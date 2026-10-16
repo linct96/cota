@@ -21,19 +21,15 @@ export function Settings() {
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
-        if (!open && !saving) useWorkspace.setState({ settingsOpen: false })
+      onOpenChange={(open, eventDetails) => {
+        if (saving) {
+          eventDetails.cancel()
+          return
+        }
+        if (!open) useWorkspace.setState({ settingsOpen: false })
       }}
     >
-      <DialogContent
-        className="settings-dialog"
-        onEscapeKeyDown={(event) => {
-          if (saving) event.preventDefault()
-        }}
-        onPointerDownOutside={(event) => {
-          if (saving) event.preventDefault()
-        }}
-      >
+      <DialogContent className="settings-dialog">
         <DialogHeader className="settings-header">
           <DialogTitle className="settings-title">设置</DialogTitle>
           <DialogDescription className="settings-description">

@@ -17,6 +17,13 @@ import { TerminalView } from './components/TerminalView'
 import { Settings } from './components/Settings'
 import { Button } from './components/ui/button'
 import { Separator } from './components/ui/separator'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu'
 import { cn } from './lib/utils'
 
 function folderName(path: string): string {
@@ -27,30 +34,12 @@ export function App() {
   const state = useWorkspace()
   const [navigation, setNavigation] = useState<'home' | 'placeholder'>('home')
   const activeNavigation = state.settingsOpen ? 'settings' : navigation
-  const [menuPath, setMenuPath] = useState<string | null>(null)
   const menuTrigger = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
     void useWorkspace.getState().bootstrap()
     return window.desktop.onShortcut((shortcut) => useWorkspace.getState().shortcut(shortcut))
   }, [])
-
-  useEffect(() => {
-    if (!menuPath) return
-    const onDismiss = (event: MouseEvent | KeyboardEvent) => {
-      if (event instanceof KeyboardEvent) {
-        if (event.key !== 'Escape' && event.key !== 'Tab') return
-        if (event.key === 'Escape') menuTrigger.current?.focus()
-      }
-      setMenuPath(null)
-    }
-    window.addEventListener('click', onDismiss)
-    window.addEventListener('keydown', onDismiss)
-    return () => {
-      window.removeEventListener('click', onDismiss)
-      window.removeEventListener('keydown', onDismiss)
-    }
-  }, [menuPath])
 
   const currentTabs = state.tabs.filter((tab) => tab.projectPath === state.selectedProject)
   const activeId = state.activeTabs[state.selectedProject || '']
@@ -135,6 +124,7 @@ export function App() {
           {/* 终端标签栏 */}
           <div className="terminal-tabs-region flex min-w-0 flex-1 items-center gap-2">
             <Separator
+              aria-hidden="true"
               orientation="vertical"
               className="terminal-tabs-separator bg-titlebar-separator data-vertical:h-4 data-vertical:self-center"
             />
@@ -253,7 +243,7 @@ export function App() {
                     key={path}
                     aria-busy={state.removingProject === path}
                     className={cn(
-                      'project-item group relative flex shrink-0 items-center justify-between rounded-md px-2.5 py-1.5 transition-colors',
+                      'project-item group flex shrink-0 items-center justify-between rounded-md px-2.5 py-1.5 transition-colors',
                       isSelected
                         ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
                         : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
@@ -284,66 +274,42 @@ export function App() {
                         </span>
                       </span>
                     </button>
-                    <div className="project-item-actions relative shrink-0">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className={cn(
-                          'project-menu-trigger size-6 rounded-sm text-muted-foreground opacity-0 transition-colors hover:bg-project-action-hover hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100',
-                          menuPath === path &&
-                            'opacity-100 bg-project-action-active text-foreground',
-                        )}
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger
+                        render={<Button variant="ghost" size="icon-sm" />}
+                        className="project-menu-trigger size-6 shrink-0 rounded-sm text-muted-foreground opacity-0 transition-colors hover:bg-project-action-hover hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-popup-open:bg-project-action-active data-popup-open:text-foreground data-popup-open:opacity-100"
                         disabled={!!state.removingProject}
                         aria-label={`${folderName(path)} 更多操作`}
-                        aria-haspopup="menu"
-                        aria-expanded={menuPath === path}
-                        onKeyDown={(event) => {
-                          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-                          event.preventDefault()
+                        onFocus={(event) => {
                           menuTrigger.current = event.currentTarget
-                          setMenuPath(path)
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          menuTrigger.current = e.currentTarget
-                          setMenuPath(menuPath === path ? null : path)
                         }}
                       >
                         <MoreHorizontal className="project-menu-trigger-icon size-3.5" />
-                      </Button>
-                      {menuPath === path && (
-                        <div
-                          role="menu"
-                          aria-label={`${folderName(path)} 操作菜单`}
-                          className="project-dropdown-menu absolute right-0 top-full z-50 mt-1 min-w-32 rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
-                        >
-                          <button
-                            type="button"
-                            role="menuitem"
-                            ref={(node) => {
-                              node?.focus()
-                            }}
-                            onKeyDown={(event) => {
-                              if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key))
-                                event.preventDefault()
-                            }}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        aria-label={`${folderName(path)} 操作菜单`}
+                        className="project-dropdown-menu"
+                      >
+                        <DropdownMenuGroup className="project-menu-actions">
+                          <DropdownMenuItem
+                            variant="destructive"
                             title="从 Cota 移除并结束终端，不删除本地文件"
                             disabled={!!state.removingProject}
-                            className="project-delete-item flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setMenuPath(null)
+                            className="project-delete-item"
+                            onClick={() => {
+                              const trigger = menuTrigger.current
                               void state.removeProject(path).then(() => {
-                                if (menuTrigger.current?.isConnected) menuTrigger.current.focus()
+                                if (trigger?.isConnected) trigger.focus()
                               })
                             }}
                           >
-                            <Trash2 className="project-delete-icon size-3.5" />
+                            <Trash2 className="project-delete-icon" />
                             <span className="project-delete-label">删除项目…</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 )
               })}
