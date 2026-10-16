@@ -27,6 +27,9 @@
   --color-project-active-foreground: var(--project-active-foreground);
   --color-project-action-hover: var(--project-action-hover);
   --color-project-action-active: var(--project-action-active);
+  --color-workspace-status-idle: var(--workspace-status-idle);
+  --color-workspace-status-active: var(--workspace-status-active);
+  --color-overlay: var(--overlay);
   --color-terminal-tab-inactive: var(--terminal-tab-inactive);
   --color-terminal-tab-inactive-hover: var(--terminal-tab-inactive-hover);
   --color-scrollbar-thumb: var(--scrollbar-thumb);
@@ -84,6 +87,9 @@
   --project-active-foreground: oklch(0.145 0 0);
   --project-action-hover: #e0e0e0;
   --project-action-active: #d6d6d6;
+  --workspace-status-idle: var(--muted-foreground);
+  --workspace-status-active: #16a34a;
+  --overlay: rgba(0, 0, 0, 0.2);
   --terminal-tab-inactive: #e8e8e8;
   --terminal-tab-inactive-hover: #dedede;
   --scrollbar-thumb: rgba(121, 121, 121, 0.4);
@@ -143,6 +149,15 @@ input[type='radio'] {
 button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+.project-folder-row {
+  border-radius: var(--radius-md);
+}
+.project-folder-row:hover {
+  background: var(--project-hover);
+}
+.project-folder-row:hover [data-slot='button'] {
+  color: var(--foreground);
 }
 .xterm {
   height: 100%;
@@ -291,6 +306,7 @@ button:not([data-slot='button']):focus-visible {
   --scrollbar-thumb: rgba(180, 180, 185, 0.4);
   --scrollbar-thumb-hover: rgba(180, 180, 185, 0.6);
   --scrollbar-thumb-active: rgba(180, 180, 185, 0.8);
+  --overlay: rgba(0, 0, 0, 0.5);
 }
 
 @layer base {
