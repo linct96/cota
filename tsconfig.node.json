@@ -16,5 +16,6 @@
     "electron.vite.config.ts",
     "vitest.config.mts",
     "tests/**/*.test.ts"
-  ]
+  ],
+  "exclude": ["tests/workspace.test.ts"]
 }

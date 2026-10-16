@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  main: {},
+  main: {
+    build: {
+      rolldownOptions: {
+        input: { index: resolve('src/main/index.ts'), host: resolve('src/main/host-entry.ts') },
+      },
+    },
+  },
   preload: {},
   renderer: {
     resolve: { alias: { '@': resolve('src/renderer/src') } },
