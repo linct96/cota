@@ -1,0 +1,5 @@
+{
+  "semi": false,
+  "singleQuote": true,
+  "ignorePatterns": ["out/**", "release/**", "pnpm-lock.yaml", "docs/需求文档/**", ".*/**"]
+}
