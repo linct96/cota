@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { unwrap } from '../../../shared/contracts'
+import { unwrap, type TerminalEvent } from '../../../shared/contracts'
 import { useWorkspace, type TerminalTab } from '../store'
 
 export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
@@ -12,6 +12,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
   const focusVersion = useWorkspace((state) => state.focusVersion)
   const id = tab.id
   const projectPath = tab.projectPath
+  const workspaceId = tab.workspaceId
   const status = tab.closingStatus ?? tab.status
 
   useEffect(() => {
@@ -20,8 +21,10 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const foreground = tokens.getPropertyValue('--foreground').trim()
     const terminal = new Terminal({
       cursorBlink: true,
+      cursorStyle: 'bar',
       fontSize: 13,
       fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
+      lineHeight: 1.25,
       scrollback: useWorkspace.getState().preferences.scrollback,
       scrollSensitivity: 1.15,
       fastScrollSensitivity: 5,
@@ -66,72 +69,105 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     terminal.open(host.current!)
     instance.current = { terminal, fit }
     let disposed = false
-    const report = (error: unknown) => {
-      if (!disposed) useWorkspace.getState().report(error)
-    }
+    let connected = false
+    const attachmentId = crypto.randomUUID()
+    const pending: TerminalEvent[] = []
+    terminal.options.disableStdin = true
     const live = () =>
+      connected &&
+      !disposed &&
       useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
     const fitAndResize = () => {
       if (!host.current?.clientWidth || !host.current.clientHeight) return
       fit.fit()
     }
     const resize = terminal.onResize(({ cols, rows }) => {
-      if (live()) void window.desktop.resizeTerminal(id, cols, rows).then(unwrap).catch(report)
+      if (live())
+        void window.desktop.resizeTerminal(id, cols, rows).then(unwrap).catch(console.error)
     })
     const data = terminal.onData((value) => {
-      if (live()) void window.desktop.writeTerminal(id, value).then(unwrap).catch(report)
+      if (live()) void window.desktop.writeTerminal(id, value).then(unwrap).catch(console.error)
     })
     terminal.attachCustomKeyEventHandler(
       (event) => !(event.metaKey && ['c', 'v'].includes(event.key.toLowerCase())),
     )
-    const unsubscribe = window.desktop.onTerminal((event) => {
-      if (event.id !== id || disposed) return
+    const apply = (event: TerminalEvent) => {
       if (event.type === 'data') {
         terminal.write(event.data, () => {
-          window.desktop.acknowledge(id, event.data.length)
+          if (!disposed) window.desktop.acknowledge(id, attachmentId, event.data.length)
         })
       } else {
         terminal.options.disableStdin = true
-        useWorkspace.getState().updateTab(id, { status: 'exited', exitCode: event.exitCode })
+        useWorkspace
+          .getState()
+          .updateTab(
+            id,
+            event.type === 'exit'
+              ? { status: 'exited', exitCode: event.exitCode }
+              : { status: 'error', error: event.error },
+          )
       }
+    }
+    const unsubscribe = window.desktop.onTerminal((event) => {
+      if (event.id !== id || event.attachmentId !== attachmentId || disposed) return
+      if (connected) apply(event)
+      else pending.push(event)
     })
     const observer = new ResizeObserver(fitAndResize)
     observer.observe(host.current!)
     fitAndResize()
-    void window.desktop
-      .createTerminal({ id, projectPath, cols: terminal.cols, rows: terminal.rows })
-      .then(unwrap)
-      .then(() => {
-        if (disposed) return
-        if (useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'starting') {
-          useWorkspace.getState().updateTab(id, { status: 'running' })
-        }
-        fitAndResize()
-        // Always send the latest size, even if fitting did not change xterm's dimensions.
-        if (live())
-          void window.desktop
-            .resizeTerminal(id, terminal.cols, terminal.rows)
-            .then(unwrap)
-            .catch(report)
+    void (async () => {
+      if (useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'starting')
+        unwrap(
+          await window.desktop.createTerminal({
+            id,
+            projectPath,
+            workspaceId,
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }),
+        )
+      if (disposed) return
+      const attached = unwrap(
+        await window.desktop.attachTerminal({ id, projectPath, workspaceId, attachmentId }),
+      )
+      if (disposed) {
+        void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
+        return
+      }
+      terminal.resize(attached.cols, attached.rows)
+      await new Promise<void>((resolve) => terminal.write(attached.snapshot, resolve))
+      if (disposed) return
+      connected = true
+      terminal.options.disableStdin = attached.exited
+      useWorkspace.getState().updateTab(id, {
+        status: attached.exited ? 'exited' : 'running',
+        exitCode: attached.exitCode,
+        error: undefined,
       })
-      .catch((error: unknown) => {
-        if (disposed) return
-        terminal.options.disableStdin = true
-        useWorkspace.getState().updateTab(id, {
-          status: 'error',
-          error: error instanceof Error ? error.message : String(error),
-        })
+      for (const event of pending) apply(event)
+      pending.length = 0
+      fitAndResize()
+      if (live()) await window.desktop.resizeTerminal(id, terminal.cols, terminal.rows).then(unwrap)
+    })().catch((error: unknown) => {
+      if (disposed) return
+      terminal.options.disableStdin = true
+      useWorkspace.getState().updateTab(id, {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
       })
+    })
     return () => {
       disposed = true
       observer.disconnect()
       unsubscribe()
+      void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
       data.dispose()
       resize.dispose()
       terminal.dispose()
       instance.current = null
     }
-  }, [id, projectPath])
+  }, [id, projectPath, workspaceId])
 
   useEffect(() => {
     if (instance.current) instance.current.terminal.options.scrollback = scrollback
@@ -144,11 +180,14 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       current.fit.fit()
       // Keep focus on tab buttons for repeated arrow-key navigation.
       if (document.activeElement?.getAttribute('role') !== 'tab') current.terminal.focus()
-      if (useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running') {
+      if (
+        !current.terminal.options.disableStdin &&
+        useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
+      ) {
         void window.desktop
           .resizeTerminal(id, current.terminal.cols, current.terminal.rows)
           .then(unwrap)
-          .catch((error) => useWorkspace.getState().report(error))
+          .catch(console.error)
       }
     })
     return () => cancelAnimationFrame(frame)
@@ -182,7 +221,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
         <div ref={host} className="terminal-screen size-full overflow-hidden" />
         {status === 'starting' && (
           <output className="terminal-starting-status pointer-events-none absolute inset-0 text-muted-foreground">
-            正在创建 Shell…
+            正在连接 Shell…
           </output>
         )}
       </div>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { ConfigStore } from '../src/main/config'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 
@@ -16,7 +17,7 @@ afterEach(async () => {
 })
 
 describe('local JSON configuration', () => {
-  it('starts with defaults and persists only preferences and recent projects', async () => {
+  it('starts with defaults and persists preferences and recent projects before a layout is saved', async () => {
     const store = new ConfigStore(file)
     expect((await store.load()).config).toEqual(DEFAULT_CONFIG)
     await store.remember('/tmp/中文 项目')
@@ -60,6 +61,58 @@ describe('local JSON configuration', () => {
     expect((await new ConfigStore(file).load()).config.recentProjects).toEqual(['/tmp/other'])
     await store.remember('/missing/中文 项目')
     expect(store.snapshot().recentProjects).toEqual(['/missing/中文 项目', '/tmp/other'])
+  })
+  it('persists layout atomically, prunes deleted projects, and rejects invalid owners without replacing valid data', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    const path = '/tmp/project'
+    await store.remember(path)
+    const workspace = { id: randomUUID(), projectPath: path, name: '中文 workspace' }
+    const tab = { id: randomUUID(), projectPath: path, workspaceId: workspace.id, title: 'Agent' }
+    const layout = {
+      workspaces: [workspace],
+      tabs: [tab],
+      selectedProject: path,
+      selectedWorkspaces: { [path]: workspace.id },
+      activeTabs: { [workspace.id]: tab.id },
+    }
+    await store.saveLayout(layout)
+    expect((await new ConfigStore(file).load()).config.layout).toEqual(layout)
+    const before = await readFile(file, 'utf8')
+    await expect(
+      store.saveLayout({ ...layout, tabs: [{ ...tab, workspaceId: randomUUID() }] }),
+    ).rejects.toThrow('所属工作区')
+    await expect(
+      store.saveLayout({ ...layout, workspaces: [workspace, workspace] }),
+    ).rejects.toThrow('重复')
+    await expect(
+      store.saveLayout({ ...layout, workspaces: [{ ...workspace, projectPath: '/unknown' }] }),
+    ).rejects.toThrow('未打开')
+    expect(await readFile(file, 'utf8')).toBe(before)
+    await store.forget(path)
+    expect((await new ConfigStore(file).load()).config.layout).toEqual({
+      workspaces: [],
+      tabs: [],
+      selectedWorkspaces: {},
+      activeTabs: {},
+    })
+  })
+  it('keeps persisted layout valid when a project falls outside the 20 most recent', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    await store.remember('/tmp/first')
+    const workspace = { id: randomUUID(), projectPath: '/tmp/first', name: '工作区 1' }
+    await store.saveLayout({
+      workspaces: [workspace],
+      tabs: [],
+      selectedProject: '/tmp/first',
+      selectedWorkspaces: {},
+      activeTabs: {},
+    })
+    for (let index = 0; index < 20; index++) await store.remember(`/tmp/project-${index}`)
+    const restored = await new ConfigStore(file).load()
+    expect(restored.warning).toBeUndefined()
+    expect(restored.config.layout?.workspaces).toEqual([])
   })
   it('does not expose mutable internal state', async () => {
     const store = new ConfigStore(file)

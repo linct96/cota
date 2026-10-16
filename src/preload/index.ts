@@ -1,18 +1,32 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopAPI, Shortcut, TerminalEvent } from '../shared/contracts'
+import type { ConfirmationRequest, DesktopAPI, Shortcut, TerminalEvent } from '../shared/contracts'
 
 const api: DesktopAPI = {
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
+  saveLayout: (layout) => ipcRenderer.invoke('workspace:save-layout', layout),
   openProject: () => ipcRenderer.invoke('project:open'),
   selectProject: (path) => ipcRenderer.invoke('project:select', path),
+  projectBranch: (path) => ipcRenderer.invoke('project:branch', path),
+  removeWorkspace: (target) => ipcRenderer.invoke('workspace:remove', target),
   removeProject: (path) => ipcRenderer.invoke('project:remove', path),
   savePreferences: (preferences) => ipcRenderer.invoke('preferences:save', preferences),
   createTerminal: (options) => ipcRenderer.invoke('terminal:create', options),
+  attachTerminal: (options) => ipcRenderer.invoke('terminal:attach', options),
+  detachTerminal: (id, attachmentId) => ipcRenderer.invoke('terminal:detach', id, attachmentId),
   writeTerminal: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
   resizeTerminal: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),
-  acknowledge: (id, length) => ipcRenderer.send('terminal:ack', id, length),
+  acknowledge: (id, attachmentId, length) =>
+    ipcRenderer.send('terminal:ack', id, attachmentId, length),
   closeTerminal: (id) => ipcRenderer.invoke('terminal:close', id),
   closeWindow: () => ipcRenderer.send('app:close-window'),
+  respondToConfirmation: (id, confirmed) =>
+    ipcRenderer.invoke('app:confirm-response', id, confirmed),
+  onConfirmation: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, request: ConfirmationRequest) =>
+      listener(request)
+    ipcRenderer.on('app:confirm', wrapped)
+    return () => ipcRenderer.removeListener('app:confirm', wrapped)
+  },
   onTerminal: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: TerminalEvent) => listener(event)
     ipcRenderer.on('terminal:event', wrapped)
