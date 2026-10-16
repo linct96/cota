@@ -23,16 +23,24 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       fontSize: 13,
       fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
       scrollback: useWorkspace.getState().preferences.scrollback,
+      scrollSensitivity: 1.15,
+      fastScrollSensitivity: 5,
+      macOptionIsMeta: false,
+      macOptionClickForcesSelection: true,
       minimumContrastRatio: 4.5,
       theme: {
         background,
         foreground,
         cursor: foreground,
         cursorAccent: background,
+        overviewRulerBorder: 'transparent',
         selectionBackground: tokens.getPropertyValue('--terminal-selection').trim(),
         selectionInactiveBackground: tokens
           .getPropertyValue('--terminal-selection-inactive')
           .trim(),
+        scrollbarSliderBackground: tokens.getPropertyValue('--scrollbar-thumb').trim(),
+        scrollbarSliderHoverBackground: tokens.getPropertyValue('--scrollbar-thumb-hover').trim(),
+        scrollbarSliderActiveBackground: tokens.getPropertyValue('--scrollbar-thumb-active').trim(),
         black: foreground,
         red: tokens.getPropertyValue('--destructive').trim(),
         green: '#15803d',
@@ -148,29 +156,36 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
 
   return (
     <section
-      style={{ display: active ? 'flex' : 'none' }}
+      id={`terminal-panel-${tab.id}`}
+      role="tabpanel"
+      aria-labelledby={`terminal-tab-${tab.id}`}
       aria-label={tab.title}
-      className="terminal-view absolute inset-0 flex-col p-3"
+      tabIndex={0}
+      hidden={!active}
+      style={{ display: active ? 'flex' : 'none' }}
+      className="terminal-view col-start-1 row-start-1 size-full min-h-0 min-w-0 flex-col p-3"
     >
-      {status === 'starting' && (
-        <output className="terminal-starting-status pointer-events-none absolute left-3 top-3 text-muted-foreground">
-          正在创建 Shell…
-        </output>
-      )}
       {status === 'error' && (
         <p
           role="alert"
-          className="terminal-error-banner mb-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive"
+          className="terminal-error-banner mb-2 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive"
         >
           {tab.error}
         </p>
       )}
       {status === 'exited' && (
-        <output className="terminal-exited-status pb-2 text-muted-foreground">
+        <output className="terminal-exited-status shrink-0 pb-2 text-muted-foreground">
           Exited · 退出码 {tab.exitCode ?? '未知'} · 请新建终端继续。
         </output>
       )}
-      <div ref={host} className="terminal-screen min-h-0 flex-1" />
+      <div className="terminal-screen-container relative min-h-0 flex-1 overflow-hidden">
+        <div ref={host} className="terminal-screen size-full overflow-hidden" />
+        {status === 'starting' && (
+          <output className="terminal-starting-status pointer-events-none absolute inset-0 text-muted-foreground">
+            正在创建 Shell…
+          </output>
+        )}
+      </div>
     </section>
   )
 }

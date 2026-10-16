@@ -357,25 +357,13 @@ export function App() {
 
           {/* 白底终端管理主面板 */}
           <main className="terminal-workspace flex min-w-0 flex-1 flex-col" aria-label="终端工作区">
-            <div className="terminal-stage-container relative min-h-0 flex-1 overflow-hidden">
+            <div className="terminal-stage-container grid grid-cols-1 grid-rows-1 min-h-0 flex-1 overflow-hidden">
               {state.tabs.map((tab) => {
                 const isSelected = tab.projectPath === state.selectedProject && tab.id === activeId
-                return (
-                  <div
-                    key={tab.id}
-                    id={`terminal-panel-${tab.id}`}
-                    role="tabpanel"
-                    aria-labelledby={`terminal-tab-${tab.id}`}
-                    tabIndex={0}
-                    hidden={!isSelected}
-                    className="terminal-stage-pane absolute inset-0"
-                  >
-                    <TerminalView tab={tab} active={isSelected} />
-                  </div>
-                )
+                return <TerminalView key={tab.id} tab={tab} active={isSelected} />
               })}
               {!state.selectedProject && (
-                <div className="workspace-empty-state flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
                   <FolderOpen className="workspace-empty-icon size-6 text-muted-foreground" />
                   <div className="workspace-empty-content">
                     <h3 className="workspace-empty-title text-sm font-medium text-foreground">
@@ -398,7 +386,7 @@ export function App() {
                 </div>
               )}
               {state.selectedProject && !currentTabs.length && (
-                <div className="terminal-empty-state flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                <div className="terminal-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
                   <TerminalIcon className="terminal-empty-icon size-6 text-muted-foreground" />
                   <div className="terminal-empty-content">
                     <h3 className="terminal-empty-title text-sm font-medium text-foreground">
