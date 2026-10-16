@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { basename } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 
@@ -20,6 +21,28 @@ function alive(pid: number): boolean {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
     throw error
   }
+}
+
+export async function hasRunningJob(pid: number, shell: string): Promise<boolean> {
+  const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid=,stat=,comm='], {
+    timeout: 2000,
+    maxBuffer: 4 * 1024 * 1024,
+  })
+  const processes = stdout
+    .trim()
+    .split('\n')
+    .map((line) => {
+      const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line)
+      if (!match) throw new Error('无法识别终端进程状态。')
+      return { pid: Number(match[1]), parent: Number(match[2]), stat: match[3], command: match[4] }
+    })
+  const root = processes.find((process) => process.pid === pid)
+  if (!root) throw new Error('无法读取终端进程状态。')
+  // shortcut: pure shell builtins have no child process; precise prompt detection needs shell integration.
+  return (
+    basename(root.command).replace(/^-/, '') !== basename(shell) ||
+    processes.some((process) => process.parent === pid && !process.stat.includes('Z'))
+  )
 }
 
 export async function stopProcessTree(pid: number): Promise<void> {
