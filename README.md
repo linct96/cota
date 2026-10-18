@@ -80,6 +80,22 @@ node scripts/host-smoke.cjs --packaged  # 校验 .app 内的真实 Host / PTY
 
 `pnpm-workspace.yaml` 定向固定 `app-builder-lib` 的 `@electron/get` 为 3.1.0：electron-builder 26.15.3 依赖的缓存模式在 3.0.0 中不存在；去掉此约束可能导致打包报 `Cannot read properties of undefined (reading 'ReadWrite')`。
 
+## 自动构建与发布
+
+`.github/workflows/release.yml` 在推送 `vX.Y.Z` 格式的正式版本 Tag 时触发，例如 `v0.1.0`。Tag 必须指向已合入 `main` 的提交，不接受预发布版本或带前导零的版本号。
+
+流程在 macOS ARM64 Runner 上执行：冻结依赖安装 → 格式检查 / lint / 测试 → 类型检查与构建 → DMG 打包 → 安装包版本及真实 Host / PTY 检查 → 上传 GitHub Release，并自动生成更新说明。任一步失败都不会进入发布步骤。
+
+安装包版本取自 Tag（去掉 `v`），不改写仓库中的 `package.json` 或锁文件；本地打包仍使用 `package.json` 的版本。产物为 `Cota-X.Y.Z-arm64.dmg`。重跑同一 Tag 的工作流会替换已有 Release 的同名安装包。
+
+```sh
+# 确认发布提交已推送至 main 后，以实际版本号替换示例
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+工作流只使用 GitHub 提供的 `GITHUB_TOKEN`，需要仓库启用 GitHub Actions 并允许工作流写入 Release。当前仍是**未签名、未公证**的安装包，仅支持 macOS Apple Silicon；不包含应用内自动更新。
+
 ## 数据与退出边界
 
 - 最近最多 20 个项目、Shell / scrollback 偏好、工作区名称与 UUID、终端关联和选中状态保存在 Electron `userData/config.json`；打包版默认位于 `~/Library/Application Support/Cota/config.json`，开发版目录名可能为 `cota`。文件权限为 `0600`，写入串行并通过同目录临时文件原子替换。
