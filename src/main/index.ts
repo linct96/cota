@@ -8,6 +8,7 @@ import {
   type IpcMainInvokeEvent,
 } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
@@ -42,6 +43,7 @@ let rendererReady = false
 let pendingConfirmation: { id: string; resolve(confirmed: boolean): void } | undefined
 let removingWorkspace: RemovalTarget | undefined
 const closingTabs = new Set<string>()
+const appName = app.isPackaged ? 'Cota' : 'Cota Dev'
 const rendererFile = join(__dirname, '../renderer/index.html')
 const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
 const rendererURL = new URL(devURL || pathToFileURL(rendererFile).href).href
@@ -275,7 +277,7 @@ function installMenu(): void {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
-        label: 'Cota',
+        label: appName,
         submenu: [
           { role: 'about' },
           { type: 'separator' },
@@ -329,6 +331,14 @@ function installMenu(): void {
   )
 }
 
+if (!app.isPackaged) {
+  const userData = join(app.getPath('appData'), appName)
+  mkdirSync(userData, { recursive: true, mode: 0o700 })
+  app.setName(appName)
+  app.setPath('userData', userData)
+  app.setPath('sessionData', userData)
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -346,7 +356,7 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
-      app.setName('Cota')
+      app.setName(appName)
       nativeTheme.themeSource = 'light'
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       warning = (await config.load()).warning
@@ -361,7 +371,7 @@ if (!app.requestSingleInstanceLock()) {
         minHeight: 480,
         backgroundColor: '#ffffff',
         show: false,
-        title: 'Cota',
+        title: appName,
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 16, y: 14 },
         webPreferences: {
@@ -401,7 +411,7 @@ if (!app.requestSingleInstanceLock()) {
       else await window.loadFile(rendererFile)
     })
     .catch((error) => {
-      dialog.showErrorBox('Cota 启动失败', String(error))
+      dialog.showErrorBox(`${appName} 启动失败`, String(error))
       app.exit(1)
     })
 }

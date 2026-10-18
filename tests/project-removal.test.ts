@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(),
   }
 })
+vi.mock('node:fs', () => ({ mkdirSync: vi.fn() }))
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -44,6 +45,7 @@ vi.mock('electron', () => ({
     quit: mocks.quit,
     whenReady: () => Promise.resolve(),
     setName: vi.fn(),
+    setPath: vi.fn(),
     getPath: () => '/tmp/cota-removal-test',
     exit: vi.fn(),
   },
