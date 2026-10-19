@@ -48,6 +48,8 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: pnpm run dist --publish never "-c.extraMetadata.version=$VERSION"
+      - name: Verify macOS app signature
+        run: codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cota.app
       - name: Check packaged version and Host
         run: |
           ELECTRON_RUN_AS_NODE=1 release/mac-arm64/Cota.app/Contents/MacOS/Cota -e '
