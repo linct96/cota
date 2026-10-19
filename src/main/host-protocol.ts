@@ -4,19 +4,23 @@ import type {
   CreateTerminal,
   Preferences,
   TerminalAttachment,
+  TerminalBinding,
   TerminalEvent,
   TerminalSession,
   WorkspaceTarget,
 } from '../shared/contracts'
 
-export const HOST_PROTOCOL = 1
+export const HOST_PROTOCOL = 2
+
+export interface ResolvedTerminalCreate extends CreateTerminal, TerminalBinding {}
+export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
 export const MAX_FRAME = 64 * 1024 * 1024
 
 export interface HostMethods {
   hello: { args: [token: string, version: number]; value: void }
   list: { args: []; value: TerminalSession[] }
-  create: { args: [CreateTerminal, Preferences, string[]]; value: void }
-  attach: { args: [AttachTerminal]; value: TerminalAttachment }
+  create: { args: [ResolvedTerminalCreate, Preferences]; value: void }
+  attach: { args: [ResolvedTerminalAttach]; value: TerminalAttachment }
   detach: { args: [string, string]; value: void }
   write: { args: [string, string]; value: void }
   resize: { args: [string, number, number]; value: void }

@@ -1,16 +1,50 @@
+export interface WorkspaceOpener {
+  id: string
+  name: string
+  command: string
+  arguments: string
+}
+
 export interface Preferences {
   shellPath: string | null
   scrollback: number
+  openWith: WorkspaceOpener[]
 }
 
 export interface AppConfig {
-  version: 1
+  version: 2
   recentProjects: string[]
   preferences: Preferences
   layout?: WorkspaceLayout
+  worktreeRecords: WorktreeRecord[]
+  worktreeNameHistory?: Record<string, string[]>
 }
 
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string }
+export type WorktreeErrorCode =
+  | 'NOT_GIT_REPO'
+  | 'GIT_UNAVAILABLE'
+  | 'REPOSITORY_UNAVAILABLE'
+  | 'UNSUPPORTED_REPOSITORY'
+  | 'INVALID_INPUT'
+  | 'INVALID_BRANCH_NAME'
+  | 'BRANCH_EXISTS'
+  | 'BASE_REF_NOT_FOUND'
+  | 'PATH_CONFLICT'
+  | 'WORKTREE_LOCKED'
+  | 'GIT_COMMAND_FAILED'
+  | 'CONFIG_PERSIST_FAILED'
+  | 'REMOVAL_BLOCKED'
+
+export interface WorktreeFailureDetails {
+  operationId?: string
+  path?: string
+  gitState?: 'created' | 'not-created' | 'removed' | 'unknown'
+  worktrees?: GitWorktreeInfo[]
+}
+
+export type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string; code?: WorktreeErrorCode; details?: WorktreeFailureDetails }
 export type Shortcut =
   | 'open-folder'
   | 'new-terminal'
@@ -20,13 +54,144 @@ export type Shortcut =
 export type TerminalEvent = (
   | { type: 'data'; id: string; data: string }
   | { type: 'exit'; id: string; exitCode: number; signal?: number }
+  | { type: 'closing'; id: string; closing: boolean }
   | { type: 'error'; id: string; error: string }
 ) & { attachmentId: string }
 
-export interface ProjectWorkspace {
+export type WorkspaceKind = 'local' | 'git-worktree'
+
+export type ProjectWorkspace = {
   id: string
   projectPath: string
   name: string
+} & ({ kind: 'local'; worktreeId?: never } | { kind: 'git-worktree'; worktreeId: string })
+
+export interface WorktreeRecord {
+  id: string
+  projectPath: string
+  repoCommonDir: string
+  repoId: string
+  path: string
+  origin: 'created' | 'linked'
+  initialBranch?: string
+  baseRef?: string
+  registeredAt: string
+}
+
+export interface GitWorktreeInfo {
+  path: string
+  branch: string | null
+  head: string
+  isMain: boolean
+  isBare: boolean
+  locked: boolean
+  lockReason?: string
+  prunable: boolean
+  prunableReason?: string
+  managedByCota: boolean
+  worktreeId?: string
+}
+
+export type GitRepositoryInfo =
+  | {
+      status: 'ready'
+      projectPath: string
+      rootPath: string
+      repoCommonDir: string
+      isBare: false
+    }
+  | {
+      status: 'unsupported'
+      projectPath: string
+      repoCommonDir: string
+      isBare: true
+      error: string
+      code: 'UNSUPPORTED_REPOSITORY'
+    }
+  | {
+      status: 'nonGit' | 'gitUnavailable' | 'unavailable'
+      projectPath: string
+      error: string
+      code: WorktreeErrorCode
+    }
+
+export interface WorktreeNameSuggestion {
+  name: string
+  branchPrefix: string
+}
+
+export interface CreateWorktreeInput {
+  projectPath: string
+  name: string
+  branchName: string
+  baseRef: string
+}
+
+export interface CreateWorktreeResult {
+  worktree: GitWorktreeInfo
+  record: WorktreeRecord
+  workspace: ProjectWorkspace
+}
+
+export interface WorktreePlan extends CreateWorktreeInput {
+  id: string
+  path: string
+}
+
+export type WorktreeStatus = 'ready' | 'missing' | 'unavailable' | 'conflict' | 'external'
+export interface WorktreeState {
+  record: WorktreeRecord
+  status: WorktreeStatus
+  worktree?: GitWorktreeInfo
+  error?: string
+}
+export interface WorktreeScan {
+  error?: string
+  repository: GitRepositoryInfo
+  entries: WorktreeState[]
+  external: GitWorktreeInfo[]
+}
+export type RemovalBlocker =
+  | 'UNMANAGED'
+  | 'MAIN_WORKTREE'
+  | 'MISSING_OR_UNKNOWN_PATH'
+  | 'LOCKED'
+  | 'PRUNABLE'
+  | 'DIRTY'
+  | 'UNTRACKED_FILES'
+  | 'IGNORED_CONTENT'
+  | 'POPULATED_SUBMODULE'
+  | 'RUNNING_SESSIONS'
+  | 'GIT_UNAVAILABLE'
+  | 'OWNERSHIP_MISMATCH'
+export const REMOVAL_BLOCKER_LABELS: Record<RemovalBlocker, string> = {
+  UNMANAGED: '并非 Cota 创建的目录',
+  MAIN_WORKTREE: '主工作树不可删除',
+  MISSING_OR_UNKNOWN_PATH: '目录缺失或无法确认',
+  LOCKED: 'Worktree 已锁定',
+  PRUNABLE: 'Git 元数据需要修复',
+  DIRTY: '存在未提交修改',
+  UNTRACKED_FILES: '存在未跟踪文件',
+  IGNORED_CONTENT: '存在被忽略的文件',
+  POPULATED_SUBMODULE: '存在已初始化的子模块',
+  RUNNING_SESSIONS: '有关联运行中终端',
+  GIT_UNAVAILABLE: 'Git 查询不可用',
+  OWNERSHIP_MISMATCH: '路径或仓库归属不匹配',
+}
+export interface WorktreeRemovalCheck {
+  allowed: boolean
+  worktreeId: string
+  worktreePath: string
+  currentBranch: string | null
+  blockers: RemovalBlocker[]
+  liveTerminalIds: string[]
+}
+export interface RemoveWorktreeResult {
+  removed: boolean
+  cancelled?: boolean
+  branchRetained?: boolean
+  warning?: string
+  operationId: string
 }
 
 export interface SavedTerminal extends WorkspaceTarget {
@@ -42,7 +207,14 @@ export interface WorkspaceLayout {
   activeTabs: Record<string, string>
 }
 
-export interface TerminalSession extends WorkspaceTarget {
+export interface TerminalBinding extends WorkspaceTarget {
+  cwd: string
+  workspaceKind: WorkspaceKind
+  worktreeId?: string
+  repoCommonDir?: string
+}
+
+export interface TerminalSession extends TerminalBinding {
   id: string
   cols: number
   rows: number
@@ -82,11 +254,33 @@ export interface ConfirmationRequest {
 }
 
 export interface DesktopAPI {
-  bootstrap(): Promise<Result<{ config: AppConfig; sessions: TerminalSession[]; warning?: string }>>
+  bootstrap(): Promise<
+    Result<{
+      config: AppConfig
+      sessions: TerminalSession[]
+      warning?: string
+      worktreeScans?: Record<string, WorktreeScan>
+    }>
+  >
   saveLayout(layout: WorkspaceLayout): Promise<Result<void>>
   openProject(): Promise<Result<string | null>>
   selectProject(path: string): Promise<Result<void>>
   projectBranch(path: string): Promise<Result<string | null>>
+  inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
+  listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
+  planGitWorktree(input: CreateWorktreeInput): Promise<Result<WorktreePlan>>
+  worktreeBranches(path: string): Promise<Result<string[]>>
+  suggestWorktreeName(path: string): Promise<Result<WorktreeNameSuggestion>>
+  scanWorktrees(path: string): Promise<Result<WorktreeScan>>
+  createGitWorktree(
+    input: CreateWorktreeInput & { planId?: string },
+  ): Promise<Result<CreateWorktreeResult>>
+  linkGitWorktree(path: string, worktreePath: string): Promise<Result<CreateWorktreeResult>>
+  inspectWorktreeRemoval(id: string): Promise<Result<WorktreeRemovalCheck>>
+  removeGitWorktree(id: string, deleteBranch: boolean): Promise<Result<RemoveWorktreeResult>>
+  unlinkGitWorktree(id: string): Promise<Result<boolean>>
+  workspacePath(target: WorkspaceTarget): Promise<Result<string>>
+  openWorkspaceWith(path: string | WorkspaceTarget, openerId: string): Promise<Result<void>>
   removeWorkspace(target: RemoveWorkspace): Promise<Result<boolean>>
   removeProject(path: string): Promise<Result<boolean>>
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>
@@ -106,12 +300,28 @@ export interface DesktopAPI {
 
 export const MAX_TERMINALS = 10
 export const DEFAULT_CONFIG: AppConfig = {
-  version: 1,
+  version: 2,
   recentProjects: [],
-  preferences: { shellPath: null, scrollback: 5000 },
+  worktreeRecords: [],
+  preferences: {
+    shellPath: null,
+    scrollback: 5000,
+    openWith: [
+      { id: 'finder', name: '文件管理器', command: '/usr/bin/open', arguments: '-a Finder {path}' },
+    ],
+  },
 }
 
 export function unwrap<T>(result: Result<T>): T {
-  if (!result.ok) throw new Error(result.error)
+  if (!result.ok)
+    throw new Error(
+      [
+        result.error,
+        result.details?.path && `目录：${result.details.path}`,
+        result.details?.operationId && `操作：${result.details.operationId}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
   return result.value
 }

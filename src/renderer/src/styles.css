@@ -152,12 +152,25 @@ button:not([data-slot='button']):focus-visible {
 }
 .project-folder-row {
   border-radius: var(--radius-md);
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .project-folder-row:hover {
   background: var(--project-hover);
 }
-.project-folder-row:hover [data-slot='button'] {
+.project-folder-row:hover [data-slot='button'],
+.project-folder-row:hover [data-slot='collapsible-trigger'],
+.project-folder-row:hover .project-folder-trigger {
   color: var(--foreground);
+}
+.project-folder-row .project-folder-trigger,
+.project-folder-row .project-folder-menu-trigger {
+  background: transparent;
+}
+.project-folder-row .project-folder-trigger:hover,
+.project-folder-row .project-folder-menu-trigger:hover,
+.project-folder-row .project-folder-trigger:active,
+.project-folder-row .project-folder-menu-trigger:active {
+  background: transparent;
 }
 .xterm {
   height: 100%;

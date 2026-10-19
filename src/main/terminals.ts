@@ -3,23 +3,17 @@ import { Terminal } from '@xterm/headless'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import {
   MAX_TERMINALS,
-  type AttachTerminal,
-  type CreateTerminal,
   type Preferences,
   type TerminalAttachment,
   type TerminalEvent,
   type TerminalSession,
   type WorkspaceTarget,
 } from '../shared/contracts'
-import {
-  dimensions,
-  preferences,
-  projectDirectory,
-  terminalId,
-  workspaceTarget,
-} from './validation'
+import { dimensions, preferences, terminalId, workspaceTarget } from './validation'
 import { resolveShell, shellEnvironment } from './shell'
 import { hasRunningJob, stopProcessTree } from './process-tree'
+import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from './host-protocol'
+import { sameBinding, terminalBinding, validateTerminalBinding } from './terminal-binding'
 
 interface Session extends TerminalSession {
   child?: pty.IPty
@@ -45,22 +39,16 @@ export class TerminalManager {
 
   constructor(private readonly send: (event: TerminalEvent) => void) {}
 
-  create(options: CreateTerminal, settings: Preferences, allowedProjects: string[]): Promise<void> {
+  create(options: ResolvedTerminalCreate, settings: Preferences): Promise<void> {
     if (this.stopping) return Promise.reject(new Error('应用正在退出。'))
     const id = terminalId(options?.id)
-    const target = workspaceTarget(options)
+    const target = terminalBinding(options)
     const size = dimensions(options.cols, options.rows)
     settings = preferences(settings)
-    if (!Array.isArray(allowedProjects) || !allowedProjects.includes(target.projectPath))
-      return Promise.reject(new Error('请先打开项目目录。'))
     const existing = this.sessions.get(id)
     if (existing) {
       // Stable IDs make an interrupted create retryable without spawning a second shell.
-      if (
-        existing.projectPath !== target.projectPath ||
-        existing.workspaceId !== target.workspaceId ||
-        existing.closing
-      )
+      if (!sameBinding(existing, target) || existing.closing)
         return Promise.reject(new Error('终端标识已被其他会话占用。'))
       return existing.creation || Promise.resolve()
     }
@@ -90,13 +78,13 @@ export class TerminalManager {
     this.sessions.set(id, session)
     const operation = (async () => {
       try {
-        const cwd = await projectDirectory(target.projectPath)
         const shell = await resolveShell(settings)
+        await validateTerminalBinding(target)
         if (this.stopping) throw new Error('应用正在退出。')
         session.shell = shell
         session.child = pty.spawn(shell, ['-il'], {
           ...size,
-          cwd,
+          cwd: target.cwd,
           name: 'xterm-256color',
           env: shellEnvironment(),
         })
@@ -155,10 +143,26 @@ export class TerminalManager {
   async list(): Promise<TerminalSession[]> {
     await Promise.allSettled([...this.creations])
     return [...this.sessions.values()].map(
-      ({ id, projectPath, workspaceId, cols, rows, exited, exitCode }) => ({
+      ({
         id,
         projectPath,
         workspaceId,
+        cwd,
+        workspaceKind,
+        worktreeId,
+        repoCommonDir,
+        cols,
+        rows,
+        exited,
+        exitCode,
+      }) => ({
+        id,
+        projectPath,
+        workspaceId,
+        cwd,
+        workspaceKind,
+        worktreeId,
+        repoCommonDir,
         cols,
         rows,
         exited,
@@ -167,16 +171,12 @@ export class TerminalManager {
     )
   }
 
-  async attach(options: AttachTerminal): Promise<TerminalAttachment> {
+  async attach(options: ResolvedTerminalAttach): Promise<TerminalAttachment> {
     const id = terminalId(options?.id)
     const attachmentId = terminalId(options.attachmentId)
-    const target = workspaceTarget(options)
+    const target = terminalBinding(options)
     const session = this.sessions.get(id)
-    if (
-      !session ||
-      session.projectPath !== target.projectPath ||
-      session.workspaceId !== target.workspaceId
-    )
+    if (!session || !sameBinding(session, target))
       throw new Error('终端会话不存在或已结束，请新建终端。')
     await session.creation
     if (session.closing || this.sessions.get(id) !== session) throw new Error('终端正在关闭。')
@@ -262,7 +262,7 @@ export class TerminalManager {
   }
 
   setScrollback(value: unknown): void {
-    const { scrollback } = preferences({ shellPath: null, scrollback: value })
+    const { scrollback } = preferences({ shellPath: null, scrollback: value, openWith: [] })
     for (const session of this.sessions.values()) session.screen.options.scrollback = scrollback
   }
 

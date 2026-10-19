@@ -7,6 +7,11 @@ import {
   type ProjectWorkspace,
   type WorkspaceLayout,
   type Shortcut,
+  type CreateWorktreeInput,
+  type CreateWorktreeResult,
+  type WorktreeRecord,
+  type WorktreeScan,
+  type TerminalSession,
 } from '../../shared/contracts'
 
 export type { ProjectWorkspace } from '../../shared/contracts'
@@ -33,8 +38,15 @@ interface Workspace {
   preferences: Preferences
   tabs: TerminalTab[]
   activeTabs: Record<string, string>
-  settingsOpen: boolean
   focusVersion: number
+  worktreeRecords: WorktreeRecord[]
+  worktreeScans: Record<string, WorktreeScan>
+  worktreeError?: string
+  orphanSessions: TerminalSession[]
+  creatingWorktree: boolean
+  createGitWorktree(input: CreateWorktreeInput & { planId: string }): Promise<void>
+  refreshWorktrees(path: string): Promise<void>
+  removeWorktree(id: string, deleteBranch?: boolean, unlink?: boolean): Promise<void>
   bootstrap(): Promise<void>
   openProject(): Promise<void>
   selectProject(path: string, workspaceId?: string): Promise<boolean>
@@ -47,23 +59,22 @@ interface Workspace {
   updateTab(id: string, value: Partial<TerminalTab>): void
   closeTab(id?: string): Promise<void>
   savePreferences(value: Preferences): Promise<void>
-  shortcut(value: Shortcut): void
+  shortcut(value: Exclude<Shortcut, 'settings'>): void
 }
 
-function recent(path: string, projects: string[]): string[] {
-  return [path, ...projects.filter((item) => item !== path)].slice(0, 20)
-}
-
-function createWorkspace(path: string, name = '工作区 1'): ProjectWorkspace {
-  return { id: crypto.randomUUID(), projectPath: path, name }
+function createWorkspace(path: string, name = '工作区'): ProjectWorkspace {
+  return { id: crypto.randomUUID(), projectPath: path, name, kind: 'local' }
 }
 
 export function nextWorkspaceName(path: string, workspaces: ProjectWorkspace[]): string {
   const numbers = workspaces
     .filter((workspace) => workspace.projectPath === path)
-    .map((workspace) => Number(/^工作区 (\d+)$/.exec(workspace.name)?.[1] || 0))
+    .map((workspace) =>
+      workspace.name === '工作区' ? 1 : Number(/^工作区 (\d+)$/.exec(workspace.name)?.[1] || 0),
+    )
     .filter(Number.isSafeInteger)
-  return `工作区 ${Math.max(0, ...numbers) + 1}`
+  const next = Math.max(0, ...numbers) + 1
+  return next === 1 ? '工作区' : `工作区 ${next}`
 }
 
 function projectWorkspaces(path: string, state: Workspace): ProjectWorkspace[] {
@@ -84,6 +95,8 @@ export function currentWorkspace(
   )
 }
 
+const scanRequests = new Map<string, number>()
+
 export const useWorkspace = create<Workspace>((set, get) => ({
   ready: false,
   layoutLoaded: false,
@@ -93,22 +106,43 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   preferences: DEFAULT_CONFIG.preferences,
   tabs: [],
   activeTabs: {},
-  settingsOpen: false,
   focusVersion: 0,
+  worktreeRecords: [],
+  worktreeScans: {},
+  orphanSessions: [],
+  creatingWorktree: false,
   async bootstrap() {
     try {
-      const { config, sessions, warning } = unwrap(await window.desktop.bootstrap())
+      const { config, sessions, warning, worktreeScans } = unwrap(await window.desktop.bootstrap())
       if (warning) console.warn(warning)
       const layout = config.layout
       const workspaces = [...(layout?.workspaces || [])]
       const tabs: TerminalTab[] = []
+      const orphanSessions: TerminalSession[] = []
       for (const session of sessions) {
+        const bound = workspaces.find((workspace) => workspace.id === session.workspaceId)
+        const record = config.worktreeRecords.find((entry) => entry.id === session.worktreeId)
+        if (
+          (bound &&
+            (bound.projectPath !== session.projectPath || bound.kind !== session.workspaceKind)) ||
+          (session.workspaceKind === 'git-worktree' &&
+            (!bound ||
+              bound.kind !== 'git-worktree' ||
+              bound.worktreeId !== session.worktreeId ||
+              record?.path !== session.cwd ||
+              record?.repoCommonDir !== session.repoCommonDir)) ||
+          (session.workspaceKind === 'local' && session.cwd !== session.projectPath)
+        ) {
+          orphanSessions.push(session)
+          continue
+        }
         if (!config.recentProjects.includes(session.projectPath)) continue
         if (!workspaces.some((workspace) => workspace.id === session.workspaceId))
           workspaces.push({
             id: session.workspaceId,
             projectPath: session.projectPath,
             name: nextWorkspaceName(session.projectPath, workspaces),
+            kind: 'local',
           })
         const saved = layout?.tabs.find(
           (tab) =>
@@ -151,23 +185,111 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         tabs,
         activeTabs,
         preferences: config.preferences,
+        worktreeRecords: config.worktreeRecords,
+        worktreeScans: worktreeScans || {},
+        orphanSessions,
       })
     } catch (error) {
       console.error(error)
       set({ ready: true })
     }
   },
+  async createGitWorktree(input) {
+    if (get().creatingWorktree || get().removingWorkspace)
+      throw new Error('正在处理另一个 Worktree 操作。')
+    set({ creatingWorktree: true, worktreeError: undefined })
+    try {
+      unwrap(await window.desktop.selectProject(input.projectPath))
+      adoptWorktree(unwrap(await window.desktop.createGitWorktree(input)))
+      await get()
+        .refreshWorktrees(input.projectPath)
+        .catch((error) => set({ worktreeError: error.message }))
+    } finally {
+      set({ creatingWorktree: false })
+    }
+  },
+  async refreshWorktrees(path) {
+    const request = (scanRequests.get(path) || 0) + 1
+    scanRequests.set(path, request)
+    const result = await window.desktop.scanWorktrees(path)
+    if (scanRequests.get(path) !== request) return
+    if (!result.ok) {
+      set({ worktreeError: result.error })
+      return
+    }
+    set((state) => {
+      const previous = state.worktreeScans[path]
+      const scan = {
+        ...result.value,
+        external:
+          result.value.error || result.value.repository.status !== 'ready'
+            ? previous?.external || result.value.external
+            : result.value.external,
+        entries: result.value.entries.map((entry) => ({
+          ...entry,
+          worktree:
+            entry.worktree ||
+            previous?.entries.find((old) => old.record.id === entry.record.id)?.worktree,
+        })),
+      }
+      return { worktreeScans: { ...state.worktreeScans, [path]: scan } }
+    })
+  },
+  async removeWorktree(id, deleteBranch = true, unlink = false) {
+    if (get().removingWorkspace || get().creatingWorktree) return
+    set({ removingWorkspace: id, worktreeError: undefined })
+    const record = get().worktreeRecords.find((entry) => entry.id === id)
+    try {
+      const result = unlink
+        ? { removed: unwrap(await window.desktop.unlinkGitWorktree(id)) }
+        : unwrap(await window.desktop.removeGitWorktree(id, deleteBranch))
+      if (!result.removed) return
+      set((state) => {
+        const removed = new Set(
+          state.workspaces
+            .filter((entry) => entry.kind === 'git-worktree' && entry.worktreeId === id)
+            .map((entry) => entry.id),
+        )
+        return {
+          selectedProject: removed.has(currentWorkspace(state)?.id || '')
+            ? undefined
+            : state.selectedProject,
+          worktreeRecords: state.worktreeRecords.filter((entry) => entry.id !== id),
+          workspaces: state.workspaces.filter((entry) => !removed.has(entry.id)),
+          tabs: state.tabs.filter((entry) => !removed.has(entry.workspaceId)),
+          selectedWorkspaces: Object.fromEntries(
+            Object.entries(state.selectedWorkspaces).filter(
+              ([, workspaceId]) => !removed.has(workspaceId),
+            ),
+          ),
+          activeTabs: Object.fromEntries(
+            Object.entries(state.activeTabs).filter(([workspaceId]) => !removed.has(workspaceId)),
+          ),
+          worktreeError: 'warning' in result ? result.warning : undefined,
+        }
+      })
+    } catch (error) {
+      set({ worktreeError: (error as Error).message })
+      throw error
+    } finally {
+      set({ removingWorkspace: undefined })
+      if (record) await get().refreshWorktrees(record.projectPath).catch(console.error)
+    }
+  },
   async openProject() {
-    if (get().removingWorkspace) return
+    if (get().removingWorkspace || get().creatingWorktree) return
     try {
       const path = unwrap(await window.desktop.openProject())
-      if (path)
-        set((state) => ({
-          projects: state.projects.includes(path) ? state.projects : recent(path, state.projects),
-          workspaces: projectWorkspaces(path, state),
-          selectedProject: path,
-          focusVersion: state.focusVersion + 1,
-        }))
+      if (!path || get().removingWorkspace || get().creatingWorktree) return
+      set((state) => ({
+        projects: state.projects.includes(path) ? state.projects : [...state.projects, path],
+        workspaces: projectWorkspaces(path, state),
+        selectedProject: path,
+        focusVersion: state.focusVersion + 1,
+      }))
+      const workspace = currentWorkspace(get())
+      if (workspace && !get().tabs.some((tab) => tab.workspaceId === workspace.id))
+        get().newTerminal()
     } catch (error) {
       console.error(error)
     }
@@ -231,6 +353,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         focusVersion: state.focusVersion + 1,
       }
     })
+    get().newTerminal()
     return true
   },
   renameWorkspace(id, name) {
@@ -253,7 +376,15 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   },
   async removeWorkspace(id) {
     const workspace = get().workspaces.find((item) => item.id === id)
-    if (!workspace || get().removingWorkspace) return false
+    if (!workspace || get().removingWorkspace || get().creatingWorktree) return false
+    if (workspace.kind === 'git-worktree') {
+      try {
+        await get().removeWorktree(workspace.worktreeId)
+        return !get().workspaces.some((item) => item.id === id)
+      } catch {
+        return false
+      }
+    }
     const removeProject = !get().workspaces.some(
       (item) => item.projectPath === workspace.projectPath && item.id !== id,
     )
@@ -347,8 +478,20 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   newTerminal() {
     const { selectedProject, tabs, removingWorkspace } = get()
     if (!selectedProject || removingWorkspace) return
-    const workspaceId = currentWorkspace(get())?.id
-    if (!workspaceId) return
+    const workspace = currentWorkspace(get())
+    const workspaceId = workspace?.id
+    if (!workspaceId || get().creatingWorktree) return
+    if (
+      workspace.kind === 'git-worktree' &&
+      get().worktreeScans[selectedProject]?.entries.find(
+        (entry) => entry.record.id === workspace.worktreeId,
+      )?.status !== 'ready'
+    ) {
+      set({
+        worktreeError: 'Worktree 不可用，请在“编辑”中重新检查或在终端中修复；不会回退到项目目录。',
+      })
+      return
+    }
     if (tabs.length >= MAX_TERMINALS) {
       console.error('最多保留 10 个终端，请先关闭一个标签。')
       return
@@ -428,10 +571,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   },
   async savePreferences(value) {
     const saved = unwrap(await window.desktop.savePreferences(value))
-    set({ preferences: saved, settingsOpen: false })
+    set({ preferences: saved })
   },
   shortcut(value) {
-    if (get().removingWorkspace || (get().settingsOpen && value !== 'settings')) return
+    if (get().removingWorkspace) return
     const workspaceId = currentWorkspace(get())?.id || ''
     switch (value) {
       case 'open-folder':
@@ -443,9 +586,6 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       case 'close-terminal':
         void get().closeTab(get().activeTabs[workspaceId])
         break
-      case 'settings':
-        set({ settingsOpen: true })
-        break
       default: {
         const tab = get().tabs.filter((item) => item.workspaceId === workspaceId)[
           Number(value.slice(4)) - 1
@@ -455,6 +595,54 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     }
   },
 }))
+
+function adoptWorktree({ record, workspace, worktree }: CreateWorktreeResult): void {
+  useWorkspace.setState((state) => {
+    const scan = state.worktreeScans[record.projectPath]
+    const existing = state.tabs.find((tab) => tab.workspaceId === workspace.id)
+    const tab: TerminalTab | undefined =
+      !existing && state.tabs.length < MAX_TERMINALS
+        ? {
+            id: crypto.randomUUID(),
+            projectPath: record.projectPath,
+            workspaceId: workspace.id,
+            title: 'Terminal 1',
+            status: 'starting',
+          }
+        : undefined
+    return {
+      projects: state.projects.includes(record.projectPath)
+        ? state.projects
+        : [...state.projects, record.projectPath],
+      worktreeRecords: [...state.worktreeRecords.filter((entry) => entry.id !== record.id), record],
+      workspaces: [...state.workspaces.filter((entry) => entry.id !== workspace.id), workspace],
+      selectedProject: record.projectPath,
+      selectedWorkspaces: { ...state.selectedWorkspaces, [record.projectPath]: workspace.id },
+      tabs: tab ? [...state.tabs, tab] : state.tabs,
+      activeTabs: tab ? { ...state.activeTabs, [workspace.id]: tab.id } : state.activeTabs,
+      focusVersion: state.focusVersion + 1,
+      worktreeError:
+        !existing && !tab ? 'Worktree 已就绪；终端已达上限，请关闭一个标签后新建终端。' : undefined,
+      worktreeScans: {
+        ...state.worktreeScans,
+        [record.projectPath]: {
+          repository: scan?.repository || {
+            status: 'ready',
+            projectPath: record.projectPath,
+            rootPath: record.projectPath,
+            repoCommonDir: record.repoCommonDir,
+            isBare: false,
+          },
+          external: scan?.external.filter((entry) => entry.path !== record.path) || [],
+          entries: [
+            ...(scan?.entries.filter((entry) => entry.record.id !== record.id) || []),
+            { record, worktree, status: 'ready' },
+          ],
+        },
+      },
+    }
+  })
+}
 
 function savedLayout(state: Workspace): WorkspaceLayout {
   const workspaces = state.workspaces.filter((workspace) =>

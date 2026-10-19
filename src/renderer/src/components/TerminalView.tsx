@@ -8,7 +8,6 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
   const host = useRef<HTMLDivElement>(null)
   const instance = useRef<{ terminal: Terminal; fit: FitAddon } | null>(null)
   const scrollback = useWorkspace((state) => state.preferences.scrollback)
-  const settingsOpen = useWorkspace((state) => state.settingsOpen)
   const focusVersion = useWorkspace((state) => state.focusVersion)
   const id = tab.id
   const projectPath = tab.projectPath
@@ -22,6 +21,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const terminal = new Terminal({
       cursorBlink: true,
       cursorStyle: 'bar',
+      cursorInactiveStyle: 'none',
       fontSize: 13,
       fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
       lineHeight: 1.25,
@@ -70,12 +70,15 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     instance.current = { terminal, fit }
     let disposed = false
     let connected = false
+    let closing = false
+    let restoreFocus = false
     const attachmentId = crypto.randomUUID()
     const pending: TerminalEvent[] = []
     terminal.options.disableStdin = true
     const live = () =>
       connected &&
       !disposed &&
+      !closing &&
       useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
     const fitAndResize = () => {
       if (!host.current?.clientWidth || !host.current.clientHeight) return
@@ -92,6 +95,27 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       (event) => !(event.metaKey && ['c', 'v'].includes(event.key.toLowerCase())),
     )
     const apply = (event: TerminalEvent) => {
+      if (event.type === 'closing') {
+        closing = event.closing
+        const element = host.current
+        if (closing) restoreFocus = !!element?.contains(document.activeElement)
+        if (element) element.inert = closing
+        terminal.options.disableStdin =
+          closing ||
+          useWorkspace.getState().tabs.find((item) => item.id === id)?.status !== 'running'
+        if (closing) terminal.blur()
+        else {
+          for (const queued of pending.splice(0)) apply(queued)
+          if (restoreFocus && element?.clientWidth && document.activeElement === document.body)
+            terminal.focus()
+        }
+        return
+      }
+      // Keep shutdown output queued until failure; successful close disposes the view.
+      if (closing) {
+        pending.push(event)
+        return
+      }
       if (event.type === 'data') {
         terminal.write(event.data, () => {
           if (!disposed) window.desktop.acknowledge(id, attachmentId, event.data.length)
@@ -145,8 +169,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
         exitCode: attached.exitCode,
         error: undefined,
       })
-      for (const event of pending) apply(event)
-      pending.length = 0
+      for (const event of pending.splice(0)) apply(event)
       fitAndResize()
       if (live()) await window.desktop.resizeTerminal(id, terminal.cols, terminal.rows).then(unwrap)
     })().catch((error: unknown) => {
@@ -159,6 +182,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     })
     return () => {
       disposed = true
+      if (host.current) host.current.inert = false
       observer.disconnect()
       unsubscribe()
       void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
@@ -173,7 +197,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     if (instance.current) instance.current.terminal.options.scrollback = scrollback
   }, [scrollback])
   useEffect(() => {
-    if (!active || settingsOpen) return
+    if (!active) return
     const frame = requestAnimationFrame(() => {
       const current = instance.current
       if (!current || !host.current?.clientWidth) return
@@ -191,7 +215,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       }
     })
     return () => cancelAnimationFrame(frame)
-  }, [active, settingsOpen, id, focusVersion])
+  }, [active, id, focusVersion])
 
   return (
     <section
@@ -219,11 +243,6 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       )}
       <div className="terminal-screen-container relative min-h-0 flex-1 overflow-hidden">
         <div ref={host} className="terminal-screen size-full overflow-hidden" />
-        {status === 'starting' && (
-          <output className="terminal-starting-status pointer-events-none absolute inset-0 text-muted-foreground">
-            正在连接 Shell…
-          </output>
-        )}
       </div>
     </section>
   )

@@ -5,14 +5,19 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
 import { projectBranch } from './git'
+import { WorktreeManager } from './worktree-manager'
+import { WorktreeError } from './git-worktrees'
+import { openWorkspaceWith } from './open-with'
 import { connectTerminalHost, type HostClient } from './host-client'
 import {
   absolutePath,
@@ -29,6 +34,8 @@ import type {
   Result,
   Shortcut,
   WorkspaceLayout,
+  WorkspaceTarget,
+  WorktreeScan,
 } from '../shared/contracts'
 
 type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject: boolean }
@@ -36,6 +43,7 @@ type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject:
 let window: BrowserWindow | undefined
 let manager: HostClient
 let config: ConfigStore
+let worktrees: WorktreeManager
 let warning: string | undefined
 let exiting = false
 let exitPending = false
@@ -46,7 +54,7 @@ const closingTabs = new Set<string>()
 const appName = app.isPackaged ? 'Cota' : 'Cota Dev'
 const rendererFile = join(__dirname, '../renderer/index.html')
 const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
-const rendererURL = new URL(devURL || pathToFileURL(rendererFile).href).href
+const rendererURL = new URL(devURL || pathToFileURL(rendererFile).href).href.split('#')[0]
 
 function trusted(event: {
   sender: Electron.WebContents
@@ -56,7 +64,8 @@ function trusted(event: {
     !window ||
     event.sender !== window.webContents ||
     event.senderFrame !== window.webContents.mainFrame ||
-    event.senderFrame.url !== rendererURL
+    // Hash routes share the same trusted renderer document.
+    event.senderFrame.url.split('#')[0] !== rendererURL
   ) {
     throw new Error('拒绝未授权的窗口请求。')
   }
@@ -73,7 +82,11 @@ function handle<Args extends unknown[], T>(
         trusted(event)
         return { ok: true, value: await action(...(args as Args)) }
       } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : '操作失败。' }
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : '操作失败。',
+          ...(error instanceof WorktreeError ? { code: error.code, details: error.details } : {}),
+        }
       }
     },
   )
@@ -107,7 +120,8 @@ function requestConfirmation(request: Omit<ConfirmationRequest, 'id'>): Promise<
 }
 
 async function removeTarget(target: RemovalTarget): Promise<boolean> {
-  if (removingWorkspace || exitPending || exiting || closingTabs.size) return false
+  if (removingWorkspace || worktrees?.removing || exitPending || exiting || closingTabs.size)
+    return false
   removingWorkspace = target
   try {
     if (target.workspaceId) {
@@ -120,6 +134,7 @@ async function removeTarget(target: RemovalTarget): Promise<boolean> {
     } else {
       await manager.request('closeProject', [target.projectPath])
     }
+    if (target.workspaceId) await config.closeWorkspace(target.workspaceId)
     if (target.removeProject) await config.forget(target.projectPath)
     return true
   } catch (error) {
@@ -139,9 +154,49 @@ function installIPC(): void {
     for (const { projectPath } of sessions)
       if (!config.snapshot().recentProjects.includes(projectPath))
         await config.remember(projectPath)
+    const initial = config.snapshot()
+    const worktreeScans: Record<string, WorktreeScan> = Object.fromEntries(
+      await Promise.all(
+        [
+          ...new Set([
+            ...initial.recentProjects,
+            ...initial.worktreeRecords.map((entry) => entry.projectPath),
+          ]),
+        ].map(async (path) => [path, await worktrees.scanWorktrees(path, sessions, true)]),
+      ),
+    )
+    for (const session of sessions) {
+      if (session.workspaceKind !== 'git-worktree') continue
+      const snapshot = config.snapshot()
+      const record = snapshot.worktreeRecords.find(
+        (entry) =>
+          entry.id === session.worktreeId &&
+          entry.projectPath === session.projectPath &&
+          entry.path === session.cwd &&
+          entry.repoCommonDir === session.repoCommonDir,
+      )
+      if (
+        record &&
+        worktreeScans[record.projectPath]?.entries.some(
+          (entry) => entry.record.id === record.id && entry.status === 'ready',
+        ) &&
+        !snapshot.layout?.workspaces.some(
+          (entry) =>
+            entry.id === session.workspaceId ||
+            (entry.kind === 'git-worktree' && entry.worktreeId === record.id),
+        )
+      )
+        await config.registerWorktree(record, {
+          id: session.workspaceId,
+          projectPath: session.projectPath,
+          name: record.initialBranch || '恢复的 Worktree',
+          kind: 'git-worktree',
+          worktreeId: record.id,
+        })
+    }
     const snapshot = config.snapshot()
     await manager.request('setScrollback', [snapshot.preferences.scrollback])
-    return { config: snapshot, sessions, warning }
+    return { config: snapshot, sessions, warning, worktreeScans }
   })
   handle('app:confirm-response', (id: unknown, confirmed: unknown) => {
     if (typeof id !== 'string' || typeof confirmed !== 'boolean') throw new Error('确认参数无效。')
@@ -161,10 +216,106 @@ function installIPC(): void {
     return path
   })
   handle('project:select', async (value: unknown) => {
-    await projectDirectory(value)
+    const path = await projectDirectory(value)
     if (removingWorkspace) throw new Error('正在删除工作区，请稍后再切换。')
+    if (
+      !config.snapshot().recentProjects.includes(path) &&
+      config.snapshot().worktreeRecords.some((record) => record.projectPath === path)
+    )
+      await config.remember(path)
   })
   handle('project:branch', projectBranch)
+  handle('git:inspect-repository', (path: string) => worktrees.inspectRepository(path))
+  handle('git:list-worktrees', (path: string) => worktrees.listWorktrees(path))
+  const assertLifecycle = () => {
+    if (removingWorkspace || worktrees.removing || closingTabs.size || exitPending || exiting)
+      throw new Error('正在关闭或移除工作区，请稍后重试。')
+  }
+  handle('git:plan-worktree', (input: unknown) => {
+    assertLifecycle()
+    return worktrees.planWorktree(input)
+  })
+  handle('git:branches', (path: string) => worktrees.localBranches(path))
+  handle('git:suggest-worktree-name', (path: string) => {
+    assertLifecycle()
+    return worktrees.suggestName(path)
+  })
+  handle('git:scan-worktrees', async (path: string) =>
+    worktrees.scanWorktrees(path, await manager.request('list', []), true),
+  )
+  handle('git:create-worktree', (input: unknown) => {
+    assertLifecycle()
+    return worktrees.createWorktree(input)
+  })
+  handle('git:link-worktree', (path: string, target: string) => {
+    assertLifecycle()
+    return worktrees.linkWorktree(path, target)
+  })
+  handle('git:inspect-removal', async (id: string) =>
+    worktrees.inspectRemoval(id, await manager.request('list', [])),
+  )
+  handle('git:remove-worktree', (id: string, deleteBranch: unknown) => {
+    assertLifecycle()
+    if (typeof deleteBranch !== 'boolean') throw new Error('删除分支参数无效。')
+    return worktrees.removeWorktree(id, {
+      deleteBranch,
+      sessions: () => manager.request('list', []),
+      close: (id) => manager.request('close', [id]),
+      confirm: (check, force) =>
+        requestConfirmation({
+          title: force ? '强制删除工作树' : '删除工作树',
+          description: force
+            ? `将永久删除 ${check.worktreePath} 及关联工作区，丢弃未提交、未跟踪和忽略的文件，并结束关联终端。${deleteBranch && check.currentBranch ? `同时强制删除本地分支 ${check.currentBranch}，未合并提交可能丢失。` : ''}此操作可能无法恢复。`
+            : `将删除 ${check.worktreePath} 及关联工作区，并结束关联终端。${check.currentBranch ? (deleteBranch ? `同时删除本地分支 ${check.currentBranch}。` : '本地分支保留。') : ''}`,
+          confirmLabel: force ? '强制删除' : '删除',
+        }),
+    })
+  })
+  handle('git:unlink-worktree', (id: string) => {
+    assertLifecycle()
+    return worktrees.unlinkWorktree(id, {
+      sessions: () => manager.request('list', []),
+      close: (id) => manager.request('close', [id]),
+      confirm: () =>
+        requestConfirmation({
+          title: '移除工作区关联',
+          description: '将结束关联终端并移除 Cota 工作区与登记，不删除工作树目录或本地分支。',
+          confirmLabel: '删除',
+        }),
+    })
+  })
+  handle('workspace:path', (target: WorkspaceTarget) =>
+    worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+  )
+  handle('workspace:open-with', async (path: unknown, openerId: unknown) => {
+    const directory =
+      typeof path === 'string'
+        ? absolutePath(path)
+        : await worktrees.withTerminalTarget(
+            path as WorkspaceTarget,
+            async (binding) => binding.cwd,
+          )
+    const snapshot = config.snapshot()
+    if (typeof path === 'string' && !snapshot.recentProjects.includes(directory))
+      throw new Error('请先打开项目目录。')
+    const systemFileManager = openerId === 'system-file-manager'
+    const opener = snapshot.preferences.openWith.find((entry) => entry.id === openerId)
+    if (!systemFileManager && !opener) throw new Error('打开方式不存在，请检查设置。')
+    try {
+      if (systemFileManager) {
+        const error = await shell.openPath(await projectDirectory(directory))
+        if (error) throw new Error(error)
+      } else if (opener) {
+        await openWorkspaceWith(directory, opener)
+      }
+    } catch (error) {
+      await requestConfirmation({
+        title: `无法使用 ${systemFileManager ? '文件管理器' : opener?.name} 打开工作区`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+      throw error
+    }
+  })
   handle('workspace:remove', (value: unknown) => removeTarget(workspaceRemoval(value)))
   handle('project:remove', (value: unknown) =>
     removeTarget({ projectPath: absolutePath(value), removeProject: true }),
@@ -185,12 +336,28 @@ function installIPC(): void {
       throw new Error('正在删除此工作区，无法新建终端。')
     const snapshot = config.snapshot()
     if (exiting || exitPending) throw new Error('应用正在退出。')
-    return manager.request('create', [value, snapshot.preferences, snapshot.recentProjects])
+    return worktrees.withTerminalTarget(value, (binding) => {
+      if (
+        (removingWorkspace?.projectPath === value.projectPath &&
+          (removingWorkspace.removeProject ||
+            removingWorkspace.workspaceId === value.workspaceId)) ||
+        worktrees.removing ||
+        exiting ||
+        exitPending
+      )
+        throw new Error('工作区正在关闭，无法新建终端。')
+      return manager.request('create', [
+        { id: value.id, cols: value.cols, rows: value.rows, ...binding },
+        snapshot.preferences,
+      ])
+    })
   })
   handle('terminal:attach', (value: AttachTerminal) => {
     if (!value || !config.snapshot().recentProjects.includes(value.projectPath))
       throw new Error('请先打开项目目录。')
-    return manager.request('attach', [value])
+    return worktrees.withTerminalTarget(value, (binding) =>
+      manager.request('attach', [{ id: value.id, attachmentId: value.attachmentId, ...binding }]),
+    )
   })
   handle('terminal:detach', (id: string, attachmentId: string) =>
     manager.request('detach', [id, attachmentId]),
@@ -204,7 +371,7 @@ function installIPC(): void {
   )
   handle('terminal:close', async (value: unknown) => {
     const id = terminalId(value)
-    if (closingTabs.size || exitPending || removingWorkspace) return false
+    if (closingTabs.size || exitPending || removingWorkspace || worktrees.removing) return false
     closingTabs.add(id)
     try {
       const needsConfirmation = await manager
@@ -245,7 +412,7 @@ function installIPC(): void {
 }
 
 async function requestExit(): Promise<void> {
-  if (exitPending || exiting || closingTabs.size || removingWorkspace) return
+  if (exitPending || exiting || closingTabs.size || removingWorkspace || worktrees?.removing) return
   exitPending = true
   try {
     if (await manager.request('hasLive', [])) {
@@ -360,6 +527,10 @@ if (!app.requestSingleInstanceLock()) {
       nativeTheme.themeSource = 'light'
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       warning = (await config.load()).warning
+      worktrees = new WorktreeManager(
+        config,
+        join(homedir(), app.isPackaged ? '.cota' : '.cota-dev', 'worktrees'),
+      )
       manager = await connectTerminalHost(app.getPath('userData'), (event) => {
         if (window && !window.webContents.isDestroyed())
           window.webContents.send('terminal:event', event)

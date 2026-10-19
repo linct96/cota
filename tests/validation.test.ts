@@ -11,6 +11,7 @@ import {
   terminalId,
 } from '../src/main/validation'
 import { resolveShell, shellEnvironment } from '../src/main/shell'
+import { DEFAULT_CONFIG } from '../src/shared/contracts'
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -41,26 +42,28 @@ describe('trust boundary validation', () => {
     await expect(executable('/bin/zsh -c whoami')).rejects.toThrow('不可执行')
   })
   it('validates preferences, terminal IDs and sizes', () => {
-    expect(preferences({ shellPath: null, scrollback: 20000 })).toEqual({
+    expect(preferences({ ...DEFAULT_CONFIG.preferences, scrollback: 20000 })).toEqual({
+      ...DEFAULT_CONFIG.preferences,
       shellPath: null,
       scrollback: 20000,
     })
     for (const value of [999, 20001, 1000.1, '5000', NaN])
-      expect(() => preferences({ shellPath: null, scrollback: value })).toThrow()
-    expect(() => preferences({ scrollback: 5000 })).toThrow()
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, scrollback: value })).toThrow()
+    expect(() => preferences({ scrollback: 5000, openWith: [] })).toThrow()
     expect(() => terminalId('../../file')).toThrow()
     expect(() => dimensions(0, 24)).toThrow()
     expect(() => dimensions('80', 24)).toThrow()
     expect(dimensions(80, 24)).toEqual({ cols: 80, rows: 24 })
   })
   it('uses an executable SHELL, falls back to zsh, and never falls back from an invalid custom shell', async () => {
+    const settings = DEFAULT_CONFIG.preferences
     vi.stubEnv('SHELL', '/bin/bash')
-    expect(await resolveShell({ shellPath: null, scrollback: 5000 })).toBe('/bin/bash')
+    expect(await resolveShell(settings)).toBe('/bin/bash')
     vi.stubEnv('SHELL', '')
-    expect(await resolveShell({ shellPath: null, scrollback: 5000 })).toBe('/bin/zsh')
+    expect(await resolveShell(settings)).toBe('/bin/zsh')
     vi.stubEnv('SHELL', 'not-an-absolute-path')
-    expect(await resolveShell({ shellPath: null, scrollback: 5000 })).toBe('/bin/zsh')
-    await expect(resolveShell({ shellPath: '/missing-shell', scrollback: 5000 })).rejects.toThrow(
+    expect(await resolveShell(settings)).toBe('/bin/zsh')
+    await expect(resolveShell({ ...settings, shellPath: '/missing-shell' })).rejects.toThrow(
       '不可执行',
     )
   })

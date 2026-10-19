@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
-import { App } from './App'
+import { RouterProvider } from '@tanstack/react-router'
+import { createAppRouter } from './router'
 import './styles.css'
 
 if (import.meta.env.DEV) {
@@ -7,4 +8,5 @@ if (import.meta.env.DEV) {
 }
 
 // Terminal views own external PTY resources; do not double-mount them in development.
-createRoot(document.getElementById('root')!).render(<App />)
+const router = createAppRouter()
+createRoot(document.getElementById('root')!).render(<RouterProvider router={router} />)

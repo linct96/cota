@@ -25,6 +25,7 @@
     "@base-ui/react": "^1.9.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@phosphor-icons/react": "^2.1.10",
+    "@tanstack/react-router": "^1.170.45",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
@@ -37,6 +38,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "shadcn": "^4.21.5",
+    "simple-icons": "12.4.0",
     "tailwind-merge": "^3.7.0",
     "zustand": "^5.0.15"
   },

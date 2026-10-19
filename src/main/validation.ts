@@ -1,13 +1,18 @@
 import { constants } from 'node:fs'
 import { access, realpath, stat } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, normalize } from 'node:path'
 import {
   MAX_TERMINALS,
   type Preferences,
+  type WorkspaceOpener,
   type RemoveWorkspace,
   type WorkspaceTarget,
   type WorkspaceLayout,
+  type ProjectWorkspace,
+  type WorktreeRecord,
+  type CreateWorktreeInput,
 } from '../shared/contracts'
+import { parseArguments } from '../shared/open-with'
 
 export function absolutePath(value: unknown): string {
   if (
@@ -46,12 +51,42 @@ export async function executable(value: unknown): Promise<string> {
 
 export function preferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object') throw new Error('设置格式无效。')
-  const { shellPath, scrollback } = value as Partial<Preferences>
+  const { shellPath, scrollback, openWith } = value as Partial<Preferences>
   if (shellPath !== null) absolutePath(shellPath)
   if (!Number.isInteger(scrollback) || scrollback! < 1000 || scrollback! > 20000) {
     throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
   }
-  return { shellPath: shellPath as string | null, scrollback: scrollback! }
+  return {
+    shellPath: shellPath as string | null,
+    scrollback: scrollback!,
+    openWith: workspaceOpeners(openWith),
+  }
+}
+
+export function workspaceOpeners(value: unknown): WorkspaceOpener[] {
+  if (!Array.isArray(value) || value.length > 50) throw new Error('打开方式最多配置 50 项。')
+  const openers = value.map((entry: unknown) => {
+    if (!entry || typeof entry !== 'object') throw new Error('打开方式格式无效。')
+    const { id, name, command, arguments: args } = entry as Partial<WorkspaceOpener>
+    if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id)) throw new Error('打开方式标识无效。')
+    if (typeof name !== 'string' || !name.trim() || name.length > 80 || /[\0\r\n]/.test(name))
+      throw new Error('请输入程序名称（上限 80 字符）。')
+    if (
+      typeof command !== 'string' ||
+      !command.trim() ||
+      command.length > 4096 ||
+      /[\0\r\n]/.test(command) ||
+      (!isAbsolute(command.trim()) && !/^[\w.+-]+$/.test(command.trim()))
+    )
+      throw new Error('启动命令需为命令名或可执行文件绝对路径，请将参数单独填写。')
+    if (typeof args !== 'string' || args.length > 4096 || args.includes('\0'))
+      throw new Error('启动参数无效（上限 4096 字符）。')
+    parseArguments(args)
+    return { id, name: name.trim(), command: command.trim(), arguments: args }
+  })
+  if (new Set(openers.map((entry) => entry.id)).size !== openers.length)
+    throw new Error('打开方式标识重复。')
+  return openers
 }
 
 export function terminalId(value: unknown): string {
@@ -75,7 +110,114 @@ export function workspaceRemoval(value: unknown): RemoveWorkspace {
   return { ...target, removeProject }
 }
 
-export function workspaceLayout(value: unknown, projects: string[]): WorkspaceLayout {
+export function createWorktreeInput(value: unknown): CreateWorktreeInput {
+  if (!value || typeof value !== 'object') throw new Error('Worktree 参数无效。')
+  const input = value as Partial<CreateWorktreeInput>
+  const text = (value: unknown): string => {
+    if (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\0\r\n]/.test(value))
+      throw new Error('Worktree 名称、分支和基准引用不能为空，且不得超过 1024 字符。')
+    return value
+  }
+  return {
+    projectPath: absolutePath(input.projectPath),
+    name: text(input.name).trim(),
+    branchName: text(input.branchName),
+    baseRef: text(input.baseRef),
+  }
+}
+
+export function worktreeNameHistory(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Worktree 名称历史无效。')
+  const entries = Object.entries(value)
+  let total = 0
+  if (entries.length > 10000) throw new Error('Worktree 名称历史过大。')
+  return Object.fromEntries(
+    entries.map(([repoId, names]) => {
+      if (
+        !/^[\da-f]{24}$/.test(repoId) ||
+        !Array.isArray(names) ||
+        names.some(
+          (name: unknown) =>
+            typeof name !== 'string' ||
+            !name ||
+            name.length > 4096 ||
+            /[\0/]/.test(name) ||
+            name === '.' ||
+            name === '..',
+        )
+      )
+        throw new Error('Worktree 名称历史无效。')
+      const normalized = [...new Set((names as string[]).map((name) => name.toLowerCase()))]
+      total += normalized.length
+      if (total > 100000) throw new Error('Worktree 名称历史过大。')
+      return [repoId, normalized]
+    }),
+  )
+}
+
+export function worktreeRecords(value: unknown): WorktreeRecord[] {
+  if (!Array.isArray(value) || value.length > 10000) throw new Error('Worktree 登记列表无效。')
+  const path = (value: unknown): string => {
+    const result = absolutePath(value)
+    if (normalize(result) !== result || result === '/') throw new Error('Worktree 登记路径无效。')
+    return result
+  }
+  const optionalText = (value: unknown): string | undefined => {
+    if (value === undefined) return undefined
+    if (typeof value !== 'string' || !value || value.length > 1024 || /[\0\r\n]/.test(value))
+      throw new Error('Worktree 登记引用无效。')
+    return value
+  }
+  const records = value.map((entry: unknown): WorktreeRecord => {
+    if (!entry || typeof entry !== 'object') throw new Error('Worktree 登记格式无效。')
+    const data = entry as Partial<WorktreeRecord>
+    if (
+      (data.origin !== 'created' && data.origin !== 'linked') ||
+      typeof data.repoId !== 'string' ||
+      !/^[\da-f]{24}$/.test(data.repoId) ||
+      typeof data.registeredAt !== 'string' ||
+      !Number.isFinite(Date.parse(data.registeredAt))
+    )
+      throw new Error('Worktree 登记来源或仓库标识无效。')
+    return {
+      id: terminalId(data.id),
+      projectPath: path(data.projectPath),
+      repoCommonDir: path(data.repoCommonDir),
+      repoId: data.repoId,
+      path: path(data.path),
+      origin: data.origin,
+      initialBranch: optionalText(data.initialBranch),
+      baseRef: optionalText(data.baseRef),
+      registeredAt: data.registeredAt,
+    }
+  })
+  if (
+    new Set(records.map((entry) => entry.id)).size !== records.length ||
+    new Set(records.map((entry) => entry.path)).size !== records.length
+  )
+    throw new Error('Worktree 登记标识或路径重复。')
+  const repositories = new Map<string, string>()
+  const repositoryIds = new Map<string, string>()
+  for (const record of records) {
+    if (
+      (repositories.has(record.repoCommonDir) &&
+        repositories.get(record.repoCommonDir) !== record.repoId) ||
+      (repositoryIds.has(record.repoId) &&
+        repositoryIds.get(record.repoId) !== record.repoCommonDir)
+    )
+      throw new Error('Worktree 仓库身份冲突。')
+    repositories.set(record.repoCommonDir, record.repoId)
+    repositoryIds.set(record.repoId, record.repoCommonDir)
+  }
+  return records
+}
+
+export function workspaceLayout(
+  value: unknown,
+  projects: string[],
+  records: WorktreeRecord[] = [],
+): WorkspaceLayout {
   if (!value || typeof value !== 'object') throw new Error('工作区布局无效。')
   const layout = value as WorkspaceLayout
   if (
@@ -93,10 +235,33 @@ export function workspaceLayout(value: unknown, projects: string[]): WorkspaceLa
   const workspaces = layout.workspaces.map((entry) => {
     if (!entry || !projects.includes(absolutePath(entry.projectPath)))
       throw new Error('布局包含未打开的项目。')
-    return { id: terminalId(entry.id), projectPath: entry.projectPath, name: text(entry.name) }
+    const workspace = {
+      id: terminalId(entry.id),
+      projectPath: entry.projectPath,
+      name: text(entry.name),
+    }
+    if (entry.kind === 'local' && entry.worktreeId === undefined)
+      return { ...workspace, kind: 'local' } satisfies ProjectWorkspace
+    if (
+      entry.kind === 'git-worktree' &&
+      records.some(
+        (record) => record.id === entry.worktreeId && record.projectPath === entry.projectPath,
+      )
+    )
+      return {
+        ...workspace,
+        kind: 'git-worktree',
+        worktreeId: terminalId(entry.worktreeId),
+      } satisfies ProjectWorkspace
+    throw new Error('工作区类型或 Worktree 关联无效。')
   })
   if (new Set(workspaces.map((entry) => entry.id)).size !== workspaces.length)
     throw new Error('工作区标识重复。')
+  const bindings = workspaces.flatMap((entry) =>
+    entry.kind === 'git-worktree' ? [entry.worktreeId] : [],
+  )
+  if (new Set(bindings).size !== bindings.length)
+    throw new Error('同一 Worktree 不能重复绑定工作区。')
   const tabs = layout.tabs.map((entry) => {
     const target = workspaceTarget(entry)
     if (

@@ -9,14 +9,11 @@ import {
   sendMessage,
   type HostMessage,
   type HostMethods,
+  type ResolvedTerminalCreate,
+  type ResolvedTerminalAttach,
 } from './host-protocol'
 import { absolutePath, terminalId } from './validation'
-import type {
-  AttachTerminal,
-  CreateTerminal,
-  Preferences,
-  WorkspaceTarget,
-} from '../shared/contracts'
+import type { AttachTerminal, Preferences, WorkspaceTarget } from '../shared/contracts'
 
 export async function startHost(directory: string, token: string) {
   const clients = new Map<Socket, Map<string, string>>()
@@ -47,13 +44,9 @@ export async function startHost(directory: string, token: string) {
         case 'list':
           return manager.list()
         case 'create':
-          return manager.create(
-            args[0] as CreateTerminal,
-            args[1] as Preferences,
-            args[2] as string[],
-          )
+          return manager.create(args[0] as ResolvedTerminalCreate, args[1] as Preferences)
         case 'attach': {
-          const value = await manager.attach(args[0] as AttachTerminal)
+          const value = await manager.attach(args[0] as ResolvedTerminalAttach)
           const attachmentId = terminalId((args[0] as AttachTerminal).attachmentId)
           if (socket.destroyed) manager.detach(value.id, attachmentId)
           else attachments.set(value.id, attachmentId)

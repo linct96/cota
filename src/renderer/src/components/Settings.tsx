@@ -16,11 +16,13 @@ import {
   Sparkles,
   Sun,
 } from 'lucide-react'
-import { useWorkspace } from '../store'
-import { Button } from './ui/button'
+import { useNavigate } from '@tanstack/react-router'
+import { Card } from './ui/card'
 import { Input } from './ui/input'
-import { Separator } from './ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { cn } from '../lib/utils'
+import { GeneralSettings } from './GeneralSettings'
+import { OpenWithSettings } from './OpenWithSettings'
 
 interface SettingItem {
   id: string
@@ -55,6 +57,7 @@ const SETTING_GROUPS: SettingGroup[] = [
     id: 'integration',
     label: '集成',
     items: [
+      { id: 'open-with', label: '打开方式', icon: AppWindow },
       { id: 'plugins', label: '插件', icon: Blocks },
       { id: 'computer-control', label: '电脑操控', icon: NavigationIcon },
       { id: 'snapshots', label: '应用快照', icon: Scan },
@@ -64,27 +67,21 @@ const SETTING_GROUPS: SettingGroup[] = [
 ]
 
 export function Settings() {
-  const preferences = useWorkspace((state) => state.preferences)
+  const navigate = useNavigate()
   const [activeCategory, setActiveCategory] = useState('general')
   const [search, setSearch] = useState('')
-  const [customShell, setCustomShell] = useState(preferences.shellPath !== null)
-  const [shellPath, setShellPath] = useState(preferences.shellPath || '')
-  const [scrollback, setScrollback] = useState(String(preferences.scrollback))
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
   const titleId = useId()
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (saving) return
+      if (event.key === 'Escape' && !event.defaultPrevented) {
         event.preventDefault()
-        useWorkspace.setState({ settingsOpen: false })
+        void navigate({ to: '/' })
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [saving])
+  }, [navigate])
 
   const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -99,16 +96,13 @@ export function Settings() {
     })).filter((group) => group.items.length > 0)
   }, [search])
 
-  const currentItem = useMemo(() => {
-    for (const group of SETTING_GROUPS) {
-      const match = group.items.find((item) => item.id === activeCategory)
-      if (match) return match
-    }
-    return SETTING_GROUPS[0].items[0]
-  }, [activeCategory])
-
   return (
-    <section
+    <Tabs
+      orientation="vertical"
+      value={activeCategory}
+      onValueChange={(val) => {
+        if (typeof val === 'string') setActiveCategory(val)
+      }}
       aria-labelledby={titleId}
       className="settings-layout flex min-h-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card text-foreground"
     >
@@ -133,36 +127,34 @@ export function Settings() {
           </div>
         </div>
 
-        <nav
-          className="settings-nav-list flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pb-3"
+        <TabsList
+          variant="line"
+          className="settings-nav-list flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto bg-transparent p-0 px-2 pb-3"
           aria-label="设置列表"
         >
           {filteredGroups.map((group) => (
-            <div key={group.id} className="settings-group flex flex-col gap-1">
+            <div key={group.id} className="settings-group flex w-full flex-col gap-1">
               <h3 className="settings-group-title px-2.5 pb-0.5 text-xs font-normal text-muted-foreground">
                 {group.label}
               </h3>
-              <div className="settings-group-items flex flex-col gap-0.5">
+              <div className="settings-group-items flex w-full flex-col gap-0.5">
                 {group.items.map((item) => {
-                  const isActive = item.id === activeCategory
                   const Icon = item.icon
 
                   return (
-                    <button
+                    <TabsTrigger
                       key={item.id}
-                      type="button"
-                      onClick={() => setActiveCategory(item.id)}
+                      value={item.id}
                       className={cn(
-                        'settings-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors text-left',
-                        isActive
-                          ? 'settings-nav-item-active bg-accent font-medium text-accent-foreground'
-                          : 'settings-nav-item-inactive text-foreground/80 hover:bg-muted/60 hover:text-foreground',
+                        'settings-nav-item flex w-full items-center justify-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
+                        'text-foreground/80 hover:bg-muted/60 hover:text-foreground',
+                        'data-active:bg-accent data-active:font-medium data-active:text-accent-foreground',
+                        'after:hidden',
                       )}
-                      aria-current={isActive ? 'page' : undefined}
                     >
                       <Icon className="settings-nav-item-icon size-4 shrink-0 text-muted-foreground" />
                       <span className="settings-nav-item-label truncate">{item.label}</span>
-                    </button>
+                    </TabsTrigger>
                   )
                 })}
               </div>
@@ -174,7 +166,7 @@ export function Settings() {
               未找到相关设置
             </p>
           )}
-        </nav>
+        </TabsList>
       </aside>
 
       {/* 右侧：设置详情内容区 */}
@@ -182,140 +174,32 @@ export function Settings() {
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-card"
         aria-label="设置详情"
       >
-        <div className="settings-detail-container max-w-xl p-8">
-          <div className="settings-section-header mb-6">
-            <h3 className="settings-section-title text-base font-semibold text-foreground">
-              {currentItem.label}
-            </h3>
-            <p className="settings-description mt-1 text-xs text-muted-foreground">
-              {currentItem.id === 'general'
-                ? '基础终端环境与偏好配置，设置仅保存在本机。Shell 变更只影响新建的终端。'
-                : '该功能暂未开放配置。'}
-            </p>
-          </div>
-
-          {currentItem.id === 'general' ? (
-            <form
-              className="settings-form flex flex-col gap-6"
-              onSubmit={async (event) => {
-                event.preventDefault()
-                if (saving) return
-                setSaving(true)
-                setError(undefined)
-                try {
-                  await useWorkspace.getState().savePreferences({
-                    shellPath: customShell ? shellPath.trim() : null,
-                    scrollback: Number(scrollback),
-                  })
-                } catch (cause) {
-                  setError(cause instanceof Error ? cause.message : String(cause))
-                  setSaving(false)
-                }
-              }}
-            >
-              <fieldset disabled={saving} className="settings-shell-group flex flex-col gap-3">
-                <legend className="settings-shell-legend text-xs font-medium text-foreground">
-                  Shell
-                </legend>
-                <div className="settings-shell-options flex flex-col gap-2">
-                  <label className="settings-radio-label flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="shell"
-                      className="settings-radio-input"
-                      checked={!customShell}
-                      onChange={() => setCustomShell(false)}
-                    />
-                    系统默认（SHELL，回退 zsh）
-                  </label>
-                  <label className="settings-radio-label flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                    <input
-                      type="radio"
-                      name="shell"
-                      className="settings-radio-input"
-                      checked={customShell}
-                      onChange={() => setCustomShell(true)}
-                    />
-                    自定义可执行文件
-                  </label>
+        <div className="settings-detail-container mx-auto w-full max-w-2xl p-8">
+          <TabsContent value="general" className="mt-0">
+            <GeneralSettings />
+          </TabsContent>
+          <TabsContent value="open-with" className="mt-0">
+            <OpenWithSettings />
+          </TabsContent>
+          {SETTING_GROUPS.flatMap((g) => g.items)
+            .filter((item) => item.id !== 'general' && item.id !== 'open-with')
+            .map((item) => (
+              <TabsContent key={item.id} value={item.id} className="mt-0">
+                <div className="settings-section-header mb-6">
+                  <h3 className="settings-section-title text-base font-semibold text-foreground">
+                    {item.label}
+                  </h3>
+                  <p className="settings-description mt-1 text-xs text-muted-foreground">
+                    该功能暂未开放配置。
+                  </p>
                 </div>
-                <label htmlFor="shell-path" className="settings-shell-path-label sr-only">
-                  Shell 绝对路径
-                </label>
-                <Input
-                  id="shell-path"
-                  className="settings-shell-path-input text-xs"
-                  value={shellPath}
-                  onChange={(event) => setShellPath(event.target.value)}
-                  placeholder="/opt/homebrew/bin/fish"
-                  disabled={!customShell}
-                  required={customShell}
-                />
-                <p className="settings-shell-hint text-xs text-muted-foreground">
-                  仅填写绝对路径，不接受命令参数。所有 Shell 均以交互式登录模式启动（-il）。
-                </p>
-              </fieldset>
-
-              <Separator className="bg-border" />
-
-              <div className="settings-scrollback-group flex flex-col gap-2">
-                <label
-                  htmlFor="scrollback"
-                  className="settings-scrollback-label text-xs font-medium text-foreground"
-                >
-                  终端滚动缓冲行数
-                </label>
-                <Input
-                  id="scrollback"
-                  className="settings-scrollback-input w-48 text-xs"
-                  type="number"
-                  min={1000}
-                  max={20000}
-                  step={1}
-                  required
-                  disabled={saving}
-                  value={scrollback}
-                  onChange={(event) => setScrollback(event.target.value)}
-                />
-                <p className="settings-scrollback-hint text-xs text-muted-foreground">
-                  范围 1,000–20,000，默认 5,000；减小会丢弃超出范围的旧输出。
-                </p>
-              </div>
-
-              {error && (
-                <p role="alert" className="settings-error-alert text-xs text-destructive">
-                  {error}
-                </p>
-              )}
-
-              <div className="settings-actions flex items-center gap-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="settings-cancel-button"
-                  disabled={saving}
-                  onClick={() => useWorkspace.setState({ settingsOpen: false })}
-                >
-                  取消
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="settings-submit-button"
-                  disabled={saving}
-                >
-                  {saving ? '保存中…' : '保存'}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-              此项设置暂未开放，请返回「常规」查看终端配置。
-            </div>
-          )}
+                <Card className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground shadow-none ring-0">
+                  此项设置暂未开放，请返回「常规」查看终端配置。
+                </Card>
+              </TabsContent>
+            ))}
         </div>
       </main>
-    </section>
+    </Tabs>
   )
 }

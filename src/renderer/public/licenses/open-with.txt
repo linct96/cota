@@ -1,0 +1,13 @@
+Open-with brand icons
+
+Zed Industries and Visual Studio Code are imported from simple-icons 12.4.0 (CC0 1.0 Universal).
+https://www.npmjs.com/package/simple-icons/v/12.4.0
+https://github.com/simple-icons/simple-icons/tree/12.4.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The system file manager uses the FolderOpen icon from lucide-react (ISC).
+https://lucide.dev/license
+Version 12.4.0 is pinned because later releases no longer include the Visual Studio Code icon.
+
+Brand names and logos remain the property of their respective owners.
+https://github.com/simple-icons/simple-icons/blob/12.4.0/DISCLAIMER.md

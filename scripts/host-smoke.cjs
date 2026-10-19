@@ -111,7 +111,7 @@ if (process.argv[2] === '--launch-host') {
       }
     })
     clients.push(client)
-    await client.request('hello', [token, 1])
+    await client.request('hello', [token, 2])
     return client
   }
   async function until(check) {
@@ -149,13 +149,14 @@ if (process.argv[2] === '--launch-host') {
         id: randomUUID(),
         workspaceId: randomUUID(),
         projectPath: directory,
+        cwd: require('node:fs').realpathSync(directory),
+        workspaceKind: 'local',
         cols: 91,
         rows: 31,
       }
       await first.request('create', [
         options,
-        { shellPath: '/bin/bash', scrollback: 1000 },
-        [directory],
+        { shellPath: '/bin/bash', scrollback: 1000, openWith: [] },
       ])
       const original = await first.request('attach', [{ ...options, attachmentId: randomUUID() }])
       assert.equal(original.cols, 91)

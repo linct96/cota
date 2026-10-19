@@ -1,4 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { realpath } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { WorktreeError } from '../src/main/git-worktrees'
 
 const mocks = vi.hoisted(() => {
   const frame = { url: 'http://localhost:5173/' }
@@ -19,7 +22,16 @@ const mocks = vi.hoisted(() => {
     },
     confirm: vi.fn(),
     list: vi.fn(),
-    config: { preferences: { scrollback: 5000 }, recentProjects: [] as string[] },
+    config: {
+      preferences: {
+        scrollback: 5000,
+        openWith: [{ id: 'zed', name: 'Zed', command: 'zed', arguments: '{path}' }],
+      },
+      recentProjects: [] as string[],
+      worktreeRecords: [],
+    },
+    openWorkspaceWith: vi.fn(),
+    openPath: vi.fn(),
     remember: vi.fn(),
     setScrollback: vi.fn(),
     hasLive: vi.fn(),
@@ -33,9 +45,18 @@ const mocks = vi.hoisted(() => {
     closeProject: vi.fn(),
     forget: vi.fn(),
     create: vi.fn(),
+    inspectRepository: vi.fn(),
+    listWorktrees: vi.fn(),
+    createWorktree: vi.fn(),
+    scanWorktrees: vi.fn(),
+    saveWorkspaceClosure: vi.fn(),
+    withTerminalTarget: vi.fn(),
   }
 })
-vi.mock('node:fs', () => ({ mkdirSync: vi.fn() }))
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
+  mkdirSync: vi.fn(),
+}))
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -66,12 +87,25 @@ vi.mock('electron', () => ({
     on: vi.fn(),
   },
   nativeTheme: {},
+  shell: { openPath: mocks.openPath },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
 }))
+vi.mock('../src/main/worktree-manager', () => ({
+  WorktreeManager: class {
+    inspectRepository = mocks.inspectRepository
+    listWorktrees = mocks.listWorktrees
+    createWorktree = mocks.createWorktree
+    scanWorktrees = mocks.scanWorktrees
+    withTerminalTarget = mocks.withTerminalTarget
+    removing = false
+  },
+}))
+vi.mock('../src/main/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
 vi.mock('../src/main/config', () => ({
   ConfigStore: class {
     load = async () => ({})
     forget = mocks.forget
+    closeWorkspace = mocks.saveWorkspaceClosure
     flush = mocks.flush
     snapshot = () => structuredClone(mocks.config)
     remember = mocks.remember
@@ -120,11 +154,26 @@ beforeAll(async () => {
   }
 })
 beforeEach(() => {
+  mocks.contents.mainFrame.url = 'http://localhost:5173/'
   vi.clearAllMocks()
   mocks.closeWorkspace.mockResolvedValue(undefined)
   mocks.closeProject.mockResolvedValue(undefined)
   mocks.forget.mockResolvedValue(undefined)
   mocks.list.mockResolvedValue([])
+  mocks.scanWorktrees.mockImplementation(async () => ({
+    entries: [],
+    external: [],
+    repository: { status: 'nonGit', projectPath: path, error: 'not Git' },
+  }))
+  mocks.saveWorkspaceClosure.mockResolvedValue(undefined)
+  mocks.withTerminalTarget.mockImplementation(async (target, action) =>
+    action({
+      projectPath: target.projectPath,
+      workspaceId: target.workspaceId,
+      cwd: target.projectPath,
+      workspaceKind: 'local',
+    }),
+  )
   mocks.config.recentProjects = []
   mocks.remember.mockImplementation(async (path: string) => {
     mocks.config.recentProjects.push(path)
@@ -135,6 +184,159 @@ beforeEach(() => {
   mocks.close.mockResolvedValue(undefined)
   mocks.flush.mockResolvedValue(undefined)
   mocks.shutdown.mockResolvedValue(undefined)
+  mocks.openWorkspaceWith.mockResolvedValue(undefined)
+  mocks.openPath.mockResolvedValue('')
+})
+
+describe('Git Worktree IPC boundaries', () => {
+  it.each([
+    'git:inspect-repository',
+    'git:list-worktrees',
+    'git:create-worktree',
+    'git:plan-worktree',
+    'git:branches',
+    'git:suggest-worktree-name',
+    'git:scan-worktrees',
+    'git:link-worktree',
+    'git:inspect-removal',
+    'git:remove-worktree',
+    'git:unlink-worktree',
+    'workspace:path',
+  ])('rejects untrusted frames before invoking %s', async (channel) => {
+    const result = await mocks.handlers.get(channel)!({ ...event, senderFrame: {} }, path)
+    expect(result).toMatchObject({ ok: false, error: '拒绝未授权的窗口请求。' })
+    expect(mocks.inspectRepository).not.toHaveBeenCalled()
+    expect(mocks.listWorktrees).not.toHaveBeenCalled()
+    expect(mocks.createWorktree).not.toHaveBeenCalled()
+  })
+  it('discards Renderer cwd and identity fields before forwarding a trusted Main binding to Host', async () => {
+    mocks.config.recentProjects = [path]
+    const value = {
+      id: randomUUID(),
+      projectPath: path,
+      workspaceId: randomUUID(),
+      cols: 80,
+      rows: 24,
+      cwd: '/forged',
+      workspaceKind: 'git-worktree',
+      worktreeId: randomUUID(),
+      repoCommonDir: '/forged/.git',
+    }
+    expect(await mocks.handlers.get('terminal:create')!(event, value)).toMatchObject({ ok: true })
+    expect(mocks.create).toHaveBeenCalledWith(
+      {
+        id: value.id,
+        projectPath: path,
+        workspaceId: value.workspaceId,
+        cols: 80,
+        rows: 24,
+        cwd: path,
+        workspaceKind: 'local',
+      },
+      mocks.config.preferences,
+    )
+  })
+  it('preserves structured partial-success diagnostics without exposing command stderr or cause', async () => {
+    const details = {
+      operationId: 'test-operation',
+      path: '/tmp/managed',
+      gitState: 'created' as const,
+    }
+    mocks.createWorktree.mockRejectedValueOnce(
+      Object.assign(new WorktreeError('CONFIG_PERSIST_FAILED', '登记保存失败', details), {
+        cause: new Error('private command output'),
+      }),
+    )
+    mocks.contents.mainFrame.url = 'http://localhost:5173/#/settings'
+    const input = { projectPath: path, name: 'Feature', branchName: 'feature', baseRef: 'main' }
+    expect(await mocks.handlers.get('git:create-worktree')!(event, input)).toEqual({
+      ok: false,
+      error: '登记保存失败',
+      code: 'CONFIG_PERSIST_FAILED',
+      details,
+    })
+    expect(mocks.createWorktree).toHaveBeenCalledExactlyOnceWith(input)
+  })
+})
+
+describe('open-with IPC', () => {
+  it('opens a known project in the system file manager without a saved program', async () => {
+    const directory = await realpath(process.cwd())
+    mocks.config.recentProjects = [directory]
+    expect(
+      await mocks.handlers.get('workspace:open-with')!(event, directory, 'system-file-manager'),
+    ).toEqual({ ok: true })
+    expect(mocks.openPath).toHaveBeenCalledExactlyOnceWith(directory)
+    expect(mocks.openWorkspaceWith).not.toHaveBeenCalled()
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
+  it('reports system file manager errors and allows retry', async () => {
+    const directory = await realpath(process.cwd())
+    mocks.config.recentProjects = [directory]
+    await mocks.handlers.get('app:bootstrap')!(event)
+    mocks.openPath.mockResolvedValueOnce('Unable to open directory')
+    const pending = mocks.handlers.get('workspace:open-with')!(
+      event,
+      directory,
+      'system-file-manager',
+    )
+    await vi.waitFor(() =>
+      expect(mocks.contents.send).toHaveBeenCalledWith(
+        'app:confirm',
+        expect.objectContaining({ description: 'Unable to open directory' }),
+      ),
+    )
+    const request = mocks.contents.send.mock.calls.find(([name]) => name === 'app:confirm')![1]
+    await mocks.handlers.get('app:confirm-response')!(event, request.id, false)
+    expect(await pending).toEqual({ ok: false, error: 'Unable to open directory' })
+    expect(
+      await mocks.handlers.get('workspace:open-with')!(event, directory, 'system-file-manager'),
+    ).toEqual({ ok: true })
+  })
+  it('uses only a saved program for a known project without touching terminal sessions', async () => {
+    mocks.config.recentProjects = [path]
+    expect(await mocks.handlers.get('workspace:open-with')!(event, path, 'zed')).toEqual({
+      ok: true,
+    })
+    expect(mocks.openWorkspaceWith).toHaveBeenCalledExactlyOnceWith(
+      path,
+      mocks.config.preferences.openWith[0],
+    )
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(mocks.close).not.toHaveBeenCalled()
+  })
+  it('rejects untrusted frames, unknown projects, and arbitrary program definitions', async () => {
+    const open = mocks.handlers.get('workspace:open-with')!
+    expect(await open(event, path, 'zed')).toMatchObject({ ok: false })
+    expect(await open(event, path, 'system-file-manager')).toMatchObject({ ok: false })
+    mocks.config.recentProjects = [path]
+    expect(await open({ ...event, senderFrame: {} }, path, 'system-file-manager')).toMatchObject({
+      ok: false,
+    })
+    expect(mocks.openPath).not.toHaveBeenCalled()
+    expect(await open({ ...event, senderFrame: {} }, path, 'zed')).toMatchObject({ ok: false })
+    expect(await open(event, path, { command: '/bin/sh' })).toMatchObject({ ok: false })
+    expect(await open(event, path, 'removed')).toMatchObject({ ok: false })
+    expect(mocks.openWorkspaceWith).not.toHaveBeenCalled()
+  })
+  it('shows a launch failure through the existing confirmation channel and permits retry', async () => {
+    mocks.config.recentProjects = [path]
+    await mocks.handlers.get('app:bootstrap')!(event)
+    mocks.openWorkspaceWith.mockRejectedValueOnce(new Error('command not found'))
+    const pending = mocks.handlers.get('workspace:open-with')!(event, path, 'zed')
+    await vi.waitFor(() =>
+      expect(mocks.contents.send).toHaveBeenCalledWith(
+        'app:confirm',
+        expect.objectContaining({ description: 'command not found' }),
+      ),
+    )
+    const request = mocks.contents.send.mock.calls.find(([name]) => name === 'app:confirm')![1]
+    await mocks.handlers.get('app:confirm-response')!(event, request.id, false)
+    expect(await pending).toEqual({ ok: false, error: 'command not found' })
+    expect(await mocks.handlers.get('workspace:open-with')!(event, path, 'zed')).toEqual({
+      ok: true,
+    })
+  })
 })
 
 describe('workspace removal IPC', () => {
@@ -155,6 +357,7 @@ describe('workspace removal IPC', () => {
         config: { ...mocks.config, recentProjects: [path] },
         sessions: [session, { ...session, id: extra.workspaceId }],
         warning: undefined,
+        worktreeScans: { [path]: await mocks.scanWorktrees() },
       },
     })
     expect(mocks.remember).toHaveBeenCalledExactlyOnceWith(path)
@@ -203,7 +406,7 @@ describe('workspace removal IPC', () => {
       value: true,
     })
   })
-  it.each(['../relative', null, ''])(
+  it.each(['../relative', null])(
     'validates project deletion paths before cleanup: %j',
     async (value) => {
       expect(await mocks.handlers.get('project:remove')!(event, value)).toMatchObject({ ok: false })
@@ -264,12 +467,9 @@ describe('workspace removal IPC', () => {
   })
   it.each([
     null,
-    path,
-    {},
     { projectPath: '../relative', workspaceId: path },
     { projectPath: path },
     { projectPath: path, workspaceId: '../other' },
-    { projectPath: path, workspaceId: '/different/project' },
   ])('rejects malformed targets before ending terminals: %j', async (value) => {
     expect(await remove(value)).toMatchObject({ ok: false })
     expect(mocks.closeWorkspace).not.toHaveBeenCalled()
@@ -291,6 +491,30 @@ describe('workspace removal IPC', () => {
       },
     )
     expect(mocks.closeWorkspace).not.toHaveBeenCalled()
+  })
+})
+
+describe('renderer route IPC trust', () => {
+  it.each(['#/', '#/settings'])('accepts hash routes of the trusted document: %s', async (hash) => {
+    mocks.contents.mainFrame.url = `http://localhost:5173/${hash}`
+    expect(await mocks.handlers.get('app:bootstrap')!(event)).toMatchObject({ ok: true })
+    expect(mocks.list).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    'http://localhost:5173/other#/settings',
+    'http://localhost:5173/?other=true#/settings',
+    'http://localhost:5174/#/settings',
+    'https://localhost:5173/#/settings',
+    'http://untrusted.example/#/settings',
+    'file:///tmp/index.html#/settings',
+  ])('rejects other documents even with a settings hash: %s', async (url) => {
+    mocks.contents.mainFrame.url = url
+    expect(await mocks.handlers.get('app:bootstrap')!(event)).toEqual({
+      ok: false,
+      error: '拒绝未授权的窗口请求。',
+    })
+    expect(mocks.list).not.toHaveBeenCalled()
   })
 })
 

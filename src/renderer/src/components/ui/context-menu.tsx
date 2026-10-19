@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react'
+import { ChevronRight } from 'lucide-react'
 import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu'
 import { cn } from '@/lib/utils'
 import { DropdownMenuItem } from './dropdown-menu'
@@ -6,6 +7,26 @@ import { DropdownMenuItem } from './dropdown-menu'
 const ContextMenu = ContextMenuPrimitive.Root
 const ContextMenuTrigger = ContextMenuPrimitive.Trigger
 const ContextMenuGroup = ContextMenuPrimitive.Group
+const ContextMenuSub = ContextMenuPrimitive.SubmenuRoot
+
+function ContextMenuSubTrigger({
+  children,
+  className,
+  ...props
+}: ContextMenuPrimitive.SubmenuTrigger.Props) {
+  return (
+    <ContextMenuPrimitive.SubmenuTrigger
+      className={cn(
+        'context-menu-sub-trigger flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-popup-open:bg-accent data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRight className="context-menu-sub-chevron ml-auto" />
+    </ContextMenuPrimitive.SubmenuTrigger>
+  )
+}
 
 function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.Props) {
   return (
@@ -31,4 +52,12 @@ function ContextMenuItem(props: ComponentProps<typeof DropdownMenuItem>) {
   return <DropdownMenuItem data-slot="context-menu-item" {...props} />
 }
 
-export { ContextMenu, ContextMenuTrigger, ContextMenuGroup, ContextMenuContent, ContextMenuItem }
+export {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuGroup,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+}

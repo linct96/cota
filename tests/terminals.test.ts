@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import type { TerminalEvent } from '../src/shared/contracts'
+import { DEFAULT_CONFIG, type TerminalEvent } from '../src/shared/contracts'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -48,10 +48,12 @@ function child() {
     listeners,
   }
 }
-const settings = { shellPath: null, scrollback: 5000 }
+const settings = structuredClone(DEFAULT_CONFIG.preferences)
 const options = () => ({
   id: randomUUID(),
   projectPath: '/tmp/project',
+  cwd: '/tmp/project',
+  workspaceKind: 'local' as const,
   workspaceId: '11111111-1111-4111-8111-111111111111',
   cols: 80,
   rows: 24,
@@ -68,7 +70,7 @@ async function attach(
 beforeEach(() => {
   vi.useFakeTimers()
   mocks.spawn.mockImplementation(child)
-  mocks.directory.mockResolvedValue('/tmp/project')
+  mocks.directory.mockImplementation(async (path: string) => path)
   mocks.shell.mockResolvedValue('/bin/zsh')
   mocks.stop.mockResolvedValue(undefined)
   mocks.busy.mockResolvedValue(false)
@@ -82,7 +84,7 @@ describe('single PTY owner', () => {
   it('spawns an interactive login shell at the validated cwd', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     expect(mocks.spawn).toHaveBeenCalledWith(
       '/bin/zsh',
       ['-il'],
@@ -96,7 +98,7 @@ describe('single PTY owner', () => {
   it('skips confirmation only for idle shells and falls back to confirmation when inspection fails', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     expect(await manager.needsCloseConfirmation(entry.id)).toBe(false)
     expect(mocks.busy).toHaveBeenCalledWith(98765, '/bin/zsh')
     mocks.busy.mockResolvedValueOnce(true)
@@ -123,7 +125,8 @@ describe('single PTY owner', () => {
         fail = reject
       }),
     )
-    const creating = manager.create(options(), settings, ['/tmp/project'])
+    const creating = manager.create(options(), settings)
+    await Promise.resolve()
     const rejected = expect(creating).rejects.toThrow('missing')
     const listing = manager.list()
     fail(new Error('missing'))
@@ -132,17 +135,15 @@ describe('single PTY owner', () => {
   })
   it('reserves slots before async validation, enforcing the limit on concurrent creates', async () => {
     const manager = new TerminalManager(vi.fn())
-    await Promise.all(
-      Array.from({ length: 10 }, () => manager.create(options(), settings, ['/tmp/project'])),
-    )
-    await expect(manager.create(options(), settings, ['/tmp/project'])).rejects.toThrow('10')
+    await Promise.all(Array.from({ length: 10 }, () => manager.create(options(), settings)))
+    await expect(manager.create(options(), settings)).rejects.toThrow('10')
     expect(mocks.spawn).toHaveBeenCalledTimes(10)
   })
   it('batches output, pauses at high water, and resumes only after rendering acknowledgements', async () => {
     const events: TerminalEvent[] = []
     const manager = new TerminalManager((event) => events.push(event))
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const { attachmentId } = await attach(manager, entry)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('x'.repeat(150000))
@@ -161,7 +162,7 @@ describe('single PTY owner', () => {
     const send = vi.fn()
     const manager = new TerminalManager(send)
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const { attachmentId } = await attach(manager, entry)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('last output')
@@ -181,20 +182,17 @@ describe('single PTY owner', () => {
   it('retries a concurrent create with the same ID without spawning twice, rejecting a different owner', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await Promise.all([
-      manager.create(entry, settings, ['/tmp/project']),
-      manager.create(entry, settings, ['/tmp/project']),
-    ])
-    await expect(
-      manager.create({ ...entry, workspaceId: randomUUID() }, settings, ['/tmp/project']),
-    ).rejects.toThrow('占用')
+    await Promise.all([manager.create(entry, settings), manager.create(entry, settings)])
+    await expect(manager.create({ ...entry, workspaceId: randomUUID() }, settings)).rejects.toThrow(
+      '占用',
+    )
     expect(mocks.spawn).toHaveBeenCalledOnce()
   })
   it('keeps output and releases renderer backpressure while detached; ignores stale detach and ACK', async () => {
     const send = vi.fn()
     const manager = new TerminalManager(send)
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const first = await attach(manager, entry)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('x'.repeat(150000))
@@ -224,7 +222,7 @@ describe('single PTY owner', () => {
     const send = vi.fn()
     const manager = new TerminalManager(send)
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('BEFORE_BARRIER\r\n')
     const attaching = manager.attach({ ...entry, attachmentId: randomUUID() })
@@ -242,7 +240,7 @@ describe('single PTY owner', () => {
   it('answers terminal status queries while detached, leaving attached renderer responses unduplicated', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('\x1b[6n')
     await vi.runAllTimersAsync()
@@ -258,7 +256,7 @@ describe('single PTY owner', () => {
     const entry = options()
     await expect(manager.attach({ ...entry, attachmentId: randomUUID() })).rejects.toThrow('不存在')
     expect(mocks.spawn).not.toHaveBeenCalled()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('\x1b[?1049h\x1b[2J\x1b[4;9H中文 TUI')
     process.listeners.exit({ exitCode: 7 })
@@ -272,7 +270,7 @@ describe('single PTY owner', () => {
   it('applies scrollback changes to Host snapshots and validates the limit before discarding history', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data(Array.from({ length: 1200 }, (_, index) => `LINE_${index}\r\n`).join(''))
     await vi.runAllTimersAsync()
@@ -288,8 +286,8 @@ describe('single PTY owner', () => {
     const manager = new TerminalManager(vi.fn())
     const a = options(),
       b = options()
-    await manager.create(a, settings, ['/tmp/project'])
-    await manager.create(b, settings, ['/tmp/project'])
+    await manager.create(a, settings)
+    await manager.create(b, settings)
     const closing = manager.close(a.id)
     expect(() => manager.resize(a.id, 80, 24)).not.toThrow()
     expect(mocks.spawn.mock.results[0].value.resize).not.toHaveBeenCalled()
@@ -304,11 +302,12 @@ describe('single PTY owner', () => {
     const other = {
       ...options(),
       projectPath: '/tmp/other',
+      cwd: '/tmp/other',
       workspaceId: '22222222-2222-4222-8222-222222222222',
     }
-    await manager.create(other, settings, ['/tmp/other'])
+    await manager.create(other, settings)
     const sibling = { ...options(), workspaceId: randomUUID() }
-    await manager.create(sibling, settings, ['/tmp/project'])
+    await manager.create(sibling, settings)
     const entry = options()
     let finish!: (path: string) => void
     mocks.directory.mockReturnValueOnce(
@@ -316,9 +315,10 @@ describe('single PTY owner', () => {
         finish = resolve
       }),
     )
-    const creating = manager.create(entry, settings, ['/tmp/project'])
+    const creating = manager.create(entry, settings)
     const closing = manager.closeWorkspace(entry)
     expect(mocks.stop).not.toHaveBeenCalled()
+    await Promise.resolve()
     finish('/tmp/project')
     await creating
     await closing
@@ -331,10 +331,10 @@ describe('single PTY owner', () => {
     const manager = new TerminalManager(vi.fn())
     const first = options()
     const second = { ...options(), workspaceId: randomUUID() }
-    const other = { ...options(), projectPath: '/tmp/other' }
-    await manager.create(first, settings, ['/tmp/project'])
-    await manager.create(second, settings, ['/tmp/project'])
-    await manager.create(other, settings, ['/tmp/other'])
+    const other = { ...options(), projectPath: '/tmp/other', cwd: '/tmp/other' }
+    await manager.create(first, settings)
+    await manager.create(second, settings)
+    await manager.create(other, settings)
     await manager.closeProject('/tmp/project')
     expect(manager.isLive(first.id)).toBe(false)
     expect(manager.isLive(second.id)).toBe(false)
@@ -344,7 +344,7 @@ describe('single PTY owner', () => {
   it('preserves sessions after workspace cleanup fails so removal can be retried', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     mocks.stop.mockRejectedValueOnce(new Error('permission denied'))
     await expect(manager.closeWorkspace(entry)).rejects.toThrow('permission denied')
     expect(manager.isLive(entry.id)).toBe(true)
@@ -355,13 +355,13 @@ describe('single PTY owner', () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
     mocks.directory.mockRejectedValueOnce(new Error('项目目录不可访问'))
-    await expect(manager.create(entry, settings, ['/tmp/project'])).rejects.toThrow('不可访问')
-    await manager.create(entry, settings, ['/tmp/project'])
+    await expect(manager.create(entry, settings)).rejects.toThrow('不可访问')
+    await manager.create(entry, settings)
     expect(manager.isLive(entry.id)).toBe(true)
   })
   it('prevents new spawns while shutting down an in-flight creation', async () => {
     const manager = new TerminalManager(vi.fn())
-    const creation = manager.create(options(), settings, ['/tmp/project'])
+    const creation = manager.create(options(), settings)
     const shutdown = manager.shutdown()
     await expect(creation).rejects.toThrow('正在退出')
     await shutdown
@@ -370,7 +370,7 @@ describe('single PTY owner', () => {
   it('does not silently discard a session when process cleanup fails', async () => {
     const manager = new TerminalManager(vi.fn())
     const entry = options()
-    await manager.create(entry, settings, ['/tmp/project'])
+    await manager.create(entry, settings)
     mocks.stop.mockRejectedValueOnce(new Error('permission denied'))
     await expect(manager.shutdown()).rejects.toThrow('permission denied')
     expect(manager.hasLive()).toBe(true)

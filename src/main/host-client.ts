@@ -68,6 +68,11 @@ export class HostClient {
   ): Promise<HostMethods[K]['value']> {
     const epoch = this.attachmentEpoch
     const id = ++this.nextId
+    const terminalId = method === 'close' ? (args as HostMethods['close']['args'])[0] : undefined
+    const attachmentId = terminalId ? this.attachments.get(terminalId) : undefined
+    // Main requests close only after any required user confirmation.
+    if (terminalId && attachmentId)
+      this.send({ type: 'closing', id: terminalId, attachmentId, closing: true })
     const value = await new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`Terminal Host 请求超时：${method}；未自动重建会话。`))
@@ -81,6 +86,10 @@ export class HostClient {
         this.pending.delete(id)
         reject(error)
       }
+    }).catch((error) => {
+      if (terminalId && attachmentId)
+        this.send({ type: 'closing', id: terminalId, attachmentId, closing: false })
+      throw error
     })
     if (method === 'attach') {
       const options = args as HostMethods['attach']['args']
@@ -187,29 +196,33 @@ export async function connectTerminalHost(
       !/^[a-f0-9]{64}$/.test(value.token)
     )
       throw new Error('Terminal Host 元数据无效。')
-    if (value.version !== HOST_PROTOCOL)
-      throw new Error('Terminal Host 协议版本不兼容，请先结束旧会话。')
     info = value
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
   if (info) {
-    try {
-      return await openClient(directory, info, send)
-    } catch (error) {
-      if (!['ENOENT', 'ECONNREFUSED'].includes((error as NodeJS.ErrnoException).code || ''))
-        throw error
+    if (info.version === HOST_PROTOCOL) {
       try {
-        process.kill(info.pid, 0)
-        throw new Error('Terminal Host 仍在运行但暂不可连接；请稍后重试，不会重建或终止已有会话。')
-      } catch (probeError) {
-        if ((probeError as NodeJS.ErrnoException).code !== 'ESRCH') throw probeError
+        return await openClient(directory, info, send)
+      } catch (error) {
+        if (!['ENOENT', 'ECONNREFUSED'].includes((error as NodeJS.ErrnoException).code || ''))
+          throw error
       }
-      await unlink(join(directory, 'host.sock')).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error
-      })
-      await unlink(file)
     }
+    try {
+      process.kill(info.pid, 0)
+      throw new Error(
+        info.version !== HOST_PROTOCOL
+          ? 'Terminal Host 协议版本不兼容，请先结束旧会话。'
+          : 'Terminal Host 仍在运行但暂不可连接；请稍后重试，不会重建或终止已有会话。',
+      )
+    } catch (probeError) {
+      if ((probeError as NodeJS.ErrnoException).code !== 'ESRCH') throw probeError
+    }
+    await unlink(join(directory, 'host.sock')).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error
+    })
+    await unlink(file)
   }
   try {
     await lstat(join(directory, 'host.sock'))
