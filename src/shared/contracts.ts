@@ -357,6 +357,7 @@ export interface ConfirmationRequest {
 }
 
 export interface DesktopAPI {
+  readonly platform: string
   bootstrap(): Promise<
     Result<{
       config: AppConfig
@@ -400,6 +401,10 @@ export interface DesktopAPI {
   resizeTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
   acknowledge(id: string, attachmentId: string, length: number): void
   closeTerminal(id: string): Promise<Result<boolean>>
+  minimizeWindow(): void
+  toggleMaximizeWindow(): void
+  isWindowMaximized(): Promise<Result<boolean>>
+  onWindowMaximized(listener: (maximized: boolean) => void): () => void
   closeWindow(): void
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
@@ -415,9 +420,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   preferences: {
     shellPath: null,
     scrollback: 5000,
-    openWith: [
-      { id: 'finder', name: '文件管理器', command: '/usr/bin/open', arguments: '-a Finder {path}' },
-    ],
+    // The system file manager is a built-in action on every platform.
+    openWith: [],
   },
 }
 

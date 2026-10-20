@@ -19,6 +19,7 @@ beforeEach(() => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   useWorkspace.setState(useWorkspace.getInitialState(), true)
   api = {
+    platform: 'darwin',
     bootstrap: vi.fn().mockResolvedValue({
       ok: true,
       value: { config: structuredClone(DEFAULT_CONFIG), sessions: [] },
@@ -52,6 +53,10 @@ beforeEach(() => {
     savePreferences: vi.fn(async (value) => ({ ok: true as const, value })),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
     closeWindow: vi.fn(),
+    minimizeWindow: vi.fn(),
+    toggleMaximizeWindow: vi.fn(),
+    isWindowMaximized: vi.fn().mockResolvedValue({ ok: true, value: false }),
+    onWindowMaximized: vi.fn(() => vi.fn()),
     respondToConfirmation: vi.fn().mockResolvedValue({ ok: true }),
     onConfirmation: vi.fn(() => vi.fn()),
     onShortcut: vi.fn(() => vi.fn()),

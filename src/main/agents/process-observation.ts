@@ -3,6 +3,8 @@ import { promisify } from 'node:util'
 import { basename, isAbsolute } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import type { AgentProvider } from '../../shared/contracts'
+import { isWindows, powershell } from '../platform'
+import { windowsDescendants, windowsProcesses } from '../windows-processes'
 
 export interface AgentProcessRow {
   pid: number
@@ -68,6 +70,28 @@ export function agentOwner(
   rootPid: number,
   reporterPid: number,
 ): AgentProcessRow | undefined {
+  if (isWindows) {
+    const owned = windowsDescendants(
+      rows.map((row) => ({ ...row, command: row.command || '' })),
+      rootPid,
+    )
+    if (!owned.some((row) => row.pid === reporterPid)) return
+    const root = rows.find((row) => row.pid === rootPid)
+    if (!root?.started) return
+    // Windows has no POSIX foreground group. Reject sibling jobs rather than guess ownership.
+    const children = owned.filter(
+      (row) => row.parent === rootPid && !/^(?:conhost|OpenConsole)\.exe$/i.test(row.command),
+    )
+    if (children.length > 1) return
+    let row = rows.find((row) => row.pid === reporterPid)
+    const seen = new Set<number>()
+    while (row && row.pid !== rootPid && !seen.has(row.pid)) {
+      seen.add(row.pid)
+      if (row.parent === rootPid) return row
+      row = rows.find((parent) => parent.pid === row!.parent)
+    }
+    return row?.pid === rootPid ? root : undefined
+  }
   const byId = new Map(rows.map((row) => [row.pid, row]))
   const root = byId.get(rootPid)
   if (!root || root.foreground <= 0 || /[TZ]/.test(root.stat)) return
@@ -84,7 +108,7 @@ export function agentOwner(
 }
 
 function nativeProvider(command = ''): AgentProvider | undefined {
-  const name = basename(command)
+  const name = basename(command).replace(/\.exe$/i, '')
   if (name === 'claude' || name === 'pi' || name === 'codex') return name
   if (/^codex-(?:aarch64|x86_64|arm64)(?:-[a-z0-9_]+)+$/.test(name)) return 'codex'
 }
@@ -93,11 +117,12 @@ function nodeEntrypoint(command: string): string | undefined {
   // shortcut: ambiguous unquoted paths/Node flags stay unknown; use Hooks for custom launchers.
   const match = /^\s*(?:"([^"]+)"|'([^']+)'|(\S+))\s+(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(command)
   const executable = match?.[1] ?? match?.[2] ?? match?.[3]
-  if (executable && ['node', 'nodejs'].includes(basename(executable)))
+  if (executable && ['node', 'nodejs'].includes(basename(executable).replace(/\.exe$/i, '')))
     return match?.[4] ?? match?.[5] ?? match?.[6]
 }
 
 function entrypointProvider(entrypoint: string): AgentProvider | undefined {
+  entrypoint = entrypoint.replaceAll('\\', '/')
   if (
     /(?:^|\/)node_modules\/@(?:earendil-works|mariozechner)\/pi-coding-agent\/dist\/(?:bundle\/)?cli\.js$/.test(
       entrypoint,
@@ -117,6 +142,59 @@ export async function agentProcesses(
   fresh = false,
   rootPids: readonly number[] = [],
 ): Promise<AgentProcessRow[]> {
+  if (isWindows) {
+    const snapshot = await windowsProcesses(fresh)
+    const rows: AgentProcessRow[] = snapshot.map((row) => ({
+      ...row,
+      group: row.pid,
+      foreground: row.pid,
+      stat: 'S',
+    }))
+    const owned = new Set(
+      rootPids.flatMap((pid) => windowsDescendants(snapshot, pid).map((row) => row.pid)),
+    )
+    const wrappers = rows
+      .filter((row) => owned.has(row.pid) && /^node(?:js)?\.exe$/i.test(row.command || ''))
+      .slice(0, 64)
+    if (wrappers.length) {
+      try {
+        const filter = wrappers.map((row) => `ProcessId = ${row.pid}`).join(' OR ')
+        const { stdout } = await promisify(execFile)(
+          powershell,
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            "[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); @(Get-CimInstance -ClassName Win32_Process -Filter $env:COTA_PROCESS_FILTER -Property ProcessId,ParentProcessId,CreationDate,CommandLine | ForEach-Object { [pscustomobject]@{ pid=[int]$_.ProcessId; parent=[int]$_.ParentProcessId; started=$_.CreationDate.ToUniversalTime().ToString('o'); command=$_.CommandLine } }) | ConvertTo-Json -Compress",
+          ],
+          {
+            windowsHide: true,
+            timeout: 5000,
+            maxBuffer: 4 * 1024 * 1024,
+            env: { ...process.env, COTA_PROCESS_FILTER: filter },
+          },
+        )
+        for (const current of JSON.parse(stdout.trim()) as {
+          pid: number
+          parent: number
+          started: string
+          command: string
+        }[]) {
+          const row = wrappers.find(
+            (row) =>
+              row.pid === current.pid &&
+              row.parent === current.parent &&
+              row.started === current.started,
+          )
+          if (row) row.provider = recognizeNodeAgent(current.command || '')
+        }
+      } catch {
+        /* Missing Node entrypoint evidence leaves identity unknown. */
+      }
+    }
+    return rows
+  }
   const rows = await processSnapshot(fresh)
   const wrappers = rows
     .filter(
@@ -181,6 +259,24 @@ export function foregroundAgent(
 ): { owner: AgentProcessRow; provider: AgentProvider } | undefined {
   const root = rows.find((row) => row.pid === rootPid)
   if (!root) return
+  if (isWindows) {
+    const owned = windowsDescendants(
+      rows.map((row) => ({ ...row, command: row.command || '' })),
+      rootPid,
+    )
+    const candidates = owned.flatMap((row) => {
+      const original = rows.find((entry) => entry.pid === row.pid)!
+      const provider = original.provider ?? nativeProvider(row.command)
+      const owner = provider ? agentOwner(rows, rootPid, row.pid) : undefined
+      return owner && provider ? [{ owner, provider }] : []
+    })
+    if (
+      new Set(candidates.map(({ owner }) => owner.pid)).size === 1 &&
+      new Set(candidates.map(({ provider }) => provider)).size === 1
+    )
+      return candidates[0]
+    return
+  }
   const owners = new Map<number, { owner: AgentProcessRow; provider: AgentProvider }>()
   const providers = new Set<AgentProvider>()
   for (const row of rows) {

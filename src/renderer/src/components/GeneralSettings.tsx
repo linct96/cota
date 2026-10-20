@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, SquareTerminal } from 'lucide-react'
 import type { Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
+import { isWindows } from '../lib/platform'
 import { Badge } from './ui/badge'
 import { AgentHookSettings } from './AgentHookSettings'
 import { Button } from './ui/button'
@@ -32,13 +33,15 @@ interface ShellPreset {
   path: string | null
 }
 
-const PRESET_SHELLS: ShellPreset[] = [
-  { id: 'default', label: '系统默认 (zsh)', path: null },
-  { id: 'zsh', label: 'zsh (/bin/zsh)', path: '/bin/zsh' },
-  { id: 'bash', label: 'bash (/bin/bash)', path: '/bin/bash' },
-  { id: 'fish', label: 'fish (/opt/homebrew/bin/fish)', path: '/opt/homebrew/bin/fish' },
-  { id: 'brew-bash', label: 'bash (/opt/homebrew/bin/bash)', path: '/opt/homebrew/bin/bash' },
-]
+const PRESET_SHELLS: ShellPreset[] = isWindows
+  ? [{ id: 'default', label: '系统默认 (PowerShell)', path: null }]
+  : [
+      { id: 'default', label: '系统默认 (zsh)', path: null },
+      { id: 'zsh', label: 'zsh (/bin/zsh)', path: '/bin/zsh' },
+      { id: 'bash', label: 'bash (/bin/bash)', path: '/bin/bash' },
+      { id: 'fish', label: 'fish (/opt/homebrew/bin/fish)', path: '/opt/homebrew/bin/fish' },
+      { id: 'brew-bash', label: 'bash (/opt/homebrew/bin/bash)', path: '/opt/homebrew/bin/bash' },
+    ]
 
 interface ScrollbackOption {
   value: number
@@ -104,7 +107,7 @@ export function GeneralSettings() {
 
   // Shell 显示名称
   function currentShellLabel(): string {
-    if (preferences.shellPath === null) return '系统默认 (zsh)'
+    if (preferences.shellPath === null) return PRESET_SHELLS[0].label
     const matched = PRESET_SHELLS.find((item) => item.path === preferences.shellPath)
     if (matched) return matched.label
     return preferences.shellPath
@@ -135,8 +138,14 @@ export function GeneralSettings() {
       setShellError('请输入 Shell 可执行文件路径。')
       return
     }
-    if (!trimmed.startsWith('/')) {
-      setShellError('Shell 路径需为以 / 开头的绝对路径。')
+    if (
+      isWindows ? !/^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i.test(trimmed) : !trimmed.startsWith('/')
+    ) {
+      setShellError(
+        isWindows
+          ? 'Shell 路径需为完整的 Windows 绝对路径。'
+          : 'Shell 路径需为以 / 开头的绝对路径。',
+      )
       return
     }
     const success = await persist({ shellPath: trimmed })
@@ -322,7 +331,11 @@ export function GeneralSettings() {
         <DialogContent className="general-settings-dialog max-w-sm">
           <DialogHeader>
             <DialogTitle>自定义 Shell 路径</DialogTitle>
-            <DialogDescription>输入本机可执行文件的绝对路径（如 /bin/zsh）</DialogDescription>
+            <DialogDescription className="shell-path-description">
+              {isWindows
+                ? '输入本机可执行文件的绝对路径（如 C:\\Program Files\\PowerShell\\7\\pwsh.exe）'
+                : '输入本机可执行文件的绝对路径（如 /bin/zsh）'}
+            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -339,7 +352,11 @@ export function GeneralSettings() {
                   required
                   maxLength={4096}
                   value={customShellInput}
-                  placeholder="/opt/homebrew/bin/fish"
+                  placeholder={
+                    isWindows
+                      ? 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+                      : '/opt/homebrew/bin/fish'
+                  }
                   className="font-mono text-xs"
                   onChange={(event) => setCustomShellInput(event.target.value)}
                 />

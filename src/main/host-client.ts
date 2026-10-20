@@ -1,11 +1,13 @@
 import { connect, type Socket } from 'node:net'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createHash, randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { HOST_PROTOCOL, readMessages, sendMessage, type HostMethods } from './host-protocol'
 import type { AgentUpdate, TerminalEvent } from '../shared/contracts'
+import { hostEndpoint, isWindows, powershell } from './platform'
 
 export class HostClient {
   private nextId = 0
@@ -132,6 +134,7 @@ interface HostInfo {
 }
 
 export function hostDirectory(userData: string): string {
+  if (isWindows) return join(userData, 'terminal-host')
   const hash = createHash('sha256').update(userData).digest('hex').slice(0, 16)
   return join(tmpdir(), `cota-${process.getuid!()}-${hash}`)
 }
@@ -142,7 +145,7 @@ async function openClient(
   send: (event: TerminalEvent) => void,
   sendAgent: (event: AgentUpdate) => void,
 ): Promise<HostClient> {
-  const socket = connect(join(directory, 'host.sock'))
+  const socket = connect(hostEndpoint(directory, 'host'))
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       socket.destroy()
@@ -179,18 +182,35 @@ export async function connectTerminalHost(
   const directoryStat = await lstat(directory)
   if (
     !directoryStat.isDirectory() ||
-    directoryStat.uid !== process.getuid!() ||
-    (directoryStat.mode & 0o777) !== 0o700
+    (!isWindows &&
+      (directoryStat.uid !== process.getuid!() || (directoryStat.mode & 0o777) !== 0o700))
   )
     throw new Error('Terminal Host 目录权限不安全。')
+  if (isWindows) {
+    // Use .NET directly: inherited PowerShell module paths can break Set-Acl autoloading.
+    await promisify(execFile)(
+      powershell,
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); $identity=[Security.Principal.WindowsIdentity]::GetCurrent().User; $acl=[Security.AccessControl.DirectorySecurity]::new(); $acl.SetOwner($identity); $acl.SetAccessRuleProtection($true,$false); $rule=[Security.AccessControl.FileSystemAccessRule]::new($identity,'FullControl','ContainerInherit,ObjectInherit','None','Allow'); $acl.AddAccessRule($rule); [IO.Directory]::SetAccessControl($env:COTA_PRIVATE_DIRECTORY,$acl)",
+      ],
+      {
+        windowsHide: true,
+        timeout: 5000,
+        env: { ...process.env, COTA_PRIVATE_DIRECTORY: directory },
+      },
+    )
+  }
   const file = join(directory, 'runtime.json')
   let info: HostInfo | undefined
   try {
     const fileStat = await lstat(file)
     if (
       !fileStat.isFile() ||
-      fileStat.uid !== process.getuid!() ||
-      (fileStat.mode & 0o777) !== 0o600 ||
+      (!isWindows && (fileStat.uid !== process.getuid!() || (fileStat.mode & 0o777) !== 0o600)) ||
       fileStat.size > 4096
     )
       throw new Error('Terminal Host 元数据权限或大小无效。')
@@ -245,6 +265,7 @@ export async function connectTerminalHost(
   // shortcut: uses the current Electron runtime; signed stable Helper packaging is required before cross-update survival.
   const child = spawn(process.execPath, [join(__dirname, 'host.js')], {
     detached: true,
+    windowsHide: true,
     stdio: 'ignore',
     env: {
       ...process.env,

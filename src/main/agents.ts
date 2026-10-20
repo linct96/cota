@@ -10,9 +10,17 @@ import {
   type Preferences,
 } from '../shared/contracts'
 import { agentProvider } from './validation'
-import { findExecutable, loginShellEnvironment } from './shell'
+import { findExecutable, loginShellEnvironment, resolveCommand } from './shell'
 
-export async function resolveAgent(provider: AgentProvider, settings: Preferences) {
+export async function resolveAgent(
+  provider: AgentProvider,
+  settings: Preferences,
+): Promise<{
+  executable: string
+  args: string[]
+  env: Record<string, string>
+  cliExecutable?: string
+}> {
   const definition = AGENT_PROVIDERS[agentProvider(provider)]
   const env = await loginShellEnvironment(settings)
   const executable = await findExecutable(definition.command, env)
@@ -22,14 +30,16 @@ export async function resolveAgent(provider: AgentProvider, settings: Preference
     const minor = /^0\.(\d+)\./.exec(version || '')
     if (minor && Number(minor[1]) >= 156) args.push('--no-daemon')
   }
-  return { executable, args, env }
+  return { ...(await resolveCommand(executable, args, env)), cliExecutable: executable }
 }
 
 async function agentVersion(executable: string, env: Record<string, string>) {
   try {
-    const { stdout } = await promisify(execFile)(executable, ['--version'], {
+    const command = await resolveCommand(executable, ['--version'], env)
+    const { stdout } = await promisify(execFile)(command.executable, command.args, {
       cwd: homedir(),
-      env,
+      env: command.env,
+      windowsHide: true,
       timeout: 3000,
       maxBuffer: 64 * 1024,
     })
@@ -44,7 +54,7 @@ export async function agentCapability(
   provider: AgentProvider,
   command: Awaited<ReturnType<typeof resolveAgent>>,
 ): Promise<'full' | 'partial'> {
-  const version = await agentVersion(command.executable, command.env)
+  const version = await agentVersion(command.cliExecutable || command.executable, command.env)
   const numbers = /^(\d+)\.(\d+)\.(\d+)/
     .exec(version || '')
     ?.slice(1)
@@ -60,7 +70,7 @@ export async function agentCapability(
     throw new Error(
       'CLI 版本未知或不在适配范围；支持 Pi 1.3+、Claude Code 2.1.196+、Codex 0.124+（同主版本）。',
     )
-  const directory = __dirname.replace(/app\.asar(?=\/)/, 'app.asar.unpacked')
+  const directory = __dirname.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
   const adapter = join(directory, provider === 'pi' ? 'pi-extension.js' : 'agent-hook.js')
   await access(adapter)
   return provider === 'pi' ? 'full' : 'partial'

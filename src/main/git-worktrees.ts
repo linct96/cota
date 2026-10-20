@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { realpath, lstat } from 'node:fs/promises'
 import { promisify } from 'node:util'
+import { normalize } from 'node:path'
 import type {
   GitRepositoryInfo,
   GitWorktreeInfo,
@@ -42,6 +43,7 @@ async function runGit(cwd: string, args: string[], writing = false): Promise<str
       timeout: writing ? 120000 : 10000,
       maxBuffer: 8 * 1024 * 1024,
       encoding: 'utf8',
+      windowsHide: true,
     })
     return stdout
   } catch (error) {
@@ -102,7 +104,10 @@ export function parseWorktreeList(output: string): GitWorktreeInfo[] {
       if (current) invalid()
       let path: string
       try {
-        path = absolutePath(field.slice(9))
+        path =
+          process.platform === 'win32'
+            ? normalize(absolutePath(field.slice(9)))
+            : absolutePath(field.slice(9))
       } catch {
         return invalid()
       }

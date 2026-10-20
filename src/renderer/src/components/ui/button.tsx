@@ -17,6 +17,8 @@ const buttonVariants = cva(
         navigation:
           'text-muted-foreground hover:bg-navigation-accent hover:text-navigation-accent-foreground data-[active=true]:bg-navigation-accent data-[active=true]:text-navigation-accent-foreground',
         project: 'text-muted-foreground hover:bg-project-hover hover:text-foreground',
+        'window-control':
+          'rounded-none text-foreground hover:bg-window-control-hover focus-visible:ring-inset active:not-aria-[haspopup]:translate-y-0 data-[window-action=close]:hover:bg-window-close-hover data-[window-action=close]:hover:text-window-close-foreground',
         destructive:
           'bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40',
         link: 'text-primary underline-offset-4 hover:underline',
@@ -32,6 +34,8 @@ const buttonVariants = cva(
         'icon-sm': "size-6 [&_svg:not([class*='size-'])]:size-3",
         'icon-lg': "size-8 [&_svg:not([class*='size-'])]:size-4",
         'icon-xl': "size-9 [&_svg:not([class*='size-'])]:size-5",
+        'window-control':
+          "h-[var(--app-titlebar-height)] w-[var(--window-control-width)] p-0 [&_svg:not([class*='size-'])]:size-3",
       },
     },
     defaultVariants: {

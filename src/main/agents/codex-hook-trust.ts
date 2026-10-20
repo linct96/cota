@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
+import { resolveCommand } from '../shell'
 
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
@@ -15,9 +16,11 @@ export async function trustCodexHooks(
 ): Promise<void> {
   const cwd = dirname(config)
   const configPath = resolve(cwd, 'config.toml')
-  const child = spawn(executable, ['app-server'], {
+  const launch = await resolveCommand(executable, ['app-server'], { ...env, CODEX_HOME: cwd })
+  const child = spawn(launch.executable, launch.args, {
     cwd,
-    env: { ...env, CODEX_HOME: cwd },
+    env: launch.env,
+    windowsHide: true,
     stdio: ['pipe', 'pipe', 'ignore'],
   })
   let pending:

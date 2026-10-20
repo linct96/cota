@@ -38,6 +38,9 @@
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-titlebar-separator: var(--titlebar-separator);
+  --color-window-control-hover: var(--window-control-hover);
+  --color-window-close-hover: var(--window-close-hover);
+  --color-window-close-foreground: var(--window-close-foreground);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-xs: calc(var(--radius) * 0.4);
@@ -100,6 +103,14 @@
   --scrollbar-thumb-active: rgba(121, 121, 121, 0.9);
   --border: oklch(0.922 0 0);
   --titlebar-separator: #e3e3e3;
+  --app-titlebar-height: 44px;
+  --app-navigation-width: 48px;
+  --titlebar-leading-inset: 12px;
+  --window-control-width: 46px;
+  --window-controls-width: 0px;
+  --window-control-hover: var(--accent);
+  --window-close-hover: #c42b1c;
+  --window-close-foreground: #ffffff;
   --destructive: oklch(0.577 0.245 27.325);
   --terminal-selection: var(--accent);
   --terminal-selection-inactive: var(--muted);
@@ -137,6 +148,37 @@ body,
 .title-bar {
   -webkit-app-region: drag;
   user-select: none;
+}
+.app-container[data-platform='win32'] {
+  --window-controls-width: calc(3 * var(--window-control-width));
+}
+.app-container[data-platform='darwin'] {
+  --titlebar-leading-inset: 96px;
+}
+.app-top-status-bar {
+  padding-right: calc(var(--window-controls-width) + 0.75rem);
+}
+.top-status-bar-history {
+  padding-left: var(--titlebar-leading-inset);
+}
+.window-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  height: var(--app-titlebar-height);
+  -webkit-app-region: no-drag;
+}
+/* Portaled overlays must cancel any titlebar drag regions beneath them. */
+[data-slot='dialog-overlay'],
+[data-slot='dialog-content'],
+[data-slot='alert-dialog-overlay'],
+[data-slot='alert-dialog-content'],
+[data-slot='dropdown-menu-content'],
+[data-slot='context-menu-content'],
+[data-slot='tooltip-content'] {
+  -webkit-app-region: no-drag;
 }
 button:not(:disabled) {
   cursor: pointer;

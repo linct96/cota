@@ -209,6 +209,7 @@ function installIPC(): void {
     if (pendingConfirmation?.id !== id) throw new Error('确认请求已失效。')
     settleConfirmation(confirmed)
   })
+  handle('window:is-maximized', () => window?.isMaximized() ?? false)
   handle('workspace:save-layout', (value: WorkspaceLayout) => config.saveLayout(value))
   handle('project:open', async () => {
     const selected = await dialog.showOpenDialog(window!, {
@@ -471,14 +472,27 @@ function installIPC(): void {
       /* Ignore malformed fire-and-forget acknowledgements. */
     }
   })
-  ipcMain.on('app:close-window', (event) => {
-    try {
-      trusted(event)
-      window?.close()
-    } catch {
-      /* No capabilities for other frames. */
-    }
-  })
+  for (const [channel, action] of [
+    ['window:minimize', () => window?.minimize()],
+    [
+      'window:toggle-maximize',
+      () => {
+        if (window?.isMaximized()) window.unmaximize()
+        else window?.maximize()
+      },
+    ],
+    // Enter the existing exit guard directly; Windows IPC-triggered close events can be unreliable.
+    ['app:close-window', () => void requestExit()],
+  ] as const) {
+    ipcMain.on(channel, (event) => {
+      try {
+        trusted(event)
+        if (window && !window.isDestroyed()) action()
+      } catch {
+        /* No capabilities for other frames. */
+      }
+    })
+  }
 }
 
 async function requestExit(): Promise<void> {
@@ -518,7 +532,11 @@ function installMenu(): void {
         submenu: [
           { role: 'about' },
           { type: 'separator' },
-          { label: 'Settings…', accelerator: 'Cmd+,', click: () => sendShortcut('settings') },
+          {
+            label: 'Settings…',
+            accelerator: 'CommandOrControl+,',
+            click: () => sendShortcut('settings'),
+          },
           { type: 'separator' },
           { role: 'hide' },
           { role: 'hideOthers' },
@@ -530,15 +548,19 @@ function installMenu(): void {
       {
         label: 'File',
         submenu: [
-          { label: 'Open Folder…', accelerator: 'Cmd+O', click: () => sendShortcut('open-folder') },
+          {
+            label: 'Open Folder…',
+            accelerator: 'CommandOrControl+O',
+            click: () => sendShortcut('open-folder'),
+          },
           {
             label: 'New Terminal',
-            accelerator: 'Cmd+T',
+            accelerator: 'CommandOrControl+T',
             click: () => sendShortcut('new-terminal'),
           },
           {
             label: 'Close Terminal / Window',
-            accelerator: 'Cmd+W',
+            accelerator: 'CommandOrControl+W',
             click: () => sendShortcut('close-terminal'),
           },
         ],
@@ -550,8 +572,14 @@ function installMenu(): void {
           { role: 'redo' },
           { type: 'separator' },
           { role: 'cut' },
-          { role: 'copy' },
-          { role: 'paste' },
+          {
+            role: 'copy',
+            ...(process.platform === 'win32' ? { accelerator: 'Control+Shift+C' } : {}),
+          },
+          {
+            role: 'paste',
+            ...(process.platform === 'win32' ? { accelerator: 'Control+Shift+V' } : {}),
+          },
           { role: 'selectAll' },
         ],
       },
@@ -559,7 +587,7 @@ function installMenu(): void {
         label: 'Terminal',
         submenu: Array.from({ length: 9 }, (_, i) => ({
           label: `Select Terminal ${i + 1}`,
-          accelerator: `Cmd+${i + 1}`,
+          accelerator: `CommandOrControl+${i + 1}`,
           click: () => sendShortcut(`tab-${i + 1}`),
         })),
       },
@@ -620,8 +648,10 @@ if (!app.requestSingleInstanceLock()) {
         backgroundColor: '#ffffff',
         show: false,
         title: appName,
-        titleBarStyle: 'hidden',
-        trafficLightPosition: { x: 16, y: 14 },
+        titleBarStyle:
+          process.platform === 'darwin' || process.platform === 'win32' ? 'hidden' : 'default',
+        ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 14 } } : {}),
+        autoHideMenuBar: process.platform === 'win32',
         webPreferences: {
           preload: join(__dirname, '../preload/index.js'),
           nodeIntegration: false,
@@ -638,6 +668,12 @@ if (!app.requestSingleInstanceLock()) {
         callback(false),
       )
       window.webContents.session.setPermissionCheckHandler(() => false)
+      const sendMaximized = () => {
+        if (window && !window.webContents.isDestroyed())
+          window.webContents.send('window:maximized-changed', window.isMaximized())
+      }
+      window.on('maximize', sendMaximized)
+      window.on('unmaximize', sendMaximized)
       window.on('close', (event) => {
         if (!exiting) {
           event.preventDefault()
@@ -662,6 +698,7 @@ if (!app.requestSingleInstanceLock()) {
       else await window.loadFile(rendererFile)
     })
     .catch((error) => {
+      console.error(`${appName} 启动失败：`, error)
       dialog.showErrorBox(`${appName} 启动失败`, String(error))
       app.exit(1)
     })

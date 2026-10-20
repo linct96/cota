@@ -16,6 +16,7 @@ export async function projectBranch(value: unknown): Promise<string | null> {
         GIT_COMMON_DIR: undefined,
       },
       timeout: 2000,
+      windowsHide: true,
       maxBuffer: 4096,
     })
     return stdout.trim() || null

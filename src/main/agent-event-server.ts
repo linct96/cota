@@ -1,5 +1,5 @@
 import { createServer, type Socket } from 'node:net'
-import { chmod, unlink } from 'node:fs/promises'
+import { protectEndpoint, removeEndpoint } from './platform'
 import type { AgentSessionManager } from './agent-session-manager'
 
 export async function startAgentEventServer(
@@ -95,7 +95,7 @@ export async function startAgentEventServer(
     })
   })
   try {
-    await chmod(path, 0o600)
+    await protectEndpoint(path)
   } catch (error) {
     for (const socket of sockets) socket.destroy()
     await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -109,9 +109,7 @@ export async function startAgentEventServer(
       manager.disable()
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => server.close(() => resolve()))
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') throw error
-      })
+      await removeEndpoint(path)
     },
   }
 }
