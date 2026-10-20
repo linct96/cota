@@ -10,7 +10,7 @@ import {
 } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
@@ -23,6 +23,7 @@ import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents
 import { loginShellEnvironment, shellEnvironment } from './shell'
 import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
 import { connectTerminalHost, type HostClient } from './host-client'
+import { AgentNotifications } from './agent-notifications'
 import {
   absolutePath,
   agentProvider,
@@ -35,6 +36,7 @@ import {
 } from './validation'
 import type {
   AttachTerminal,
+  AgentSession,
   ConfirmationRequest,
   CreateTerminal,
   Result,
@@ -54,6 +56,28 @@ let warning: string | undefined
 let exiting = false
 let exitPending = false
 let rendererReady = false
+let visibleTerminal: string | undefined
+let pendingAgentFocus: { terminalId: string; launchId: string } | undefined
+const notifications = new AgentNotifications({
+  isVisible: (id) => !!window?.isFocused() && !window.isMinimized() && visibleTerminal === id,
+  describe: (session) => {
+    const workspace = config
+      .snapshot()
+      .layout?.workspaces.find((entry) => entry.id === session.workspaceId)
+    return `${basename(session.projectPath)} · ${workspace?.name || basename(session.cwd)}`
+  },
+  activate: async (session: AgentSession) => {
+    const current = (await manager.request('list', [])).find(
+      (entry) => entry.id === session.terminalId && entry.agent?.launchId === session.launchId,
+    )
+    if (!current || !window || window.webContents.isDestroyed()) return
+    pendingAgentFocus = { terminalId: session.terminalId, launchId: session.launchId }
+    if (window.isMinimized()) window.restore()
+    window.show()
+    window.focus()
+    sendAgentFocus()
+  },
+})
 let pendingConfirmation: { id: string; resolve(confirmed: boolean): void } | undefined
 let removingWorkspace: RemovalTarget | undefined
 const closingTabs = new Set<string>()
@@ -100,6 +124,12 @@ function handle<Args extends unknown[], T>(
 
 function sendShortcut(shortcut: Shortcut): void {
   if (window && !window.webContents.isDestroyed()) window.webContents.send('app:shortcut', shortcut)
+}
+
+function sendAgentFocus(): void {
+  if (!rendererReady || !pendingAgentFocus || !window || window.webContents.isDestroyed()) return
+  window.webContents.send('agent:focus', pendingAgentFocus)
+  pendingAgentFocus = undefined
 }
 
 function settleConfirmation(confirmed: boolean): void {
@@ -202,7 +232,14 @@ function installIPC(): void {
     }
     const snapshot = config.snapshot()
     await manager.request('setScrollback', [snapshot.preferences.scrollback])
-    return { config: snapshot, sessions: await manager.request('list', []), warning, worktreeScans }
+    const result = {
+      config: snapshot,
+      sessions: await manager.request('list', []),
+      warning,
+      worktreeScans,
+    }
+    sendAgentFocus()
+    return result
   })
   handle('app:confirm-response', (id: unknown, confirmed: unknown) => {
     if (typeof id !== 'string' || typeof confirmed !== 'boolean') throw new Error('确认参数无效。')
@@ -391,6 +428,9 @@ function installIPC(): void {
           )
     })
   }
+  handle('agent:visible', (id: unknown) => {
+    visibleTerminal = id === undefined ? undefined : terminalId(id)
+  })
   handle('agent:read', (id: unknown, launchId: unknown, revision: unknown) => {
     if (!Number.isSafeInteger(revision) || Number(revision) < 0)
       throw new Error('Agent 状态版本无效。')
@@ -608,10 +648,13 @@ if (!app.requestSingleInstanceLock()) {
             window.webContents.send('terminal:event', event)
         },
         (event) => {
+          notifications.receive(event)
           if (window && !window.webContents.isDestroyed())
             window.webContents.send('agent:event', event)
         },
       )
+      for (const session of await manager.request('list', []))
+        if (session.agent) notifications.receive({ type: 'state', session: session.agent })
       window = new BrowserWindow({
         width: 1180,
         height: 780,
@@ -646,6 +689,7 @@ if (!app.requestSingleInstanceLock()) {
       })
       const rendererUnavailable = () => {
         rendererReady = false
+        visibleTerminal = undefined
         settleConfirmation(false)
         void manager.detachAll().catch(() => {})
       }

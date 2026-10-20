@@ -718,6 +718,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   },
   setVisibleTerminal(id) {
     set({ visibleTerminal: id })
+    void window.desktop
+      .setVisibleTerminal(id)
+      .then(unwrap)
+      .catch((error) => console.warn('无法同步当前可见终端。', error))
   },
   async closeTab(id) {
     if (get().removingWorkspace) return

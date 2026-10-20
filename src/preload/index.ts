@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AgentUpdate,
+  AgentSession,
   ConfirmationRequest,
   DesktopAPI,
   Shortcut,
@@ -35,6 +36,15 @@ const api: DesktopAPI = {
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
   uninstallAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-uninstall', provider),
   readAgent: (id, launchId, revision) => ipcRenderer.invoke('agent:read', id, launchId, revision),
+  setVisibleTerminal: (id) => ipcRenderer.invoke('agent:visible', id),
+  onAgentFocus: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      target: Pick<AgentSession, 'terminalId' | 'launchId'>,
+    ) => listener(target)
+    ipcRenderer.on('agent:focus', wrapped)
+    return () => ipcRenderer.removeListener('agent:focus', wrapped)
+  },
   onAgent: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: AgentUpdate) => listener(event)
     ipcRenderer.on('agent:event', wrapped)

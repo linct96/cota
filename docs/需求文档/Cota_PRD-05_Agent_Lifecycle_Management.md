@@ -3,9 +3,9 @@
 **产品：** Cota（macOS 优先、Terminal-first ADE）\
 **版本：** v1.0\
 **优先级：** P0\
-**状态：** Phase A/B/C 代码已接入，真实 CLI 与打包验收待完成\
+**状态：** Phase A/B/C 与系统通知代码已接入，真实 CLI 部分验收，打包与通知人工验收待完成\
 **日期：** 2026-10-19\
-**代码基线：** `linct96/cota@4b33b63`\
+**代码基线：** `linct96/cota@82f1c9c`（验收修复见当前工作区）\
 **前置依赖：** Git Worktree、Terminal Host、Workspace V2、Terminal Binding
 
 > **核心设计决策：** Cota 管理 PTY 和 Agent 进程；Adapter 只负责提供可信状态事件；Agent 交互始终在原生终端中完成。不重建聊天界面。受管 Hooks / Extension 仅在用户从设置主动安装并确认后写入 CLI 配置，绝不在启动、打开设置或检测时安装。
@@ -53,7 +53,14 @@ Claude 后台任务只使用主 Agent Stop / StopFailure 的完整快照：后�
 
 关闭失败时保留会话与错误诊断；尚未收到真实退出事件则恢复 runtimeState=running，使输入 / resize 可继续并允许重试关闭。停止阶段已撤销的集成凭证不恢复，activity 保持 unknown；若关闭期间已退出则保留 exited 和退出码，禁止错误恢复 running。
 
-实际 CLI、GUI、macOS ARM64 打包及 smoke 验收按项目规则未默认执行，不能将代码接入等同于第 12 节全部 DoD 通过。P1 系统通知仍为独立后续任务，本轮仅实现界面内状态与未读提醒。
+2026-10-20 经用户明确授权，在隔离 HOME / CLI 配置与临时 Git Worktree 中执行了真实 CLI / Electron Host / PTY 验收，发现并修复菜单 Agent 的原生 setsid Hook 归属拒绝问题。三种版本的通过项、阻塞项和未测项见 [真实 CLI 验收记录](../验收记录/2026-10-20-agent-cli-acceptance.md)。这不是全版本或全部 DoD 通过；应用 GUI、macOS ARM64 打包及发布 smoke 仍待验收。
+
+### 原生系统通知（2026-10-20）
+
+- Main 直接消费 Host 权威状态，使用 Electron 原生 Notification，不由 Renderer 或终端输出推断结果。后台终端的明确成功、明确失败及需要操作触发提醒；结果未知的结束仅称“本轮结束”，中断、进程退出和集成不可用不冒充任务失败 / 成功。权限等待与原生问题统一提示返回终端处理，不代替用户授权。
+- 当前终端实际可见且窗口聚焦时不通知；设置页、其他终端或窗口失焦不视为正在查看。按 launchId、轮次与状态去重，已读回执不重复提醒，断连清理，初始快照不补发历史提醒。
+- 通知仅含 Agent 名、项目 / 工作区名称与状态，不含提示词、回复或工具内容。点击后再次核对存活会话身份，再聚焦窗口、切回主页并选择对应终端；已关闭或被新会话替换的目标忽略。
+- 系统不支持、显示失败或系统权限关闭不影响状态与未读提醒。没有新增通知配置面板或依赖。代码与相关重逻辑已自动化验证；系统横幅、权限、勿扰模式和点击跳转由用户后续人工验收。
 
 以下背景中的“当前实现”描述需求提出时的基线。
 
@@ -714,7 +721,7 @@ Main 必须校验 Renderer 请求来源。Host 不能信任 Renderer 提交的�
 - **AC-17** 删除 Worktree 时，不能遗漏其关联 Agent，也不能误杀其他 Worktree 的 Agent。
 - **AC-18** 开发版与正式版 Agent Session 互相隔离。
 - **AC-19** 原有 Terminal 输入、resize、scrollback、snapshot、backpressure 和关闭确认无回归。
-- **AC-20** 禁用状态集成后，三种 Agent 仍能作为普通交互式 CLI 正常使用。
+- **AC-20** 未安装状态集成时，三种 Agent 仍能作为普通交互式 CLI 正常使用，任务状态未知。
 
 ## 10. 开发阶段
 
@@ -786,7 +793,7 @@ Main 必须校验 Renderer 请求来源。Host 不能信任 Renderer 提交的�
 | AG-11 | Tab、Workspace 状态展示 | P0 | `TerminalTab.tsx`、`App.tsx` |
 | AG-12 | Store 与重连对账 | P0 | `store.ts` |
 | AG-13 | 单元、Host 集成、实际 CLI 验证 | P0 | `tests/`、smoke scripts |
-| AG-14 | 完成/等待操作通知 | P1 | 独立后续任务 |
+| AG-14 | 完成 / 失败 / 等待操作原生通知 | P1 | `main/agent-notifications.ts`、Main / preload / Renderer 定位链路；已实现，用户人工验收待完成 |
 
 ## 12. Definition of Done
 

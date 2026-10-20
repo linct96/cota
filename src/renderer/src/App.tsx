@@ -144,7 +144,20 @@ export function App() {
     const stopAgents = window.desktop.onAgent((event) =>
       useWorkspace.getState().receiveAgent(event),
     )
-    void useWorkspace.getState().bootstrap()
+    const bootstrapped = useWorkspace.getState().bootstrap()
+    const stopAgentFocus = window.desktop.onAgentFocus((target) => {
+      void bootstrapped
+        .then(async () => {
+          const state = useWorkspace.getState()
+          const tab = state.tabs.find(
+            (entry) => entry.id === target.terminalId && entry.agent?.launchId === target.launchId,
+          )
+          if (!tab || !(await state.selectProject(tab.projectPath, tab.workspaceId))) return
+          useWorkspace.getState().selectTab(tab.id)
+          await router.navigate({ to: '/' })
+        })
+        .catch((error) => console.warn('无法定位 Agent 通知目标。', error))
+    })
     const stopShortcuts = window.desktop.onShortcut((shortcut) => {
       if (useWorkspace.getState().removingWorkspace || useWorkspace.getState().creatingWorktree)
         return
@@ -156,6 +169,7 @@ export function App() {
     })
     return () => {
       stopAgents()
+      stopAgentFocus()
       stopShortcuts()
     }
   }, [router])

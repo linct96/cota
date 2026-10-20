@@ -61,6 +61,8 @@ beforeEach(() => {
     installAgentHook: vi.fn(),
     uninstallAgentHook: vi.fn(),
     readAgent: vi.fn().mockResolvedValue({ ok: true }),
+    setVisibleTerminal: vi.fn().mockResolvedValue({ ok: true }),
+    onAgentFocus: vi.fn(() => vi.fn()),
     onAgent: vi.fn(() => vi.fn()),
     createTerminal: vi.fn(),
     attachTerminal: vi.fn(),

@@ -391,6 +391,10 @@ export interface DesktopAPI {
   installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
   uninstallAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
   readAgent(id: string, launchId: string, revision: number): Promise<Result<void>>
+  setVisibleTerminal(id?: string): Promise<Result<void>>
+  onAgentFocus(
+    listener: (target: Pick<AgentSession, 'terminalId' | 'launchId'>) => void,
+  ): () => void
   onAgent(listener: (event: AgentUpdate) => void): () => void
   createTerminal(options: CreateTerminal): Promise<Result<void>>
   attachTerminal(options: AttachTerminal): Promise<Result<TerminalAttachment>>

@@ -2,6 +2,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { WorktreeError } from '../src/main/git-worktrees'
+import type { AgentSession, AgentUpdate } from '../src/shared/contracts'
 
 const mocks = vi.hoisted(() => {
   const frame = { url: 'http://localhost:5173/' }
@@ -31,7 +32,13 @@ const mocks = vi.hoisted(() => {
     inspectHook: vi.fn(),
     installHook: vi.fn(),
     uninstallHook: vi.fn(),
-    list: vi.fn(),
+    list: vi.fn().mockResolvedValue([]),
+    sendAgent: undefined as ((event: AgentUpdate) => void) | undefined,
+    windowFocused: false,
+    notify: vi.fn(),
+    notificationClick: undefined as (() => void) | undefined,
+    notificationSupported: true,
+    notificationFails: false,
     config: {
       preferences: {
         scrollback: 5000,
@@ -89,6 +96,21 @@ vi.mock('electron', () => ({
     isMinimized = () => false
     show = vi.fn()
     focus = vi.fn()
+    isFocused = () => mocks.windowFocused
+  },
+  Notification: class {
+    static isSupported = () => mocks.notificationSupported
+    constructor(options: unknown) {
+      mocks.notify(options)
+    }
+    on(name: string, callback: () => void) {
+      if (name === 'click') mocks.notificationClick = callback
+      return this
+    }
+    show() {
+      if (mocks.notificationFails) throw new Error('unavailable')
+    }
+    close = vi.fn()
   },
   dialog: { showMessageBox: mocks.confirm, showErrorBox: vi.fn() },
   ipcMain: {
@@ -133,23 +155,30 @@ vi.mock('../src/main/config', () => ({
   },
 }))
 vi.mock('../src/main/host-client', () => ({
-  connectTerminalHost: async () => ({
-    disconnect: mocks.disconnect,
-    detachAll: vi.fn().mockResolvedValue(undefined),
-    request: (method: string, args: unknown[]) => {
-      if (method === 'closeWorkspace') return mocks.closeWorkspace(...args)
-      if (method === 'closeProject') return mocks.closeProject(...args)
-      if (method === 'create') return mocks.create(...args)
-      if (method === 'list') return mocks.list()
-      if (method === 'setScrollback') return mocks.setScrollback(...args)
-      if (method === 'readAgent') return mocks.readAgent(...args)
-      if (method === 'hasLive') return mocks.hasLive()
-      if (method === 'needsCloseConfirmation') return mocks.needsCloseConfirmation(...args)
-      if (method === 'close') return mocks.close(...args)
-      if (method === 'shutdown') return mocks.shutdown()
-      throw new Error(`Unexpected method: ${method}`)
-    },
-  }),
+  connectTerminalHost: async (
+    _path: string,
+    _send: unknown,
+    sendAgent: (event: AgentUpdate) => void,
+  ) => {
+    mocks.sendAgent = sendAgent
+    return {
+      disconnect: mocks.disconnect,
+      detachAll: vi.fn().mockResolvedValue(undefined),
+      request: (method: string, args: unknown[]) => {
+        if (method === 'closeWorkspace') return mocks.closeWorkspace(...args)
+        if (method === 'closeProject') return mocks.closeProject(...args)
+        if (method === 'create') return mocks.create(...args)
+        if (method === 'list') return mocks.list()
+        if (method === 'setScrollback') return mocks.setScrollback(...args)
+        if (method === 'readAgent') return mocks.readAgent(...args)
+        if (method === 'hasLive') return mocks.hasLive()
+        if (method === 'needsCloseConfirmation') return mocks.needsCloseConfirmation(...args)
+        if (method === 'close') return mocks.close(...args)
+        if (method === 'shutdown') return mocks.shutdown()
+        throw new Error(`Unexpected method: ${method}`)
+      },
+    }
+  },
 }))
 
 const event = { sender: mocks.contents, senderFrame: mocks.contents.mainFrame }
@@ -329,6 +358,107 @@ describe('Git Worktree IPC boundaries', () => {
       ),
     ).toMatchObject({ ok: false })
     expect(mocks.readAgent).toHaveBeenCalledOnce()
+    expect(
+      await mocks.handlers.get('agent:visible')!({ ...event, senderFrame: {} }, value.id),
+    ).toMatchObject({ ok: false })
+    expect(await mocks.handlers.get('agent:visible')!(event, 'invalid')).toMatchObject({
+      ok: false,
+    })
+    const state: AgentSession = {
+      terminalId: value.id,
+      launchId: launch.launchId,
+      provider: 'pi',
+      projectPath: path,
+      workspaceId: value.workspaceId,
+      cwd: path,
+      runtimeState: 'running',
+      activityState: 'working',
+      outcome: 'unknown',
+      startedAt: new Date().toISOString(),
+      lastEventAt: new Date().toISOString(),
+      lastTurnId: 'turn-1',
+      eventSource: 'pi-extension',
+      observability: 'full',
+      revision: 1,
+      unread: false,
+    }
+    const publish = (change: Partial<AgentSession>) => {
+      Object.assign(state, change, { revision: state.revision + 1 })
+      mocks.sendAgent!({ type: 'state', session: { ...state } })
+    }
+    mocks.sendAgent!({ type: 'disconnected' })
+    publish({ activityState: 'completed', outcome: 'success', unread: true })
+    publish({ unread: false })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    publish({ activityState: 'working', outcome: 'unknown', lastTurnId: 'turn-2' })
+    publish({ activityState: 'completed', outcome: 'success', unread: true })
+    expect(mocks.notify).toHaveBeenCalledOnce()
+    const click = mocks.notificationClick!
+    publish({ unread: false })
+    mocks.sendAgent!({ type: 'state', session: { ...state, revision: 1 } })
+    expect(mocks.notify).toHaveBeenCalledOnce()
+    mocks.contents.send.mockClear()
+    mocks.list.mockResolvedValueOnce([])
+    click()
+    await vi.waitFor(() => expect(mocks.list).toHaveBeenCalled())
+    expect(mocks.contents.send).not.toHaveBeenCalledWith('agent:focus', expect.anything())
+    await mocks.handlers.get('app:bootstrap')!(event)
+    mocks.list.mockResolvedValueOnce([{ id: value.id, agent: { ...state } }])
+    click()
+    await vi.waitFor(() =>
+      expect(mocks.contents.send).toHaveBeenCalledWith('agent:focus', {
+        terminalId: value.id,
+        launchId: launch.launchId,
+      }),
+    )
+    await mocks.handlers.get('agent:visible')!(event, value.id)
+    mocks.windowFocused = true
+    publish({ activityState: 'working', outcome: 'unknown', lastTurnId: 'turn-3' })
+    publish({ activityState: 'needs-input', unread: true })
+    expect(mocks.notify).toHaveBeenCalledOnce()
+    mocks.windowFocused = false
+    publish({ unread: false })
+    expect(mocks.notify).toHaveBeenCalledOnce()
+    publish({ activityState: 'working' })
+    publish({ activityState: 'needs-input', unread: true })
+    expect(mocks.notify).toHaveBeenCalledTimes(2)
+    publish({ activityState: 'unknown', observability: 'unavailable' })
+    publish({ activityState: 'needs-input', observability: 'full' })
+    expect(mocks.notify).toHaveBeenCalledTimes(2)
+    publish({ activityState: 'failed', outcome: 'failure' })
+    expect(mocks.notify).toHaveBeenCalledTimes(3)
+    publish({ activityState: 'interrupted', outcome: 'cancelled' })
+    publish({
+      activityState: 'unknown',
+      outcome: 'unknown',
+      observability: 'unavailable',
+      eventSource: 'process',
+    })
+    expect(mocks.notify).toHaveBeenCalledTimes(3)
+    mocks.notificationSupported = false
+    publish({
+      activityState: 'completed',
+      outcome: 'unknown',
+      lastTurnId: 'turn-4',
+      observability: 'partial',
+      eventSource: 'codex-hooks',
+    })
+    expect(mocks.notify).toHaveBeenCalledTimes(3)
+    mocks.notificationSupported = true
+    mocks.notificationFails = true
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    publish({ activityState: 'working', lastTurnId: 'turn-5' })
+    expect(() => publish({ activityState: 'completed' })).not.toThrow()
+    expect(warning).toHaveBeenCalledOnce()
+    warning.mockRestore()
+    mocks.notificationFails = false
+    mocks.sendAgent!({
+      type: 'removed',
+      terminalId: value.id,
+      launchId: launch.launchId,
+      revision: state.revision + 1,
+    })
+    mocks.sendAgent!({ type: 'disconnected' })
     await mocks.handlers.get('app:bootstrap')!(event)
     expect(mocks.installHook).not.toHaveBeenCalled()
     expect(await mocks.handlers.get('agent:hooks-detect')!(event)).toMatchObject({ ok: true })
