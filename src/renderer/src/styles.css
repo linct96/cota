@@ -175,6 +175,11 @@ button:not([data-slot='button']):focus-visible {
 .xterm {
   height: 100%;
 }
+/* 为末列字形保留缓冲，避免小数像素误差导致右侧笔画被裁切。 */
+.terminal-screen .xterm-rows > div {
+  box-sizing: content-box;
+  padding-right: 2px;
+}
 /* xterm 视口背景透明化，避免在亮色主题下视口出现多余的 1px 黑色内边框 (参考 Orca) */
 .xterm:not(.allow-transparency) .xterm-viewport {
   background-color: transparent !important;
