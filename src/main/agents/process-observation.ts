@@ -67,6 +67,7 @@ export function agentOwner(
   rows: AgentProcessRow[],
   rootPid: number,
   reporterPid: number,
+  agentRoot = false,
 ): AgentProcessRow | undefined {
   const byId = new Map(rows.map((row) => [row.pid, row]))
   const root = byId.get(rootPid)
@@ -75,8 +76,12 @@ export function agentOwner(
   const seen = new Set<number>()
   while (row && row.pid !== rootPid && !seen.has(row.pid)) {
     seen.add(row.pid)
-    if (row.parent === rootPid)
-      return row.group === root.foreground && !/[TZ]/.test(row.stat) ? row : undefined
+    if (row.parent === rootPid) {
+      if (/[TZ]/.test(row.stat)) return
+      if (row.group === root.foreground) return row
+      // Native Hooks use setsid; only an explicit foreground Agent root may own detached helpers.
+      return agentRoot && root.group === root.foreground ? root : undefined
+    }
     row = byId.get(row.parent)
   }
   // exec replaces the PTY shell; its foreground group still owns the same terminal.

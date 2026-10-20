@@ -208,6 +208,17 @@ describe('single PTY owner', () => {
     )
     expect(agentOwner(rows, 98765, 60001)?.pid).toBe(60000)
     expect(agentOwner(rows, 98765, 1)).toBeUndefined()
+    expect(agentOwner(rows, 60000, 60001)).toBeUndefined()
+    expect(agentOwner(rows, 60000, 60001, true)?.pid).toBe(60000)
+    expect(agentOwner(rows, 60000, 1, true)).toBeUndefined()
+    expect(
+      agentOwner(
+        rows.map((row) => (row.pid === 60000 ? { ...row, foreground: 98765 } : row)),
+        60000,
+        60001,
+        true,
+      ),
+    ).toBeUndefined()
     expect(
       agentOwner(
         rows.map((row) => (row.pid === 98765 ? { ...row, foreground: 98765 } : row)),

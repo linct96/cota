@@ -487,8 +487,13 @@ export class TerminalManager {
       return false
     let rows = await agentProcesses()
     if (!rows.some((row) => row.pid === processId)) rows = await agentProcesses(true)
-    const descendant = agentOwner(rows, session.child.pid, processId)
-    // A menu launch owns the PTY root; Hook reporters are children in that same foreground group.
+    const descendant = agentOwner(
+      rows,
+      session.child.pid,
+      processId,
+      session.launch.kind === 'agent',
+    )
+    // Menu launches own the foreground PTY root, including native setsid Hook helpers.
     const owner =
       session.launch.kind === 'agent' && descendant
         ? rows.find((row) => row.pid === session.child!.pid && row.group === descendant.group)
