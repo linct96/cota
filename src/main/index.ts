@@ -18,13 +18,19 @@ import { projectBranch } from './git'
 import { WorktreeManager } from './worktree-manager'
 import { WorktreeError } from './git-worktrees'
 import { openWorkspaceWith } from './open-with'
+import { detectAgents } from './agents'
+import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
+import { loginShellEnvironment, shellEnvironment } from './shell'
+import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
 import { connectTerminalHost, type HostClient } from './host-client'
 import {
   absolutePath,
+  agentProvider,
   executable,
   preferences,
   projectDirectory,
   terminalId,
+  terminalLaunch,
   workspaceRemoval,
 } from './validation'
 import type {
@@ -196,7 +202,7 @@ function installIPC(): void {
     }
     const snapshot = config.snapshot()
     await manager.request('setScrollback', [snapshot.preferences.scrollback])
-    return { config: snapshot, sessions, warning, worktreeScans }
+    return { config: snapshot, sessions: await manager.request('list', []), warning, worktreeScans }
   })
   handle('app:confirm-response', (id: unknown, confirmed: unknown) => {
     if (typeof id !== 'string' || typeof confirmed !== 'boolean') throw new Error('确认参数无效。')
@@ -327,6 +333,69 @@ function installIPC(): void {
     await manager.request('setScrollback', [next.scrollback])
     return next
   })
+  handle('agent:detect', () => detectAgents(config.snapshot().preferences))
+  handle('agent:hooks-detect', async () => {
+    const settings = config.snapshot().preferences
+    const [env, agents] = await Promise.all([
+      loginShellEnvironment(settings),
+      detectAgents(settings),
+    ])
+    return Promise.all(
+      (Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) =>
+        inspectAgentHook(
+          provider,
+          env,
+          agents.find((agent) => agent.provider === provider)?.version,
+        ),
+      ),
+    )
+  })
+  for (const operation of ['install', 'uninstall'] as const) {
+    handle(`agent:hooks-${operation}`, async (value: unknown) => {
+      const provider = agentProvider(value)
+      const env = shellEnvironment()
+      const uninstall = operation === 'uninstall'
+      const label = uninstall ? '卸载' : '安装'
+      const trust = !uninstall && provider === 'codex'
+      // Codex supplies the native trust hashes and selects supported Hook events.
+      const codex = trust
+        ? (await detectAgents(config.snapshot().preferences)).find(
+            (agent) => agent.provider === provider,
+          )
+        : undefined
+      if (trust && !codex?.executable) throw new Error('找不到 Codex，无法安装并信任 Hooks。')
+      const version = codex?.version
+      const status = await inspectAgentHook(provider, env, version)
+      if (status.state === 'conflict' || status.state === 'error') throw new Error(status.detail)
+      if (!rendererReady || !window || window.webContents.isDestroyed() || pendingConfirmation)
+        throw new Error(
+          `当前无法显示${label}确认，请关闭其他确认弹窗后重试；仍无响应时请重新打开应用。`,
+        )
+      if (
+        !(await requestConfirmation({
+          title: `${trust ? '安装并信任' : label} ${AGENT_PROVIDERS[provider].name} 的 Cota 状态集成？`,
+          description: uninstall
+            ? `仅在本次确认后移除以下文件中的 Cota 集成：\n${status.paths[0]}\n\n保留其他 Hooks 和配置，卸载不创建备份；共享加载脚本不删除。Dev / 正式版共用此配置，均受影响。不会结束正在运行的 Agent，已加载的集成需重启对应 CLI 后停止生效。`
+            : `仅在本次确认后写入以下文件：\n${status.paths.join('\n')}\n\n保留原有 Hooks，修改已有文件前创建备份。${trust ? '同时授权信任本次安装的 Cota Hooks，使用 Codex 原生定义哈希；不信任其他 Hooks，不修改 Hooks 功能开关，不绕过企业策略。' : ''}不改变 CLI 权限。安装后请新建终端。`,
+          confirmLabel: `${trust ? '安装并信任' : label} ${provider === 'pi' ? 'Extension' : 'Hooks'}`,
+        }))
+      )
+        return null
+      return uninstall
+        ? uninstallAgentHook(provider, env)
+        : installAgentHook(
+            provider,
+            trust ? await loginShellEnvironment(config.snapshot().preferences) : env,
+            version,
+            codex?.executable,
+          )
+    })
+  }
+  handle('agent:read', (id: unknown, launchId: unknown, revision: unknown) => {
+    if (!Number.isSafeInteger(revision) || Number(revision) < 0)
+      throw new Error('Agent 状态版本无效。')
+    return manager.request('readAgent', [terminalId(id), terminalId(launchId), Number(revision)])
+  })
   handle('terminal:create', (value: CreateTerminal) => {
     if (!value || typeof value !== 'object') throw new Error('终端参数无效。')
     if (
@@ -334,6 +403,7 @@ function installIPC(): void {
       (removingWorkspace.removeProject || removingWorkspace.workspaceId === value.workspaceId)
     )
       throw new Error('正在删除此工作区，无法新建终端。')
+    const launch = terminalLaunch(value)
     const snapshot = config.snapshot()
     if (exiting || exitPending) throw new Error('应用正在退出。')
     return worktrees.withTerminalTarget(value, (binding) => {
@@ -347,7 +417,7 @@ function installIPC(): void {
       )
         throw new Error('工作区正在关闭，无法新建终端。')
       return manager.request('create', [
-        { id: value.id, cols: value.cols, rows: value.rows, ...binding },
+        { id: value.id, cols: value.cols, rows: value.rows, ...binding, ...launch },
         snapshot.preferences,
       ])
     })
@@ -382,7 +452,7 @@ function installIPC(): void {
         !(await requestConfirmation({
           title: '关闭终端？',
           description:
-            '将结束此终端的 Shell 及其中正在执行的程序，终端输出不保留。其他终端不受影响。',
+            '将结束此终端及其中正在执行的程序（包括 Agent），终端输出不保留。其他终端不受影响。',
           confirmLabel: '结束并关闭终端',
         }))
       )
@@ -531,10 +601,17 @@ if (!app.requestSingleInstanceLock()) {
         config,
         join(homedir(), app.isPackaged ? '.cota' : '.cota-dev', 'worktrees'),
       )
-      manager = await connectTerminalHost(app.getPath('userData'), (event) => {
-        if (window && !window.webContents.isDestroyed())
-          window.webContents.send('terminal:event', event)
-      })
+      manager = await connectTerminalHost(
+        app.getPath('userData'),
+        (event) => {
+          if (window && !window.webContents.isDestroyed())
+            window.webContents.send('terminal:event', event)
+        },
+        (event) => {
+          if (window && !window.webContents.isDestroyed())
+            window.webContents.send('agent:event', event)
+        },
+      )
       window = new BrowserWindow({
         width: 1180,
         height: 780,
@@ -572,7 +649,10 @@ if (!app.requestSingleInstanceLock()) {
         settleConfirmation(false)
         void manager.detachAll().catch(() => {})
       }
-      window.webContents.on('did-start-loading', rendererUnavailable)
+      window.webContents.on('did-start-navigation', (details) => {
+        // Hash routes keep the same renderer and its confirmation listener alive.
+        if (details.isMainFrame && !details.isSameDocument) rendererUnavailable()
+      })
       window.webContents.on('render-process-gone', rendererUnavailable)
       window.webContents.on('destroyed', rendererUnavailable)
       window.once('ready-to-show', () => window?.show())

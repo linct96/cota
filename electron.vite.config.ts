@@ -7,7 +7,14 @@ export default defineConfig({
   main: {
     build: {
       rolldownOptions: {
-        input: { index: resolve('src/main/index.ts'), host: resolve('src/main/host-entry.ts') },
+        // Shared launch helpers and external CLI adapters must resolve from the same directory.
+        output: { chunkFileNames: '[name]-[hash].js' },
+        input: {
+          index: resolve('src/main/index.ts'),
+          host: resolve('src/main/host-entry.ts'),
+          'pi-extension': resolve('src/main/agents/pi-extension.ts'),
+          'agent-hook': resolve('src/main/agents/hook-entry.ts'),
+        },
       },
     },
   },

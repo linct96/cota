@@ -89,6 +89,9 @@
   --project-action-active: #d6d6d6;
   --workspace-status-idle: var(--muted-foreground);
   --workspace-status-active: #16a34a;
+  --agent-status-neutral: var(--muted-foreground);
+  --agent-status-attention: #a16207;
+  --agent-status-completed: #166534;
   --overlay: rgba(0, 0, 0, 0.2);
   --terminal-tab-inactive: #e8e8e8;
   --terminal-tab-inactive-hover: #dedede;
@@ -171,6 +174,21 @@ button:not([data-slot='button']):focus-visible {
 .project-folder-row .project-folder-trigger:active,
 .project-folder-row .project-folder-menu-trigger:active {
   background: transparent;
+}
+.agent-status {
+  color: var(--agent-status-neutral);
+}
+.agent-status[data-state='working'],
+.agent-status[data-state='needs-input'] {
+  color: var(--agent-status-attention);
+}
+.agent-status[data-state='completed'],
+.agent-status[data-state='succeeded'] {
+  color: var(--agent-status-completed);
+}
+.agent-status[data-state='error'],
+.agent-status[data-state='failed'] {
+  color: var(--destructive);
 }
 .xterm {
   height: 100%;
@@ -319,6 +337,8 @@ button:not([data-slot='button']):focus-visible {
   --project-active-foreground: oklch(0.985 0 0);
   --project-action-hover: oklch(0.32 0 0);
   --project-action-active: oklch(0.38 0 0);
+  --agent-status-attention: #fbbf24;
+  --agent-status-completed: #4ade80;
   --terminal-tab-inactive: oklch(0.24 0 0);
   --terminal-tab-inactive-hover: oklch(0.28 0 0);
   --scrollbar-thumb: rgba(180, 180, 185, 0.4);

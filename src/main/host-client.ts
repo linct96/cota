@@ -5,7 +5,7 @@ import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { HOST_PROTOCOL, readMessages, sendMessage, type HostMethods } from './host-protocol'
-import type { TerminalEvent } from '../shared/contracts'
+import type { AgentUpdate, TerminalEvent } from '../shared/contracts'
 
 export class HostClient {
   private nextId = 0
@@ -23,9 +23,11 @@ export class HostClient {
   constructor(
     private readonly socket: Socket,
     private readonly send: (event: TerminalEvent) => void,
+    private readonly sendAgent: (event: AgentUpdate) => void = () => {},
   ) {
     socket.on('error', () => socket.destroy())
     socket.on('close', () => {
+      this.sendAgent({ type: 'disconnected' })
       for (const request of this.pending.values()) {
         clearTimeout(request.timer)
         request.reject(new Error('Terminal Host 连接已断开；请重新打开应用以重连。'))
@@ -41,6 +43,10 @@ export class HostClient {
       this.attachments.clear()
     })
     readMessages(socket, (message) => {
+      if (message.type === 'agent') {
+        this.sendAgent(message.event)
+        return
+      }
       if (message.type === 'event') {
         this.send(message.event)
         return
@@ -136,6 +142,7 @@ async function openClient(
   directory: string,
   info: HostInfo,
   send: (event: TerminalEvent) => void,
+  sendAgent: (event: AgentUpdate) => void,
 ): Promise<HostClient> {
   const socket = connect(join(directory, 'host.sock'))
   await new Promise<void>((resolve, reject) => {
@@ -154,7 +161,7 @@ async function openClient(
     }
     socket.once('error', fail)
   })
-  const client = new HostClient(socket, send)
+  const client = new HostClient(socket, send, sendAgent)
   try {
     await client.request('hello', [info.token, HOST_PROTOCOL])
     return client
@@ -167,6 +174,7 @@ async function openClient(
 export async function connectTerminalHost(
   userData: string,
   send: (event: TerminalEvent) => void,
+  sendAgent: (event: AgentUpdate) => void = () => {},
 ): Promise<HostClient> {
   const directory = hostDirectory(userData)
   await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -203,7 +211,7 @@ export async function connectTerminalHost(
   if (info) {
     if (info.version === HOST_PROTOCOL) {
       try {
-        return await openClient(directory, info, send)
+        return await openClient(directory, info, send, sendAgent)
       } catch (error) {
         if (!['ENOENT', 'ECONNREFUSED'].includes((error as NodeJS.ErrnoException).code || ''))
           throw error
@@ -222,13 +230,18 @@ export async function connectTerminalHost(
     await unlink(join(directory, 'host.sock')).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error
     })
+    await unlink(join(directory, 'agent.sock')).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error
+    })
     await unlink(file)
   }
-  try {
-    await lstat(join(directory, 'host.sock'))
-    throw new Error('Terminal Host 端点存在但缺少元数据；不会覆盖未知的会话。')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  for (const endpoint of ['host.sock', 'agent.sock']) {
+    try {
+      await lstat(join(directory, endpoint))
+      throw new Error('Terminal Host 端点存在但缺少元数据；不会覆盖未知的会话。')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
   const token = randomBytes(32).toString('hex')
   // shortcut: uses the current Electron runtime; signed stable Helper packaging is required before cross-update survival.
@@ -256,7 +269,7 @@ export async function connectTerminalHost(
   }
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
-      return await openClient(directory, info, send)
+      return await openClient(directory, info, send, sendAgent)
     } catch (error) {
       if (!['ENOENT', 'ECONNREFUSED'].includes((error as NodeJS.ErrnoException).code || ''))
         throw error

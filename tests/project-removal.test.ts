@@ -8,11 +8,17 @@ const mocks = vi.hoisted(() => {
   return {
     handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
     appEvents: new Map<string, (event: { preventDefault(): void }) => void>(),
-    rendererEvents: new Map<string, () => void>(),
+    rendererEvents: new Map<
+      string,
+      (details?: { isMainFrame: boolean; isSameDocument: boolean }) => void
+    >(),
     contents: {
       mainFrame: frame,
       setWindowOpenHandler: vi.fn(),
-      on: (name: string, listener: () => void) => mocks.rendererEvents.set(name, listener),
+      on: (
+        name: string,
+        listener: (details?: { isMainFrame: boolean; isSameDocument: boolean }) => void,
+      ) => mocks.rendererEvents.set(name, listener),
       send: vi.fn(),
       isDestroyed: () => false,
       session: {
@@ -21,6 +27,10 @@ const mocks = vi.hoisted(() => {
       },
     },
     confirm: vi.fn(),
+    detectAgents: vi.fn(),
+    inspectHook: vi.fn(),
+    installHook: vi.fn(),
+    uninstallHook: vi.fn(),
     list: vi.fn(),
     config: {
       preferences: {
@@ -34,6 +44,7 @@ const mocks = vi.hoisted(() => {
     openPath: vi.fn(),
     remember: vi.fn(),
     setScrollback: vi.fn(),
+    readAgent: vi.fn(),
     hasLive: vi.fn(),
     needsCloseConfirmation: vi.fn(),
     close: vi.fn(),
@@ -101,6 +112,16 @@ vi.mock('../src/main/worktree-manager', () => ({
   },
 }))
 vi.mock('../src/main/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
+vi.mock('../src/main/agents', () => ({ detectAgents: mocks.detectAgents }))
+vi.mock('../src/main/agents/managed-hooks', () => ({
+  inspectAgentHook: mocks.inspectHook,
+  installAgentHook: mocks.installHook,
+  uninstallAgentHook: mocks.uninstallHook,
+}))
+vi.mock('../src/main/shell', () => ({
+  loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
+  shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
+}))
 vi.mock('../src/main/config', () => ({
   ConfigStore: class {
     load = async () => ({})
@@ -121,6 +142,7 @@ vi.mock('../src/main/host-client', () => ({
       if (method === 'create') return mocks.create(...args)
       if (method === 'list') return mocks.list()
       if (method === 'setScrollback') return mocks.setScrollback(...args)
+      if (method === 'readAgent') return mocks.readAgent(...args)
       if (method === 'hasLive') return mocks.hasLive()
       if (method === 'needsCloseConfirmation') return mocks.needsCloseConfirmation(...args)
       if (method === 'close') return mocks.close(...args)
@@ -186,6 +208,27 @@ beforeEach(() => {
   mocks.shutdown.mockResolvedValue(undefined)
   mocks.openWorkspaceWith.mockResolvedValue(undefined)
   mocks.openPath.mockResolvedValue('')
+  mocks.detectAgents.mockResolvedValue([
+    { provider: 'codex', version: '0.159.0', executable: '/tmp/codex-fixture' },
+  ])
+  mocks.inspectHook.mockImplementation(async (provider) => ({
+    provider,
+    state: 'missing',
+    paths: ['/tmp/cota-hook-fixture/hooks.json'],
+    detail: 'missing',
+  }))
+  mocks.uninstallHook.mockImplementation(async (provider) => ({
+    provider,
+    state: 'missing',
+    paths: ['/tmp/cota-hook-fixture/hooks.json'],
+    detail: 'missing',
+  }))
+  mocks.installHook.mockImplementation(async (provider) => ({
+    provider,
+    state: 'installed',
+    paths: ['/tmp/cota-hook-fixture/hooks.json'],
+    detail: 'installed',
+  }))
 })
 
 describe('Git Worktree IPC boundaries', () => {
@@ -232,9 +275,181 @@ describe('Git Worktree IPC boundaries', () => {
         rows: 24,
         cwd: path,
         workspaceKind: 'local',
+        kind: 'shell',
       },
       mocks.config.preferences,
     )
+    const launch = { kind: 'agent', provider: 'codex', launchId: randomUUID() }
+    expect(
+      await mocks.handlers.get('terminal:create')!(event, {
+        ...value,
+        ...launch,
+        executable: '/bin/sh',
+        args: ['-c', 'touch nope'],
+        env: { COTA_HOST_TOKEN: 'forged' },
+      }),
+    ).toMatchObject({ ok: true })
+    expect(mocks.create).toHaveBeenLastCalledWith(
+      {
+        id: value.id,
+        cols: 80,
+        rows: 24,
+        projectPath: path,
+        workspaceId: value.workspaceId,
+        cwd: path,
+        workspaceKind: 'local',
+        ...launch,
+      },
+      mocks.config.preferences,
+    )
+    mocks.create.mockClear()
+    for (const provider of ['__proto__', 'sh', 'codex; touch nope'])
+      expect(
+        await mocks.handlers.get('terminal:create')!(event, { ...value, ...launch, provider }),
+      ).toMatchObject({ ok: false })
+    expect(await mocks.handlers.get('agent:detect')!({ ...event, senderFrame: {} })).toMatchObject({
+      ok: false,
+      error: '拒绝未授权的窗口请求。',
+    })
+    expect(mocks.create).not.toHaveBeenCalled()
+    expect(await mocks.handlers.get('agent:read')!(event, value.id, launch.launchId, 7)).toEqual({
+      ok: true,
+    })
+    expect(mocks.readAgent).toHaveBeenCalledExactlyOnceWith(value.id, launch.launchId, 7)
+    for (const revision of [-1, 0.5, '7', Number.MAX_SAFE_INTEGER + 1])
+      expect(
+        await mocks.handlers.get('agent:read')!(event, value.id, launch.launchId, revision),
+      ).toMatchObject({ ok: false })
+    expect(
+      await mocks.handlers.get('agent:read')!(
+        { ...event, senderFrame: {} },
+        value.id,
+        launch.launchId,
+        7,
+      ),
+    ).toMatchObject({ ok: false })
+    expect(mocks.readAgent).toHaveBeenCalledOnce()
+    await mocks.handlers.get('app:bootstrap')!(event)
+    expect(mocks.installHook).not.toHaveBeenCalled()
+    expect(await mocks.handlers.get('agent:hooks-detect')!(event)).toMatchObject({ ok: true })
+    expect(mocks.installHook).not.toHaveBeenCalled()
+    expect(
+      await mocks.handlers.get('agent:hooks-install')!({ ...event, senderFrame: {} }, 'codex'),
+    ).toMatchObject({ ok: false })
+    expect(await mocks.handlers.get('agent:hooks-install')!(event, '__proto__')).toMatchObject({
+      ok: false,
+    })
+    for (const confirmed of [false, true]) {
+      mocks.contents.send.mockClear()
+      const pending = mocks.handlers.get('agent:hooks-install')!(event, 'codex')
+      await vi.waitFor(() =>
+        expect(mocks.contents.send).toHaveBeenCalledWith(
+          'app:confirm',
+          expect.objectContaining({ title: expect.stringContaining('安装') }),
+        ),
+      )
+      expect(mocks.installHook).not.toHaveBeenCalled()
+      const request = mocks.contents.send.mock.calls.find(
+        ([channel]) => channel === 'app:confirm',
+      )![1]
+      expect(request.description).toContain('/tmp/cota-hook-fixture/hooks.json')
+      expect(request.title).toContain('安装并信任 Codex')
+      expect(request.confirmLabel).toBe('安装并信任 Hooks')
+      expect(request.description).toContain('不信任其他 Hooks')
+      expect(request.description).toContain('不修改 Hooks 功能开关')
+      await mocks.handlers.get('app:confirm-response')!(event, request.id, confirmed)
+      expect(await pending).toMatchObject(
+        confirmed ? { ok: true, value: { state: 'installed' } } : { ok: true, value: null },
+      )
+    }
+    expect(mocks.installHook).toHaveBeenCalledExactlyOnceWith(
+      'codex',
+      { HOME: '/tmp/cota-hook-fixture' },
+      '0.159.0',
+      '/tmp/codex-fixture',
+    )
+    mocks.detectAgents.mockResolvedValueOnce([{ provider: 'codex', error: 'missing' }])
+    expect(await mocks.handlers.get('agent:hooks-install')!(event, 'codex')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('找不到 Codex'),
+    })
+    expect(mocks.installHook).toHaveBeenCalledOnce()
+    mocks.detectAgents.mockClear()
+    mocks.contents.send.mockClear()
+    mocks.rendererEvents.get('did-start-navigation')!({ isMainFrame: true, isSameDocument: true })
+    mocks.rendererEvents.get('did-start-navigation')!({ isMainFrame: false, isSameDocument: false })
+    const piInstall = mocks.handlers.get('agent:hooks-install')!(event, 'pi')
+    await vi.waitFor(() =>
+      expect(mocks.contents.send).toHaveBeenCalledWith(
+        'app:confirm',
+        expect.objectContaining({ title: expect.stringContaining('Pi') }),
+      ),
+    )
+    expect(mocks.detectAgents).not.toHaveBeenCalled()
+    expect(mocks.installHook).toHaveBeenCalledOnce()
+    expect(await mocks.handlers.get('agent:hooks-install')!(event, 'pi')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('无法显示安装确认'),
+    })
+    const piRequest = mocks.contents.send.mock.calls.find(
+      ([channel]) => channel === 'app:confirm',
+    )![1]
+    await mocks.handlers.get('app:confirm-response')!(event, piRequest.id, true)
+    expect(await piInstall).toMatchObject({
+      ok: true,
+      value: { provider: 'pi', state: 'installed' },
+    })
+    expect(mocks.installHook).toHaveBeenCalledTimes(2)
+    expect(mocks.uninstallHook).not.toHaveBeenCalled()
+    expect(
+      await mocks.handlers.get('agent:hooks-uninstall')!({ ...event, senderFrame: {} }, 'pi'),
+    ).toMatchObject({ ok: false, error: '拒绝未授权的窗口请求。' })
+    expect(await mocks.handlers.get('agent:hooks-uninstall')!(event, '__proto__')).toMatchObject({
+      ok: false,
+    })
+    for (const provider of ['codex', 'pi', 'claude']) {
+      for (const confirmed of [false, true]) {
+        mocks.contents.send.mockClear()
+        mocks.uninstallHook.mockClear()
+        const pending = mocks.handlers.get('agent:hooks-uninstall')!(event, provider)
+        await vi.waitFor(() =>
+          expect(mocks.contents.send).toHaveBeenCalledWith(
+            'app:confirm',
+            expect.objectContaining({ title: expect.stringContaining('卸载') }),
+          ),
+        )
+        expect(mocks.uninstallHook).not.toHaveBeenCalled()
+        expect(mocks.detectAgents).not.toHaveBeenCalled()
+        expect(await mocks.handlers.get('agent:hooks-uninstall')!(event, provider)).toMatchObject({
+          ok: false,
+          error: expect.stringContaining('无法显示卸载确认'),
+        })
+        const request = mocks.contents.send.mock.calls.find(
+          ([channel]) => channel === 'app:confirm',
+        )![1]
+        expect(request.description).toContain('/tmp/cota-hook-fixture/hooks.json')
+        expect(request.description).toContain('共享加载脚本不删除')
+        expect(request.description).toContain('卸载不创建备份')
+        await mocks.handlers.get('app:confirm-response')!(event, request.id, confirmed)
+        expect(await pending).toMatchObject(
+          confirmed ? { ok: true, value: { state: 'missing' } } : { ok: true, value: null },
+        )
+        expect(mocks.uninstallHook).toHaveBeenCalledTimes(confirmed ? 1 : 0)
+      }
+    }
+    expect(mocks.installHook).toHaveBeenCalledTimes(2)
+    mocks.rendererEvents.get('did-start-navigation')!({ isMainFrame: true, isSameDocument: false })
+    expect(await mocks.handlers.get('agent:hooks-install')!(event, 'pi')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('无法显示安装确认'),
+    })
+    expect(mocks.installHook).toHaveBeenCalledTimes(2)
+    expect(await mocks.handlers.get('agent:hooks-uninstall')!(event, 'pi')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('无法显示卸载确认'),
+    })
+    expect(mocks.uninstallHook).toHaveBeenCalledOnce()
+    await mocks.handlers.get('app:bootstrap')!(event)
   })
   it('preserves structured partial-success diagnostics without exposing command stderr or cause', async () => {
     const details = {
@@ -349,13 +564,16 @@ describe('workspace removal IPC', () => {
       rows: 24,
       exited: false,
     }
-    mocks.list.mockResolvedValueOnce([session, { ...session, id: extra.workspaceId }])
+    const latest = { ...session, exited: true, exitCode: 7 }
+    mocks.list
+      .mockResolvedValueOnce([session, { ...session, id: extra.workspaceId }])
+      .mockResolvedValueOnce([latest, { ...session, id: extra.workspaceId }])
     const result = await mocks.handlers.get('app:bootstrap')!(event)
     expect(result).toEqual({
       ok: true,
       value: {
         config: { ...mocks.config, recentProjects: [path] },
-        sessions: [session, { ...session, id: extra.workspaceId }],
+        sessions: [latest, { ...session, id: extra.workspaceId }],
         warning: undefined,
         worktreeScans: { [path]: await mocks.scanWorktrees() },
       },
@@ -498,7 +716,7 @@ describe('renderer route IPC trust', () => {
   it.each(['#/', '#/settings'])('accepts hash routes of the trusted document: %s', async (hash) => {
     mocks.contents.mainFrame.url = `http://localhost:5173/${hash}`
     expect(await mocks.handlers.get('app:bootstrap')!(event)).toMatchObject({ ok: true })
-    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(mocks.list).toHaveBeenCalledTimes(2)
   })
 
   it.each([
@@ -556,12 +774,14 @@ describe('renderer confirmation IPC', () => {
     expect(mocks.quit).not.toHaveBeenCalled()
   })
 
-  it.each(['did-start-loading', 'render-process-gone', 'destroyed'])(
+  it.each(['did-start-navigation', 'render-process-gone', 'destroyed'])(
     'cancels pending quit on %s and permits retry',
     async (name) => {
       quit()
       const request = await prompt()
-      mocks.rendererEvents.get(name)!()
+      mocks.rendererEvents.get(name)!(
+        name === 'did-start-navigation' ? { isMainFrame: true, isSameDocument: false } : undefined,
+      )
       await Promise.resolve()
       expect(await reply(request.id, true)).toMatchObject({ ok: false })
       expect(mocks.shutdown).not.toHaveBeenCalled()

@@ -1,6 +1,7 @@
 import { Socket } from 'node:net'
 import type {
   AttachTerminal,
+  AgentUpdate,
   CreateTerminal,
   Preferences,
   TerminalAttachment,
@@ -10,9 +11,9 @@ import type {
   WorkspaceTarget,
 } from '../shared/contracts'
 
-export const HOST_PROTOCOL = 2
+export const HOST_PROTOCOL = 6
 
-export interface ResolvedTerminalCreate extends CreateTerminal, TerminalBinding {}
+export type ResolvedTerminalCreate = CreateTerminal & TerminalBinding
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
 export const MAX_FRAME = 64 * 1024 * 1024
 
@@ -25,6 +26,7 @@ export interface HostMethods {
   write: { args: [string, string]; value: void }
   resize: { args: [string, number, number]; value: void }
   setScrollback: { args: [number]; value: void }
+  readAgent: { args: [string, string, number]; value: void }
   acknowledge: { args: [string, string, number]; value: void }
   close: { args: [string]; value: void }
   needsCloseConfirmation: { args: [string]; value: boolean }
@@ -38,6 +40,7 @@ export type HostMessage =
   | { type: 'request'; id: number; method: keyof HostMethods; args: unknown[] }
   | { type: 'response'; id: number; ok: boolean; value?: unknown; error?: string }
   | { type: 'event'; event: TerminalEvent }
+  | { type: 'agent'; event: AgentUpdate }
 
 export function sendMessage(socket: Socket, value: HostMessage): void {
   const frame = `${JSON.stringify(value)}\n`

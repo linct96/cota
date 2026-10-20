@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { ConfirmationRequest, DesktopAPI, Shortcut, TerminalEvent } from '../shared/contracts'
+import type {
+  AgentUpdate,
+  ConfirmationRequest,
+  DesktopAPI,
+  Shortcut,
+  TerminalEvent,
+} from '../shared/contracts'
 
 const api: DesktopAPI = {
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
@@ -24,6 +30,16 @@ const api: DesktopAPI = {
   removeWorkspace: (target) => ipcRenderer.invoke('workspace:remove', target),
   removeProject: (path) => ipcRenderer.invoke('project:remove', path),
   savePreferences: (preferences) => ipcRenderer.invoke('preferences:save', preferences),
+  detectAgents: () => ipcRenderer.invoke('agent:detect'),
+  detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
+  installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
+  uninstallAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-uninstall', provider),
+  readAgent: (id, launchId, revision) => ipcRenderer.invoke('agent:read', id, launchId, revision),
+  onAgent: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, event: AgentUpdate) => listener(event)
+    ipcRenderer.on('agent:event', wrapped)
+    return () => ipcRenderer.removeListener('agent:event', wrapped)
+  },
   createTerminal: (options) => ipcRenderer.invoke('terminal:create', options),
   attachTerminal: (options) => ipcRenderer.invoke('terminal:attach', options),
   detachTerminal: (id, attachmentId) => ipcRenderer.invoke('terminal:detach', id, attachmentId),

@@ -7,6 +7,11 @@ import type {
 } from '../src/shared/contracts'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from '../src/renderer/src/store'
+import {
+  agentIndicatorState,
+  agentTabState,
+  workspaceAgentSummary,
+} from '../src/renderer/src/lib/agent-status'
 
 let api: DesktopAPI
 beforeEach(() => {
@@ -51,6 +56,12 @@ beforeEach(() => {
     onConfirmation: vi.fn(() => vi.fn()),
     onShortcut: vi.fn(() => vi.fn()),
     onTerminal: vi.fn(() => vi.fn()),
+    detectAgents: vi.fn(),
+    detectAgentHooks: vi.fn(),
+    installAgentHook: vi.fn(),
+    uninstallAgentHook: vi.fn(),
+    readAgent: vi.fn().mockResolvedValue({ ok: true }),
+    onAgent: vi.fn(() => vi.fn()),
     createTerminal: vi.fn(),
     attachTerminal: vi.fn(),
     detachTerminal: vi.fn(),
@@ -364,13 +375,37 @@ describe('workspace state', () => {
       workspaceId: workspace.id,
       projectPath: path,
       title: 'Codex',
+      kind: 'agent' as const,
+      provider: 'codex' as const,
       cwd: path,
       workspaceKind: 'local' as const,
     }
-    const other = { ...live, id: crypto.randomUUID(), title: 'Shell' }
+    const agent = {
+      terminalId: live.id,
+      projectPath: path,
+      workspaceId: workspace.id,
+      cwd: path,
+      revision: 2,
+      unread: false,
+      launchId: crypto.randomUUID(),
+      provider: 'codex' as const,
+      runtimeState: 'running' as const,
+      activityState: 'unknown' as const,
+      startedAt: new Date().toISOString(),
+      lastEventAt: new Date().toISOString(),
+      eventSource: 'process' as const,
+      observability: 'unavailable' as const,
+    }
+    const other = {
+      ...live,
+      id: crypto.randomUUID(),
+      title: 'Shell',
+      kind: 'shell' as const,
+      provider: undefined,
+    }
     const lost = { ...live, id: crypto.randomUUID() }
     const orphan = {
-      ...live,
+      ...other,
       id: crypto.randomUUID(),
       workspaceId: crypto.randomUUID(),
       cols: 80,
@@ -393,16 +428,32 @@ describe('workspace state', () => {
           },
         },
         sessions: [other, live]
-          .map((tab) => ({ ...tab, cols: 80, rows: 24, exited: false }))
+          .map((tab) => ({
+            ...tab,
+            cols: 80,
+            rows: 24,
+            exited: false,
+            ...(tab.id === live.id ? { agent } : {}),
+          }))
           .concat(orphan),
       },
     })
+    const buffered = { ...agent, revision: 3, activityState: 'working' as const }
+    useWorkspace.getState().receiveAgent({ type: 'state', session: buffered })
     await useWorkspace.getState().bootstrap()
     expect(currentWorkspace(useWorkspace.getState())).toEqual(workspace)
     expect(useWorkspace.getState().activeTabs[workspace.id]).toBe(live.id)
     expect(useWorkspace.getState().tabs).toEqual([
       expect.objectContaining({ id: other.id, title: 'Shell', status: 'running' }),
-      expect.objectContaining({ id: live.id, title: 'Codex', status: 'running' }),
+      expect.objectContaining({
+        id: live.id,
+        title: 'Codex',
+        kind: 'agent',
+        provider: 'codex',
+        status: 'running',
+        launchId: agent.launchId,
+        agent: buffered,
+      }),
       expect.objectContaining({ id: orphan.id, status: 'exited', exitCode: 7 }),
     ])
     expect(useWorkspace.getState().workspaces.some((item) => item.id === orphan.workspaceId)).toBe(
@@ -419,6 +470,229 @@ describe('workspace state', () => {
         ],
       }),
     )
+    const store = () => useWorkspace.getState()
+    const completion = {
+      ...buffered,
+      revision: 4,
+      activityState: 'completed' as const,
+      unread: true,
+    }
+    const focus = store().focusVersion
+    store().receiveAgent({ type: 'state', session: completion })
+    expect(api.readAgent).not.toHaveBeenCalled()
+    expect(store().focusVersion).toBe(focus)
+    expect(store().activeTabs[workspace.id]).toBe(live.id)
+    expect(workspaceAgentSummary(store().tabs)).toEqual({
+      state: 'completed',
+      count: 1,
+      description: '1 个本轮结束',
+    })
+    expect(workspaceAgentSummary([store().tabs[0]])).toBeUndefined()
+    for (const status of ['starting', 'running', 'error', 'exited'] as const) {
+      expect(workspaceAgentSummary([{ ...store().tabs[1], agent: undefined, status }])?.state).toBe(
+        status === 'error' ? 'error' : 'other',
+      )
+    }
+    for (const runtimeState of ['starting', 'stopping', 'exited'] as const) {
+      expect(
+        agentIndicatorState({ ...store().tabs[1], agent: { ...completion, runtimeState } }),
+      ).toBe('other')
+    }
+    for (const activityState of ['idle', 'unknown'] as const) {
+      expect(
+        agentIndicatorState({ ...store().tabs[1], agent: { ...completion, activityState } }),
+      ).toBe('other')
+    }
+    expect(agentTabState({ ...store().tabs[1], closingStatus: 'running' })).toBe('other')
+    expect(agentTabState(store().tabs[1])).toBe('completed')
+    const failed = {
+      ...store().tabs[1],
+      agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
+    }
+    expect(workspaceAgentSummary([failed])).toEqual({
+      state: 'failed',
+      count: 1,
+      description: '1 个执行失败',
+    })
+    const working = { ...failed, agent: buffered }
+    expect(workspaceAgentSummary([working, failed, working])).toEqual({
+      state: 'failed',
+      count: 1,
+      description: '1 个执行失败 · 2 个执行中',
+    })
+    expect(
+      workspaceAgentSummary([{ ...failed, agent: { ...failed.agent, unread: false } }]),
+    ).toEqual({ state: 'other', count: 1, description: '1 个其他状态' })
+    const succeeded = { ...store().tabs[1], agent: { ...completion, outcome: 'success' as const } }
+    expect(agentTabState(succeeded)).toBe('succeeded')
+    expect(workspaceAgentSummary([succeeded])).toEqual({
+      state: 'succeeded',
+      count: 1,
+      description: '1 个已完成',
+    })
+    vi.useFakeTimers()
+    try {
+      vi.advanceTimersByTime(5000)
+      expect(api.readAgent).not.toHaveBeenCalled()
+      store().setVisibleTerminal(live.id)
+      vi.advanceTimersByTime(1000)
+      expect(api.readAgent).not.toHaveBeenCalled()
+      store().setVisibleTerminal(undefined)
+      vi.advanceTimersByTime(5000)
+      expect(api.readAgent).not.toHaveBeenCalled()
+      store().setVisibleTerminal(live.id)
+      vi.advanceTimersByTime(1000)
+      store().selectTab(other.id)
+      vi.advanceTimersByTime(2000)
+      expect(api.readAgent).not.toHaveBeenCalled()
+      store().selectTab(live.id)
+      vi.advanceTimersByTime(1999)
+      expect(api.readAgent).not.toHaveBeenCalled()
+      store().updateTab(other.id, { title: 'Shell renamed' })
+      vi.advanceTimersByTime(1)
+      expect(api.readAgent).toHaveBeenCalledExactlyOnceWith(live.id, agent.launchId, 4)
+      expect(store().tabs[1].agent?.unread).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+    const read = { ...completion, revision: 5, unread: false }
+    store().receiveAgent({ type: 'state', session: read })
+    expect(store().tabs[1].agent?.activityState).toBe('completed')
+    expect(agentTabState(store().tabs[1])).toBe('completed')
+    expect(agentIndicatorState(store().tabs[1])).toBe('other')
+    expect(workspaceAgentSummary(store().tabs)).toEqual({
+      state: 'other',
+      count: 1,
+      description: '1 个其他状态',
+    })
+    expect(
+      workspaceAgentSummary([{ ...succeeded, agent: { ...succeeded.agent, unread: false } }])
+        ?.state,
+    ).toBe('other')
+    expect(workspaceAgentSummary([working])?.state).toBe('working')
+    store().receiveAgent({ type: 'state', session: completion })
+    store().receiveAgent({
+      type: 'state',
+      session: { ...completion, revision: 6, launchId: crypto.randomUUID() },
+    })
+    store().receiveAgent({ type: 'state', session: { ...completion, revision: 6, cwd: '/wrong' } })
+    expect(store().tabs[1].agent).toEqual(read)
+    const attention = { ...read, revision: 6, activityState: 'needs-input' as const, unread: true }
+    store().setVisibleTerminal(undefined)
+    store().receiveAgent({ type: 'state', session: attention })
+    expect(workspaceAgentSummary(store().tabs)).toEqual({
+      state: 'needs-input',
+      count: 1,
+      description: '1 个待处理',
+    })
+    expect(workspaceAgentSummary([failed, working, store().tabs[1]])).toEqual({
+      state: 'needs-input',
+      count: 1,
+      description: '1 个待处理 · 1 个执行失败 · 1 个执行中',
+    })
+    expect(workspaceAgentSummary([{ ...store().tabs[1], kind: 'shell' }])).toEqual({
+      state: 'needs-input',
+      count: 1,
+      description: '1 个待处理',
+    })
+    vi.useFakeTimers()
+    try {
+      store().setVisibleTerminal(live.id)
+      const reads = vi.mocked(api.readAgent).mock.calls.length
+      store().receiveAgent({ type: 'state', session: { ...completion, revision: 7 } })
+      vi.advanceTimersByTime(1000)
+      store().receiveAgent({ type: 'state', session: { ...buffered, revision: 8 } })
+      vi.advanceTimersByTime(2000)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads)
+      expect(agentIndicatorState(store().tabs[1])).toBe('working')
+      store().receiveAgent({ type: 'state', session: { ...completion, revision: 9 } })
+      vi.advanceTimersByTime(1000)
+      store().receiveAgent({ type: 'state', session: { ...completion, revision: 10 } })
+      vi.advanceTimersByTime(999)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads)
+      vi.advanceTimersByTime(1)
+      expect(api.readAgent).toHaveBeenLastCalledWith(live.id, agent.launchId, 10)
+      store().receiveAgent({
+        type: 'state',
+        session: { ...completion, revision: 11, unread: false },
+      })
+      store().setVisibleTerminal(undefined)
+      store().setVisibleTerminal(live.id)
+      vi.advanceTimersByTime(2000)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads + 1)
+      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+    } finally {
+      vi.useRealTimers()
+    }
+    store().receiveAgent({
+      type: 'state',
+      session: {
+        ...attention,
+        revision: 12,
+        runtimeState: 'stopping',
+        activityState: 'unknown',
+        unread: false,
+      },
+    })
+    store().updateTab(live.id, { error: '关闭失败：permission denied' })
+    store().receiveAgent({
+      type: 'state',
+      session: {
+        ...attention,
+        revision: 13,
+        runtimeState: 'running',
+        activityState: 'unknown',
+        observability: 'unavailable',
+        unread: false,
+      },
+    })
+    expect(store().tabs[1]).toMatchObject({
+      status: 'running',
+      error: '关闭失败：permission denied',
+    })
+    expect(agentTabState(store().tabs[1])).toBe('other')
+    const manual = {
+      ...agent,
+      terminalId: other.id,
+      launchId: crypto.randomUUID(),
+      revision: 1,
+      activityState: 'working' as const,
+    }
+    store().receiveAgent({ type: 'state', session: manual })
+    expect(store().tabs[0]).toMatchObject({ kind: 'shell', status: 'running', agent: manual })
+    expect(store().tabs[0].launchId).toBeUndefined()
+    store().receiveAgent({
+      type: 'removed',
+      terminalId: other.id,
+      launchId: manual.launchId,
+      revision: 2,
+    })
+    expect(store().tabs[0].agent).toBeUndefined()
+    expect(store().tabs[0].status).toBe('running')
+    store().receiveAgent({ type: 'state', session: manual })
+    expect(store().tabs[0].agent).toBeUndefined()
+    const restarted = { ...manual, launchId: crypto.randomUUID(), revision: 3 }
+    store().receiveAgent({ type: 'state', session: restarted })
+    store().receiveAgent({
+      type: 'removed',
+      terminalId: other.id,
+      launchId: manual.launchId,
+      revision: 2,
+    })
+    expect(store().tabs[0].agent).toEqual(restarted)
+    store().updateTab(other.id, { agent: manual })
+    expect(store().tabs[0].agent).toEqual(restarted)
+    store().receiveAgent({ type: 'disconnected' })
+    expect(store().tabs[1].agent).toMatchObject({
+      activityState: 'unknown',
+      observability: 'unavailable',
+      unread: false,
+    })
+    store().receiveAgent({ type: 'state', session: { ...completion, revision: 7 } })
+    expect(store().tabs[1].agent?.activityState).toBe('unknown')
+    const saved = vi.mocked(api.saveLayout).mock.calls.at(-1)![0]
+    expect(saved.tabs[1]).not.toHaveProperty('agent')
+    expect(saved.tabs[1]).not.toHaveProperty('launchId')
   })
 
   it('does not restart a lost terminal or activate its empty workspace, even with a live sibling', async () => {
@@ -435,6 +709,8 @@ describe('workspace state', () => {
       workspaceId: workspace.id,
       projectPath: path,
       title: '旧终端',
+      kind: 'agent' as const,
+      provider: 'pi' as const,
     }
     const session = {
       id: crypto.randomUUID(),
@@ -559,7 +835,9 @@ describe('workspace state', () => {
   it('adds a project workspace without exceeding the terminal limit and starts its terminal after capacity is freed', async () => {
     const store = () => useWorkspace.getState()
     await store().openProject()
-    for (let i = store().tabs.length; i < 10; i++) store().newTerminal()
+    for (let i = store().tabs.length; i < 10; i++) store().newTerminal(i % 2 ? 'pi' : undefined)
+    store().newTerminal('codex')
+    expect(store().tabs).toHaveLength(10)
     vi.mocked(api.openProject).mockResolvedValue({ ok: true, value: '/tmp/second' })
     await store().openProject()
     const workspace = currentWorkspace(store())!
@@ -578,6 +856,7 @@ describe('workspace state', () => {
   })
   it('creates independent workspaces and scopes terminal selection, closing and shortcuts', async () => {
     const store = () => useWorkspace.getState()
+    await store().bootstrap()
     await store().openProject()
     const path = store().selectedProject!
     const initial = store().tabs[0]
@@ -621,6 +900,48 @@ describe('workspace state', () => {
     expect(store().selectedWorkspaces[path]).toBe(initial.workspaceId)
     expect(store().tabs).toEqual([initial, second])
     expect(api.closeWindow).not.toHaveBeenCalled()
+    const target = { ...workspace, id: crypto.randomUUID(), name: '仅 Agent' }
+    useWorkspace.setState({ workspaces: [...store().workspaces, target] })
+    store().newTerminal('pi', target.id)
+    expect(store().tabs).toHaveLength(3)
+    expect(store().tabs[2]).toMatchObject({
+      kind: 'agent',
+      provider: 'pi',
+      title: 'Pi · 1',
+      workspaceId: target.id,
+      status: 'starting',
+    })
+    expect(currentWorkspace(store())?.id).toBe(target.id)
+    const launchId = store().tabs[2].launchId
+    expect(launchId).toBeTruthy()
+    store().newTerminal('pi')
+    store().newTerminal('codex')
+    store().newTerminal('claude')
+    store().newTerminal()
+    expect(
+      store()
+        .tabs.slice(2)
+        .map((tab) => tab.title),
+    ).toEqual(['Pi · 1', 'Pi · 2', 'Codex · 1', 'Claude Code · 1', 'Terminal 1'])
+    expect(store().tabs[3].launchId).not.toBe(launchId)
+    const saved = vi.mocked(api.saveLayout).mock.calls.at(-1)![0]
+    expect(saved.tabs[2]).toEqual({
+      id: store().tabs[2].id,
+      projectPath: path,
+      workspaceId: target.id,
+      title: 'Pi · 1',
+      kind: 'agent',
+      provider: 'pi',
+    })
+    await store().selectProject(path, initial.workspaceId)
+    const agentTab = store().tabs[4]
+    const focus = store().focusVersion
+    if (await store().selectProject(agentTab.projectPath, agentTab.workspaceId)) {
+      store().selectTab(agentTab.id)
+    }
+    expect(currentWorkspace(store())?.id).toBe(target.id)
+    expect(store().activeTabs[target.id]).toBe(agentTab.id)
+    expect(store().focusVersion).toBeGreaterThan(focus)
   })
 
   it('creates exactly one terminal when selecting an empty workspace and reuses existing terminals', async () => {
@@ -722,6 +1043,16 @@ describe('workspace state', () => {
     expect(useWorkspace.getState().tabs).toHaveLength(2)
     expect(useWorkspace.getState().tabs[1]).toMatchObject({
       status: 'running',
+      closingStatus: undefined,
+    })
+    vi.mocked(api.closeTerminal).mockResolvedValueOnce({
+      ok: false,
+      error: 'process cleanup failed',
+    })
+    await useWorkspace.getState().closeTab(b.id)
+    expect(useWorkspace.getState().tabs[1]).toMatchObject({
+      status: 'running',
+      error: '关闭失败：process cleanup failed',
       closingStatus: undefined,
     })
     await useWorkspace.getState().closeTab(b.id)

@@ -1,5 +1,8 @@
 import * as React from 'react'
 import { Terminal as TerminalIcon, X } from 'lucide-react'
+import { AgentIcon } from './AgentIcon'
+import { AgentStatus } from './AgentStatus'
+import { AGENT_STATE_LABELS, agentIndicatorState, agentTabState } from '../lib/agent-status'
 import { cn } from '../lib/utils'
 import type { TerminalTab as TerminalTabData } from '../store'
 
@@ -20,14 +23,20 @@ export function TerminalTab({
   onClose,
   className,
 }: TerminalTabProps) {
+  const isAgent = tab.kind === 'agent' || !!tab.provider || !!tab.agent
+  const provider = tab.provider || tab.agent?.provider
+  const agentState = agentIndicatorState(tab)
+  const agentLabel = isAgent ? AGENT_STATE_LABELS[agentTabState(tab)] : undefined
+
   return (
     <div
       role="tab"
       id={`terminal-tab-${tab.id}`}
       aria-selected={active}
       aria-controls={`terminal-panel-${tab.id}`}
+      aria-label={agentLabel ? `${tab.title}，${agentLabel}` : undefined}
       tabIndex={active ? 0 : -1}
-      title={tab.projectPath}
+      title={agentLabel ? `${tab.projectPath}\n${agentLabel}` : tab.projectPath}
       onClick={onSelect}
       onAuxClick={(event) => {
         if (event.button === 1 && !closeDisabled) {
@@ -50,16 +59,30 @@ export function TerminalTab({
         className,
       )}
     >
-      <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
+      {isAgent ? (
+        <AgentIcon provider={provider} size={14} className="terminal-tab-icon size-3.5 shrink-0" />
+      ) : (
+        <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
+      )}
 
       <span className="terminal-tab-title min-w-0 flex-1 truncate">{tab.title}</span>
 
-      {active && (
-        <span
-          className="terminal-tab-status size-1.5 shrink-0 rounded-full bg-emerald-500"
-          aria-hidden="true"
-        />
-      )}
+      {isAgent
+        ? agentState !== 'other' && (
+            <span
+              className="terminal-tab-agent-status inline-flex size-3.5 shrink-0 items-center justify-center"
+              title={agentLabel}
+              aria-hidden="true"
+            >
+              <AgentStatus state={agentState} />
+            </span>
+          )
+        : active && (
+            <span
+              className="terminal-tab-status size-1.5 shrink-0 rounded-full bg-emerald-500"
+              aria-hidden="true"
+            />
+          )}
 
       <button
         type="button"

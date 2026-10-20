@@ -3,6 +3,9 @@ import { access, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, normalize } from 'node:path'
 import {
   MAX_TERMINALS,
+  AGENT_PROVIDERS,
+  type AgentProvider,
+  type TerminalLaunch,
   type Preferences,
   type WorkspaceOpener,
   type RemoveWorkspace,
@@ -94,6 +97,30 @@ export function terminalId(value: unknown): string {
     throw new Error('终端标识无效。')
   }
   return value
+}
+
+export function agentProvider(value: unknown): AgentProvider {
+  if (typeof value !== 'string' || !Object.hasOwn(AGENT_PROVIDERS, value))
+    throw new Error('不支持的 Agent 类型。')
+  return value as AgentProvider
+}
+
+export function terminalLaunch(value: unknown): TerminalLaunch {
+  if (!value || typeof value !== 'object') throw new Error('终端启动参数无效。')
+  const launch = value as Partial<TerminalLaunch>
+  if (launch.kind === 'agent')
+    return {
+      kind: 'agent',
+      provider: agentProvider(launch.provider),
+      launchId: terminalId(launch.launchId),
+    }
+  if (
+    (launch.kind === undefined || launch.kind === 'shell') &&
+    launch.provider === undefined &&
+    launch.launchId === undefined
+  )
+    return { kind: 'shell' }
+  throw new Error('终端启动身份无效。')
 }
 
 export function workspaceTarget(value: unknown): WorkspaceTarget {
@@ -271,7 +298,18 @@ export function workspaceLayout(
       )
     )
       throw new Error('终端所属工作区不存在。')
-    return { ...target, id: terminalId(entry.id), title: text(entry.title) }
+    if (entry.kind !== undefined && entry.kind !== 'shell' && entry.kind !== 'agent')
+      throw new Error('终端类型无效。')
+    if (entry.kind !== 'agent' && entry.provider !== undefined)
+      throw new Error('Shell 不能绑定 Agent。')
+    return {
+      ...target,
+      id: terminalId(entry.id),
+      title: text(entry.title),
+      ...(entry.kind === 'agent'
+        ? { kind: 'agent' as const, provider: agentProvider(entry.provider) }
+        : {}),
+    }
   })
   if (new Set(tabs.map((entry) => entry.id)).size !== tabs.length) throw new Error('终端标识重复。')
   const selectedWorkspaces: Record<string, string> = {}

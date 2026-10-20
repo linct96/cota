@@ -10,6 +10,7 @@ files:
 asar: true
 asarUnpack:
   - node_modules/node-pty/**
+  - out/main/**
 mac:
   category: public.app-category.developer-tools
   target:

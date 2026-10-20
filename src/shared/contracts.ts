@@ -194,9 +194,106 @@ export interface RemoveWorktreeResult {
   operationId: string
 }
 
+export const AGENT_PROVIDERS = {
+  pi: { name: 'Pi', command: 'pi' },
+  codex: { name: 'Codex', command: 'codex' },
+  claude: { name: 'Claude Code', command: 'claude' },
+} as const
+export type AgentProvider = keyof typeof AGENT_PROVIDERS
+export type TerminalLaunch =
+  | { kind?: 'shell'; provider?: never; launchId?: never }
+  | { kind: 'agent'; provider: AgentProvider; launchId: string }
+
+export interface AgentAvailability {
+  provider: AgentProvider
+  executable?: string
+  version?: string
+  error?: string
+}
+
+export type AgentActivity =
+  | 'unknown'
+  | 'idle'
+  | 'working'
+  | 'needs-input'
+  | 'completed'
+  | 'failed'
+  | 'interrupted'
+export type AgentOutcome = 'success' | 'failure' | 'cancelled' | 'unknown'
+export type AgentEventType =
+  | 'session-started'
+  | 'turn-started'
+  | 'turn-active'
+  | 'attention-required'
+  | 'turn-ended'
+  | 'turn-completed'
+  | 'turn-failed'
+  | 'turn-interrupted'
+  | 'activity-unknown'
+  | 'integration-unavailable'
+  | 'session-ended'
+
+export interface AgentLifecycleEvent {
+  token: string
+  terminalId: string
+  launchId: string
+  provider: AgentProvider
+  eventId: string
+  timestamp: number
+  type: AgentEventType
+  turnId?: string
+  agentId?: string
+  requestId?: string
+  toolName?: string
+  requestDone?: boolean
+  waitingFor?: 'permission' | 'question'
+  backgroundTasks?: { agentIds: string[]; otherCount: number }
+}
+
+export interface ManagedAgentEvent extends Omit<AgentLifecycleEvent, 'launchId'> {
+  managed: true
+  processId: number
+  sessionId: string
+}
+
+export interface AgentHookStatus {
+  provider: AgentProvider
+  state: 'installed' | 'missing' | 'outdated' | 'conflict' | 'error'
+  paths: string[]
+  detail: string
+}
+
+export type AgentUpdate =
+  | { type: 'state'; session: AgentSession }
+  | { type: 'removed'; terminalId: string; launchId: string; revision: number }
+  | { type: 'disconnected' }
+
+export interface AgentSession extends WorkspaceTarget {
+  cwd: string
+  terminalId: string
+  launchId: string
+  provider: AgentProvider
+  runtimeState: 'starting' | 'running' | 'stopping' | 'exited' | 'error'
+  activityState: AgentActivity
+  outcome?: AgentOutcome
+  workingChildren?: number
+  waitingChildren?: number
+  startedAt: string
+  lastEventAt: string
+  lastTurnId?: string
+  eventSource: 'process' | 'pi-extension' | 'claude-hooks' | 'codex-hooks'
+  observability: 'full' | 'partial' | 'unavailable'
+  observabilityReason?: string
+  revision: number
+  unread: boolean
+  exitCode?: number
+}
+
 export interface SavedTerminal extends WorkspaceTarget {
   id: string
   title: string
+  kind?: 'shell' | 'agent'
+  provider?: AgentProvider
 }
 
 export interface WorkspaceLayout {
@@ -220,6 +317,10 @@ export interface TerminalSession extends TerminalBinding {
   rows: number
   exited: boolean
   exitCode?: number
+  kind?: 'shell' | 'agent'
+  provider?: AgentProvider
+  agent?: AgentSession
+  agentRevision?: number
 }
 
 export interface AttachTerminal extends WorkspaceTarget {
@@ -240,11 +341,12 @@ export interface RemoveWorkspace extends WorkspaceTarget {
   removeProject: boolean
 }
 
-export interface CreateTerminal extends WorkspaceTarget {
-  id: string
-  cols: number
-  rows: number
-}
+export type CreateTerminal = WorkspaceTarget &
+  TerminalLaunch & {
+    id: string
+    cols: number
+    rows: number
+  }
 
 export interface ConfirmationRequest {
   id: string
@@ -284,6 +386,12 @@ export interface DesktopAPI {
   removeWorkspace(target: RemoveWorkspace): Promise<Result<boolean>>
   removeProject(path: string): Promise<Result<boolean>>
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>
+  detectAgents(): Promise<Result<AgentAvailability[]>>
+  detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
+  installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
+  uninstallAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
+  readAgent(id: string, launchId: string, revision: number): Promise<Result<void>>
+  onAgent(listener: (event: AgentUpdate) => void): () => void
   createTerminal(options: CreateTerminal): Promise<Result<void>>
   attachTerminal(options: AttachTerminal): Promise<Result<TerminalAttachment>>
   detachTerminal(id: string, attachmentId: string): Promise<Result<void>>

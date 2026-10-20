@@ -35,6 +35,21 @@ vi.mock('node:child_process', async (importOriginal) => ({
   spawn: mocks.hostSpawn,
 }))
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
+vi.mock('../src/main/agents', () => ({
+  resolveAgent: async (provider: string) => ({
+    executable: `/fake/${provider}`,
+    args: [],
+    env: {},
+  }),
+  agentCapability: async () => 'partial',
+}))
+vi.mock('../src/main/agents/process-observation', async (original) => ({
+  ...(await original<object>()),
+  agentProcesses: async () => [
+    { pid: 12345, parent: 1, group: 12345, foreground: 12345, stat: 'S', started: 'pty-root' },
+    { pid: 12346, parent: 12345, group: 12345, foreground: 12345, stat: 'S', started: 'hook' },
+  ],
+}))
 vi.mock('../src/main/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
@@ -48,10 +63,10 @@ let directory: string
 let server: Awaited<ReturnType<typeof startHost>>
 const clients: HostClient[] = []
 const token = randomBytes(32).toString('hex')
-async function client(secret = token, version = HOST_PROTOCOL, send = vi.fn()) {
+async function client(secret = token, version = HOST_PROTOCOL, send = vi.fn(), agents = vi.fn()) {
   const socket = connect(join(directory, 'host.sock'))
   await once(socket, 'connect')
-  const value = new HostClient(socket, send)
+  const value = new HostClient(socket, send, agents)
   clients.push(value)
   await value.request('hello', [secret, version])
   return value
@@ -93,6 +108,7 @@ describe('local terminal Host', () => {
     await expect(client('0'.repeat(64))).rejects.toThrow('断开')
     await expect(client(token, HOST_PROTOCOL + 1)).rejects.toThrow('断开')
     await expect(client(token, 1)).rejects.toThrow('断开')
+    await expect(client(token, HOST_PROTOCOL - 1)).rejects.toThrow('断开')
     expect(mocks.spawn).not.toHaveBeenCalled()
     expect(await (await client()).request('list', [])).toEqual([])
   })
@@ -156,6 +172,152 @@ describe('local terminal Host', () => {
       closing: true,
     })
     expect(await second.request('list', [])).toEqual([])
+    const agent = {
+      ...options,
+      id: randomUUID(),
+      kind: 'agent' as const,
+      provider: 'codex' as const,
+      launchId: randomUUID(),
+    }
+    await second.request('create', [agent, DEFAULT_CONFIG.preferences])
+    await second.request('create', [agent, DEFAULT_CONFIG.preferences])
+    expect(mocks.spawn).toHaveBeenCalledTimes(2)
+    expect(mocks.spawn).toHaveBeenLastCalledWith(
+      '/fake/codex',
+      [],
+      expect.objectContaining({ cwd: directory }),
+    )
+    expect(await second.request('needsCloseConfirmation', [agent.id])).toBe(true)
+    second.disconnect()
+    const agentUpdates = vi.fn()
+    const third = await client(token, HOST_PROTOCOL, vi.fn(), agentUpdates)
+    expect(await third.request('list', [])).toMatchObject([
+      {
+        id: agent.id,
+        kind: 'agent',
+        provider: 'codex',
+        agent: {
+          launchId: agent.launchId,
+          runtimeState: 'running',
+          activityState: 'unknown',
+          observability: 'unavailable',
+        },
+      },
+    ])
+    expect((await stat(join(directory, 'agent.sock'))).mode & 0o777).toBe(0o600)
+    const unauthenticated = connect(join(directory, 'host.sock'))
+    const leaked = vi.fn()
+    unauthenticated.on('data', leaked)
+    unauthenticated.on('error', () => {})
+    await once(unauthenticated, 'connect')
+    const scopedToken = mocks.spawn.mock.calls[1][2].env.COTA_AGENT_TOKEN
+    await expect(client(scopedToken)).rejects.toThrow('断开')
+    const native = (type: string) => ({
+      terminalId: agent.id,
+      managed: true,
+      processId: 12346,
+      sessionId: 'native-session',
+      provider: 'codex',
+      token: scopedToken,
+      eventId: randomUUID(),
+      timestamp: Date.now(),
+      type,
+      turnId: 'native-turn',
+    })
+    const deliver = async (value: unknown) => {
+      const socket = connect(join(directory, 'agent.sock'))
+      socket.on('error', () => {})
+      await once(socket, 'connect')
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
+      const text = typeof value === 'string' ? value : `${JSON.stringify(value)}\n`
+      socket.write(text.slice(0, 10))
+      socket.end(text.slice(10))
+      await closed
+    }
+    await deliver({ ...native('turn-started'), token }) // The administrative token grants no event capability.
+    await deliver({ ...native('turn-started'), terminalId: options.id })
+    await deliver('x'.repeat(4097))
+    expect((await third.request('list', []))[0].agent?.activityState).toBe('unknown')
+    await deliver(native('turn-started'))
+    await vi.waitFor(() =>
+      expect(agentUpdates).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'state',
+          session: expect.objectContaining({ activityState: 'working' }),
+        }),
+      ),
+    )
+    expect(leaked).not.toHaveBeenCalled()
+    unauthenticated.destroy()
+    await deliver(native('attention-required'))
+    let current = (await third.request('list', []))[0].agent!
+    expect(current).toMatchObject({ activityState: 'needs-input', unread: true })
+    await third.request('readAgent', [agent.id, agent.launchId, current.revision - 1])
+    expect((await third.request('list', []))[0].agent?.unread).toBe(true)
+    await third.request('readAgent', [agent.id, agent.launchId, current.revision])
+    expect((await third.request('list', []))[0].agent).toMatchObject({
+      activityState: 'needs-input',
+      unread: false,
+    })
+    await deliver(native('turn-active'))
+    await deliver(native('turn-ended'))
+    await deliver(native('turn-completed'))
+    current = (await third.request('list', []))[0].agent!
+    expect(current).toMatchObject({
+      activityState: 'completed',
+      outcome: 'unknown',
+      observability: 'partial',
+      unread: true,
+    })
+    third.disconnect()
+    const closeEvents = vi.fn()
+    const fourth = await client(token, HOST_PROTOCOL, closeEvents)
+    expect((await fourth.request('list', []))[0].agent).toEqual(current)
+    expect(agentUpdates).toHaveBeenCalledWith({ type: 'disconnected' })
+    await deliver(native('turn-active'))
+    expect((await fourth.request('list', []))[0].agent).toMatchObject({
+      activityState: 'working',
+      observability: 'partial',
+    })
+    const failureAttachment = randomUUID()
+    await fourth.request('attach', [{ ...agent, attachmentId: failureAttachment }])
+    mocks.stop.mockRejectedValueOnce(new Error('permission denied'))
+    await expect(fourth.request('close', [agent.id])).rejects.toThrow('permission denied')
+    expect(closeEvents).toHaveBeenCalledWith({
+      type: 'closing',
+      id: agent.id,
+      attachmentId: failureAttachment,
+      closing: true,
+    })
+    expect(closeEvents).toHaveBeenCalledWith({
+      type: 'closing',
+      id: agent.id,
+      attachmentId: failureAttachment,
+      closing: false,
+    })
+    expect((await fourth.request('list', []))[0].agent).toMatchObject({
+      runtimeState: 'running',
+      activityState: 'unknown',
+      observability: 'unavailable',
+    })
+    await fourth.request('write', [agent.id, 'save before retry\r'])
+    await fourth.request('resize', [agent.id, 100, 30])
+    expect(mocks.spawn.mock.results[1].value.write).toHaveBeenCalledWith('save before retry\r')
+    expect(mocks.spawn.mock.results[1].value.resize).toHaveBeenCalledWith(100, 30)
+    expect(await fourth.request('needsCloseConfirmation', [agent.id])).toBe(true)
+    mocks.spawn.mock.results[1].value.listeners.data('agent final screen\r\n')
+    mocks.spawn.mock.results[1].value.listeners.exit({ exitCode: 9 })
+    const attachedAgent = await fourth.request('attach', [{ ...agent, attachmentId: randomUUID() }])
+    expect(attachedAgent.snapshot).toContain('agent final screen')
+    expect(attachedAgent.agent).toMatchObject({
+      launchId: agent.launchId,
+      runtimeState: 'exited',
+      exitCode: 9,
+    })
+    await deliver(native('turn-started'))
+    expect((await fourth.request('list', []))[0].agent?.runtimeState).toBe('exited')
+    expect(mocks.spawn).toHaveBeenCalledTimes(2)
+    await fourth.request('close', [agent.id])
   })
   it('spawns isolated Worktree shells, preserves immutable identity across reconnect and rejects missing or changed cwd', async () => {
     const repo = join(directory, '仓库 path')

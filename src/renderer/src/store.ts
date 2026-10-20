@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import {
   DEFAULT_CONFIG,
   MAX_TERMINALS,
+  AGENT_PROVIDERS,
+  type AgentProvider,
+  type AgentSession,
+  type AgentUpdate,
   unwrap,
   type Preferences,
   type ProjectWorkspace,
@@ -21,6 +25,12 @@ export interface TerminalTab {
   projectPath: string
   workspaceId: string
   title: string
+  kind?: 'shell' | 'agent'
+  provider?: AgentProvider
+  launchId?: string
+  agent?: AgentSession
+  agentRevision?: number
+  cwd?: string
   status: 'starting' | 'running' | 'exited' | 'error'
   exitCode?: number
   error?: string
@@ -37,6 +47,11 @@ interface Workspace {
   removingWorkspace?: string
   preferences: Preferences
   tabs: TerminalTab[]
+  pendingAgentUpdates: Record<string, Exclude<AgentUpdate, { type: 'disconnected' }>>
+  agentConnectionLost: boolean
+  visibleTerminal?: string
+  receiveAgent(event: AgentUpdate): void
+  setVisibleTerminal(id?: string): void
   activeTabs: Record<string, string>
   focusVersion: number
   worktreeRecords: WorktreeRecord[]
@@ -54,7 +69,7 @@ interface Workspace {
   renameWorkspace(id: string, name: string): boolean
   removeWorkspace(id: string): Promise<boolean>
   removeProject(path: string): Promise<boolean>
-  newTerminal(): void
+  newTerminal(provider?: AgentProvider, workspaceId?: string): void
   selectTab(id: string): void
   updateTab(id: string, value: Partial<TerminalTab>): void
   closeTab(id?: string): Promise<void>
@@ -95,6 +110,55 @@ export function currentWorkspace(
   )
 }
 
+let completionRead: { session: AgentSession; timer: ReturnType<typeof setTimeout> } | undefined
+
+function markAgentRead(agent: AgentSession): void {
+  void window.desktop
+    .readAgent(agent.terminalId, agent.launchId, agent.revision)
+    .then(unwrap)
+    .catch((error) => console.warn('无法标记 Agent 状态已读。', error))
+}
+
+function readVisibleAgent(state: Workspace): void {
+  const tab = state.tabs.find((tab) => tab.id === state.visibleTerminal)
+  const agent =
+    tab &&
+    !state.agentConnectionLost &&
+    !tab.closingStatus &&
+    tab.workspaceId === currentWorkspace(state)?.id &&
+    state.activeTabs[tab.workspaceId] === tab.id
+      ? tab.agent
+      : undefined
+  const completed = agent?.runtimeState === 'running' && agent.activityState === 'completed'
+  if (
+    completionRead &&
+    (!completed ||
+      !agent?.unread ||
+      completionRead.session.terminalId !== agent.terminalId ||
+      completionRead.session.launchId !== agent.launchId ||
+      completionRead.session.lastTurnId !== agent.lastTurnId)
+  ) {
+    clearTimeout(completionRead.timer)
+    completionRead = undefined
+  }
+  if (!agent?.unread) return
+  if (!completed) {
+    markAgentRead(agent)
+    return
+  }
+  if (completionRead) return
+  completionRead = {
+    session: agent,
+    timer: setTimeout(() => {
+      completionRead = undefined
+      const current = useWorkspace
+        .getState()
+        .tabs.find((item) => item.id === agent.terminalId)?.agent
+      if (current?.unread) markAgentRead(current)
+    }, 2000),
+  }
+}
+
 const scanRequests = new Map<string, number>()
 
 export const useWorkspace = create<Workspace>((set, get) => ({
@@ -105,6 +169,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   selectedWorkspaces: {},
   preferences: DEFAULT_CONFIG.preferences,
   tabs: [],
+  pendingAgentUpdates: {},
+  agentConnectionLost: false,
   activeTabs: {},
   focusVersion: 0,
   worktreeRecords: [],
@@ -154,7 +220,21 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           id: session.id,
           projectPath: session.projectPath,
           workspaceId: session.workspaceId,
-          title: saved?.title || `Terminal ${tabs.length + 1}`,
+          title:
+            ((saved?.kind === 'agent') === (session.kind === 'agent') &&
+            saved?.provider === session.provider
+              ? saved?.title
+              : undefined) ||
+            (session.provider
+              ? `${AGENT_PROVIDERS[session.provider].name} · ${tabs.length + 1}`
+              : undefined) ||
+            `Terminal ${tabs.length + 1}`,
+          kind: session.kind,
+          provider: session.provider,
+          launchId: session.kind === 'agent' ? session.agent?.launchId : undefined,
+          agent: session.agent,
+          agentRevision: session.agent?.revision ?? session.agentRevision,
+          cwd: session.cwd,
           status: session.exited ? 'exited' : 'running',
           exitCode: session.exitCode,
         })
@@ -189,6 +269,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         worktreeScans: worktreeScans || {},
         orphanSessions,
       })
+      const pending = get().pendingAgentUpdates
+      set({ pendingAgentUpdates: {} })
+      for (const event of Object.values(pending)) get().receiveAgent(event)
+      if (get().agentConnectionLost) get().receiveAgent({ type: 'disconnected' })
     } catch (error) {
       console.error(error)
       set({ ready: true })
@@ -475,12 +559,15 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       set((state) => ({ removingWorkspace: undefined, focusVersion: state.focusVersion + 1 }))
     }
   },
-  newTerminal() {
-    const { selectedProject, tabs, removingWorkspace } = get()
-    if (!selectedProject || removingWorkspace) return
-    const workspace = currentWorkspace(get())
-    const workspaceId = workspace?.id
-    if (!workspaceId || get().creatingWorktree) return
+  newTerminal(provider, targetId) {
+    const { tabs, removingWorkspace } = get()
+    if (removingWorkspace || (provider && !Object.hasOwn(AGENT_PROVIDERS, provider))) return
+    const workspace = targetId
+      ? get().workspaces.find((entry) => entry.id === targetId)
+      : currentWorkspace(get())
+    if (!workspace || get().creatingWorktree) return
+    const selectedProject = workspace.projectPath
+    const workspaceId = workspace.id
     if (
       workspace.kind === 'git-worktree' &&
       get().worktreeScans[selectedProject]?.entries.find(
@@ -501,8 +588,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       Math.max(
         0,
         ...tabs
-          .filter((tab) => tab.workspaceId === workspaceId)
-          .map((tab) => Number(tab.title.split(' ')[1])),
+          .filter((tab) => tab.workspaceId === workspaceId && tab.provider === provider)
+          .map((tab) => Number(/(?:Terminal | · )(\d+)$/.exec(tab.title)?.[1] || 0)),
       ) + 1
     set((state) => ({
       tabs: [
@@ -511,10 +598,13 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           id,
           projectPath: selectedProject,
           workspaceId,
-          title: `Terminal ${number}`,
+          title: provider ? `${AGENT_PROVIDERS[provider].name} · ${number}` : `Terminal ${number}`,
+          ...(provider ? { kind: 'agent' as const, provider, launchId: crypto.randomUUID() } : {}),
           status: 'starting',
         },
       ],
+      selectedProject,
+      selectedWorkspaces: { ...state.selectedWorkspaces, [selectedProject]: workspaceId },
       activeTabs: { ...state.activeTabs, [workspaceId]: id },
       focusVersion: state.focusVersion + 1,
     }))
@@ -528,9 +618,106 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       }))
   },
   updateTab(id, value) {
+    const { agent, agentRevision, ...fields } = value
+    const rest: Partial<TerminalTab> = agent
+      ? fields
+      : { ...fields, ...(agentRevision ? { agentRevision } : {}) }
     set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...value } : tab)),
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== id) return tab
+        const currentRevision = tab.agentRevision ?? tab.agent?.revision ?? 0
+        const incomingRevision = agent?.revision ?? value.agentRevision ?? 0
+        if (incomingRevision && currentRevision >= incomingRevision) {
+          const { agentRevision: _revision, ...other } = rest
+          return { ...tab, ...other, status: tab.status, exitCode: tab.exitCode }
+        }
+        return { ...tab, ...rest, ...(value.agentRevision && !agent ? { agent: undefined } : {}) }
+      }),
     }))
+    if (agent) get().receiveAgent({ type: 'state', session: agent })
+  },
+  receiveAgent(event) {
+    if (event.type === 'disconnected') {
+      set((state) => ({
+        agentConnectionLost: true,
+        tabs: state.tabs.map((tab) =>
+          tab.agent
+            ? {
+                ...tab,
+                agent: {
+                  ...tab.agent,
+                  activityState: 'unknown',
+                  outcome: 'unknown',
+                  workingChildren: 0,
+                  waitingChildren: 0,
+                  unread: false,
+                  observability: 'unavailable',
+                  observabilityReason: 'Terminal Host 已断开；重新打开应用后尝试恢复。',
+                },
+              }
+            : tab,
+        ),
+      }))
+      return
+    }
+    if (get().agentConnectionLost) return
+    const terminalId = event.type === 'state' ? event.session.terminalId : event.terminalId
+    const revision = event.type === 'state' ? event.session.revision : event.revision
+    if (!get().layoutLoaded) {
+      const previous = get().pendingAgentUpdates[terminalId]
+      const previousRevision =
+        previous?.type === 'state' ? previous.session.revision : previous?.revision
+      if (previousRevision === undefined || previousRevision < revision)
+        set((state) => ({
+          pendingAgentUpdates: {
+            ...Object.fromEntries(Object.entries(state.pendingAgentUpdates).slice(-MAX_TERMINALS)),
+            [terminalId]: event,
+          },
+        }))
+      return
+    }
+    if (event.type === 'removed') {
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === event.terminalId &&
+          (tab.agentRevision ?? tab.agent?.revision ?? 0) < event.revision &&
+          (tab.kind !== 'agent' || !tab.agent || tab.agent.launchId === event.launchId)
+            ? { ...tab, agent: undefined, agentRevision: event.revision }
+            : tab,
+        ),
+      }))
+      return
+    }
+    const agent = event.session
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
+        if (
+          tab.id !== agent.terminalId ||
+          (tab.kind === 'agent' &&
+            (tab.launchId !== agent.launchId || tab.provider !== agent.provider)) ||
+          tab.projectPath !== agent.projectPath ||
+          tab.workspaceId !== agent.workspaceId ||
+          (tab.cwd && tab.cwd !== agent.cwd) ||
+          (tab.agentRevision ?? tab.agent?.revision ?? 0) >= agent.revision
+        )
+          return tab
+        return {
+          ...tab,
+          agent,
+          agentRevision: agent.revision,
+          cwd: agent.cwd,
+          ...(tab.kind === 'agent'
+            ? {
+                exitCode: agent.exitCode,
+                status: agent.runtimeState === 'stopping' ? tab.status : agent.runtimeState,
+              }
+            : {}),
+        }
+      }),
+    }))
+  },
+  setVisibleTerminal(id) {
+    set({ visibleTerminal: id })
   },
   async closeTab(id) {
     if (get().removingWorkspace) return
@@ -563,6 +750,9 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         }
       })
     } catch (error) {
+      get().updateTab(id, {
+        error: `关闭失败：${error instanceof Error ? error.message : String(error)}`,
+      })
       console.error(error)
     } finally {
       if (get().tabs.some((item) => item.id === id))
@@ -652,7 +842,13 @@ function savedLayout(state: Workspace): WorkspaceLayout {
     workspaces,
     tabs: state.tabs
       .filter((tab) => workspaces.some((workspace) => workspace.id === tab.workspaceId))
-      .map(({ id, projectPath, workspaceId, title }) => ({ id, projectPath, workspaceId, title })),
+      .map(({ id, projectPath, workspaceId, title, kind, provider }) => ({
+        id,
+        projectPath,
+        workspaceId,
+        title,
+        ...(kind === 'agent' ? { kind, provider } : {}),
+      })),
     selectedProject: state.selectedProject,
     selectedWorkspaces: state.selectedWorkspaces,
     activeTabs: state.activeTabs,
@@ -669,4 +865,10 @@ const unsubscribeLayout = useWorkspace.subscribe((state, previous) => {
     .then(unwrap)
     .catch((error) => console.error(error))
 })
-if (import.meta.hot) import.meta.hot.dispose(unsubscribeLayout)
+const unsubscribeAgentRead = useWorkspace.subscribe(readVisibleAgent)
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    unsubscribeLayout()
+    unsubscribeAgentRead()
+    if (completionRead) clearTimeout(completionRead.timer)
+  })

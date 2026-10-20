@@ -3,6 +3,7 @@ import { Check, Loader2, SquareTerminal } from 'lucide-react'
 import type { Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
 import { Badge } from './ui/badge'
+import { AgentHookSettings } from './AgentHookSettings'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import {
@@ -313,6 +314,7 @@ export function GeneralSettings() {
             </Select>
           </div>
         </div>
+        <AgentHookSettings />
       </Card>
 
       {/* 自定义 Shell 弹窗 */}

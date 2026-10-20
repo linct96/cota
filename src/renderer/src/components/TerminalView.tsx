@@ -12,6 +12,9 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
   const id = tab.id
   const projectPath = tab.projectPath
   const workspaceId = tab.workspaceId
+  const kind = tab.kind
+  const provider = tab.provider
+  const launchId = tab.launchId
   const status = tab.closingStatus ?? tab.status
 
   useEffect(() => {
@@ -122,14 +125,15 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
         })
       } else {
         terminal.options.disableStdin = true
-        useWorkspace
-          .getState()
-          .updateTab(
-            id,
-            event.type === 'exit'
-              ? { status: 'exited', exitCode: event.exitCode }
-              : { status: 'error', error: event.error },
-          )
+        useWorkspace.getState().updateTab(
+          id,
+          event.type === 'exit'
+            ? {
+                status: 'exited',
+                exitCode: event.exitCode,
+              }
+            : { status: 'error', error: event.error },
+        )
       }
     }
     const unsubscribe = window.desktop.onTerminal((event) => {
@@ -147,6 +151,9 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
             id,
             projectPath,
             workspaceId,
+            ...(kind === 'agent'
+              ? { kind, provider: provider!, launchId: launchId! }
+              : { kind: 'shell' as const }),
             cols: terminal.cols,
             rows: terminal.rows,
           }),
@@ -167,6 +174,9 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       useWorkspace.getState().updateTab(id, {
         status: attached.exited ? 'exited' : 'running',
         exitCode: attached.exitCode,
+        agent: attached.agent,
+        agentRevision: attached.agentRevision,
+        cwd: attached.cwd,
         error: undefined,
       })
       for (const event of pending.splice(0)) apply(event)
@@ -191,7 +201,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       terminal.dispose()
       instance.current = null
     }
-  }, [id, projectPath, workspaceId])
+  }, [id, projectPath, workspaceId, kind, provider, launchId])
 
   useEffect(() => {
     if (instance.current) instance.current.terminal.options.scrollback = scrollback
@@ -228,7 +238,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       style={{ display: active ? 'flex' : 'none' }}
       className="terminal-view col-start-1 row-start-1 size-full min-h-0 min-w-0 flex-col p-3"
     >
-      {status === 'error' && (
+      {tab.error && !tab.closingStatus && (
         <p
           role="alert"
           className="terminal-error-banner mb-2 shrink-0 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-destructive"

@@ -3,6 +3,7 @@ import { chmod, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
 import { TerminalManager } from './terminals'
+import { startAgentEventServer } from './agent-event-server'
 import {
   HOST_PROTOCOL,
   readMessages,
@@ -17,16 +18,36 @@ import type { AttachTerminal, Preferences, WorkspaceTarget } from '../shared/con
 
 export async function startHost(directory: string, token: string) {
   const clients = new Map<Socket, Map<string, string>>()
-  const manager = new TerminalManager((event) => {
-    for (const [socket, attachments] of clients) {
-      if (attachments.get(event.id) !== event.attachmentId) continue
-      try {
-        sendMessage(socket, { type: 'event', event })
-      } catch {
-        socket.destroy()
+  const authenticatedClients = new Set<Socket>()
+  const agentPath = join(directory, 'agent.sock')
+  const manager = new TerminalManager(
+    (event) => {
+      for (const [socket, attachments] of clients) {
+        if (attachments.get(event.id) !== event.attachmentId) continue
+        try {
+          sendMessage(socket, { type: 'event', event })
+        } catch {
+          socket.destroy()
+        }
       }
-    }
-  })
+    },
+    (event) => {
+      for (const socket of authenticatedClients) {
+        try {
+          sendMessage(socket, { type: 'agent', event })
+        } catch {
+          socket.destroy()
+        }
+      }
+    },
+    agentPath,
+  )
+  const agentServer = await startAgentEventServer(
+    agentPath,
+    manager.agents,
+    (value, channel) => manager.receiveAgentEvent(value, channel),
+    (value) => manager.authenticManagedEvent(value),
+  )
   const socketPath = join(directory, 'host.sock')
   const server = createServer((socket) => {
     const attachments = new Map<string, string>()
@@ -38,6 +59,7 @@ export async function startHost(directory: string, token: string) {
       clearTimeout(authTimer)
       for (const [id, attachmentId] of attachments) manager.detach(id, attachmentId)
       clients.delete(socket)
+      authenticatedClients.delete(socket)
     })
     const dispatch = async (method: keyof HostMethods, args: unknown[]) => {
       switch (method) {
@@ -67,6 +89,10 @@ export async function startHost(directory: string, token: string) {
           return manager.resize(terminalId(args[0]), args[1] as number, args[2] as number)
         case 'setScrollback':
           return manager.setScrollback(args[0])
+        case 'readAgent':
+          if (!Number.isSafeInteger(args[2]) || Number(args[2]) < 0)
+            throw new Error('Agent 状态版本无效。')
+          return manager.agents.read(terminalId(args[0]), terminalId(args[1]), Number(args[2]))
         case 'acknowledge':
           return manager.acknowledge(terminalId(args[0]), terminalId(args[1]), args[2])
         case 'close':
@@ -111,6 +137,7 @@ export async function startHost(directory: string, token: string) {
               return
             }
             authenticated = true
+            authenticatedClients.add(socket)
             clearTimeout(authTimer)
           } else value = await dispatch(request.method, request.args)
           sendMessage(socket, { type: 'response', id: request.id, ok: true, value })
@@ -141,15 +168,26 @@ export async function startHost(directory: string, token: string) {
       })()
     })
   })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(socketPath, () => {
-      server.removeListener('error', reject)
-      resolve()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(socketPath, () => {
+        server.removeListener('error', reject)
+        resolve()
+      })
     })
-  })
-  await chmod(socketPath, 0o600)
-  async function stop() {
+    await chmod(socketPath, 0o600)
+  } catch (error) {
+    if (server.listening) server.close()
+    await agentServer.stop()
+    throw error
+  }
+  let stopping: Promise<void> | undefined
+  function stop(): Promise<void> {
+    return (stopping ||= stopServers())
+  }
+  async function stopServers() {
+    await agentServer.stop()
     for (const socket of clients.keys()) socket.end()
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await unlink(socketPath).catch((error: NodeJS.ErrnoException) => {

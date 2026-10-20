@@ -21,6 +21,15 @@ import { currentWorkspace, nextWorkspaceName, useWorkspace } from './store'
 import { unwrap } from '../../shared/contracts'
 import { TerminalTab } from './components/TerminalTab'
 import { TerminalView } from './components/TerminalView'
+import { AgentMenu } from './components/AgentMenu'
+import { AgentStatus } from './components/AgentStatus'
+import { AgentIcon } from './components/AgentIcon'
+import {
+  AGENT_STATE_LABELS,
+  agentIndicatorState,
+  agentTabState,
+  workspaceAgentSummary,
+} from './lib/agent-status'
 import { OpenerIcon } from './components/OpenWithIcons'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
 import { WorktreeDialog } from './components/WorktreeDialog'
@@ -132,8 +141,11 @@ export function App() {
   }, [editingRecord, workspaceCheckAttempt])
 
   useEffect(() => {
+    const stopAgents = window.desktop.onAgent((event) =>
+      useWorkspace.getState().receiveAgent(event),
+    )
     void useWorkspace.getState().bootstrap()
-    return window.desktop.onShortcut((shortcut) => {
+    const stopShortcuts = window.desktop.onShortcut((shortcut) => {
       if (useWorkspace.getState().removingWorkspace || useWorkspace.getState().creatingWorktree)
         return
       if (shortcut === 'settings') {
@@ -142,12 +154,36 @@ export function App() {
         useWorkspace.getState().shortcut(shortcut)
       }
     })
+    return () => {
+      stopAgents()
+      stopShortcuts()
+    }
   }, [router])
 
   const activeWorkspace = currentWorkspace(state)
   const workspaceId = activeWorkspace?.id
   const currentTabs = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
   const activeId = state.activeTabs[workspaceId || '']
+  useEffect(() => {
+    const updateVisible = () =>
+      useWorkspace
+        .getState()
+        .setVisibleTerminal(
+          activeNavigation === 'home' && !document.hidden && document.hasFocus()
+            ? activeId
+            : undefined,
+        )
+    updateVisible()
+    window.addEventListener('focus', updateVisible)
+    window.addEventListener('blur', updateVisible)
+    document.addEventListener('visibilitychange', updateVisible)
+    return () => {
+      window.removeEventListener('focus', updateVisible)
+      window.removeEventListener('blur', updateVisible)
+      document.removeEventListener('visibilitychange', updateVisible)
+      useWorkspace.getState().setVisibleTerminal(undefined)
+    }
+  }, [activeId, activeNavigation])
   const pendingWorkspace = state.workspaces.find((workspace) => workspace.id === workspaceToRemove)
   // Keep projects with workspaces or terminals reachable outside the recent 20.
   const projects = [
@@ -367,7 +403,7 @@ export function App() {
                                 )?.status !== 'ready')
                             }
                             aria-label="新建终端"
-                            onClick={state.newTerminal}
+                            onClick={() => state.newTerminal()}
                           />
                         }
                       >
@@ -556,14 +592,19 @@ export function App() {
                                 (worktree?.head
                                   ? `detached ${worktree.head.slice(0, 8)}`
                                   : undefined)
-                          const hasTerminals = state.tabs.some(
+                          const workspaceTabs = state.tabs.filter(
                             (tab) => tab.workspaceId === workspace.id,
                           )
+                          const hasTerminals = workspaceTabs.length > 0
+                          const workspaceAgents = workspaceTabs.filter(
+                            (tab) => tab.kind === 'agent' || tab.provider || tab.agent,
+                          )
+                          const agentSummary = workspaceAgentSummary(workspaceTabs)
                           return (
                             <ContextMenu key={workspace.id} disabled={!!state.removingWorkspace}>
                               <div
                                 className={cn(
-                                  'project-item group ml-3 flex items-center justify-between rounded-md transition-colors',
+                                  'project-item group ml-3 flex flex-col items-stretch rounded-md transition-colors',
                                   isSelected
                                     ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
                                     : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
@@ -574,7 +615,7 @@ export function App() {
                                     <Button variant="ghost" disabled={!!state.removingWorkspace} />
                                   }
                                   data-active={isSelected}
-                                  aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${branch ? `，分支 ${branch}` : ''}`}
+                                  aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
                                   aria-current={isSelected ? 'page' : undefined}
                                   aria-haspopup="menu"
                                   className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent"
@@ -589,14 +630,18 @@ export function App() {
                                     className="project-item-status flex size-3.5 items-center justify-center"
                                     aria-hidden="true"
                                   >
-                                    <span
-                                      className={cn(
-                                        'project-item-status-dot size-1.5 rounded-full',
-                                        hasTerminals
-                                          ? 'bg-workspace-status-active'
-                                          : 'bg-workspace-status-idle',
-                                      )}
-                                    />
+                                    {agentSummary && agentSummary.state !== 'other' ? (
+                                      <AgentStatus state={agentSummary.state} />
+                                    ) : (
+                                      <span
+                                        className={cn(
+                                          'project-item-status-dot size-1.5 rounded-full',
+                                          hasTerminals
+                                            ? 'bg-workspace-status-active'
+                                            : 'bg-workspace-status-idle',
+                                        )}
+                                      />
+                                    )}
                                   </span>
                                   <span className="project-item-name truncate">
                                     {state.removingWorkspace === workspace.id
@@ -631,6 +676,65 @@ export function App() {
                                     </span>
                                   )}
                                 </ContextMenuTrigger>
+                                {workspaceAgents.length > 0 && (
+                                  <div
+                                    className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 pr-2 pb-2"
+                                    role="group"
+                                    aria-label={`${workspace.name} Agent 列表`}
+                                  >
+                                    {workspaceAgents.map((tab) => {
+                                      const agentState = agentTabState(tab)
+                                      const agentActive =
+                                        isSelected &&
+                                        activeNavigation === 'home' &&
+                                        state.activeTabs[workspace.id] === tab.id
+                                      const label = `${tab.title} · ${AGENT_STATE_LABELS[agentState]}`
+                                      return (
+                                        <Tooltip key={tab.id}>
+                                          <TooltipTrigger
+                                            render={<Button variant="navigation" size="icon" />}
+                                            className="project-item-agent-button relative"
+                                            data-active={agentActive}
+                                            aria-pressed={agentActive}
+                                            aria-label={`定位到 ${label}`}
+                                            disabled={!state.ready || !!state.removingWorkspace}
+                                            onClick={async () => {
+                                              if (
+                                                isSelected ||
+                                                (await state.selectProject(path, workspace.id))
+                                              ) {
+                                                state.selectTab(tab.id)
+                                                setNavigation('home')
+                                              }
+                                            }}
+                                          >
+                                            <span
+                                              className="project-item-agent-provider inline-flex"
+                                              aria-hidden="true"
+                                            >
+                                              <AgentIcon
+                                                provider={tab.provider || tab.agent?.provider}
+                                                size={16}
+                                                className="project-item-agent-provider-icon size-4"
+                                              />
+                                            </span>
+                                            {agentIndicatorState(tab) !== 'other' && (
+                                              <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-sidebar p-px [&_.agent-status]:size-2.5">
+                                                <AgentStatus state={agentState} />
+                                              </span>
+                                            )}
+                                          </TooltipTrigger>
+                                          <TooltipContent
+                                            side="bottom"
+                                            className="project-item-agent-tooltip"
+                                          >
+                                            {tab.title}
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      )
+                                    })}
+                                  </div>
+                                )}
                               </div>
                               <ContextMenuContent
                                 finalFocus={() => menuTrigger.current}
@@ -638,6 +742,16 @@ export function App() {
                                 className="project-dropdown-menu"
                               >
                                 <ContextMenuGroup className="project-menu-actions">
+                                  <AgentMenu
+                                    workspaceId={workspace.id}
+                                    disabled={
+                                      !state.ready ||
+                                      state.creatingWorktree ||
+                                      !!state.removingWorkspace ||
+                                      (workspace.kind === 'git-worktree' &&
+                                        scanEntry?.status !== 'ready')
+                                    }
+                                  />
                                   <ContextMenuSub>
                                     <ContextMenuSubTrigger className="workspace-open-with-trigger">
                                       <ExternalLink className="workspace-open-with-icon" />
@@ -826,7 +940,7 @@ export function App() {
                       size="sm"
                       className="terminal-empty-action mt-1"
                       disabled={!!state.removingWorkspace}
-                      onClick={state.newTerminal}
+                      onClick={() => state.newTerminal()}
                     >
                       新建终端 (⌘T)
                     </Button>
