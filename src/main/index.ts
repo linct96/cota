@@ -441,7 +441,7 @@ function installIPC(): void {
   )
   handle('terminal:close', async (value: unknown) => {
     const id = terminalId(value)
-    if (closingTabs.size || exitPending || removingWorkspace || worktrees.removing) return false
+    if (closingTabs.has(id) || exitPending || removingWorkspace || worktrees.removing) return false
     closingTabs.add(id)
     try {
       const needsConfirmation = await manager

@@ -1059,7 +1059,7 @@ describe('workspace state', () => {
     expect(useWorkspace.getState().tabs).toHaveLength(1)
     expect(useWorkspace.getState().activeTabs[b.workspaceId]).toBe(a.id)
   })
-  it('keeps the pre-close presentation and ignores duplicate closes until Main confirms', async () => {
+  it('keeps the pre-close presentation until confirmation, then removes the tab before cleanup finishes', async () => {
     await useWorkspace.getState().openProject()
     const tab = useWorkspace.getState().tabs[0]
     useWorkspace.getState().updateTab(tab.id, { status: 'running' })
@@ -1079,18 +1079,23 @@ describe('workspace state', () => {
     })
     await useWorkspace.getState().closeTab(tab.id)
     expect(api.closeTerminal).toHaveBeenCalledOnce()
-    finish({ ok: true, value: true })
-    await closing
+    const onTerminal = vi.mocked(api.onTerminal).mock.calls.at(-1)![0]
+    onTerminal({ type: 'closing', id: tab.id, closing: true })
     expect(useWorkspace.getState().tabs).toEqual([])
     expect(useWorkspace.getState().activeTabs).toEqual({})
     expect(useWorkspace.getState().selectedProject).toBeUndefined()
     expect(currentWorkspace(useWorkspace.getState())).toBeUndefined()
     expect(useWorkspace.getState().projects).toEqual([tab.projectPath])
     expect(useWorkspace.getState().workspaces[0].id).toBe(tab.workspaceId)
+    await useWorkspace.getState().closeTab(tab.id)
+    expect(api.closeTerminal).toHaveBeenCalledOnce()
     await useWorkspace.getState().selectProject(tab.projectPath, tab.workspaceId)
     expect(useWorkspace.getState().tabs).toHaveLength(1)
     expect(useWorkspace.getState().tabs[0].id).not.toBe(tab.id)
     expect(currentWorkspace(useWorkspace.getState())?.id).toBe(tab.workspaceId)
+    finish({ ok: true, value: true })
+    await closing
+    expect(useWorkspace.getState().tabs).toHaveLength(1)
   })
   it('does not deselect another workspace when a background terminal finishes closing', async () => {
     const store = () => useWorkspace.getState()
@@ -1121,8 +1126,14 @@ describe('workspace state', () => {
       const tab = useWorkspace.getState().tabs[0]
       useWorkspace.getState().updateTab(tab.id, { status: 'running' })
       vi.mocked(api.closeTerminal).mockImplementationOnce(async () => {
+        if (outcome === 'rejected') {
+          const onTerminal = vi.mocked(api.onTerminal).mock.calls.at(-1)![0]
+          onTerminal({ type: 'closing', id: tab.id, closing: true })
+          expect(useWorkspace.getState().tabs).toEqual([])
+          onTerminal({ type: 'exit', id: tab.id, attachmentId: 'closing-view', exitCode: 1 })
+          throw new Error('清理失败')
+        }
         useWorkspace.getState().updateTab(tab.id, { status: 'exited', exitCode: 1 })
-        if (outcome === 'rejected') throw new Error('清理失败')
         return { ok: true, value: false }
       })
       await useWorkspace.getState().closeTab(tab.id)

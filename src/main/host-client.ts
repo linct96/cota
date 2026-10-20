@@ -77,8 +77,7 @@ export class HostClient {
     const terminalId = method === 'close' ? (args as HostMethods['close']['args'])[0] : undefined
     const attachmentId = terminalId ? this.attachments.get(terminalId) : undefined
     // Main requests close only after any required user confirmation.
-    if (terminalId && attachmentId)
-      this.send({ type: 'closing', id: terminalId, attachmentId, closing: true })
+    if (terminalId) this.send({ type: 'closing', id: terminalId, attachmentId, closing: true })
     const value = await new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error(`Terminal Host 请求超时：${method}；未自动重建会话。`))
@@ -93,8 +92,7 @@ export class HostClient {
         reject(error)
       }
     }).catch((error) => {
-      if (terminalId && attachmentId)
-        this.send({ type: 'closing', id: terminalId, attachmentId, closing: false })
+      if (terminalId) this.send({ type: 'closing', id: terminalId, attachmentId, closing: false })
       throw error
     })
     if (method === 'attach') {

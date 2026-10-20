@@ -51,12 +51,13 @@ export type Shortcut =
   | 'close-terminal'
   | 'settings'
   | `tab-${number}`
-export type TerminalEvent = (
-  | { type: 'data'; id: string; data: string }
-  | { type: 'exit'; id: string; exitCode: number; signal?: number }
-  | { type: 'closing'; id: string; closing: boolean }
-  | { type: 'error'; id: string; error: string }
-) & { attachmentId: string }
+export type TerminalEvent =
+  | ((
+      | { type: 'data'; id: string; data: string }
+      | { type: 'exit'; id: string; exitCode: number; signal?: number }
+      | { type: 'error'; id: string; error: string }
+    ) & { attachmentId: string })
+  | { type: 'closing'; id: string; attachmentId?: string; closing: boolean }
 
 export type WorkspaceKind = 'local' | 'git-worktree'
 
