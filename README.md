@@ -1,8 +1,23 @@
+# 本地构建
+
+需要 Node.js 22.12+、pnpm 11+。先执行 `pnpm install`，再运行 `pnpm dist`，按当前系统生成生产安装包；`pnpm pack` 只生成可直接运行的应用目录。产物均位于 `release/`。
+
+| 平台        | 构建命令        | 安装包                                 |
+| ----------- | --------------- | -------------------------------------- |
+| Windows x64 | `pnpm dist:win` | `release/Cota-0.1.0-win-x64-setup.exe` |
+| macOS ARM64 | `pnpm dist:mac` | `release/Cota-0.1.0-arm64.dmg`         |
+
+请在对应系统构建。Windows 使用 NSIS 安装向导，默认按用户安装，可选择安装目录；当前未配置 Windows 代码签名证书。Windows 使用 `node-pty` 自带的 Node-API / ConPTY 预编译文件，无需为其安装 Visual Studio 编译环境。Tag 发布流程会依次构建并上传 macOS DMG 和 Windows 安装包。
+
+Windows 终端默认优先使用标准安装目录或 PATH 中的 PowerShell 7，未找到时使用系统 Windows PowerShell，并避开会脱离终端进程树的 WindowsApps 执行别名；可在设置中填写其他 Shell 的完整 `.exe` 路径。菜单中的 Agent 检测使用应用继承的 PATH；仅在 PowerShell profile 中设置的路径需加入系统或用户 PATH 后重启应用。应用使用原生窗口控制，快捷键为 Ctrl+O / Ctrl+T / Ctrl+W，终端复制粘贴为 Ctrl+Shift+C / Ctrl+Shift+V，Ctrl+C 保留为终端中断。Git 工作区需安装 Git for Windows 并加入 PATH。
+
+Windows 支持命名管道通信、终端恢复、进程树清理、常见 npm CLI 启动脚本以及 VS Code 命令行入口；自定义批处理启动器无法安全解析时会提示改用 `.exe`。Claude / Codex 的 Windows Hooks 还需要 PATH 中可用的 Node.js，安装前会检查；不自动修改 PowerShell 执行策略。PowerShell 在已安装 Codex 集成后可为新终端加载隔离包装，已有 alias / function 优先。Windows 通过进程创建时间和父子关系核验 Agent 归属，无法提供 POSIX 前台组信息，存在并行直接子任务等歧义时拒绝绑定状态事件。真实 Agent CLI 版本矩阵仍需单独验收。
+
 # 开发环境
 
 在项目目录运行 `pnpm dev`（首次先执行 `pnpm install`），可与已安装的正式版同时运行。
 
-- 开发版名称为 **Cota Dev**，数据目录为 `~/Library/Application Support/Cota Dev`；正式版继续使用原有数据目录。
+- 开发版名称为 **Cota Dev**，macOS 数据目录为 `~/Library/Application Support/Cota Dev`，Windows 为 `%APPDATA%/Cota Dev`；正式版使用独立的 `Cota` 数据目录。
 - 配置、最近项目、工作区、缓存、单实例锁及 Terminal Host / 终端会话互相独立；退出任一版本不会清理另一版本的终端。
 - 开发版首次使用独立的空白配置，不自动复制或迁移原有配置。
 - 两边若打开同一个项目目录，仍会操作同一份文件；Shell 配置和外部 CLI 的账号等也不隔离。
