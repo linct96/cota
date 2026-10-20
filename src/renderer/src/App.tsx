@@ -494,7 +494,7 @@ export function App() {
                                       'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
                                   )}
                                   disabled={!!state.removingWorkspace}
-                                  aria-label={`${folderName(path)} 项目更多操作`}
+                                  aria-label={`${folderName(path)} 更多操作`}
                                   onFocus={(event) => {
                                     menuTrigger.current = event.currentTarget
                                   }}
@@ -504,7 +504,7 @@ export function App() {
                               <MoreHorizontal className="project-folder-menu-icon size-3.5" />
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="project-folder-menu-tooltip">
-                              项目更多操作
+                              更多操作
                             </TooltipContent>
                           </Tooltip>
                           <DropdownMenuContent
@@ -523,7 +523,7 @@ export function App() {
                                   setWorkspaceDialog({ projectPath: path })
                                 }}
                               >
-                                新建本地工作区
+                                新建工作区
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 variant="destructive"
@@ -556,13 +556,6 @@ export function App() {
                                 (worktree?.head
                                   ? `detached ${worktree.head.slice(0, 8)}`
                                   : undefined)
-                          const record =
-                            workspace.kind === 'git-worktree'
-                              ? state.worktreeRecords.find(
-                                  (entry) => entry.id === workspace.worktreeId,
-                                )
-                              : undefined
-                          const workspacePath = record?.path || path
                           const hasTerminals = state.tabs.some(
                             (tab) => tab.workspaceId === workspace.id,
                           )
@@ -583,7 +576,6 @@ export function App() {
                                   data-active={isSelected}
                                   aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${branch ? `，分支 ${branch}` : ''}`}
                                   aria-current={isSelected ? 'page' : undefined}
-                                  title={workspacePath}
                                   aria-haspopup="menu"
                                   className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent"
                                   onContextMenu={(event) => {
@@ -596,7 +588,6 @@ export function App() {
                                   <span
                                     className="project-item-status flex size-3.5 items-center justify-center"
                                     aria-hidden="true"
-                                    title={hasTerminals ? '有终端' : '无终端'}
                                   >
                                     <span
                                       className={cn(
@@ -713,16 +704,6 @@ export function App() {
                                       </ContextMenuGroup>
                                     </ContextMenuContent>
                                   </ContextMenuSub>
-                                  <ContextMenuItem
-                                    className="workspace-copy-path-item"
-                                    onClick={() => {
-                                      void navigator.clipboard
-                                        .writeText(workspacePath)
-                                        .catch(console.error)
-                                    }}
-                                  >
-                                    复制工作目录路径
-                                  </ContextMenuItem>
                                   <ContextMenuItem
                                     disabled={!!state.removingWorkspace}
                                     className="workspace-edit-item"
