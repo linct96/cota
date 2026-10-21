@@ -422,7 +422,7 @@ export function OpenWithSettings() {
                 取消
               </Button>
               <Button type="submit" disabled={saving}>
-                {saving ? '保存中…' : dialogMode === 'add' ? '添加' : '保存'}
+                {dialogMode === 'add' ? '添加' : '保存'}
               </Button>
             </DialogFooter>
           </form>

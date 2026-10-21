@@ -238,10 +238,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
                         aria-invalid={invalid}
                         aria-describedby={invalid ? 'worktree-base-error' : undefined}
                       >
-                        <SelectValue
-                          className="worktree-base-value"
-                          placeholder="正在读取当前分支…"
-                        >
+                        <SelectValue className="worktree-base-value" placeholder="选择基准分支">
                           {(value) => (value === 'HEAD' ? 'HEAD（当前提交）' : value)}
                         </SelectValue>
                       </SelectTrigger>
@@ -319,7 +316,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
               type="submit"
               disabled={pending || !validPlan || !!repositoryError}
             >
-              {pending ? '正在创建…' : '创建'}
+              创建
             </Button>
           </DialogFooter>
         </form>

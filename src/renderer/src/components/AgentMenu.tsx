@@ -70,7 +70,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
                   {AGENT_PROVIDERS[provider].name}
                 </span>
                 <span className="workspace-agent-provider-version text-muted-foreground">
-                  {loading ? '检测中…' : available ? result.version || '版本未知' : '未检测到'}
+                  {loading ? null : available ? result.version || '版本未知' : '未检测到'}
                 </span>
               </ContextMenuItem>
             )

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { shellFormSchema, scrollbackFormSchema } from '../lib/form-schemas'
 import { isWindows } from '../lib/platform'
-import { Check, Loader2, SquareTerminal } from 'lucide-react'
+import { Check, SquareTerminal } from 'lucide-react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
 import { Badge } from './ui/badge'
@@ -53,7 +53,11 @@ export function TerminalSettings() {
   const [shellError, setShellError] = useState<string>()
   const [defaultShellPath, setDefaultShellPath] = useState<string>()
   const [defaultShellError, setDefaultShellError] = useState<string>()
-  const defaultShellLabel = `系统默认（${defaultShellPath ?? (defaultShellError ? '读取失败' : '读取中…')}）`
+  const defaultShellLabel = defaultShellPath
+    ? `系统默认（${defaultShellPath}）`
+    : defaultShellError
+      ? '系统默认（读取失败）'
+      : '系统默认'
 
   // 自定义缓冲行数弹窗状态
   const [scrollbackDialogOpen, setScrollbackDialogOpen] = useState(false)
@@ -165,15 +169,7 @@ export function TerminalSettings() {
           className="terminal-settings-status flex shrink-0 items-center gap-1.5 text-xs select-none"
           aria-live="polite"
         >
-          {saving ? (
-            <Badge
-              variant="outline"
-              className="terminal-settings-saving gap-1 border-transparent font-normal text-muted-foreground"
-            >
-              <Loader2 className="terminal-settings-saving-icon size-3 animate-spin" />
-              <span className="terminal-settings-saving-label">保存中…</span>
-            </Badge>
-          ) : savedRecently ? (
+          {!saving && savedRecently ? (
             <Badge
               variant="outline"
               className="terminal-settings-saved gap-1 border-transparent font-medium text-emerald-600 dark:text-emerald-400"
@@ -491,8 +487,8 @@ export function TerminalSettings() {
               >
                 取消
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? '保存中…' : '保存'}
+              <Button className="terminal-settings-shell-submit" type="submit" disabled={saving}>
+                保存
               </Button>
             </DialogFooter>
           </form>
@@ -582,8 +578,12 @@ export function TerminalSettings() {
               >
                 取消
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? '保存中…' : '保存'}
+              <Button
+                className="terminal-settings-scrollback-submit"
+                type="submit"
+                disabled={saving}
+              >
+                保存
               </Button>
             </DialogFooter>
           </form>

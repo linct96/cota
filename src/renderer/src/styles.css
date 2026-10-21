@@ -223,6 +223,23 @@ button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+/* Extend workspace activation across the card without nesting the Agent buttons. */
+.project-item-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+}
+.project-item-button:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.project-item-button > *,
+.project-item-agent-button {
+  position: relative;
+  z-index: 1;
+}
 .project-folder-row,
 .source-control-group-header,
 .source-control-directory-row,

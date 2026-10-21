@@ -83,7 +83,7 @@ export function AgentHookSettings() {
           disabled={!!busy}
           onClick={() => void detect()}
         >
-          {busy === 'detect' ? '检测中…' : '检测安装状态'}
+          检测安装状态
         </Button>
       </div>
       <p
@@ -150,7 +150,7 @@ export function AgentHookSettings() {
                     }
                     onClick={() => void manage(provider, 'install')}
                   >
-                    {busy === provider ? '处理中…' : installLabel}
+                    {installLabel}
                   </Button>
                 )}
                 {(status?.state === 'installed' || status?.state === 'outdated') && (
@@ -162,7 +162,7 @@ export function AgentHookSettings() {
                     disabled={!!busy}
                     onClick={() => void manage(provider, 'uninstall')}
                   >
-                    {busy === provider ? '处理中…' : '卸载'}
+                    卸载
                   </Button>
                 )}
               </div>
@@ -182,11 +182,6 @@ export function AgentHookSettings() {
         不修改 Hooks 功能开关，不绕过 CLI 权限或企业策略。
       </p>
       <div className="agent-hook-feedback" aria-live="polite">
-        {busy && busy !== 'detect' && (
-          <p className="agent-hook-progress text-xs text-muted-foreground">
-            正在处理 {AGENT_PROVIDERS[busy].name} 的集成文件，确认前不会修改配置…
-          </p>
-        )}
         {notice && <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>}
         {error && (
           <p className="agent-hook-error text-xs text-destructive" role="alert">

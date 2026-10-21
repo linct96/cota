@@ -732,29 +732,28 @@ export function App() {
                                     key={workspace.id}
                                     disabled={!!state.removingWorkspace}
                                   >
-                                    <div
+                                    <ContextMenuTrigger
                                       className={cn(
-                                        'project-item group ml-3 flex flex-col items-stretch rounded-md transition-colors',
+                                        'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
                                         isSelected
                                           ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
                                           : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
                                       )}
+                                      onContextMenu={(event) => {
+                                        menuTrigger.current =
+                                          event.currentTarget.querySelector<HTMLButtonElement>(
+                                            '.project-item-button',
+                                          )
+                                      }}
                                     >
-                                      <ContextMenuTrigger
-                                        render={
-                                          <Button
-                                            variant="ghost"
-                                            disabled={!!state.removingWorkspace}
-                                          />
-                                        }
+                                      <Button
+                                        variant="ghost"
+                                        disabled={!!state.removingWorkspace}
                                         data-active={isSelected}
                                         aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
                                         aria-current={isSelected ? 'page' : undefined}
                                         aria-haspopup="menu"
-                                        className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent"
-                                        onContextMenu={(event) => {
-                                          menuTrigger.current = event.currentTarget
-                                        }}
+                                        className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent focus-visible:ring-0"
                                         onClick={() => {
                                           void state.selectProject(path, workspace.id)
                                         }}
@@ -777,9 +776,7 @@ export function App() {
                                           )}
                                         </span>
                                         <span className="project-item-name truncate">
-                                          {state.removingWorkspace === workspace.id
-                                            ? '正在删除…'
-                                            : workspace.name}
+                                          {workspace.name}
                                         </span>
                                         {workspace.kind === 'git-worktree' &&
                                           scanEntry &&
@@ -808,7 +805,7 @@ export function App() {
                                             {branch}
                                           </span>
                                         )}
-                                      </ContextMenuTrigger>
+                                      </Button>
                                       {workspaceAgents.length > 0 && (
                                         <div
                                           className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 pr-2 pb-2"
@@ -875,7 +872,7 @@ export function App() {
                                           })}
                                         </div>
                                       )}
-                                    </div>
+                                    </ContextMenuTrigger>
                                     <ContextMenuContent
                                       finalFocus={() => menuTrigger.current}
                                       aria-label={`${folderName(path)} ${workspace.name} 操作菜单`}
@@ -1238,15 +1235,18 @@ export function App() {
                   <p className="workspace-worktree-path break-all text-muted-foreground">
                     {editingRecord.path}
                   </p>
-                  <p className="workspace-worktree-status text-muted-foreground" role="status">
-                    {checkingWorktree
-                      ? '正在检查工作树…'
-                      : editingScan?.error ||
+                  <p
+                    className="workspace-worktree-status text-muted-foreground"
+                    role="status"
+                    aria-busy={checkingWorktree}
+                  >
+                    {!checkingWorktree &&
+                      (editingScan?.error ||
                         (editingScan?.status === 'ready'
                           ? editingScan.worktree?.locked
                             ? '工作树已锁定'
                             : '工作树就绪'
-                          : '工作树状态暂不可用')}
+                          : '工作树状态暂不可用'))}
                   </p>
                   <Button
                     type="button"
@@ -1369,7 +1369,7 @@ export function App() {
                   className="workspace-name-confirm"
                   disabled={savingWorkspace || !!state.removingWorkspace}
                 >
-                  {savingWorkspace ? '正在保存…' : workspaceDialog?.id ? '保存修改' : '创建工作区'}
+                  {workspaceDialog?.id ? '保存修改' : '创建工作区'}
                 </Button>
               </DialogFooter>
             </form>
@@ -1433,11 +1433,7 @@ export function App() {
                   setProjectToRemove(null)
                 }}
               >
-                {state.removingWorkspace
-                  ? '正在删除…'
-                  : projectToRemove
-                    ? '删除项目'
-                    : '删除工作区'}
+                {projectToRemove ? '删除项目' : '删除工作区'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
