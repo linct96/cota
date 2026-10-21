@@ -7,10 +7,12 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router'
 import { App } from './App'
+import { AppError } from './components/AppError'
 import { Settings } from './components/Settings'
 
 const rootRoute = createRootRoute({
   component: App,
+  errorComponent: AppError,
   notFoundComponent: () => <Navigate to="/" replace />,
 })
 
@@ -30,7 +32,7 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([workspaceRoute, settingsRoute])
 
 export function createAppRouter(history: RouterHistory = createHashHistory()) {
-  return createRouter({ routeTree, history })
+  return createRouter({ routeTree, history, defaultErrorComponent: AppError })
 }
 
 declare module '@tanstack/react-router' {

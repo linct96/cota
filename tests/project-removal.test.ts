@@ -950,10 +950,11 @@ describe('renderer confirmation IPC', () => {
     await mocks.handlers.get('app:bootstrap')!(event)
   })
 
-  it('cancels quit without cleanup and rejects duplicate, malformed, stale and untrusted replies', async () => {
-    quit()
+  it('cancels terminal closure and rejects duplicate, malformed, stale and untrusted replies', async () => {
+    const close = () => mocks.handlers.get('terminal:close')!(event, target.workspaceId)
+    const closing = close()
     const request = await prompt()
-    quit()
+    expect(await close()).toEqual({ ok: true, value: false })
     expect(mocks.contents.send).toHaveBeenCalledOnce()
     expect(await reply(request.id, 'true')).toMatchObject({ ok: false })
     expect(await reply('stale', true)).toMatchObject({ ok: false })
@@ -961,31 +962,62 @@ describe('renderer confirmation IPC', () => {
       ok: false,
     })
     expect(mocks.shutdown).not.toHaveBeenCalled()
-    expect(await mocks.handlers.get('terminal:create')!(event, target)).toMatchObject({ ok: false })
+    expect(
+      await mocks.handlers.get('terminal:write')!(event, target.workspaceId, 'echo test\r'),
+    ).toMatchObject({ ok: false })
     expect(await remove()).toEqual({ ok: true, value: false })
     expect(await reply(request.id, false)).toEqual({ ok: true, value: undefined })
+    expect(await closing).toEqual({ ok: true, value: false })
     expect(await reply(request.id, true)).toMatchObject({ ok: false })
     expect(mocks.flush).not.toHaveBeenCalled()
     expect(mocks.quit).not.toHaveBeenCalled()
   })
 
-  it.each(['did-start-navigation', 'render-process-gone', 'destroyed'])(
-    'cancels pending quit on %s and permits retry',
+  it.each(['error-boundary', 'did-start-navigation', 'render-process-gone', 'destroyed'])(
+    'uses native quit confirmation after %s, prevents duplicate exits and permits retry after cancellation',
     async (name) => {
-      quit()
-      const request = await prompt()
-      mocks.rendererEvents.get(name)!(
-        name === 'did-start-navigation' ? { isMainFrame: true, isSameDocument: false } : undefined,
+      // A React error boundary leaves the renderer alive without its confirmation listener.
+      if (name !== 'error-boundary')
+        mocks.rendererEvents.get(name)!(
+          name === 'did-start-navigation'
+            ? { isMainFrame: true, isSameDocument: false }
+            : undefined,
+        )
+      let cancel!: (result: { response: number }) => void
+      mocks.confirm.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            cancel = resolve
+          }),
       )
-      await Promise.resolve()
-      expect(await reply(request.id, true)).toMatchObject({ ok: false })
-      expect(mocks.shutdown).not.toHaveBeenCalled()
-      await mocks.handlers.get('app:bootstrap')!(event)
-      mocks.contents.send.mockClear()
       quit()
-      const retry = await prompt()
-      expect(retry.id).not.toBe(request.id)
-      await reply(retry.id, false)
+      await vi.waitFor(() =>
+        expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            type: 'warning',
+            buttons: ['取消', '结束终端并退出'],
+            defaultId: 0,
+            cancelId: 0,
+          }),
+        ),
+      )
+      quit()
+      expect(mocks.confirm).toHaveBeenCalledOnce()
+      expect(mocks.contents.send).not.toHaveBeenCalledWith('app:confirm', expect.anything())
+      expect(mocks.shutdown).not.toHaveBeenCalled()
+      expect(await mocks.handlers.get('terminal:create')!(event, target)).toMatchObject({
+        ok: false,
+      })
+      expect(await remove()).toEqual({ ok: true, value: false })
+      cancel({ response: 0 })
+      await new Promise(setImmediate)
+      expect(mocks.flush).not.toHaveBeenCalled()
+      expect(mocks.quit).not.toHaveBeenCalled()
+      mocks.confirm.mockResolvedValueOnce({ response: 0 })
+      quit()
+      await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2))
+      await new Promise(setImmediate)
+      expect(mocks.shutdown).not.toHaveBeenCalled()
     },
   )
 
@@ -1025,18 +1057,21 @@ describe('renderer confirmation IPC', () => {
 
   it('preserves the application after failed cleanup, then flushes and shuts down only after confirmation', async () => {
     mocks.shutdown.mockRejectedValueOnce(new Error('cleanup failed'))
+    mocks.confirm.mockResolvedValueOnce({ response: 1 }).mockResolvedValueOnce({ response: 0 })
     quit()
-    await reply((await prompt()).id, true)
-    await vi.waitFor(() => expect(mocks.contents.send).toHaveBeenCalledTimes(2))
-    const failure = await prompt()
-    expect(failure.title).toContain('应用暂未退出')
-    expect(failure.confirmLabel).toBeUndefined()
+    await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2))
+    expect(mocks.confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: 'error',
+        message: '终端清理失败，应用暂未退出。',
+        detail: 'Error: cleanup failed',
+      }),
+    )
     expect(mocks.quit).not.toHaveBeenCalled()
     expect(mocks.disconnect).not.toHaveBeenCalled()
-    await reply(failure.id, false)
-    mocks.contents.send.mockClear()
+    await new Promise(setImmediate)
+    mocks.confirm.mockResolvedValueOnce({ response: 1 })
     quit()
-    await reply((await prompt()).id, true)
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
     expect(mocks.flush.mock.invocationCallOrder.at(-1)).toBeLessThan(
       mocks.shutdown.mock.invocationCallOrder.at(-1)!,

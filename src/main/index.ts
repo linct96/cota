@@ -640,14 +640,18 @@ async function requestExit(): Promise<void> {
   exitPending = true
   try {
     if (await manager.request('hasLive', [])) {
-      if (
-        !(await requestConfirmation({
-          title: '退出 Cota？',
-          description: '退出将结束所有终端及运行中的程序，项目设置将会保留。',
-          confirmLabel: '结束终端并退出',
-        }))
-      )
-        return
+      // Exit must remain available when the renderer's error boundary replaces the application.
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: '退出 Cota？',
+        message: '退出 Cota？',
+        detail: '退出将结束所有终端及运行中的程序，项目设置将会保留。',
+        buttons: ['取消', '结束终端并退出'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (response !== 1) return
     }
     await config.flush()
     await manager.request('shutdown', [])
@@ -657,9 +661,13 @@ async function requestExit(): Promise<void> {
     exiting = true
     app.quit()
   } catch (error) {
-    await requestConfirmation({
-      title: '终端清理失败，应用暂未退出。',
-      description: String(error),
+    await dialog.showMessageBox({
+      type: 'error',
+      title: '退出失败',
+      message: '终端清理失败，应用暂未退出。',
+      detail: String(error),
+      buttons: ['知道了'],
+      noLink: true,
     })
   } finally {
     exitPending = false
