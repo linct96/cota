@@ -13,6 +13,7 @@ import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution.js'
 import workerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?worker&url'
+import { monacoColor } from './monaco-color'
 
 // A same-origin module worker works under the existing CSP, without CDN or blob scripts.
 globalThis.MonacoEnvironment = { getWorker: () => new Worker(workerUrl, { type: 'module' }) }
@@ -24,13 +25,15 @@ export function configureMonacoTheme(): void {
     inherit: true,
     rules: [],
     colors: {
-      'editor.background': tokens.getPropertyValue('--source-control-editor-background').trim(),
-      'diffEditor.insertedLineBackground': tokens
-        .getPropertyValue('--source-control-diff-added')
-        .trim(),
-      'diffEditor.removedLineBackground': tokens
-        .getPropertyValue('--source-control-diff-removed')
-        .trim(),
+      'editor.background': monacoColor(
+        tokens.getPropertyValue('--source-control-editor-background'),
+      ),
+      'diffEditor.insertedLineBackground': monacoColor(
+        tokens.getPropertyValue('--source-control-diff-added'),
+      ),
+      'diffEditor.removedLineBackground': monacoColor(
+        tokens.getPropertyValue('--source-control-diff-removed'),
+      ),
     },
   })
 }
