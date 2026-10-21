@@ -31,6 +31,7 @@ import {
 import { hasRunningJob, stopProcessTree } from './process-tree'
 import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from './host-protocol'
 import { sameBinding, terminalBinding, validateTerminalBinding } from './terminal-binding'
+import { createTerminalKeyboardState } from '../shared/terminal-keyboard-state'
 
 interface Session extends TerminalSession {
   launch: TerminalLaunch
@@ -51,6 +52,7 @@ interface Session extends TerminalSession {
   creation?: Promise<void>
   screen: Terminal
   serializer: SerializeAddon
+  keyboard: ReturnType<typeof createTerminalKeyboardState>
   pending: string[]
   timer?: ReturnType<typeof setTimeout>
   parsing: number
@@ -108,9 +110,11 @@ export class TerminalManager {
       ...size,
       scrollback: settings.scrollback,
       allowProposedApi: true,
+      vtExtensions: { kittyKeyboard: true },
     })
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
+    const keyboard = createTerminalKeyboardState(screen.parser)
     const session: Session = {
       ...target,
       ...size,
@@ -125,12 +129,13 @@ export class TerminalManager {
         : {}),
       screen,
       serializer,
+      keyboard,
       exited: false,
       pending: [],
       parsing: 0,
       inFlight: 0,
       paused: false,
-      subscriptions: [],
+      subscriptions: [keyboard],
       attaching: new Set(),
     }
     this.sessions.set(id, session)
@@ -296,7 +301,7 @@ export class TerminalManager {
         try {
           this.detach(id, session.attachmentId)
           // shortcut: serialization omits unfinished escape state; track escape tails before promising lossless arbitrary-TUI reconnect.
-          const snapshot = session.serializer.serialize()
+          const snapshot = session.keyboard.snapshot(session.serializer.serialize())
           session.attachmentId = attachmentId
           resolve({
             id,

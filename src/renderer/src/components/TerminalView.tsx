@@ -4,6 +4,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { unwrap, type TerminalEvent } from '../../../shared/contracts'
 import { useWorkspace, type TerminalTab } from '../store'
 import { createTerminalRenderer } from '../lib/terminal-renderer'
+import { createTerminalInputHandler } from '../lib/terminal-input'
+import { createTerminalKeyboardState } from '../../../shared/terminal-keyboard-state'
 
 export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
   const host = useRef<HTMLDivElement>(null)
@@ -71,6 +73,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
         brightWhite: '#fafafa',
       },
       allowProposedApi: false,
+      vtExtensions: { kittyKeyboard: true },
       allowTransparency: false,
     })
     const fit = new FitAddon()
@@ -98,17 +101,21 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       if (live())
         void window.desktop.resizeTerminal(id, cols, rows).then(unwrap).catch(console.error)
     })
-    const data = terminal.onData((value) => {
-      if (live()) void window.desktop.writeTerminal(id, value).then(unwrap).catch(console.error)
+    const keyboard = createTerminalKeyboardState(terminal.parser)
+    const input = createTerminalInputHandler({
+      platform: window.desktop.platform,
+      useKitty: () => keyboard.flags > 0,
+      canSend: () => live() && !terminal.options.disableStdin,
+      write: (value) => {
+        void window.desktop.writeTerminal(id, value).then(unwrap).catch(console.error)
+      },
     })
-    terminal.attachCustomKeyEventHandler(
-      (event) =>
-        !(
-          (event.metaKey ||
-            (window.desktop.platform === 'win32' && event.ctrlKey && event.shiftKey)) &&
-          ['c', 'v'].includes(event.key.toLowerCase())
-        ),
-    )
+    const data = terminal.onData(input.send)
+    terminal.attachCustomKeyEventHandler(input.handleKeyEvent)
+    const textarea = terminal.textarea!
+    textarea.addEventListener('compositionstart', input.compositionStart)
+    textarea.addEventListener('compositionend', input.compositionEnd)
+    textarea.addEventListener('blur', input.reset)
     const apply = (event: TerminalEvent) => {
       if (event.type === 'closing') {
         closing = event.closing
@@ -204,6 +211,11 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     })
     return () => {
       disposed = true
+      input.dispose()
+      keyboard.dispose()
+      textarea.removeEventListener('compositionstart', input.compositionStart)
+      textarea.removeEventListener('compositionend', input.compositionEnd)
+      textarea.removeEventListener('blur', input.reset)
       if (host.current) host.current.inert = false
       observer.disconnect()
       unsubscribe()

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
+import { Terminal } from '@xterm/headless'
+import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
 import { DEFAULT_CONFIG, type AgentEventType, type TerminalEvent } from '../src/shared/contracts'
 import { AgentSessionManager } from '../src/main/agent-session-manager'
 import { normalizeHook } from '../src/main/agents/hooks'
@@ -1210,15 +1212,57 @@ describe('single PTY owner', () => {
     const entry = options()
     await manager.create(entry, settings)
     const first = await attach(manager, entry)
+    expect(first.snapshot.endsWith('\x1b[=0u')).toBe(true)
     const process = mocks.spawn.mock.results[0].value
     process.listeners.data('x'.repeat(150000))
     await vi.runAllTimersAsync()
     manager.detach(entry.id, first.attachmentId)
     const resumes = process.resume.mock.calls.length
-    process.listeners.data('\r\nWHILE_DETACHED\r\n')
+    process.listeners.data('\r\nWHILE_DETACHED\r\n\x1b[>1u\x1b[>3u\x1b[?1049h\x1b[>7')
+    process.listeners.data('u\x1b[>15u\x1b[HALT CONTENT')
     await vi.runAllTimersAsync()
     const second = await attach(manager, entry)
     expect(second.snapshot).toContain('WHILE_DETACHED')
+    expect(second.snapshot.endsWith('\x1b[=15u')).toBe(true)
+    const restored = new Terminal({
+      cols: entry.cols,
+      rows: entry.rows,
+      allowProposedApi: true,
+      vtExtensions: { kittyKeyboard: true },
+    })
+    const keyboard = createTerminalKeyboardState(restored.parser)
+    const replies: string[] = []
+    restored.onData((data) => replies.push(data))
+    const parse = async (data: string) => {
+      const parsed = new Promise<void>((resolve) => restored.write(data, resolve))
+      await vi.runAllTimersAsync()
+      await parsed
+    }
+    const expectFlags = async (flags: number) => {
+      await parse('\x1b[?u')
+      expect(replies.at(-1)).toBe(`\x1b[?${flags}u`)
+      expect(keyboard.flags).toBe(flags)
+    }
+    try {
+      await parse(second.snapshot)
+      expect(restored.buffer.active.type).toBe('alternate')
+      expect(restored.buffer.active.getLine(0)?.translateToString(true)).toBe('ALT CONTENT')
+      await expectFlags(15)
+      await parse('\x1b[<u')
+      await expectFlags(7)
+      await parse('\x1b[<u')
+      await expectFlags(0)
+      await parse('\x1b[?1049l')
+      expect(restored.buffer.active.type).toBe('normal')
+      await expectFlags(3)
+      await parse('\x1b[<u')
+      await expectFlags(1)
+      await parse('\x1b[<u')
+      await expectFlags(0)
+    } finally {
+      keyboard.dispose()
+      restored.dispose()
+    }
     manager.detach(entry.id, first.attachmentId)
     process.listeners.data('y'.repeat(150000))
     await vi.runAllTimersAsync()
@@ -1232,6 +1276,9 @@ describe('single PTY owner', () => {
     expect(process.resume).toHaveBeenCalledTimes(currentResumes + 1)
     expect(resumes).toBeGreaterThan(0)
     expect(mocks.spawn).toHaveBeenCalledOnce()
+    process.listeners.data('\x1b[<2u\x1b[?1049l\x1b[<2u')
+    const third = await attach(manager, entry)
+    expect(third.snapshot.endsWith('\x1b[=0u')).toBe(true)
     await manager.close(entry.id)
   })
   it('delivers output queued after the snapshot barrier exactly once, while earlier output stays in the snapshot', async () => {

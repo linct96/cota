@@ -8,7 +8,10 @@ import type {
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from '../src/renderer/src/store'
 import { WebglAddon } from '@xterm/addon-webgl'
+import { Terminal } from '@xterm/headless'
+import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
 import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-renderer'
+import { createTerminalInputHandler } from '../src/renderer/src/lib/terminal-input'
 import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
 import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
 import { buildGitChangeTree } from '../src/renderer/src/lib/source-control-tree'
@@ -348,6 +351,216 @@ describe('Worktree state transactions and recovery', () => {
 })
 
 describe('workspace state', () => {
+  it('routes modified Enter once without submitting IME input or writing to inactive sessions', async () => {
+    vi.useFakeTimers()
+    const screen = new Terminal({
+      allowProposedApi: true,
+      vtExtensions: { kittyKeyboard: true },
+    })
+    const keyboard = createTerminalKeyboardState(screen.parser)
+    const replies: string[] = []
+    screen.onData((data) => replies.push(data))
+    const output = async (data: string) => {
+      const parsed = new Promise<void>((resolve) => screen.write(data, resolve))
+      await vi.runAllTimersAsync()
+      await parsed
+    }
+    const expectFlags = async (flags: number) => {
+      await output('\x1b[?u')
+      expect(replies.at(-1)).toBe(`\x1b[?${flags}u`)
+      expect(keyboard.flags).toBe(flags)
+    }
+    let running = true
+    const write = vi.fn()
+    const input = createTerminalInputHandler({
+      platform: 'darwin',
+      canSend: () => running,
+      write,
+      useKitty: () => keyboard.flags > 0,
+    })
+    type KeyEvent = Parameters<typeof input.handleKeyEvent>[0]
+    const key = (overrides: Partial<KeyEvent> = {}): KeyEvent => ({
+      type: 'keydown',
+      key: 'Enter',
+      code: 'Enter',
+      keyCode: 13,
+      shiftKey: true,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      repeat: false,
+      isComposing: false,
+      preventDefault: vi.fn(),
+      ...overrides,
+    })
+    const expectMenuShortcuts = () => {
+      const shortcuts: Partial<KeyEvent>[] = [
+        ...[
+          'o',
+          't',
+          'w',
+          ',',
+          '1',
+          '2',
+          '3',
+          '4',
+          '5',
+          '6',
+          '7',
+          '8',
+          '9',
+          'a',
+          'x',
+          'c',
+          'v',
+          'z',
+          'q',
+          'h',
+          'm',
+        ].map((key) => ({ key })),
+        { key: 'Z', shiftKey: true },
+        { key: '˙', code: 'KeyH', altKey: true },
+      ]
+      for (const shortcut of shortcuts) {
+        for (const type of ['keydown', 'keypress', 'keyup']) {
+          const event = key({
+            code: '',
+            keyCode: 0,
+            shiftKey: false,
+            metaKey: true,
+            ...shortcut,
+            type,
+          })
+          expect(input.handleKeyEvent(event)).toBe(false)
+          expect(event.preventDefault).not.toHaveBeenCalled()
+        }
+      }
+      expect(
+        input.handleKeyEvent(key({ key: 'w', shiftKey: false, metaKey: true, repeat: true })),
+      ).toBe(false)
+      for (const modifiers of [
+        { metaKey: false, ctrlKey: true, shiftKey: false },
+        { metaKey: true, ctrlKey: true, shiftKey: false },
+        { metaKey: true, altKey: true, shiftKey: false },
+        { metaKey: true, shiftKey: true },
+      ])
+        expect(input.handleKeyEvent(key({ key: 'w', code: 'KeyW', ...modifiers }))).toBe(true)
+      expect(
+        input.handleKeyEvent(key({ key: 'k', code: 'KeyK', metaKey: true, shiftKey: false })),
+      ).toBe(true)
+    }
+    try {
+      expectMenuShortcuts()
+      for (const platform of ['win32', 'linux']) {
+        const other = createTerminalInputHandler({
+          platform,
+          canSend: () => running,
+          write,
+          useKitty: () => true,
+        })
+        expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, metaKey: true }))).toBe(true)
+        expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, ctrlKey: true }))).toBe(true)
+        expect(other.handleKeyEvent(key({ key: 'c', ctrlKey: true }))).toBe(platform !== 'win32')
+        other.dispose()
+      }
+      expect(input.handleKeyEvent(key({ shiftKey: false }))).toBe(true)
+      for (const modifier of ['ctrlKey', 'altKey', 'metaKey'] as const)
+        expect(input.handleKeyEvent(key({ [modifier]: true }))).toBe(true)
+      expect(input.handleKeyEvent(key({ key: 'c', code: 'KeyC', metaKey: true }))).toBe(false)
+      expect(write).not.toHaveBeenCalled()
+
+      const shiftEnter = key()
+      expect(input.handleKeyEvent(shiftEnter)).toBe(false)
+      expect(shiftEnter.preventDefault).toHaveBeenCalledOnce()
+      expect(input.handleKeyEvent(key({ type: 'keypress' }))).toBe(false)
+      expect(input.handleKeyEvent(key({ repeat: true }))).toBe(false)
+      expect(input.handleKeyEvent(key({ type: 'keyup', shiftKey: false }))).toBe(false)
+      expect(write.mock.calls).toEqual([['\x1b\r']])
+
+      input.compositionStart()
+      const confirm = key({ shiftKey: false, isComposing: true })
+      expect(input.handleKeyEvent(confirm)).toBe(false)
+      expect(confirm.preventDefault).not.toHaveBeenCalled()
+      input.compositionEnd()
+      expect(input.handleKeyEvent(key({ type: 'keyup' }))).toBe(false)
+      expect(input.handleKeyEvent(key())).toBe(false)
+      input.send('中文')
+      vi.runAllTimers()
+      expect(input.handleKeyEvent(key({ repeat: true }))).toBe(false)
+      input.handleKeyEvent(key({ type: 'keyup' }))
+      expect(input.handleKeyEvent(key())).toBe(false)
+      expect(write.mock.calls).toEqual([['\x1b\r'], ['中文'], ['\x1b\r']])
+
+      input.reset()
+      expect(input.handleKeyEvent(key({ isComposing: true }))).toBe(false)
+      input.reset()
+      expect(input.handleKeyEvent(key({ key: 'Process', keyCode: 229 }))).toBe(false)
+      input.reset()
+      running = false
+      input.send('late input')
+      input.handleKeyEvent(key())
+      expect(write).toHaveBeenCalledTimes(3)
+      running = true
+      input.compositionEnd()
+      input.reset()
+      expect(vi.getTimerCount()).toBe(0)
+      input.send('resumed')
+      expect(write.mock.calls).toEqual([['\x1b\r'], ['中文'], ['\x1b\r'], ['resumed']])
+
+      await output('\x1b[>7') // Pi negotiation can span PTY output chunks.
+      expect(keyboard.flags).toBe(0)
+      await output('u')
+      await expectFlags(7)
+      expectMenuShortcuts()
+      expect(input.handleKeyEvent(key({ shiftKey: false }))).toBe(true)
+      const nativeShiftEnter = key()
+      expect(input.handleKeyEvent(nativeShiftEnter)).toBe(true)
+      expect(nativeShiftEnter.preventDefault).not.toHaveBeenCalled()
+      expect(input.handleKeyEvent(key({ type: 'keypress' }))).toBe(true)
+      expect(input.handleKeyEvent(key({ repeat: true }))).toBe(true)
+      expect(input.handleKeyEvent(key({ type: 'keyup' }))).toBe(true)
+      expect(write).toHaveBeenCalledTimes(4)
+      input.reset() // Focus changes must not erase the CLI's negotiated mode.
+      expect(keyboard.flags).toBe(7)
+      input.compositionStart()
+      expect(input.handleKeyEvent(key({ isComposing: true }))).toBe(false)
+      input.compositionEnd()
+      input.handleKeyEvent(key({ type: 'keyup' }))
+      vi.runAllTimers()
+      await output('\x1b[=1;3u')
+      await expectFlags(6)
+      await output('\x1b[=1;2u\x1b[=0;4u')
+      await expectFlags(7)
+      await output('\x1b[>3u\x1b[<u')
+      await expectFlags(7)
+      await output('\x1b[<u')
+      await expectFlags(0)
+      input.handleKeyEvent(key())
+      expect(write).toHaveBeenLastCalledWith('\x1b\r')
+      await output('\x1b[>1u\x1b[?1049h\x1b[>7u\x1b[!p')
+      await expectFlags(0)
+      expect(screen.buffer.active.type).toBe('alternate')
+      await output('\x1b[?1049l')
+      await expectFlags(0)
+      await output('\x1b[>7u'.repeat(20) + '\x1b[<65535u')
+      await expectFlags(0)
+      await output('\x1b[>7u\x1b[?1049h\x1bc')
+      await expectFlags(0)
+      expect(screen.buffer.active.type).toBe('normal')
+      input.compositionEnd()
+      input.dispose()
+      vi.runAllTimers()
+      input.send('disposed input')
+      expect(input.handleKeyEvent(key())).toBe(false)
+      expect(write).toHaveBeenCalledTimes(5)
+    } finally {
+      input.dispose()
+      keyboard.dispose()
+      screen.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it('updates preferences with the saved result only after success', async () => {
     const terminal = { loadAddon: vi.fn(), refresh: vi.fn(), rows: 24 }
     const fit = { fit: vi.fn() }
