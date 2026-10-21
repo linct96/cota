@@ -1,0 +1,72 @@
+import { z } from 'zod'
+import { parseArguments } from '../../../shared/open-with'
+import { worktreeBranchSegment } from '../../../shared/worktree-names'
+
+export const shellFormSchema = z.object({
+  name: z
+    .string()
+    .max(80, '名称最多 80 字符。')
+    .regex(/^[^\0\r\n]*$/, '名称不能包含换行或空字符。'),
+  path: z
+    .string()
+    .max(4096, '路径最多 4096 字符。')
+    .refine((value) => value.trim().startsWith('/'), '请输入以 / 开头的 Shell 绝对路径。')
+    .refine((value) => !value.includes('\0'), '路径不能包含空字符。'),
+})
+
+export const scrollbackFormSchema = z.object({
+  scrollback: z.string().refine((value) => {
+    const count = Number(value)
+    return Number.isInteger(count) && count >= 1000 && count <= 20000
+  }, '请输入 1,000 至 20,000 之间的整数。'),
+})
+
+export const openerFormSchema = z.object({
+  name: z
+    .string()
+    .max(80, '名称最多 80 字符。')
+    .refine((value) => !!value.trim(), '请输入应用程序名称。')
+    .regex(/^[^\0\r\n]*$/, '名称不能包含换行或空字符。'),
+  command: z
+    .string()
+    .max(4096, '启动命令最多 4096 字符。')
+    .regex(/^[^\0\r\n]*$/, '启动命令不能包含换行或空字符。')
+    .refine(
+      (value) => value.trim().startsWith('/') || /^[\w.+-]+$/.test(value.trim()),
+      '请输入命令名或可执行文件绝对路径，参数请单独填写。',
+    ),
+  arguments: z
+    .string()
+    .max(4096, '启动参数最多 4096 字符。')
+    .refine((value) => !value.includes('\0'), '启动参数不能包含空字符。')
+    .superRefine((value, context) => {
+      try {
+        parseArguments(value)
+      } catch (cause) {
+        context.addIssue({
+          code: 'custom',
+          message: cause instanceof Error ? cause.message : '启动参数格式无效。',
+        })
+      }
+    }),
+})
+
+export const workspaceFormSchema = z.object({
+  name: z
+    .string()
+    .refine((value) => !!value.trim(), '请输入工作区名称。')
+    .refine((value) => value.trim().length <= 1024, '名称最多 1024 字符。'),
+})
+
+export const worktreeFormSchema = z.object({
+  name: z
+    .string()
+    .max(1024, '名称最多 1024 字符。')
+    .regex(/^[^\0\r\n/]*$/, '名称不能包含斜杠、换行或空字符。')
+    .refine((value) => !!worktreeBranchSegment(value), '名称需包含字母、数字或下划线。'),
+  baseRef: z
+    .string()
+    .refine((value) => !!value.trim(), '请选择基础引用。')
+    .max(1024, '基础引用最多 1024 字符。')
+    .regex(/^[^\0\r\n]*$/, '基础引用不能包含换行或空字符。'),
+})

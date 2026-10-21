@@ -30,6 +30,7 @@ const api: DesktopAPI = {
   openWorkspaceWith: (path, openerId) => ipcRenderer.invoke('workspace:open-with', path, openerId),
   removeWorkspace: (target) => ipcRenderer.invoke('workspace:remove', target),
   removeProject: (path) => ipcRenderer.invoke('project:remove', path),
+  getDefaultShell: () => ipcRenderer.invoke('shell:default'),
   savePreferences: (preferences) => ipcRenderer.invoke('preferences:save', preferences),
   detectAgents: () => ipcRenderer.invoke('agent:detect'),
   detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),

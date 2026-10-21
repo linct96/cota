@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { revalidateLogic, useForm } from '@tanstack/react-form'
+import { openerFormSchema } from '../lib/form-schemas'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { WorkspaceOpener } from '../../../shared/contracts'
-import { parseArguments } from '../../../shared/open-with'
 import { useWorkspace } from '../store'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -22,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
-import { Field, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
 import { OpenerIcon, PRESET_OPENERS, type PresetOpener } from './OpenWithIcons'
 
@@ -36,13 +37,29 @@ export function OpenWithSettings() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'add' | 'edit'>('add')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [command, setCommand] = useState('')
-  const [argumentsTemplate, setArgumentsTemplate] = useState('')
-  const [dialogError, setDialogError] = useState<string>()
+  const persisting = useRef(false)
+  const form = useForm({
+    defaultValues: { name: '', command: '', arguments: '{path}' },
+    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validators: { onDynamic: openerFormSchema },
+    onSubmit: async ({ value }) => {
+      const opener = {
+        name: value.name.trim(),
+        command: value.command.trim(),
+        arguments: value.arguments,
+      }
+      const current = useWorkspace.getState().preferences.openWith
+      const next =
+        dialogMode === 'edit' && editingId
+          ? current.map((item) => (item.id === editingId ? { ...item, ...opener } : item))
+          : [...current, { id: crypto.randomUUID(), ...opener }]
+      if (await persist(next)) setDialogOpen(false)
+    },
+  })
 
   async function persist(nextOpeners: WorkspaceOpener[]) {
-    if (saving) return
+    if (persisting.current) return false
+    persisting.current = true
     setSaving(true)
     setError(undefined)
     try {
@@ -55,6 +72,7 @@ export function OpenWithSettings() {
       setError(cause instanceof Error ? cause.message : String(cause))
       return false
     } finally {
+      persisting.current = false
       setSaving(false)
     }
   }
@@ -73,76 +91,22 @@ export function OpenWithSettings() {
   function handleOpenAddDialog() {
     setDialogMode('add')
     setEditingId(null)
-    setName('')
-    setCommand('')
-    setArgumentsTemplate('{path}')
-    setDialogError(undefined)
+    form.reset({ name: '', command: '', arguments: '{path}' })
+    setError(undefined)
     setDialogOpen(true)
   }
 
   function handleOpenEditDialog(opener: WorkspaceOpener) {
     setDialogMode('edit')
     setEditingId(opener.id)
-    setName(opener.name)
-    setCommand(opener.command)
-    setArgumentsTemplate(opener.arguments)
-    setDialogError(undefined)
+    form.reset({ name: opener.name, command: opener.command, arguments: opener.arguments })
+    setError(undefined)
     setDialogOpen(true)
   }
 
   async function handleDelete(id: string) {
     const next = openers.filter((item) => item.id !== id)
     await persist(next)
-  }
-
-  async function handleDialogSubmit(event: React.FormEvent) {
-    event.preventDefault()
-    const trimmedName = name.trim()
-    const trimmedCommand = command.trim()
-
-    if (!trimmedName) {
-      setDialogError('请输入应用程序名称。')
-      return
-    }
-    if (!trimmedCommand) {
-      setDialogError('请输入启动命令或可执行文件路径。')
-      return
-    }
-    try {
-      parseArguments(argumentsTemplate)
-    } catch (cause) {
-      setDialogError(cause instanceof Error ? cause.message : '启动参数格式无效。')
-      return
-    }
-
-    let nextOpeners: WorkspaceOpener[]
-    if (dialogMode === 'edit' && editingId) {
-      nextOpeners = openers.map((item) =>
-        item.id === editingId
-          ? {
-              ...item,
-              name: trimmedName,
-              command: trimmedCommand,
-              arguments: argumentsTemplate,
-            }
-          : item,
-      )
-    } else {
-      nextOpeners = [
-        ...openers,
-        {
-          id: crypto.randomUUID(),
-          name: trimmedName,
-          command: trimmedCommand,
-          arguments: argumentsTemplate,
-        },
-      ]
-    }
-
-    const success = await persist(nextOpeners)
-    if (success) {
-      setDialogOpen(false)
-    }
   }
 
   return (
@@ -281,14 +245,20 @@ export function OpenWithSettings() {
         ))}
       </div>
 
-      {error && (
+      {error && !dialogOpen && (
         <p role="alert" className="open-with-settings-error text-xs text-destructive">
           {error}
         </p>
       )}
 
       {/* 编辑 / 添加 对话框 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open, details) => {
+          if (persisting.current) details.cancel()
+          else setDialogOpen(open)
+        }}
+      >
         <DialogContent className="open-with-dialog max-w-sm">
           <DialogHeader className="open-with-dialog-header">
             <DialogTitle className="open-with-dialog-title">
@@ -300,58 +270,145 @@ export function OpenWithSettings() {
           </DialogHeader>
 
           <form
-            onSubmit={(event) => void handleDialogSubmit(event)}
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault()
+              void form.handleSubmit()
+            }}
             className="open-with-dialog-form flex flex-col gap-4"
           >
             <FieldGroup className="open-with-dialog-fields">
-              <Field className="open-with-dialog-name-field">
-                <FieldLabel htmlFor="dialog-opener-name" className="text-xs">
-                  显示名称
-                </FieldLabel>
-                <Input
-                  id="dialog-opener-name"
-                  required
-                  maxLength={80}
-                  value={name}
-                  placeholder="例如 Zed 或 VS Code"
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </Field>
-
-              <Field className="open-with-dialog-command-field">
-                <FieldLabel htmlFor="dialog-opener-command" className="text-xs">
-                  启动命令
-                </FieldLabel>
-                <Input
-                  id="dialog-opener-command"
-                  required
-                  maxLength={4096}
-                  value={command}
-                  placeholder="zed 或 /usr/local/bin/zed"
-                  onChange={(event) => setCommand(event.target.value)}
-                />
-              </Field>
-
-              <Field className="open-with-dialog-arguments-field">
-                <FieldLabel htmlFor="dialog-opener-arguments" className="text-xs">
-                  启动参数
-                </FieldLabel>
-                <Input
-                  id="dialog-opener-arguments"
-                  maxLength={4096}
-                  value={argumentsTemplate}
-                  placeholder="{path}"
-                  onChange={(event) => setArgumentsTemplate(event.target.value)}
-                />
-                <p className="open-with-dialog-arguments-hint mt-1 text-[11px] text-muted-foreground">
-                  参数中的 {'{path}'} 会替换为工作区目录路径；未填写时自动追加目录。
-                </p>
-              </Field>
+              <form.Field name="name">
+                {(field) => {
+                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                  return (
+                    <Field
+                      className="open-with-dialog-name-field"
+                      data-invalid={invalid}
+                      data-disabled={saving}
+                    >
+                      <FieldLabel
+                        htmlFor="dialog-opener-name"
+                        className="open-with-dialog-name-label"
+                      >
+                        显示名称
+                      </FieldLabel>
+                      <Input
+                        className="open-with-dialog-name-input"
+                        id="dialog-opener-name"
+                        name={field.name}
+                        required
+                        maxLength={80}
+                        value={field.state.value}
+                        placeholder="例如 Zed 或 VS Code"
+                        disabled={saving}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        aria-invalid={invalid}
+                        aria-describedby={invalid ? 'dialog-opener-name-error' : undefined}
+                      />
+                      {invalid && (
+                        <FieldError
+                          id="dialog-opener-name-error"
+                          errors={field.state.meta.errors}
+                        />
+                      )}
+                    </Field>
+                  )
+                }}
+              </form.Field>
+              <form.Field name="command">
+                {(field) => {
+                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                  return (
+                    <Field
+                      className="open-with-dialog-command-field"
+                      data-invalid={invalid}
+                      data-disabled={saving}
+                    >
+                      <FieldLabel
+                        htmlFor="dialog-opener-command"
+                        className="open-with-dialog-command-label"
+                      >
+                        启动命令
+                      </FieldLabel>
+                      <Input
+                        className="open-with-dialog-command-input"
+                        id="dialog-opener-command"
+                        name={field.name}
+                        required
+                        maxLength={4096}
+                        value={field.state.value}
+                        placeholder="zed 或 /usr/local/bin/zed"
+                        disabled={saving}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        aria-invalid={invalid}
+                        aria-describedby={invalid ? 'dialog-opener-command-error' : undefined}
+                      />
+                      {invalid && (
+                        <FieldError
+                          id="dialog-opener-command-error"
+                          errors={field.state.meta.errors}
+                        />
+                      )}
+                    </Field>
+                  )
+                }}
+              </form.Field>
+              <form.Field name="arguments">
+                {(field) => {
+                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                  return (
+                    <Field
+                      className="open-with-dialog-arguments-field"
+                      data-invalid={invalid}
+                      data-disabled={saving}
+                    >
+                      <FieldLabel
+                        htmlFor="dialog-opener-arguments"
+                        className="open-with-dialog-arguments-label"
+                      >
+                        启动参数
+                      </FieldLabel>
+                      <Input
+                        className="open-with-dialog-arguments-input"
+                        id="dialog-opener-arguments"
+                        name={field.name}
+                        maxLength={4096}
+                        value={field.state.value}
+                        placeholder="{path}"
+                        disabled={saving}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        aria-invalid={invalid}
+                        aria-describedby={
+                          invalid
+                            ? 'dialog-opener-arguments-hint dialog-opener-arguments-error'
+                            : 'dialog-opener-arguments-hint'
+                        }
+                      />
+                      <FieldDescription
+                        id="dialog-opener-arguments-hint"
+                        className="open-with-dialog-arguments-hint"
+                      >
+                        参数中的 {'{path}'} 会替换为工作区目录路径；未填写时自动追加目录。
+                      </FieldDescription>
+                      {invalid && (
+                        <FieldError
+                          id="dialog-opener-arguments-error"
+                          errors={field.state.meta.errors}
+                        />
+                      )}
+                    </Field>
+                  )
+                }}
+              </form.Field>
             </FieldGroup>
 
-            {dialogError && (
+            {error && (
               <p role="alert" className="open-with-dialog-error text-xs text-destructive">
-                {dialogError}
+                {error}
               </p>
             )}
 

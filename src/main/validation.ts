@@ -54,12 +54,33 @@ export async function executable(value: unknown): Promise<string> {
 
 export function preferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object') throw new Error('设置格式无效。')
-  const { shellPath, scrollback, openWith } = value as Partial<Preferences>
+  const {
+    shellName,
+    shellPath,
+    scrollback,
+    openWith,
+    terminalGpuAcceleration = 'auto',
+  } = value as Partial<Preferences>
+  if (
+    terminalGpuAcceleration !== 'auto' &&
+    terminalGpuAcceleration !== 'on' &&
+    terminalGpuAcceleration !== 'off'
+  ) {
+    throw new Error('GPU 加速选项无效。')
+  }
+  if (
+    shellName != null &&
+    (typeof shellName !== 'string' || shellName.length > 80 || /[\0\r\n]/.test(shellName))
+  ) {
+    throw new Error('Shell 名称不能包含换行且最多 80 字符。')
+  }
   if (shellPath !== null) absolutePath(shellPath)
   if (!Number.isInteger(scrollback) || scrollback! < 1000 || scrollback! > 20000) {
     throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
   }
   return {
+    terminalGpuAcceleration,
+    shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: shellPath as string | null,
     scrollback: scrollback!,
     openWith: workspaceOpeners(openWith),

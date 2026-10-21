@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
+import { worktreeFormSchema } from '../lib/form-schemas'
 import { unwrap, type WorktreePlan } from '../../../shared/contracts'
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 import { useWorkspace } from '../store'
@@ -11,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog'
-import { Field, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
 import {
   Select,
@@ -23,22 +25,58 @@ import {
 } from './ui/select'
 
 export function WorktreeDialog({ projectPath, close }: { projectPath: string; close(): void }) {
-  const [name, setName] = useState('')
   const [branchPrefix, setBranchPrefix] = useState('')
   const [suggestionAttempt, setSuggestionAttempt] = useState(0)
-  const branchSegment = worktreeBranchSegment(name)
-  const branchName = branchPrefix && branchSegment ? `${branchPrefix}/${branchSegment}` : ''
-  const [baseRef, setBaseRef] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [currentBranch, setCurrentBranch] = useState<string | null>(null)
   const [repositoryError, setRepositoryError] = useState<string>()
   const [error, setError] = useState<string>()
   const [plan, setPlan] = useState<WorktreePlan>()
-  const [pending, setPending] = useState(false)
+  const [checkingPlan, setCheckingPlan] = useState(false)
   const submitting = useRef(false)
   const nameInput = useRef<HTMLInputElement>(null)
   const nameEdited = useRef(false)
   const baseEdited = useRef(false)
+  const form = useForm({
+    defaultValues: { name: '', baseRef: '' },
+    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validators: { onDynamic: worktreeFormSchema },
+    onSubmit: async ({ value }) => {
+      const branchName = `${branchPrefix}/${worktreeBranchSegment(value.name)}`
+      if (
+        !plan ||
+        plan.name !== value.name.trim() ||
+        plan.branchName !== branchName ||
+        plan.baseRef !== value.baseRef ||
+        submitting.current ||
+        repositoryError ||
+        checkingPlan
+      )
+        return
+      submitting.current = true
+      setError(undefined)
+      try {
+        await useWorkspace.getState().createGitWorktree({
+          projectPath,
+          name: value.name.trim(),
+          branchName,
+          baseRef: value.baseRef,
+          planId: plan.id,
+        })
+        close()
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : String(failure))
+        setPlan(undefined)
+      } finally {
+        submitting.current = false
+      }
+    },
+  })
+  const name = useStore(form.store, (state) => state.values.name)
+  const baseRef = useStore(form.store, (state) => state.values.baseRef)
+  const pending = useStore(form.store, (state) => state.isSubmitting) || checkingPlan
+  const branchSegment = worktreeBranchSegment(name)
+  const branchName = branchPrefix && branchSegment ? `${branchPrefix}/${branchSegment}` : ''
   useEffect(() => {
     let disposed = false
     void Promise.all([
@@ -49,7 +87,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
         if (disposed) return
         setBranches(value)
         setCurrentBranch(currentBranch)
-        if (!baseEdited.current) setBaseRef(currentBranch || 'HEAD')
+        if (!baseEdited.current) form.setFieldValue('baseRef', currentBranch || 'HEAD')
         setRepositoryError(undefined)
       })
       .catch((failure) => {
@@ -60,7 +98,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
       .then(unwrap)
       .then((suggested) => {
         if (disposed) return
-        if (!nameEdited.current) setName(suggested.name)
+        if (!nameEdited.current) form.setFieldValue('name', suggested.name)
         setBranchPrefix(suggested.branchPrefix)
         setError(undefined)
       })
@@ -73,7 +111,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
   }, [projectPath, suggestionAttempt])
   useEffect(() => {
     let disposed = false
-    if (!name.trim() || !branchName.trim() || !baseRef.trim()) return
+    if (!branchName || !worktreeFormSchema.safeParse({ name, baseRef }).success) return
     const timer = window.setTimeout(() => {
       void window.desktop
         .planGitWorktree({ projectPath, name, branchName, baseRef })
@@ -119,90 +157,120 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
         <form
           className="worktree-create-form flex flex-col gap-5"
           aria-busy={pending}
+          noValidate
           onSubmit={(event) => {
             event.preventDefault()
-            if (!validPlan || submitting.current || repositoryError) return
-            submitting.current = true
-            setPending(true)
-            setError(undefined)
-            void useWorkspace
-              .getState()
-              .createGitWorktree({ projectPath, name, branchName, baseRef, planId: plan.id })
-              .then(close)
-              .catch((failure) => {
-                setError(failure.message)
-                setPlan(undefined)
-              })
-              .finally(() => {
-                submitting.current = false
-                setPending(false)
-              })
+            void form.handleSubmit()
           }}
         >
           <FieldGroup className="worktree-create-fields">
-            <Field className="worktree-name-field">
-              <FieldLabel className="worktree-name-label" htmlFor="worktree-name">
-                工作区名称
-              </FieldLabel>
-              <Input
-                className="worktree-name-input"
-                id="worktree-name"
-                value={name}
-                maxLength={1024}
-                required
-                disabled={pending}
-                ref={nameInput}
-                aria-describedby="worktree-name-hint"
-                onChange={(event) => {
-                  nameEdited.current = true
-                  setName(event.target.value)
-                  setPlan(undefined)
-                  if (branchPrefix) setError(undefined)
-                }}
-              />
-              <p
-                id="worktree-name-hint"
-                className="worktree-name-hint text-xs text-muted-foreground"
-              >
-                可修改名称，分支名自动更新；名称需包含字母、数字或下划线。
-              </p>
-            </Field>
-            <Field className="worktree-base-field">
-              <FieldLabel className="worktree-base-label" htmlFor="worktree-base">
-                基础引用
-              </FieldLabel>
-              <Select
-                value={baseRef || null}
-                disabled={pending || !baseRef}
-                onValueChange={(value) => {
-                  if (!value) return
-                  baseEdited.current = true
-                  setBaseRef(value)
-                  setPlan(undefined)
-                  if (branchPrefix) setError(undefined)
-                }}
-              >
-                <SelectTrigger className="worktree-base-select w-full" id="worktree-base">
-                  <SelectValue className="worktree-base-value" placeholder="正在读取当前分支…">
-                    {(value) => (value === 'HEAD' ? 'HEAD（当前提交）' : value)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="worktree-base-options max-h-[min(9.25rem,var(--available-height))]">
-                  <SelectGroup className="worktree-base-group">
-                    {!currentBranch && (
-                      <SelectItem className="worktree-base-option" value="HEAD">
-                        HEAD（当前提交）
-                      </SelectItem>
+            <form.Field name="name">
+              {(field) => {
+                const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                return (
+                  <Field
+                    className="worktree-name-field"
+                    data-invalid={invalid}
+                    data-disabled={pending}
+                  >
+                    <FieldLabel className="worktree-name-label" htmlFor="worktree-name">
+                      工作区名称
+                    </FieldLabel>
+                    <Input
+                      className="worktree-name-input"
+                      id="worktree-name"
+                      name={field.name}
+                      value={field.state.value}
+                      maxLength={1024}
+                      required
+                      disabled={pending}
+                      ref={nameInput}
+                      onBlur={field.handleBlur}
+                      aria-invalid={invalid}
+                      aria-describedby={
+                        invalid ? 'worktree-name-hint worktree-name-error' : 'worktree-name-hint'
+                      }
+                      onChange={(event) => {
+                        nameEdited.current = true
+                        field.handleChange(event.target.value)
+                        setPlan(undefined)
+                        if (branchPrefix) setError(undefined)
+                      }}
+                    />
+                    <FieldDescription id="worktree-name-hint" className="worktree-name-hint">
+                      可修改名称，分支名自动更新；名称需包含字母、数字或下划线。
+                    </FieldDescription>
+                    {invalid && (
+                      <FieldError id="worktree-name-error" errors={field.state.meta.errors} />
                     )}
-                    {branches.map((branch) => (
-                      <SelectItem className="worktree-base-option" key={branch} value={branch}>
-                        {branch}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+                  </Field>
+                )
+              }}
+            </form.Field>
+            <form.Field name="baseRef">
+              {(field) => {
+                const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                return (
+                  <Field
+                    className="worktree-base-field"
+                    data-invalid={invalid}
+                    data-disabled={pending || !baseRef}
+                  >
+                    <FieldLabel className="worktree-base-label" htmlFor="worktree-base">
+                      基础引用
+                    </FieldLabel>
+                    <Select
+                      name={field.name}
+                      value={field.state.value || null}
+                      disabled={pending || !baseRef}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        baseEdited.current = true
+                        field.handleChange(value)
+                        setPlan(undefined)
+                        if (branchPrefix) setError(undefined)
+                      }}
+                    >
+                      <SelectTrigger
+                        className="worktree-base-select w-full"
+                        id="worktree-base"
+                        onBlur={field.handleBlur}
+                        aria-invalid={invalid}
+                        aria-describedby={invalid ? 'worktree-base-error' : undefined}
+                      >
+                        <SelectValue
+                          className="worktree-base-value"
+                          placeholder="正在读取当前分支…"
+                        >
+                          {(value) => (value === 'HEAD' ? 'HEAD（当前提交）' : value)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="worktree-base-options max-h-[min(9.25rem,var(--available-height))]">
+                        <SelectGroup className="worktree-base-group">
+                          {!currentBranch && (
+                            <SelectItem className="worktree-base-option" value="HEAD">
+                              HEAD（当前提交）
+                            </SelectItem>
+                          )}
+                          {branches.map((branch) => (
+                            <SelectItem
+                              className="worktree-base-option"
+                              key={branch}
+                              value={branch}
+                            >
+                              {branch}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {invalid && (
+                      <FieldError id="worktree-base-error" errors={field.state.meta.errors} />
+                    )}
+                  </Field>
+                )
+              }}
+            </form.Field>
           </FieldGroup>
           {(repositoryError || error) && (
             <p className="worktree-create-error text-sm text-destructive break-words" role="alert">
@@ -220,7 +288,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
                   setSuggestionAttempt((attempt) => attempt + 1)
                   return
                 }
-                setPending(true)
+                setCheckingPlan(true)
                 void window.desktop
                   .planGitWorktree({ projectPath, name, branchName, baseRef })
                   .then(unwrap)
@@ -230,7 +298,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
                     setRepositoryError(undefined)
                   })
                   .catch((failure) => setError(failure.message))
-                  .finally(() => setPending(false))
+                  .finally(() => setCheckingPlan(false))
               }}
             >
               {branchPrefix && baseRef ? '重新检查' : '重新读取工作树信息'}

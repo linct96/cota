@@ -38,4 +38,34 @@ function FieldLabel({ className, htmlFor, ...props }: ComponentProps<'label'>) {
   )
 }
 
-export { FieldGroup, Field, FieldLabel }
+function FieldDescription({ className, ...props }: ComponentProps<'p'>) {
+  return (
+    <p
+      data-slot="field-description"
+      className={cn('field-description text-xs text-muted-foreground', className)}
+      {...props}
+    />
+  )
+}
+
+function FieldError({
+  className,
+  children,
+  errors,
+  ...props
+}: ComponentProps<'div'> & { errors?: Array<{ message?: string } | undefined> }) {
+  const messages = [...new Set(errors?.map((error) => error?.message).filter(Boolean))]
+  if (!children && !messages.length) return null
+  return (
+    <div
+      role="alert"
+      data-slot="field-error"
+      className={cn('field-error text-xs text-destructive', className)}
+      {...props}
+    >
+      {children || messages.join(' ')}
+    </div>
+  )
+}
+
+export { FieldGroup, Field, FieldLabel, FieldDescription, FieldError }

@@ -23,6 +23,7 @@ describe('local JSON configuration', () => {
     await store.remember('/tmp/中文 项目')
     await store.savePreferences({
       ...DEFAULT_CONFIG.preferences,
+      shellName: '我的 Bash',
       shellPath: '/bin/bash',
       scrollback: 1000,
     })
@@ -31,9 +32,31 @@ describe('local JSON configuration', () => {
       version: 2,
       worktreeRecords: [],
       recentProjects: ['/tmp/中文 项目'],
-      preferences: { ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash', scrollback: 1000 },
+      preferences: {
+        ...DEFAULT_CONFIG.preferences,
+        shellName: '我的 Bash',
+        shellPath: '/bin/bash',
+        scrollback: 1000,
+      },
     })
     expect((await stat(file)).mode & 0o777).toBe(0o600)
+    await store.savePreferences({ ...store.snapshot().preferences, shellName: null })
+    expect((await new ConfigStore(file).load()).config.preferences).toMatchObject({
+      shellName: null,
+      shellPath: '/bin/bash',
+    })
+    for (const terminalGpuAcceleration of ['on', 'off', 'auto'] as const) {
+      await store.savePreferences({ ...store.snapshot().preferences, terminalGpuAcceleration })
+      expect((await new ConfigStore(file).load()).config.preferences.terminalGpuAcceleration).toBe(
+        terminalGpuAcceleration,
+      )
+    }
+    const legacy = JSON.parse(await readFile(file, 'utf8'))
+    delete legacy.preferences.terminalGpuAcceleration
+    await writeFile(file, JSON.stringify(legacy))
+    expect((await new ConfigStore(file).load()).config.preferences.terminalGpuAcceleration).toBe(
+      'auto',
+    )
   })
   it('persists custom and empty open-with lists', async () => {
     const store = new ConfigStore(file)

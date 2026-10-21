@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import {
   AppWindow,
   Archive,
@@ -15,13 +15,14 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  SquareTerminal,
 } from 'lucide-react'
-import { useNavigate } from '@tanstack/react-router'
 import { Card } from './ui/card'
 import { Input } from './ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { cn } from '../lib/utils'
 import { GeneralSettings } from './GeneralSettings'
+import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
 
 interface SettingItem {
@@ -42,6 +43,7 @@ const SETTING_GROUPS: SettingGroup[] = [
     label: '个人',
     items: [
       { id: 'general', label: '常规', icon: SettingsIcon },
+      { id: 'terminal', label: '终端', icon: SquareTerminal },
       { id: 'import', label: '导入', icon: Download },
       { id: 'appearance', label: '外观', icon: Sun },
       { id: 'archived-chats', label: 'Archived chats', icon: Archive },
@@ -67,21 +69,9 @@ const SETTING_GROUPS: SettingGroup[] = [
 ]
 
 export function Settings() {
-  const navigate = useNavigate()
   const [activeCategory, setActiveCategory] = useState('general')
   const [search, setSearch] = useState('')
   const titleId = useId()
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) {
-        event.preventDefault()
-        void navigate({ to: '/' })
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [navigate])
 
   const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -178,11 +168,14 @@ export function Settings() {
           <TabsContent value="general" className="mt-0">
             <GeneralSettings />
           </TabsContent>
+          <TabsContent value="terminal" className="settings-terminal-content mt-0">
+            <TerminalSettings />
+          </TabsContent>
           <TabsContent value="open-with" className="mt-0">
             <OpenWithSettings />
           </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
-            .filter((item) => item.id !== 'general' && item.id !== 'open-with')
+            .filter((item) => !['general', 'terminal', 'open-with'].includes(item.id))
             .map((item) => (
               <TabsContent key={item.id} value={item.id} className="mt-0">
                 <div className="settings-section-header mb-6">
@@ -194,7 +187,7 @@ export function Settings() {
                   </p>
                 </div>
                 <Card className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground shadow-none ring-0">
-                  此项设置暂未开放，请返回「常规」查看终端配置。
+                  此项设置暂未开放，请前往「终端」查看终端配置。
                 </Card>
               </TabsContent>
             ))}

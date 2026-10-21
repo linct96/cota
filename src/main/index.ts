@@ -20,7 +20,7 @@ import { WorktreeError } from './git-worktrees'
 import { openWorkspaceWith } from './open-with'
 import { detectAgents } from './agents'
 import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
-import { loginShellEnvironment, shellEnvironment } from './shell'
+import { loginShellEnvironment, resolveShell, shellEnvironment } from './shell'
 import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
 import { connectTerminalHost, type HostClient } from './host-client'
 import { AgentNotifications } from './agent-notifications'
@@ -363,6 +363,7 @@ function installIPC(): void {
   handle('project:remove', (value: unknown) =>
     removeTarget({ projectPath: absolutePath(value), removeProject: true }),
   )
+  handle('shell:default', () => resolveShell({ shellPath: null }))
   handle('preferences:save', async (value: unknown) => {
     const next = preferences(value)
     if (next.shellPath) await executable(next.shellPath)

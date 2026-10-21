@@ -67,41 +67,36 @@ export function TerminalTab({
 
       <span className="terminal-tab-title min-w-0 flex-1 truncate">{tab.title}</span>
 
-      {isAgent
-        ? agentState !== 'other' && (
-            <span
-              className="terminal-tab-agent-status inline-flex size-3.5 shrink-0 items-center justify-center"
-              title={agentLabel}
-              aria-hidden="true"
-            >
-              <AgentStatus state={agentState} />
-            </span>
-          )
-        : active && (
-            <span
-              className="terminal-tab-status size-1.5 shrink-0 rounded-full bg-emerald-500"
-              aria-hidden="true"
-            />
+      <span className="terminal-tab-actions inline-grid size-4 shrink-0 place-items-center">
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={`关闭 ${tab.title}`}
+          disabled={closeDisabled}
+          onClick={(event) => {
+            event.stopPropagation()
+            onClose()
+          }}
+          className={cn(
+            'terminal-tab-close-button peer/terminal-tab-close col-start-1 row-start-1 inline-flex size-4 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none [&:disabled>svg]:opacity-30',
+            !isAgent && active
+              ? 'opacity-100'
+              : 'pointer-events-none opacity-0 group-hover/terminal-tab:pointer-events-auto group-hover/terminal-tab:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
           )}
+        >
+          <X className="terminal-tab-close-icon size-3" />
+        </button>
 
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label={`关闭 ${tab.title}`}
-        disabled={closeDisabled}
-        onClick={(event) => {
-          event.stopPropagation()
-          onClose()
-        }}
-        className={cn(
-          'terminal-tab-close-button inline-flex size-4 shrink-0 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-30',
-          active
-            ? 'opacity-100'
-            : 'pointer-events-none opacity-0 group-hover/terminal-tab:pointer-events-auto group-hover/terminal-tab:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
+        {isAgent && agentState !== 'other' && (
+          <span
+            className="terminal-tab-agent-status pointer-events-none col-start-1 row-start-1 inline-flex size-3.5 items-center justify-center group-hover/terminal-tab:opacity-0 peer-focus-visible/terminal-tab-close:opacity-0"
+            title={agentLabel}
+            aria-hidden="true"
+          >
+            <AgentStatus state={agentState} />
+          </span>
         )}
-      >
-        <X className="terminal-tab-close-icon size-3" />
-      </button>
+      </span>
     </div>
   )
 }

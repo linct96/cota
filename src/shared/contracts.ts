@@ -5,7 +5,11 @@ export interface WorkspaceOpener {
   arguments: string
 }
 
+export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
+
 export interface Preferences {
+  terminalGpuAcceleration: TerminalGpuAcceleration
+  shellName: string | null
   shellPath: string | null
   scrollback: number
   openWith: WorkspaceOpener[]
@@ -385,6 +389,7 @@ export interface DesktopAPI {
   openWorkspaceWith(path: string | WorkspaceTarget, openerId: string): Promise<Result<void>>
   removeWorkspace(target: RemoveWorkspace): Promise<Result<boolean>>
   removeProject(path: string): Promise<Result<boolean>>
+  getDefaultShell(): Promise<Result<string>>
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>
   detectAgents(): Promise<Result<AgentAvailability[]>>
   detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
@@ -416,6 +421,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   recentProjects: [],
   worktreeRecords: [],
   preferences: {
+    terminalGpuAcceleration: 'auto',
+    shellName: null,
     shellPath: null,
     scrollback: 5000,
     openWith: [

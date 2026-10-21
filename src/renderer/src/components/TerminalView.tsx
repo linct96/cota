@@ -3,10 +3,16 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { unwrap, type TerminalEvent } from '../../../shared/contracts'
 import { useWorkspace, type TerminalTab } from '../store'
+import { createTerminalRenderer } from '../lib/terminal-renderer'
 
 export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
   const host = useRef<HTMLDivElement>(null)
-  const instance = useRef<{ terminal: Terminal; fit: FitAddon } | null>(null)
+  const instance = useRef<{
+    terminal: Terminal
+    fit: FitAddon
+    renderer: ReturnType<typeof createTerminalRenderer>
+  } | null>(null)
+  const gpuAcceleration = useWorkspace((state) => state.preferences.terminalGpuAcceleration)
   const scrollback = useWorkspace((state) => state.preferences.scrollback)
   const focusVersion = useWorkspace((state) => state.focusVersion)
   const id = tab.id
@@ -70,7 +76,8 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const fit = new FitAddon()
     terminal.loadAddon(fit)
     terminal.open(host.current!)
-    instance.current = { terminal, fit }
+    const renderer = createTerminalRenderer(terminal, fit)
+    instance.current = { terminal, fit, renderer }
     let disposed = false
     let connected = false
     let closing = false
@@ -198,10 +205,15 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
       data.dispose()
       resize.dispose()
+      renderer.dispose()
       terminal.dispose()
       instance.current = null
     }
   }, [id, projectPath, workspaceId, kind, provider, launchId])
+
+  useEffect(() => {
+    instance.current?.renderer.update(gpuAcceleration, active)
+  }, [gpuAcceleration, active, id, projectPath, workspaceId, kind, provider, launchId])
 
   useEffect(() => {
     if (instance.current) instance.current.terminal.options.scrollback = scrollback
