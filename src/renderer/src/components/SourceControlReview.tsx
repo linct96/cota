@@ -139,7 +139,7 @@ export function SourceControlReview({
   return (
     <section
       className="source-control-review flex flex-col gap-3"
-      aria-label={mode === 'history' ? '提交历史' : '分支比较'}
+      aria-label={mode === 'history' ? '提交历史' : '比较'}
     >
       {mode === 'compare' && (
         <Field className="source-control-base-field px-1">
@@ -207,31 +207,37 @@ export function SourceControlReview({
               </EmptyHeader>
             </Empty>
           )}
-          {history?.commits.map((item) => (
-            <Button
-              key={item.oid}
-              variant="ghost"
-              className="source-control-history-commit h-auto w-full min-w-0 justify-start py-2"
-              title={item.subject}
-              onClick={() => setCommit(item.oid)}
-            >
-              <GitCommitHorizontal
-                className="source-control-history-commit-icon"
-                data-icon="inline-start"
-              />
-              <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-1 text-left">
-                <span className="source-control-history-subject truncate">
-                  {item.subject || '（无提交标题）'}
-                </span>
-                <span className="source-control-history-metadata truncate text-muted-foreground">
-                  {item.oid.slice(0, 8)} · {item.author} ·{' '}
-                  <time className="source-control-history-date" dateTime={item.date}>
-                    {new Date(item.date).toLocaleDateString()}
-                  </time>
-                </span>
-              </span>
-            </Button>
-          ))}
+          {!!history?.commits.length && (
+            <div className="source-control-history-list flex min-w-0 flex-col gap-1">
+              {history?.commits.map((item) => (
+                <Button
+                  key={item.oid}
+                  variant="ghost"
+                  className="source-control-history-commit h-auto w-full min-w-0 items-start justify-start py-1.5"
+                  title={item.subject}
+                  onClick={() => setCommit(item.oid)}
+                >
+                  <span className="source-control-history-commit-icon-container flex h-lh shrink-0 items-center">
+                    <GitCommitHorizontal
+                      className="source-control-history-commit-icon"
+                      data-icon="inline-start"
+                    />
+                  </span>
+                  <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                    <span className="source-control-history-subject truncate">
+                      {item.subject || '（无提交标题）'}
+                    </span>
+                    <span className="source-control-history-metadata truncate text-muted-foreground">
+                      {item.oid.slice(0, 8)} · {item.author} ·{' '}
+                      <time className="source-control-history-date" dateTime={item.date}>
+                        {new Date(item.date).toLocaleDateString()}
+                      </time>
+                    </span>
+                  </span>
+                </Button>
+              ))}
+            </div>
+          )}
           {history?.more && (
             <Button
               variant="outline"

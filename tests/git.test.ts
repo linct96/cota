@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import type { FSWatcher } from 'node:fs'
 import {
   mkdtemp,
   mkdir,
@@ -15,6 +17,8 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { projectBranch } from '../src/main/git'
 import { SourceControlService, parseGitStatus } from '../src/main/source-control'
+import { SourceControlWatches } from '../src/main/source-control-watch'
+import * as gitRunner from '../src/main/git-runner'
 
 const sourceControl = new SourceControlService()
 
@@ -54,12 +58,14 @@ describe('project branch', () => {
     const name = 'nested/中文 [文件]*\n.txt'
     const file = { path: name, area: 'untracked' as const }
     await writeFile(join(directory, name), 'first\n')
-    const initial = await sourceControl.status(nested)
+    const initial = await sourceControl.status(nested, true)
     expect(initial.rootPath).toBe(directory)
     expect(initial.head).toBeNull()
     expect(initial.branch).toBe('feature/工作区')
     expect(await sourceControl.history(directory)).toEqual({ head: null, commits: [], more: false })
-    expect(initial.entries).toEqual([expect.objectContaining(file)])
+    expect(initial.entries).toEqual([
+      expect.objectContaining({ ...file, stats: { additions: 1, deletions: 0 } }),
+    ])
     expect(await sourceControl.diff(directory, file)).toEqual({
       kind: 'text',
       original: '',
@@ -69,9 +75,10 @@ describe('project branch', () => {
     const noConfirm = vi.fn().mockResolvedValue(false)
     await sourceControl.mutate(directory, { ...target, action: 'stage', files: [file] }, noConfirm)
     await writeFile(join(directory, name), 'second\n')
-    expect((await sourceControl.status(directory)).entries.map((entry) => entry.area)).toEqual([
-      'staged',
-      'unstaged',
+    const partial = await sourceControl.status(directory, true)
+    expect(partial.entries.map((entry) => [entry.area, entry.stats])).toEqual([
+      ['staged', { additions: 1, deletions: 0 }],
+      ['unstaged', { additions: 1, deletions: 1 }],
     ])
     expect(await sourceControl.diff(directory, { ...file, area: 'staged' })).toEqual({
       kind: 'text',
@@ -146,6 +153,7 @@ describe('project branch', () => {
     expect(await sourceControl.diff(directory, { ...file, area: 'unstaged' })).toEqual(
       expect.objectContaining({ kind: 'unavailable' }),
     )
+    expect((await sourceControl.status(directory, true)).entries[0].stats).toBeNull()
     await sourceControl.mutate(directory, discard, async () => true)
     const outside = join(directory, 'outside.txt')
     await writeFile(outside, 'do not delete')
@@ -166,6 +174,88 @@ describe('project branch', () => {
         noConfirm,
       ),
     ).rejects.toThrow('路径无效')
+    const samples = [
+      ['nested/new\t中文\n.txt', Buffer.from('one\r\ntwo')],
+      ['nested/empty.txt', Buffer.alloc(0)],
+      ['nested/binary.dat', Buffer.from([0, 1, 2])],
+      ['nested/large.txt', Buffer.alloc(2 * 1024 * 1024 + 1, 65)],
+    ] as const
+    for (const [path, bytes] of samples) await writeFile(join(directory, path), bytes)
+    await rm(join(directory, name))
+    const counts = await sourceControl.status(nested, true)
+    expect(counts.entries.find((entry) => entry.path === name)?.stats).toEqual({
+      additions: 0,
+      deletions: 1,
+    })
+    expect(counts.entries.find((entry) => entry.path === samples[0][0])?.stats).toEqual({
+      additions: 2,
+      deletions: 0,
+    })
+    expect(counts.entries.find((entry) => entry.path === samples[1][0])?.stats).toEqual({
+      additions: 0,
+      deletions: 0,
+    })
+    expect(counts.entries.find((entry) => entry.path === samples[2][0])?.stats).toBeNull()
+    expect(counts.entries.find((entry) => entry.path === samples[3][0])?.stats).toBeUndefined()
+    await git('restore', '--worktree', '--', `:(literal)${name}`)
+    const renamed = 'nested/renamed\t中文\n.txt'
+    await git('mv', '--', name, renamed)
+    await git('config', 'diff.external', 'cota-must-not-run-external-diff')
+    expect((await sourceControl.status(nested, true)).entries).toContainEqual(
+      expect.objectContaining({
+        path: renamed,
+        oldPath: name,
+        stats: { additions: 0, deletions: 0 },
+      }),
+    )
+    expect(
+      (await sourceControl.status(nested)).entries.every((entry) => entry.stats === undefined),
+    ).toBe(true)
+    const readGit = gitRunner.runGitBytes
+    const failedStats = vi
+      .spyOn(gitRunner, 'runGitBytes')
+      .mockImplementation((cwd, args, writing, timeout) => {
+        if (args.includes('--numstat')) return Promise.reject(new Error('Statistics unavailable'))
+        return readGit(cwd, args, writing, timeout)
+      })
+    try {
+      const unavailable = (await sourceControl.status(nested, true)).entries.find(
+        (entry) => entry.path === renamed,
+      )
+      expect(unavailable).toMatchObject({ path: renamed, area: 'staged' })
+      expect(unavailable?.stats).toBeUndefined()
+    } finally {
+      failedStats.mockRestore()
+    }
+    await writeFile(join(directory, renamed), 'third\n')
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(1000)
+    const limitedStats = vi
+      .spyOn(gitRunner, 'runGitBytes')
+      .mockImplementation((cwd, args, writing, timeout) => {
+        if (args.includes('--numstat')) {
+          expect(timeout).toBe(500)
+          clock.mockReturnValue(1500)
+          return Promise.reject(new Error('Statistics timed out'))
+        }
+        return readGit(cwd, args, writing, timeout)
+      })
+    try {
+      const limited = await sourceControl.status(nested, true)
+      expect(limited.entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: renamed, area: 'staged' }),
+          expect.objectContaining({ path: renamed, area: 'unstaged' }),
+          expect.objectContaining({ path: samples[0][0], area: 'untracked' }),
+        ]),
+      )
+      expect(limited.entries.every((entry) => entry.stats === undefined)).toBe(true)
+      expect(limitedStats.mock.calls.filter(([, args]) => args.includes('--numstat'))).toHaveLength(
+        1,
+      )
+    } finally {
+      limitedStats.mockRestore()
+      clock.mockRestore()
+    }
   }, 15000)
 
   it('reads worktree branches and omits detached HEAD', async () => {
@@ -521,6 +611,116 @@ describe('project branch', () => {
       sourceControl.compare(worktree, { kind: 'branch', ref: 'refs/heads/main' }),
     ).rejects.toThrow('没有共同祖先')
   }, 30000)
+
+  it('watches worktree and shared metadata, filters noise and cleans up races and failures', async () => {
+    await git('init', '--initial-branch=main')
+    await git('config', 'user.name', 'Cota')
+    await git('config', 'user.email', 'cota@example.test')
+    await git('config', 'commit.gpgsign', 'false')
+    await git('config', 'core.hooksPath', '/dev/null')
+    await writeFile(join(directory, 'tracked.txt'), 'initial')
+    await git('add', '.')
+    await git('commit', '-m', 'initial')
+    const linked = join(directory, 'linked')
+    await git('worktree', 'add', '-b', 'linked', linked)
+    const gitDir = (await git('-C', linked, 'rev-parse', '--absolute-git-dir')).stdout.trim()
+    const common = join(directory, '.git')
+    const paths = new Map<
+      string,
+      { watcher: FSWatcher; emit(event: 'change' | 'rename', file: string | null): void }
+    >()
+    const watch = vi.fn((...args: unknown[]) => {
+      const [path, , listener] = args
+      if (typeof listener !== 'function') throw new Error('Missing listener')
+      const watcher = new EventEmitter() as FSWatcher
+      watcher.close = vi.fn(() => {
+        watcher.emit('close')
+      })
+      paths.set(String(path), { watcher, emit: (event, file) => listener(event, file) })
+      return watcher
+    })
+    const service = new SourceControlWatches(watch)
+    const notify = vi.fn()
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+    const originalRun = gitRunner.runGit
+    const run = vi.spyOn(gitRunner, 'runGit').mockImplementation((cwd, args, writing) => {
+      if (args[0] !== 'check-ignore') return originalRun(cwd, args, writing)
+      if (args.includes('node_modules/generated.js'))
+        return Promise.resolve('node_modules/generated.js\0')
+      return Promise.reject(Object.assign(new Error('No ignored paths'), { cause: { code: 1 } }))
+    })
+    try {
+      expect(await service.start(id, async () => linked, notify)).toBe(true)
+      expect(paths.has(linked)).toBe(true)
+      expect(paths.has(gitDir)).toBe(true)
+      expect(paths.has(common)).toBe(true)
+      expect(paths.has(join(common, 'refs'))).toBe(true)
+      vi.useFakeTimers()
+      paths.get(linked)!.emit('change', '.git')
+      paths.get(common)!.emit('change', 'index.lock')
+      paths.get(join(common, 'refs'))!.emit('change', 'heads/linked.lock')
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(notify).not.toHaveBeenCalled()
+      paths.get(linked)!.emit('change', 'node_modules/generated.js')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(run).toHaveBeenCalledWith(linked, [
+        'check-ignore',
+        '-z',
+        '--',
+        'node_modules/generated.js',
+      ])
+      expect(notify).not.toHaveBeenCalled()
+      paths.get(linked)!.emit('change', 'tracked.txt')
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(notify.mock.calls).toEqual([['change']])
+      notify.mockClear()
+      paths.get(gitDir)!.emit('rename', 'index')
+      paths.get(gitDir)!.emit('rename', 'HEAD')
+      paths.get(join(common, 'refs'))!.emit('change', 'remotes/origin/main')
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(notify.mock.calls).toEqual([['change']])
+      notify.mockClear()
+      paths.get(gitDir)!.emit('change', 'HEAD')
+      paths.get(linked)!.watcher.emit('error', new Error('watch limit'))
+      expect(notify.mock.calls).toEqual([['unavailable']])
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(notify).toHaveBeenCalledTimes(1)
+      for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
+
+      paths.clear()
+      expect(await service.start(id, async () => linked, notify)).toBe(true)
+      paths.get(common)!.emit('rename', 'refs')
+      expect(notify).toHaveBeenLastCalledWith('unavailable')
+      for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
+      paths.clear()
+      watch.mockImplementationOnce(() => {
+        throw new Error('recursive watch unsupported')
+      })
+      expect(await service.start(id, async () => linked, notify)).toBe(false)
+      let resolvePath!: (path: string) => void
+      const pending = service.start(
+        id,
+        () =>
+          new Promise((resolve) => {
+            resolvePath = resolve
+          }),
+        notify,
+      )
+      const count = watch.mock.calls.length
+      service.stop(id)
+      resolvePath(linked)
+      expect(await pending).toBe(false)
+      expect(watch).toHaveBeenCalledTimes(count)
+
+      expect(await service.start(id, async () => linked, notify)).toBe(true)
+      service.close()
+      for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
+      await expect(service.start('invalid', async () => linked, notify)).rejects.toThrow()
+    } finally {
+      service.close()
+      vi.useRealTimers()
+    }
+  })
 
   it('omits the subtitle for non-repositories or missing Git', async () => {
     expect(await projectBranch(directory)).toBeNull()

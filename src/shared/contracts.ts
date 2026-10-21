@@ -372,6 +372,8 @@ export interface ConfirmationRequest {
   confirmLabel?: string
 }
 
+export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
+
 export interface DesktopAPI {
   readonly platform: string
   bootstrap(): Promise<
@@ -389,6 +391,7 @@ export interface DesktopAPI {
   inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
   listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
   gitStatus(target: WorkspaceTarget): Promise<Result<GitStatus>>
+  watchGit(target: WorkspaceTarget, listener: (event: GitWatchEvent) => void): () => void
   gitDiff(target: WorkspaceTarget, file: GitDiffSelection): Promise<Result<GitDiff>>
   gitReferences(target: WorkspaceTarget): Promise<Result<GitReferences>>
   gitHistory(target: WorkspaceTarget, request?: GitHistoryRequest): Promise<Result<GitHistory>>

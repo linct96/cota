@@ -7,6 +7,7 @@ export interface GitChange {
   area: GitArea
   status: string
   submodule: boolean
+  stats?: { additions: number; deletions: number } | null
 }
 export interface GitStatus {
   rootPath: string

@@ -25,12 +25,17 @@ export function gitEnvironment(): NodeJS.ProcessEnv {
   return { ...env, LC_ALL: 'C', LANG: 'C', GIT_TERMINAL_PROMPT: '0' }
 }
 
-export async function runGitBytes(cwd: string, args: string[], writing = false): Promise<Buffer> {
+export async function runGitBytes(
+  cwd: string,
+  args: string[],
+  writing = false,
+  timeout = writing ? 120000 : 10000,
+): Promise<Buffer> {
   try {
     const { stdout } = await execFileAsync('git', args, {
       cwd,
       env: { ...gitEnvironment(), ...(!writing && { GIT_OPTIONAL_LOCKS: '0' }) },
-      timeout: writing ? 120000 : 10000,
+      timeout,
       maxBuffer: 8 * 1024 * 1024,
       encoding: 'buffer',
       windowsHide: true,

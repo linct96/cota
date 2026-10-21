@@ -24,6 +24,7 @@ import { runGit, runGitBytes, WorktreeError } from './git-runner'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_FILES = 5000
+const STATS_BUDGET_MS = 500
 const OID = /^[\da-f]{40}([\da-f]{24})?$/
 const HISTORY_PAGE = 50
 
@@ -135,7 +136,7 @@ function explain(error: unknown): Error {
 export class SourceControlService {
   private readonly git = new GitService()
 
-  async status(cwd: string): Promise<GitStatus> {
+  async status(cwd: string, includeStats = false): Promise<GitStatus> {
     try {
       const repository = await this.git.requireRepository(cwd)
       const rootPath = repository.rootPath
@@ -149,14 +150,94 @@ export class SourceControlService {
       ])
       if (!isUtf8(raw)) throw new Error('仓库包含非 UTF-8 文件名，请在终端处理这些路径。')
       const status = parseGitStatus(raw.toString('utf8'))
-      return {
+      const result = {
         ...status,
         rootPath,
         tracking: await this.tracking(rootPath, status.branch),
         indexVersion: await this.indexVersion(rootPath, status.head),
       }
+      if (includeStats) await this.fileStats(rootPath, result.entries)
+      return result
     } catch (error) {
       throw explain(error)
+    }
+  }
+
+  private async fileStats(root: string, entries: GitChange[]): Promise<void> {
+    // Optional counts must not hold the status read lock for slow diffs.
+    const deadline = performance.now() + STATS_BUDGET_MS
+    for (const area of ['staged', 'unstaged'] as const) {
+      const files = entries.filter((entry) => entry.area === area && !entry.submodule)
+      if (!files.length) continue
+      const timeout = Math.ceil(deadline - performance.now())
+      if (timeout <= 0) return
+      try {
+        const raw = await runGitBytes(
+          root,
+          [
+            'diff',
+            '--numstat',
+            '-z',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--ignore-submodules=all',
+            '--find-renames',
+            ...(area === 'staged' ? ['--cached'] : []),
+            '--',
+          ],
+          false,
+          timeout,
+        )
+        if (!isUtf8(raw) || (raw.length && raw.at(-1) !== 0))
+          throw new Error('Git 行数统计格式无效。')
+        const records = raw.toString('utf8').split('\0')
+        const stats = new Map<string, GitChange['stats']>()
+        for (let i = 0; i < records.length; i++) {
+          if (performance.now() >= deadline) return
+          if (!records[i]) continue
+          const match = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(records[i])
+          if (!match) throw new Error('Git 行数统计格式无效。')
+          let path = match[3]
+          if (!path) {
+            filePath(records[++i])
+            path = records[++i]
+          }
+          const counts =
+            match[1] === '-' && match[2] === '-'
+              ? null
+              : { additions: Number(match[1]), deletions: Number(match[2]) }
+          if (
+            counts &&
+            !Object.values(counts).every((count) => Number.isSafeInteger(count) && count >= 0)
+          )
+            throw new Error('Git 行数统计格式无效。')
+          stats.set(filePath(path), counts)
+        }
+        for (const entry of files) entry.stats = stats.get(entry.path)
+      } catch {
+        // Counts are optional display data; a failed diff must not hide the valid Git status.
+      }
+    }
+    // shortcut: untracked counts read at most 8 MiB per refresh; use on-demand counts for larger trees.
+    let remaining = 8 * 1024 * 1024
+    for (const entry of entries) {
+      if (performance.now() >= deadline) break
+      if (entry.area !== 'untracked' || entry.submodule || remaining <= 0) continue
+      try {
+        const info = await lstat(await this.safeTarget(root, entry.path))
+        if (info.size > Math.min(MAX_FILE_BYTES, remaining)) continue
+        const bytes = await this.workingFile(root, entry.path, info.size)
+        if (!bytes) continue
+        remaining -= bytes.length
+        if (bytes.includes(0) || !isUtf8(bytes)) entry.stats = null
+        else {
+          let lines = bytes.length && bytes.at(-1) !== 10 ? 1 : 0
+          for (const byte of bytes) if (byte === 10) lines++
+          entry.stats = { additions: lines, deletions: 0 }
+        }
+      } catch {
+        // Files can disappear or change type while a terminal or Agent edits them.
+      }
     }
   }
 
@@ -397,7 +478,11 @@ export class SourceControlService {
     return target
   }
 
-  private async workingFile(root: string, path: string): Promise<Buffer | null> {
+  private async workingFile(
+    root: string,
+    path: string,
+    limit = MAX_FILE_BYTES,
+  ): Promise<Buffer | null> {
     const target = await this.safeTarget(root, path)
     let info
     try {
@@ -417,7 +502,8 @@ export class SourceControlService {
       if (!current.isFile()) throw new Error('文件类型已改变，请刷新。')
       if (current.size > MAX_FILE_BYTES)
         throw new Error('文件超过 2 MiB，请在外部编辑器或终端处理。')
-      const buffer = Buffer.alloc(MAX_FILE_BYTES + 1)
+      if (current.size > limit) throw new Error('文件大小已改变，请刷新。')
+      const buffer = Buffer.alloc(limit + 1)
       let length = 0
       while (length < buffer.length) {
         const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null)
@@ -425,6 +511,7 @@ export class SourceControlService {
         length += bytesRead
       }
       if (length > MAX_FILE_BYTES) throw new Error('文件超过 2 MiB，请在外部编辑器或终端处理。')
+      if (length > limit) throw new Error('文件大小已改变，请刷新。')
       return buffer.subarray(0, length)
     } finally {
       await handle.close()

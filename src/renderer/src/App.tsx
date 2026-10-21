@@ -10,14 +10,13 @@ import {
   FolderOpen,
   FolderPlus,
   GitFork,
-  PanelRightOpen,
-  FileDiff,
   ExternalLink,
   MoreHorizontal,
   Pencil,
   Plus,
   Terminal as TerminalIcon,
   Trash2,
+  X,
 } from 'lucide-react'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from './store'
 import { unwrap } from '../../shared/contracts'
@@ -26,9 +25,9 @@ import { TerminalView } from './components/TerminalView'
 import { TopStatusBar } from './components/TopStatusBar'
 import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
+import { FileTypeIcon } from './components/FileTypeIcon'
 import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
-import { useSourceControl } from './lib/source-control-store'
-import { useRightPanel } from './lib/right-panel-store'
+import { EMPTY_SOURCE_CONTROL, useSourceControl } from './lib/source-control-store'
 import { AgentMenu } from './components/AgentMenu'
 import { AgentStatus } from './components/AgentStatus'
 import { AgentIcon } from './components/AgentIcon'
@@ -43,8 +42,10 @@ import { ConfirmationDialog } from './components/ConfirmationDialog'
 import { WorktreeDialog } from './components/WorktreeDialog'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
+import { Tabs } from './components/ui/tabs'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty'
 import { Separator } from './components/ui/separator'
+import { Toaster } from './components/ui/sonner'
 import { Input } from './components/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from './components/ui/field'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
@@ -213,13 +214,16 @@ export function App() {
   const workspaceId = activeWorkspace?.id
   const currentTabs = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
   const activeId = state.activeTabs[workspaceId || '']
-  const rightPanelOpen = useRightPanel((state) => state.open)
-  const sourceSelection = useSourceControl((state) =>
-    workspaceId ? state.sessions[workspaceId]?.selection : undefined,
+  const sourceControl = useSourceControl(
+    (state) => state.sessions[workspaceId || ''] || EMPTY_SOURCE_CONTROL,
   )
-  const showingDiff = useSourceControl(
-    (state) => !!workspaceId && !!state.sessions[workspaceId]?.preview,
-  )
+  const previewSelection = sourceControl.selection
+  const showingDiff = !!previewSelection && sourceControl.preview
+  function closePreview() {
+    if (!workspaceId) return
+    useSourceControl.getState().update(workspaceId, { selection: undefined, preview: false })
+    requestAnimationFrame(() => document.getElementById(`terminal-tab-${activeId}`)?.focus())
+  }
   useEffect(() => {
     const current = useSourceControl.getState()
     const ids = new Set(state.workspaces.map((workspace) => workspace.id))
@@ -265,8 +269,9 @@ export function App() {
 
   return (
     <TooltipProvider delay={300}>
-      <div
-        className="app-container flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground select-none"
+      <Tabs
+        defaultValue="git"
+        className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-background text-foreground select-none"
         data-platform={window.desktop.platform}
       >
         <TopStatusBar settingsOpen={settingsOpen} onBack={() => void router.navigate({ to: '/' })}>
@@ -280,29 +285,32 @@ export function App() {
               />
               {state.selectedProject && (
                 <>
-                  {currentTabs.length > 0 && (
+                  {(currentTabs.length > 0 || previewSelection) && (
                     <div
                       role="tablist"
                       tabIndex={-1}
-                      aria-label="终端标签"
+                      aria-label="工作区标签"
                       className="terminal-tab-list flex min-w-0 items-center gap-1 overflow-x-auto"
                       onKeyDown={(event) => {
                         if ((event.target as HTMLElement).getAttribute('role') !== 'tab') return
-                        const index = currentTabs.findIndex((tab) => tab.id === activeId)
+                        const tabs = Array.from(
+                          event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
+                        )
+                        const index = tabs.indexOf(event.target as HTMLElement)
                         const next =
                           event.key === 'ArrowRight'
-                            ? currentTabs[(index + 1) % currentTabs.length]
+                            ? tabs[(index + 1) % tabs.length]
                             : event.key === 'ArrowLeft'
-                              ? currentTabs[(index - 1 + currentTabs.length) % currentTabs.length]
+                              ? tabs[(index - 1 + tabs.length) % tabs.length]
                               : event.key === 'Home'
-                                ? currentTabs[0]
+                                ? tabs[0]
                                 : event.key === 'End'
-                                  ? currentTabs.at(-1)
+                                  ? tabs.at(-1)
                                   : undefined
                         if (!next) return
                         event.preventDefault()
-                        state.selectTab(next.id)
-                        document.getElementById(`terminal-tab-${next.id}`)?.focus()
+                        next.click()
+                        next.focus()
                       }}
                     >
                       {currentTabs.map((tab) => (
@@ -321,6 +329,54 @@ export function App() {
                           }}
                         />
                       ))}
+                      {previewSelection && (
+                        <div
+                          role="tab"
+                          id={`source-control-tab-${workspaceId}`}
+                          aria-selected={showingDiff}
+                          aria-controls={`source-control-panel-${workspaceId}`}
+                          aria-label={`${previewSelection.path} 变更预览`}
+                          tabIndex={showingDiff ? 0 : -1}
+                          title={previewSelection.path}
+                          className="source-control-preview-tab inline-flex h-8 w-40 shrink-0 cursor-pointer items-center gap-1.5 px-2.5"
+                          onClick={() => {
+                            if (workspaceId)
+                              useSourceControl.getState().update(workspaceId, { preview: true })
+                          }}
+                          onAuxClick={(event) => {
+                            if (event.button !== 1) return
+                            event.preventDefault()
+                            closePreview()
+                          }}
+                          onKeyDown={(event) => {
+                            if (
+                              event.target !== event.currentTarget ||
+                              (event.key !== 'Enter' && event.key !== ' ')
+                            )
+                              return
+                            event.preventDefault()
+                            event.currentTarget.click()
+                          }}
+                        >
+                          <FileTypeIcon path={previewSelection.path} />
+                          <span className="source-control-preview-tab-title min-w-0 flex-1 truncate">
+                            {folderName(previewSelection.path)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            tabIndex={-1}
+                            className="source-control-preview-tab-close size-4 shrink-0"
+                            aria-label={`关闭 ${previewSelection.path} 预览`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              closePreview()
+                            }}
+                          >
+                            <X className="source-control-preview-tab-close-icon" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                   <Tooltip>
@@ -350,41 +406,7 @@ export function App() {
                   </Tooltip>
                 </>
               )}
-              {sourceSelection && workspaceId && (
-                <Button
-                  variant="navigation"
-                  size="sm"
-                  className="source-control-preview-tab shrink-0"
-                  aria-pressed={showingDiff}
-                  data-active={showingDiff}
-                  onClick={() => useSourceControl.getState().update(workspaceId, { preview: true })}
-                >
-                  <FileDiff className="source-control-preview-icon" data-icon="inline-start" />
-                  变更预览
-                </Button>
-              )}
               <div className="workspace-header-spacer min-w-0 flex-1" />
-              {!rightPanelOpen && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="navigation"
-                        size="icon"
-                        id="right-panel-toggle"
-                        className="right-panel-toggle shrink-0"
-                        aria-label="展开右侧面板"
-                        aria-expanded={false}
-                        aria-controls="right-panel-content"
-                        onClick={() => useRightPanel.setState({ open: true })}
-                      />
-                    }
-                  >
-                    <PanelRightOpen className="right-panel-toggle-icon" aria-hidden="true" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">展开右侧面板</TooltipContent>
-                </Tooltip>
-              )}
             </div>
           )}
         </TopStatusBar>
@@ -1082,6 +1104,11 @@ export function App() {
           />
         )}
         <ConfirmationDialog />
+        <Toaster
+          closeButton
+          containerAriaLabel="操作结果提示"
+          toastOptions={{ duration: 6000, closeButtonAriaLabel: '关闭提示' }}
+        />
 
         <Dialog
           open={workspaceDialog !== null}
@@ -1362,7 +1389,7 @@ export function App() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
+      </Tabs>
     </TooltipProvider>
   )
 }

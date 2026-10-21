@@ -4,6 +4,8 @@ import type {
   AgentSession,
   ConfirmationRequest,
   DesktopAPI,
+  GitWatchEvent,
+  Result,
   Shortcut,
   TerminalEvent,
 } from '../shared/contracts'
@@ -18,6 +20,30 @@ const api: DesktopAPI = {
   inspectRepository: (path) => ipcRenderer.invoke('git:inspect-repository', path),
   listWorktrees: (path) => ipcRenderer.invoke('git:list-worktrees', path),
   gitStatus: (target) => ipcRenderer.invoke('git:status', target),
+  watchGit: (target, listener) => {
+    const id = crypto.randomUUID()
+    let disposed = false
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      update: { id: string; event: GitWatchEvent },
+    ) => {
+      if (!disposed && update.id === id) listener(update.event)
+    }
+    ipcRenderer.on('git:changed', wrapped)
+    void ipcRenderer
+      .invoke('git:watch', target, id)
+      .then((result: Result<boolean>) => {
+        if (!disposed) listener(result.ok && result.value ? 'ready' : 'unavailable')
+      })
+      .catch(() => {
+        if (!disposed) listener('unavailable')
+      })
+    return () => {
+      disposed = true
+      ipcRenderer.removeListener('git:changed', wrapped)
+      void ipcRenderer.invoke('git:unwatch', id).catch(() => {})
+    }
+  },
   gitDiff: (target, file) => ipcRenderer.invoke('git:diff', target, file),
   gitMutate: (input) => ipcRenderer.invoke('git:mutate', input),
   gitReferences: (target) => ipcRenderer.invoke('git:references', target),

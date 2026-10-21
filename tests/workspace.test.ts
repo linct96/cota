@@ -10,6 +10,9 @@ import { currentWorkspace, nextWorkspaceName, useWorkspace } from '../src/render
 import { WebglAddon } from '@xterm/addon-webgl'
 import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-renderer'
 import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
+import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
+import { buildGitChangeTree } from '../src/renderer/src/lib/source-control-tree'
+import type { GitChange } from '../src/shared/source-control'
 import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
 import {
   agentIndicatorState,
@@ -46,6 +49,7 @@ beforeEach(() => {
     inspectRepository: vi.fn(),
     listWorktrees: vi.fn(),
     gitStatus: vi.fn(),
+    watchGit: vi.fn(() => vi.fn()),
     gitDiff: vi.fn(),
     gitMutate: vi.fn(),
     gitReferences: vi.fn(),
@@ -984,6 +988,15 @@ describe('workspace state', () => {
       [initial.workspaceId]: initial.id,
       [workspace.id]: first.id,
     })
+    useSourceControl.getState().update(workspace.id, { preview: true })
+    store().shortcut('close-terminal')
+    expect(useSourceControl.getState().sessions[workspace.id]).toMatchObject({
+      preview: false,
+      selection: undefined,
+      draft: 'keep draft',
+    })
+    expect(store().tabs).toEqual([initial, first, second])
+    expect(api.closeTerminal).not.toHaveBeenCalled()
     store().updateTab(first.id, { status: 'running' })
     store().shortcut('close-terminal')
     await vi.waitFor(() => expect(store().tabs).toEqual([initial, second]))
@@ -1101,6 +1114,153 @@ describe('workspace state', () => {
     expect(store().tabs).toBe(tabs)
     useRightPanel.setState({ open: true })
     expect(useRightPanel.getState()).toEqual({ open: true, width: 420 })
+  })
+
+  it('builds sorted Git directory trees without changing file identity or paths', () => {
+    const entries: GitChange[] = [
+      'README.md',
+      'src/components/file10.tsx',
+      'src/components/file2.tsx',
+      'src/lib/state.ts',
+      '__proto__/constructor.txt',
+      '中文/空 格\t换行\n.txt',
+      'back\\slash.txt',
+    ].map((path) => ({ path, area: 'unstaged', status: 'M', submodule: false }))
+    entries[1].oldPath = 'old/path.tsx'
+    entries[1].stats = { additions: 2, deletions: 1 }
+    const original = structuredClone(entries)
+    const tree = buildGitChangeTree(entries)
+    expect(tree.map((node) => node.kind)).toEqual([
+      'directory',
+      'directory',
+      'directory',
+      'file',
+      'file',
+    ])
+    const source = tree.find((node) => node.path === 'src')
+    if (source?.kind !== 'directory') throw new Error('Missing src directory')
+    expect(source.children.map((node) => node.name)).toEqual(['components', 'lib'])
+    const components = source.children[0]
+    if (components.kind !== 'directory') throw new Error('Missing components directory')
+    expect(components.children.map((node) => node.name)).toEqual(['file2.tsx', 'file10.tsx'])
+    expect(components.children[1]).toMatchObject({ kind: 'file', entry: entries[1] })
+    expect(source.entries).toEqual(entries.slice(1, 4))
+    expect(components.entries).toEqual(entries.slice(1, 3))
+    const sibling = { ...entries[0], path: 'src-extra/sibling.ts' }
+    const scoped = buildGitChangeTree([...entries, sibling]).find((node) => node.path === 'src')
+    if (scoped?.kind !== 'directory') throw new Error('Missing scoped src directory')
+    expect(scoped.entries).toEqual(entries.slice(1, 4))
+    expect(tree).toContainEqual(
+      expect.objectContaining({
+        kind: 'directory',
+        path: '__proto__',
+        children: [
+          expect.objectContaining({
+            name: 'constructor.txt',
+            entry: entries[4],
+          }),
+        ],
+      }),
+    )
+    expect(tree).toContainEqual(
+      expect.objectContaining({
+        kind: 'directory',
+        path: '中文',
+        children: [
+          expect.objectContaining({
+            name: '空 格\t换行\n.txt',
+            entry: entries[5],
+          }),
+        ],
+      }),
+    )
+    const leaves: GitChange[] = []
+    const pending = [...tree]
+    while (pending.length) {
+      const node = pending.pop()!
+      if (node.kind === 'directory') {
+        expect(node.entries).toEqual(
+          entries.filter((entry) => entry.path.startsWith(`${node.path}/`)),
+        )
+        expect(node.entries.every((entry) => entries.includes(entry))).toBe(true)
+        pending.push(...node.children)
+      } else leaves.push(node.entry)
+    }
+    expect(leaves).toHaveLength(entries.length)
+    expect(leaves.every((entry) => entries.includes(entry))).toBe(true)
+    expect(entries).toEqual(original)
+    expect(buildGitChangeTree([])).toEqual([])
+    expect(buildGitChangeTree([entries[0]])).toEqual([
+      { kind: 'file', name: 'README.md', path: 'README.md', entry: entries[0] },
+    ])
+  })
+
+  it('coalesces Git refreshes and retains trailing signals across reads and writes', async () => {
+    vi.useFakeTimers()
+    let visible = true
+    let writing = false
+    let finish!: () => void
+    const read = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)))
+    const queue = createSourceControlRefreshQueue(read, () => visible && !writing)
+    try {
+      queue.request()
+      queue.request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(read).toHaveBeenCalledTimes(1)
+      queue.request()
+      queue.request()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(read).toHaveBeenCalledTimes(1)
+      finish()
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(read).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(read).toHaveBeenCalledTimes(2)
+      finish()
+      await vi.advanceTimersByTimeAsync(3000)
+
+      writing = true
+      queue.request()
+      queue.request()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(read).toHaveBeenCalledTimes(2)
+      writing = false
+      queue.flush()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(read).toHaveBeenCalledTimes(3)
+      finish()
+      await vi.advanceTimersByTimeAsync(0)
+
+      queue.request()
+      visible = false
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(read).toHaveBeenCalledTimes(3)
+      visible = true
+      queue.request()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(read).toHaveBeenCalledTimes(4)
+      queue.request()
+      queue.cancel()
+      finish()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(read).toHaveBeenCalledTimes(4)
+
+      queue.request()
+      queue.cancel()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(read).toHaveBeenCalledTimes(4)
+      read.mockRejectedValueOnce(new Error('Git unavailable'))
+      queue.request()
+      await vi.advanceTimersByTimeAsync(0)
+      queue.request()
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(read).toHaveBeenCalledTimes(6)
+      finish()
+      await vi.advanceTimersByTimeAsync(0)
+    } finally {
+      queue.cancel()
+      vi.useRealTimers()
+    }
   })
 
   it('creates exactly one terminal when selecting an empty workspace and reuses existing terminals', async () => {

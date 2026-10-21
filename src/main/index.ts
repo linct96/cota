@@ -16,6 +16,7 @@ import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
 import { projectBranch } from './git'
 import { SourceControlService } from './source-control'
+import { SourceControlWatches } from './source-control-watch'
 import type {
   GitDiffSelection,
   GitMutation,
@@ -60,6 +61,7 @@ let manager: HostClient
 let config: ConfigStore
 let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
+const sourceControlWatches = new SourceControlWatches()
 let warning: string | undefined
 let exiting = false
 let exitPending = false
@@ -285,8 +287,22 @@ function installIPC(): void {
   }
   handle('git:status', (target: WorkspaceTarget) => {
     assertLifecycle()
-    return worktrees.withTerminalTarget(target, (binding) => sourceControl.status(binding.cwd))
+    return worktrees.withTerminalTarget(target, (binding) =>
+      sourceControl.status(binding.cwd, true),
+    )
   })
+  handle('git:watch', (target: WorkspaceTarget, id: unknown) => {
+    assertLifecycle()
+    return sourceControlWatches.start(
+      id,
+      () => worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+      (event) => {
+        if (window && !window.webContents.isDestroyed())
+          window.webContents.send('git:changed', { id, event })
+      },
+    )
+  })
+  handle('git:unwatch', (id: unknown) => sourceControlWatches.stop(id))
   handle('git:references', (target: WorkspaceTarget) => {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) => sourceControl.references(binding.cwd))
@@ -599,6 +615,7 @@ async function requestExit(): Promise<void> {
     await config.flush()
     await manager.request('shutdown', [])
     manager.disconnect()
+    sourceControlWatches.close()
     exiting = true
     app.quit()
   } catch (error) {
@@ -771,6 +788,7 @@ if (!app.requestSingleInstanceLock()) {
         }
       })
       const rendererUnavailable = () => {
+        sourceControlWatches.close()
         rendererReady = false
         visibleTerminal = undefined
         settleConfirmation(false)

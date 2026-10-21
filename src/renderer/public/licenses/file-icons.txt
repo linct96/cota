@@ -1,0 +1,13 @@
+File type icon theme
+
+Language and tool logos (CSS3, Docker, Git, Go, HTML5, JavaScript, Markdown,
+npm, pnpm, Python, React, Rust, TypeScript and Vue.js) are imported from
+simple-icons 12.4.0 (CC0 1.0 Universal).
+https://github.com/simple-icons/simple-icons/tree/12.4.0
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Generic file and folder icons are imported from lucide-react (ISC).
+https://lucide.dev/license
+
+Brand names and logos remain the property of their respective owners.
+https://github.com/simple-icons/simple-icons/blob/12.4.0/DISCLAIMER.md

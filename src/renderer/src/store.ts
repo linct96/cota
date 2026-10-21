@@ -847,7 +847,9 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         get().newTerminal()
         break
       case 'close-terminal':
-        void get().closeTab(get().activeTabs[workspaceId])
+        if (useSourceControl.getState().sessions[workspaceId]?.preview)
+          useSourceControl.getState().update(workspaceId, { selection: undefined, preview: false })
+        else void get().closeTab(get().activeTabs[workspaceId])
         break
       default: {
         const tab = get().tabs.filter((item) => item.workspaceId === workspaceId)[

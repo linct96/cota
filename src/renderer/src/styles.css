@@ -6,6 +6,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.app-toaster[data-sonner-toaster] {
+  font-family: var(--font-sans);
+}
+
+.app-toaster[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--muted-foreground);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -98,6 +106,17 @@
   --source-control-editor-background: #ffffff;
   --source-control-diff-added: #edf9ef;
   --source-control-diff-removed: #fff0f0;
+  --source-control-stat-added: #166534;
+  --source-control-stat-removed: var(--destructive);
+  --file-icon-neutral: var(--muted-foreground);
+  --file-icon-yellow: #947000;
+  --file-icon-blue: #326bad;
+  --file-icon-cyan: #237d91;
+  --file-icon-green: #367950;
+  --file-icon-orange: #b36334;
+  --file-icon-purple: #85609f;
+  --file-icon-pink: #a05f88;
+  --file-icon-red: #a45656;
   --overlay: rgba(0, 0, 0, 0.2);
   --terminal-tab-inactive: #e8e8e8;
   --terminal-tab-inactive-hover: #dedede;
@@ -161,6 +180,12 @@ body,
 .app-top-status-bar {
   padding-right: calc(var(--window-controls-width) + 0.75rem);
 }
+.app-top-status-bar[data-right-panel-open='true'] {
+  padding-right: 0;
+}
+.right-panel-header[data-open='true'] {
+  padding-right: calc(var(--window-controls-width) + 0.75rem);
+}
 .top-status-bar-history {
   padding-left: var(--titlebar-leading-inset);
 }
@@ -199,19 +224,27 @@ button:not([data-slot='button']):focus-visible {
   outline-offset: -2px;
 }
 .project-folder-row,
-.source-control-group-header {
+.source-control-group-header,
+.source-control-directory-row,
+.source-control-file-row {
   border-radius: var(--radius-md);
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 .project-folder-row:hover,
-.source-control-group-header:hover {
+.source-control-group-header:hover,
+.source-control-directory-row:hover,
+.source-control-directory-row:focus-within,
+.source-control-file-row:hover,
+.source-control-file-row:focus-within {
   background: var(--project-hover);
 }
 .project-folder-row:hover [data-slot='button'],
 .project-folder-row:hover [data-slot='collapsible-trigger'],
 .project-folder-row:hover .project-folder-trigger,
 .source-control-group-header:hover [data-slot='button'],
-.source-control-group-header:hover [data-slot='collapsible-trigger'] {
+.source-control-group-header:hover [data-slot='collapsible-trigger'],
+.source-control-directory-row:hover [data-slot='button'],
+.source-control-file-row:hover [data-slot='button'] {
   color: var(--foreground);
 }
 .project-folder-row .project-folder-trigger,
@@ -224,7 +257,9 @@ button:not([data-slot='button']):focus-visible {
 .project-folder-row .project-folder-menu-trigger:active {
   background: transparent;
 }
-.source-control-group-header > [data-slot='button'] {
+.source-control-group-header > [data-slot='button'],
+.source-control-directory-row [data-slot='button'],
+.source-control-file-row [data-slot='button'] {
   background: transparent;
 }
 .agent-status {
@@ -242,13 +277,180 @@ button:not([data-slot='button']):focus-visible {
 .agent-status[data-state='failed'] {
   color: var(--destructive);
 }
-.source-control-file-row {
+.source-control-context {
+  min-width: 0;
+  flex: 0 0 auto;
+  padding: 0.375rem 0.5rem;
+}
+.source-control-preview-tab {
   border-radius: var(--radius-md);
+  background: var(--terminal-tab-inactive);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  transition:
+    color 150ms,
+    background-color 150ms;
+  outline: none;
+}
+.source-control-preview-tab:hover {
+  background: var(--terminal-tab-inactive-hover);
+  color: var(--foreground);
+}
+.source-control-preview-tab[aria-selected='true'] {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+.source-control-preview-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.source-control-preview-tab-close {
+  opacity: 0;
+}
+.source-control-preview-tab:is(:hover, :focus-within, [aria-selected='true'])
+  .source-control-preview-tab-close {
+  opacity: 1;
+}
+.source-control-section-tabs {
+  width: 100%;
+  height: 2.25rem;
+  flex-shrink: 0;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.source-control-section-tabs > [data-slot='tabs-trigger'] {
+  height: 100%;
+  flex: 0 0 auto;
+  padding: 0 0.875rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  transition-property: color, background-color;
+}
+.source-control-section-tabs > [data-slot='tabs-trigger']:hover {
+  background: var(--project-hover);
+  color: var(--foreground);
+}
+.source-control-section-tabs > [data-slot='tabs-trigger'][data-active] {
+  color: var(--foreground);
+}
+.source-control-section-tabs > [data-slot='tabs-trigger']::after {
+  bottom: -1px;
+  height: 2px;
+  background: var(--primary);
+}
+.source-control-file-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 30px;
 }
 .source-control-file-row[data-selected='true'] {
   background: var(--accent);
+}
+.file-type-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  color: var(--file-icon-neutral);
+}
+.file-type-icon:is(
+  [data-kind='javascript'],
+  [data-kind='json'],
+  [data-kind='env'],
+  [data-kind='pnpm']
+) {
+  color: var(--file-icon-yellow);
+}
+.file-type-icon:is(
+  [data-kind='typescript'],
+  [data-kind='declaration'],
+  [data-kind='python'],
+  [data-kind='docker'],
+  [data-kind='markdown']
+) {
+  color: var(--file-icon-blue);
+}
+.file-type-icon:is([data-kind='react'], [data-kind='go']) {
+  color: var(--file-icon-cyan);
+}
+.file-type-icon:is([data-kind='vue'], [data-kind='image'], [data-kind='shell']) {
+  color: var(--file-icon-green);
+}
+.file-type-icon:is(
+  [data-kind='html'],
+  [data-kind='rust'],
+  [data-kind='git'],
+  [data-kind='archive'],
+  [data-kind='package']
+) {
+  color: var(--file-icon-orange);
+}
+.file-type-icon:is([data-kind='css'], [data-kind='code'], [data-kind='font']) {
+  color: var(--file-icon-purple);
+}
+.file-type-icon:is([data-kind='audio'], [data-kind='video']) {
+  color: var(--file-icon-pink);
+}
+.file-type-icon[data-kind='npm'] {
+  color: var(--file-icon-red);
+}
+.source-control-directory-icon,
+.source-control-directory-open-icon {
+  color: var(--file-icon-neutral);
+}
+.source-control-directory-open-icon,
+.source-control-directory-trigger[aria-expanded='true'] .source-control-directory-icon {
+  display: none;
+}
+.source-control-directory-trigger[aria-expanded='true'] .source-control-directory-open-icon {
+  display: inline-block;
+}
+.source-control-file-trailing > * {
+  grid-area: 1 / 1;
+}
+.source-control-file-stats {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--muted-foreground);
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.source-control-file-additions {
+  color: var(--source-control-stat-added);
+}
+.source-control-file-deletions {
+  color: var(--source-control-stat-removed);
+}
+.source-control-file-actions {
+  justify-self: end;
+}
+.source-control-directory-actions,
+.source-control-file-actions {
+  opacity: 0;
+  pointer-events: none;
+}
+.source-control-file-row:is(:hover, :focus-within) .source-control-file-summary {
+  visibility: hidden;
+}
+.source-control-directory-row:is(:hover, :focus-within) .source-control-directory-actions,
+.source-control-file-row:is(:hover, :focus-within) .source-control-file-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .source-control-file-summary {
+    visibility: hidden;
+  }
+  .source-control-directory-actions,
+  .source-control-file-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .source-control-files {
   scrollbar-width: thin;
@@ -383,6 +585,15 @@ button:not([data-slot='button']):focus-visible {
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --source-control-stat-added: #86efac;
+  --file-icon-yellow: #d7b75f;
+  --file-icon-blue: #80ace0;
+  --file-icon-cyan: #79b6c8;
+  --file-icon-green: #84b698;
+  --file-icon-orange: #dca47d;
+  --file-icon-purple: #b89bcf;
+  --file-icon-pink: #d1a1c2;
+  --file-icon-red: #cf8f8f;
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

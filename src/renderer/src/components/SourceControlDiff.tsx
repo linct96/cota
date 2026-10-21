@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { ArrowLeft, ExternalLink } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import { gitFileKey, type GitDiff } from '../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-store'
 import { useWorkspace } from '../store'
 import { useRightPanel } from '../lib/right-panel-store'
+import { useSourceControlWatch } from '../lib/use-source-control-watch'
 import { Button } from './ui/button'
 import { Alert, AlertDescription } from './ui/alert'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
@@ -38,20 +39,11 @@ export function SourceControlDiff({
   const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
   const key = selection ? `${workspace.id}:${gitFileKey(selection)}` : ''
 
-  useEffect(() => {
-    if (!active || panelOpen) return
-    const reload = () => {
-      if (!document.hidden && document.hasFocus()) setRefresh((value) => value + 1)
-    }
-    const timer = window.setInterval(reload, 5000)
-    window.addEventListener('focus', reload)
-    document.addEventListener('visibilitychange', reload)
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('focus', reload)
-      document.removeEventListener('visibilitychange', reload)
-    }
-  }, [active, panelOpen])
+  useSourceControlWatch(
+    target,
+    active && !panelOpen && !!selection && selection.area !== 'review',
+    () => setRefresh((value) => value + 1),
+  )
 
   useEffect(() => {
     if (!active || !selection) return
@@ -80,19 +72,13 @@ export function SourceControlDiff({
   const current = result?.key === key ? result.diff : undefined
   return (
     <section
+      id={`source-control-panel-${workspace.id}`}
+      role="tabpanel"
+      tabIndex={0}
+      aria-labelledby={`source-control-tab-${workspace.id}`}
       className="source-control-diff flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-      aria-label={`${selection.path} 变更预览`}
     >
       <header className="source-control-diff-header flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="source-control-return-terminal"
-          onClick={() => useSourceControl.getState().showTerminal(workspace.id)}
-        >
-          <ArrowLeft className="source-control-return-icon" data-icon="inline-start" />
-          终端
-        </Button>
         <div className="source-control-diff-heading min-w-0 flex-1">
           <h2
             className="source-control-diff-path truncate text-xs font-medium"
