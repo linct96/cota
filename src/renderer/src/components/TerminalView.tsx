@@ -33,7 +33,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       cursorBlink: true,
       cursorStyle: 'bar',
       cursorInactiveStyle: 'none',
-      fontSize: 13,
+      fontSize: 14,
       fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
       lineHeight: 1.25,
       scrollback: useWorkspace.getState().preferences.scrollback,

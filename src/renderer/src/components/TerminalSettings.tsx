@@ -35,10 +35,10 @@ interface ScrollbackOption {
 }
 
 const PRESET_SCROLLBACKS: ScrollbackOption[] = [
-  { value: 1000, label: '1,000 行（轻量）' },
+  { value: 1000, label: '1,000 行' },
   { value: 5000, label: '5,000 行（默认）' },
   { value: 10000, label: '10,000 行' },
-  { value: 20000, label: '20,000 行（最大）' },
+  { value: 20000, label: '20,000 行' },
 ]
 
 export function TerminalSettings() {
@@ -75,7 +75,7 @@ export function TerminalSettings() {
     },
   })
   const scrollbackForm = useForm({
-    defaultValues: { scrollback: '' },
+    defaultValues: { scrollback: String(preferences.scrollback) },
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: scrollbackFormSchema },
     onSubmit: async ({ value }) => {
@@ -139,8 +139,6 @@ export function TerminalSettings() {
 
   // 缓冲行数显示名称
   function currentScrollbackLabel(): string {
-    const matched = PRESET_SCROLLBACKS.find((item) => item.value === preferences.scrollback)
-    if (matched) return matched.label
     return `${preferences.scrollback.toLocaleString()} 行`
   }
 
