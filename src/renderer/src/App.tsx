@@ -165,6 +165,8 @@ export function App() {
   useEffect(() => {
     if (!editingRecord) return
     let disposed = false
+    // Worktree checks are external requests; lock the dialog while refreshing their snapshot.
+    // oxlint-disable-next-line react/set-state-in-effect
     setCheckingWorktree(true)
     setWorkspaceSaveError(undefined)
     useWorkspace.setState({ worktreeError: undefined })
@@ -812,9 +814,8 @@ export function App() {
                                       )}
                                     </Button>
                                     {workspaceAgents.length > 0 && (
-                                      <div
-                                        className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 pr-2 pb-2"
-                                        role="group"
+                                      <fieldset
+                                        className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 border-0 p-0 pr-2 pb-2"
                                         aria-label={`${workspace.name} Agent 列表`}
                                       >
                                         {workspaceAgents.map((tab) => {
@@ -868,7 +869,7 @@ export function App() {
                                             </Tooltip>
                                           )
                                         })}
-                                      </div>
+                                      </fieldset>
                                     )}
                                   </ContextMenuTrigger>
                                   <ContextMenuContent
@@ -1240,9 +1241,8 @@ export function App() {
                   <p className="workspace-worktree-path break-all text-muted-foreground">
                     {editingRecord.path}
                   </p>
-                  <p
+                  <output
                     className="workspace-worktree-status text-muted-foreground"
-                    role="status"
                     aria-busy={checkingWorktree}
                   >
                     {!checkingWorktree &&
@@ -1252,7 +1252,7 @@ export function App() {
                             ? '工作树已锁定'
                             : '工作树就绪'
                           : '工作树状态暂不可用'))}
-                  </p>
+                  </output>
                   <Button
                     type="button"
                     variant="outline"

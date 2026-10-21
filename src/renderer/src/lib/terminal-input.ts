@@ -17,12 +17,12 @@ export function createTerminalInputHandler({
   platform,
   canSend,
   write,
-  useKitty,
+  isKittyEnabled,
 }: {
   platform: string
   canSend: () => boolean
   write: (data: string) => void
-  useKitty: () => boolean
+  isKittyEnabled: () => boolean
 }) {
   let composing = false
   let settling = false
@@ -78,7 +78,7 @@ export function createTerminalInputHandler({
             return false
           }
           if (event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
-            if (useKitty()) return true
+            if (isKittyEnabled()) return true
             heldEnter = 'newline'
             event.preventDefault()
             send('\x1b\r')

@@ -108,7 +108,7 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
     return () => {
       disposed = true
     }
-  }, [projectPath, suggestionAttempt])
+  }, [projectPath, suggestionAttempt, form])
   useEffect(() => {
     let disposed = false
     if (!branchName || !worktreeFormSchema.safeParse({ name, baseRef }).success) return

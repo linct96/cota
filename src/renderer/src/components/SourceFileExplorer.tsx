@@ -60,6 +60,7 @@ export function SourceFileExplorer<T extends { path: string }>({
     <div
       ref={tree}
       role="tree"
+      tabIndex={-1}
       aria-label={label}
       className="source-file-explorer flex min-w-0 flex-col gap-0.5"
       onFocusCapture={() => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import { configureMonacoTheme, languageForPath, monaco } from '../lib/monaco'
 
 const views = new Map<string, monaco.editor.ICodeEditorViewState>()
@@ -14,12 +14,11 @@ export default function FilePreviewEditor({
 }) {
   const host = useRef<HTMLDivElement>(null)
   const instance = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
-  const content = useRef(text)
-  content.current = text
+  const initialText = useEffectEvent(() => text)
   useEffect(() => {
     if (!host.current) return
     configureMonacoTheme()
-    const model = monaco.editor.createModel(content.current, languageForPath(path))
+    const model = monaco.editor.createModel(initialText(), languageForPath(path))
     const editor = monaco.editor.create(host.current, {
       theme: 'cota-editor',
       model,

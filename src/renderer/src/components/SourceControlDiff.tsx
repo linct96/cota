@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronUp,
@@ -55,7 +55,10 @@ export function SourceControlDiff({
   const [refresh, setRefresh] = useState(0)
   const panelOpen = useRightPanel((state) => state.open)
   const selection = file || session.selection
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
   const key = selection ? `${workspace.id}:${gitFileKey(selection)}` : ''
   const onStatsChange = useCallback(
     (stats: { additions: number; deletions: number }) => setStats({ key, ...stats }),
@@ -68,9 +71,13 @@ export function SourceControlDiff({
     () => setRefresh((value) => value + 1),
   )
 
+  const statusRefresh = selection?.area === 'review' ? 0 : session.refreshed
+  const watchRefresh = selection?.area === 'review' ? 0 : refresh
   useEffect(() => {
     if (!active || !selection) return
     let disposed = false
+    // An explicit reload retries IPC and clears the previous read error.
+    // oxlint-disable-next-line react/set-state-in-effect
     setError(undefined)
     window.desktop
       .gitDiff(target, selection)
@@ -84,12 +91,7 @@ export function SourceControlDiff({
     return () => {
       disposed = true
     }
-  }, [
-    active,
-    key,
-    selection?.area === 'review' ? 0 : session.refreshed,
-    selection?.area === 'review' ? 0 : refresh,
-  ])
+  }, [active, key, selection, target, statusRefresh, watchRefresh])
 
   if (!selection) return null
   const current = result?.key === key ? result.diff : undefined

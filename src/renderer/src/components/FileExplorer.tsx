@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { ChevronRight, ChevronsDownUp, Folder, FolderOpen, Link, RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import type { FileAction } from '../../../shared/file-explorer'
@@ -51,7 +59,10 @@ export function FileExplorer({
       .map((row) => row.path),
   ]
   const directoryKey = JSON.stringify(directories)
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
   const root = session.directories['']
   const rootLoaded = !!root?.entries
   const focusPath = rows.some((row) => row.path === session.selected)
@@ -62,16 +73,18 @@ export function FileExplorer({
   function refresh(paths = directories) {
     for (const path of paths) void useFileExplorer.getState().load(target, path)
   }
+  const refreshActive = useEffectEvent(() => refresh())
   useEffect(() => {
-    if (active) refresh()
-  }, [active, workspace.id])
+    if (active) refreshActive()
+  }, [active, target])
   useEffect(() => {
     if (!active) return
     const current = useFileExplorer.getState().sessions[workspace.id]
-    for (const path of directories) {
+    const watched: string[] = JSON.parse(directoryKey)
+    for (const path of watched) {
       if (!current?.directories[path]) void useFileExplorer.getState().load(target, path)
     }
-  }, [active, workspace.id, directoryKey])
+  }, [active, workspace.id, directoryKey, target])
   useLayoutEffect(() => {
     if (active && rootLoaded && scroll.current) {
       scrollTop.current = useFileExplorer.getState().sessions[workspace.id]?.scrollTop || 0
@@ -176,6 +189,7 @@ export function FileExplorer({
         <div
           ref={tree}
           role="tree"
+          tabIndex={-1}
           aria-label={`${folderName} 文件树`}
           aria-busy={!rootLoaded && !root?.error}
           className="file-explorer-tree flex min-w-0 flex-col gap-0.5"

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import { gitFileKey, type GitArea } from '../../../shared/source-control'
@@ -31,7 +31,10 @@ export function SourceControlChanges({
   const panelOpen = useRightPanel((state) => state.open)
   const [refresh, setRefresh] = useState(0)
   const [error, setError] = useState<string>()
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
 
   useSourceControlWatch(target, active && !panelOpen, () => setRefresh((value) => value + 1))
   useEffect(() => {
@@ -51,7 +54,7 @@ export function SourceControlChanges({
     return () => {
       disposed = true
     }
-  }, [active, panelOpen, refresh, workspace.id, workspace.projectPath])
+  }, [active, panelOpen, refresh, workspace.id, target])
 
   const entries = session.status?.entries || []
   return (

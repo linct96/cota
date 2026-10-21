@@ -105,13 +105,17 @@ export function SourceControlPanel({
   const [dialogError, setDialogError] = useState<string>()
   const currentError = error || readError || referencesError
   useEffect(() => {
+    // Preserve asynchronous IPC errors in the dismissible dialog until the user closes it.
+    // oxlint-disable-next-line react/set-state-in-effect
     if (currentError) setDialogError(currentError)
   }, [currentError])
   const readTask = useRef<Promise<void> | undefined>(undefined)
   const writing = useRef(false)
   const mounted = useRef(true)
   const activeRef = useRef(active)
-  activeRef.current = active
+  useEffect(() => {
+    activeRef.current = active
+  }, [active])
   const status = session.status
   const changeGroups = useMemo(
     () =>
@@ -121,7 +125,10 @@ export function SourceControlPanel({
       }),
     [status?.entries],
   )
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
   const form = useForm({
     defaultValues: { message: session.draft },
     onSubmitMeta: { push: false },
@@ -180,6 +187,8 @@ export function SourceControlPanel({
     }
   }
 
+  // Queue initialization stores callbacks; refs are only read when the queue runs.
+  // oxlint-disable-next-line react/refs
   const [refreshQueue] = useState(() =>
     createSourceControlRefreshQueue(
       () => (readTask.current = refresh()),
@@ -218,7 +227,7 @@ export function SourceControlPanel({
     return () => {
       disposed = true
     }
-  }, [active, workspace.id, session.refreshed])
+  }, [active, target, session.refreshed])
 
   async function mutate(input: GitMutation) {
     if (writing.current) return false

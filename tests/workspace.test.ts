@@ -383,7 +383,7 @@ describe('workspace state', () => {
       platform: 'darwin',
       canSend: () => running,
       write,
-      useKitty: () => keyboard.flags > 0,
+      isKittyEnabled: () => keyboard.flags > 0,
     })
     type KeyEvent = Parameters<typeof input.handleKeyEvent>[0]
     const key = (overrides: Partial<KeyEvent> = {}): KeyEvent => ({
@@ -463,7 +463,7 @@ describe('workspace state', () => {
           platform,
           canSend: () => running,
           write,
-          useKitty: () => true,
+          isKittyEnabled: () => true,
         })
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, metaKey: true }))).toBe(true)
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, ctrlKey: true }))).toBe(true)

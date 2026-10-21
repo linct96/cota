@@ -26,6 +26,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
   const status = tab.closingStatus ?? tab.status
 
   useEffect(() => {
+    const container = host.current
     const tokens = getComputedStyle(document.documentElement)
     const background = tokens.getPropertyValue('--surface-canvas').trim()
     const foreground = tokens.getPropertyValue('--foreground').trim()
@@ -104,7 +105,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const keyboard = createTerminalKeyboardState(terminal.parser)
     const input = createTerminalInputHandler({
       platform: window.desktop.platform,
-      useKitty: () => keyboard.flags > 0,
+      isKittyEnabled: () => keyboard.flags > 0,
       canSend: () => live() && !terminal.options.disableStdin,
       write: (value) => {
         void window.desktop.writeTerminal(id, value).then(unwrap).catch(console.error)
@@ -216,7 +217,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       textarea.removeEventListener('compositionstart', input.compositionStart)
       textarea.removeEventListener('compositionend', input.compositionEnd)
       textarea.removeEventListener('blur', input.reset)
-      if (host.current) host.current.inert = false
+      if (container) container.inert = false
       observer.disconnect()
       unsubscribe()
       void window.desktop.detachTerminal(id, attachmentId).catch(() => {})

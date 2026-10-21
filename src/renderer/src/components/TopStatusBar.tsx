@@ -41,12 +41,9 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
         style={{ width: `calc(var(--app-navigation-width) + ${sidebarWidth}px + 1px)` }}
       >
         {isWindows && (
-          <div
-            className="top-status-bar-logo flex h-full w-[var(--app-navigation-width)] shrink-0 items-center justify-center"
-            role="img"
-            aria-label="OpenAI Logo（临时占位）"
-          >
+          <div className="top-status-bar-logo flex h-full w-[var(--app-navigation-width)] shrink-0 items-center justify-center">
             <OpenAI className="top-status-bar-logo-icon" size={20} aria-hidden="true" />
+            <span className="top-status-bar-logo-label sr-only">OpenAI Logo（临时占位）</span>
           </div>
         )}
         <nav

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import { fileParent, type FilePreview as Preview } from '../../../shared/file-explorer'
@@ -23,7 +23,10 @@ export function FilePreview({
   const [error, setError] = useState<string>()
   const [restart, setRestart] = useState(0)
   const reload = useRef<(() => void) | undefined>(undefined)
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
   const watchError = useFileWatch(
     target,
     [fileParent(path)],
@@ -65,7 +68,7 @@ export function FilePreview({
       disposed = true
       reload.current = undefined
     }
-  }, [active, workspace.id, workspace.projectPath, path])
+  }, [active, target, path])
 
   return (
     <section
@@ -111,9 +114,9 @@ export function FilePreview({
       ) : result?.kind === 'text' ? (
         <Suspense
           fallback={
-            <p role="status" className="file-preview-editor-loading p-4 text-muted-foreground">
+            <output className="file-preview-editor-loading p-4 text-muted-foreground">
               正在加载预览…
-            </p>
+            </output>
           }
         >
           <Editor identity={`${workspace.id}:${path}`} path={path} text={result.content} />
@@ -132,9 +135,7 @@ export function FilePreview({
           </EmptyHeader>
         </Empty>
       ) : (
-        <p role="status" className="file-preview-loading p-4 text-muted-foreground">
-          正在读取文件…
-        </p>
+        <output className="file-preview-loading p-4 text-muted-foreground">正在读取文件…</output>
       )}
     </section>
   )

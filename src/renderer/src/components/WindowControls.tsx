@@ -30,7 +30,7 @@ export function WindowControls() {
   }, [])
 
   return (
-    <div className="window-controls" role="group" aria-label="窗口控制">
+    <fieldset className="window-controls min-w-0 border-0 p-0" aria-label="窗口控制">
       <Button
         className="window-minimize-button"
         variant="window-control"
@@ -66,6 +66,6 @@ export function WindowControls() {
       >
         <X className="window-close-icon" aria-hidden="true" />
       </Button>
-    </div>
+    </fieldset>
   )
 }

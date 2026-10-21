@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent } from 'react'
 import type { WorkspaceTarget } from '../../../shared/contracts'
 
 export function useSourceControlWatch(
@@ -6,8 +6,8 @@ export function useSourceControlWatch(
   active: boolean,
   refresh: () => void,
 ) {
-  const refreshRef = useRef(refresh)
-  refreshRef.current = refresh
+  const reloadCurrent = useEffectEvent(refresh)
+  const { projectPath, workspaceId } = target
   useEffect(() => {
     if (!active) return
     let stopWatch: (() => void) | undefined
@@ -16,7 +16,7 @@ export function useSourceControlWatch(
     let generation = 0
     let disposed = false
     const reload = () => {
-      if (!disposed && !document.hidden) refreshRef.current()
+      if (!disposed && !document.hidden) reloadCurrent()
     }
     const stop = () => {
       generation++
@@ -30,7 +30,7 @@ export function useSourceControlWatch(
       if (disposed || document.hidden) return
       const token = generation
       poll = setInterval(reload, 5000)
-      stopWatch = window.desktop.watchGit(target, (event) => {
+      stopWatch = window.desktop.watchGit({ projectPath, workspaceId }, (event) => {
         if (disposed || token !== generation) return
         if (event === 'change') {
           reload()
@@ -57,5 +57,5 @@ export function useSourceControlWatch(
       window.removeEventListener('focus', reload)
       document.removeEventListener('visibilitychange', connect)
     }
-  }, [active, target.projectPath, target.workspaceId])
+  }, [active, projectPath, workspaceId])
 }

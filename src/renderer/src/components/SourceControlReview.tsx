@@ -38,7 +38,10 @@ export function SourceControlReview({
   const [morePending, setMorePending] = useState(false)
   const generation = useRef(0)
   const paging = useRef(false)
-  const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
+  const target = useMemo(
+    () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
+    [workspace.projectPath, workspace.id],
+  )
   const mode = session.mode
   const head = session.status?.head
   const branches = references?.branches || []
@@ -53,7 +56,10 @@ export function SourceControlReview({
   const nodes = useMemo(() => buildGitChangeTree(comparison?.entries || []), [comparison])
 
   useEffect(() => {
-    const version = ++generation.current
+    const currentGeneration = generation
+    const version = ++currentGeneration.current
+    // Reset the previous IPC request's state before loading a new history snapshot.
+    // oxlint-disable-next-line react/set-state-in-effect
     setHistoryError(undefined)
     if (!active || mode !== 'history') return
     setHistory(undefined)
@@ -68,12 +74,15 @@ export function SourceControlReview({
           setHistoryError(error instanceof Error ? error.message : String(error))
       })
     return () => {
-      generation.current++
+      currentGeneration.current++
     }
-  }, [active, mode, head, workspace.id])
+  }, [active, mode, head, target])
 
+  const comparisonRefresh = mode === 'compare' ? session.refreshed : 0
   useEffect(() => {
     if (!active) return
+    // Clear the previous IPC request's loading/error state before starting this comparison.
+    // oxlint-disable-next-line react/set-state-in-effect
     setError(undefined)
     setLoading(false)
     if ((mode === 'history' && !commit) || (mode === 'compare' && (!baseRef || !head))) return
@@ -97,15 +106,7 @@ export function SourceControlReview({
     return () => {
       disposed = true
     }
-  }, [
-    active,
-    mode,
-    commit,
-    baseRef,
-    head,
-    mode === 'compare' ? session.refreshed : 0,
-    workspace.id,
-  ])
+  }, [active, mode, commit, baseRef, head, comparisonRefresh, comparisonKey, target])
 
   async function loadMore() {
     if (!history?.head || paging.current) return

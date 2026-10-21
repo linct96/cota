@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
+import { useEffect, useEffectEvent, useImperativeHandle, useRef, type Ref } from 'react'
 import { configureMonacoTheme, languageForPath, monaco } from '../lib/monaco'
 const views = new Map<string, monaco.editor.IDiffEditorViewState>()
 
@@ -34,8 +34,8 @@ export default function GitDiffEditor({
     original: monaco.editor.ITextModel
     modified: monaco.editor.ITextModel
   } | null>(null)
-  const content = useRef({ original, modified })
-  content.current = { original, modified }
+  const initialContent = useEffectEvent(() => ({ original, modified }))
+  const initialOptions = useEffectEvent(() => ({ sideBySide, wordWrap, showWhitespace }))
 
   useImperativeHandle(
     ref,
@@ -58,6 +58,8 @@ export default function GitDiffEditor({
     container.style.opacity = '0'
     container.inert = true
     configureMonacoTheme()
+    const { sideBySide, wordWrap, showWhitespace } = initialOptions()
+    const content = initialContent()
     const editor = monaco.editor.createDiffEditor(container, {
       theme: 'cota-editor',
       readOnly: true,
@@ -82,8 +84,8 @@ export default function GitDiffEditor({
     })
     editor.getOriginalEditor().updateOptions({ lineNumbers: sideBySide ? 'on' : 'off' })
     const syntax = languageForPath(path)
-    const originalModel = monaco.editor.createModel(content.current.original, syntax)
-    const modifiedModel = monaco.editor.createModel(content.current.modified, syntax)
+    const originalModel = monaco.editor.createModel(content.original, syntax)
+    const modifiedModel = monaco.editor.createModel(content.modified, syntax)
     models.current = { original: originalModel, modified: modifiedModel }
     editor.setModel(models.current)
     instance.current = editor
