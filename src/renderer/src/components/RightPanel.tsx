@@ -4,6 +4,7 @@ import type { ProjectWorkspace } from '../../../shared/contracts'
 import { useRightPanel } from '../lib/right-panel-store'
 import { cn } from '../lib/utils'
 import { SourceControlPanel } from './SourceControlPanel'
+import { FileExplorer } from './FileExplorer'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
 import { ResizableHandle, ResizablePanel } from './ui/resizable'
 import { TabsContent } from './ui/tabs'
@@ -11,9 +12,11 @@ import { TabsContent } from './ui/tabs'
 export function RightPanel({
   workspace,
   active,
+  filesActive,
 }: {
   workspace?: ProjectWorkspace
   active: boolean
+  filesActive: boolean
 }) {
   const open = useRightPanel((state) => state.open)
   const [panel, panelRef] = usePanelCallbackRef()
@@ -85,16 +88,27 @@ export function RightPanel({
           </TabsContent>
           <TabsContent
             value="files"
-            className="right-panel-files-content flex min-h-0 flex-col overflow-auto"
+            keepMounted
+            className="right-panel-files-content flex min-h-0 flex-col overflow-hidden [&[hidden]]:hidden"
           >
-            <Empty className="right-panel-files-placeholder rounded-none">
-              <EmptyHeader className="right-panel-files-placeholder-header">
-                <EmptyTitle className="right-panel-files-placeholder-title">文件浏览</EmptyTitle>
-                <EmptyDescription className="right-panel-files-placeholder-description">
-                  文件浏览功能暂未开放。
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            {workspace ? (
+              <FileExplorer
+                key={workspace.id}
+                workspace={workspace}
+                active={visible && filesActive}
+              />
+            ) : (
+              <Empty className="right-panel-files-no-workspace rounded-none">
+                <EmptyHeader className="right-panel-files-no-workspace-header">
+                  <EmptyTitle className="right-panel-files-no-workspace-title">
+                    尚未选择工作区
+                  </EmptyTitle>
+                  <EmptyDescription className="right-panel-files-no-workspace-description">
+                    选择工作区后，在这里浏览文件。
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
           </TabsContent>
         </aside>
       </ResizablePanel>

@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Upload,
   CloudDownload,
+  Files,
   GitBranch,
   GitCommitHorizontal,
   Minus,
@@ -95,7 +96,6 @@ export function SourceControlPanel({
   const update = useSourceControl((state) => state.update)
   const [error, setError] = useState<string>()
   const [readError, setReadError] = useState<string>()
-  const [refreshing, setRefreshing] = useState(false)
   const [pending, setPending] = useState(false)
   const [messageExpanded, setMessageExpanded] = useState(false)
   const [references, setReferences] = useState<GitReferences>()
@@ -105,7 +105,7 @@ export function SourceControlPanel({
   useEffect(() => {
     if (currentError) setDialogError(currentError)
   }, [currentError])
-  const reading = useRef(false)
+  const readTask = useRef<Promise<void> | undefined>(undefined)
   const writing = useRef(false)
   const mounted = useRef(true)
   const activeRef = useRef(active)
@@ -125,6 +125,7 @@ export function SourceControlPanel({
     onSubmitMeta: { push: false },
     onSubmit: async ({ value, meta }) => {
       if (
+        !value.message.trim() ||
         !status ||
         !status.entries.some((entry) => entry.area === 'staged') ||
         status.entries.some((entry) => entry.area === 'conflict')
@@ -163,9 +164,7 @@ export function SourceControlPanel({
   })
 
   async function refresh() {
-    if (reading.current || writing.current) return
-    reading.current = true
-    setRefreshing(true)
+    if (writing.current) return
     try {
       const next = unwrap(await window.desktop.gitStatus(target))
       if (!mounted.current) return
@@ -176,15 +175,12 @@ export function SourceControlPanel({
         update(workspace.id, { status: undefined })
         setReadError(error instanceof Error ? error.message : String(error))
       }
-    } finally {
-      reading.current = false
-      if (mounted.current) setRefreshing(false)
     }
   }
 
   const [refreshQueue] = useState(() =>
     createSourceControlRefreshQueue(
-      refresh,
+      () => (readTask.current = refresh()),
       () => mounted.current && activeRef.current && !document.hidden && !writing.current,
     ),
   )
@@ -223,11 +219,14 @@ export function SourceControlPanel({
   }, [active, workspace.id, session.refreshed])
 
   async function mutate(input: GitMutation) {
-    if (writing.current || reading.current) return false
+    if (writing.current) return false
     writing.current = true
     setPending(true)
     setError(undefined)
     try {
+      // Keep background reads silent without overlapping them with writes.
+      await readTask.current
+      if (!mounted.current) return false
       const done = unwrap(await window.desktop.gitMutate(input))
       if (
         done &&
@@ -240,9 +239,7 @@ export function SourceControlPanel({
       }
       if (!mounted.current) return false
       if (done && input.action === 'switch-branch')
-        update(workspace.id, { selection: undefined, preview: false })
-      if (!done && input.action === 'sync')
-        toast.warning('已完成拉取合并，推送已取消。', { description: workspace.name })
+        update(workspace.id, { selection: undefined, preview: false, previewAll: false })
       return done
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -270,7 +267,11 @@ export function SourceControlPanel({
     }
   }
 
-  const disabled = pending || refreshing || !status
+  const disabled = pending || !status
+  const stageable =
+    status?.entries.filter(
+      (entry) => (entry.area === 'unstaged' || entry.area === 'untracked') && !entry.submodule,
+    ) || []
   const filesAction = (action: 'stage' | 'unstage' | 'discard', entries: GitChange[]) =>
     void mutate({ ...target, action, files: entries.map(({ path, area }) => ({ path, area })) })
   const selectedRemote =
@@ -289,10 +290,10 @@ export function SourceControlPanel({
   const localBranches =
     references?.branches.filter((branch) => branch.ref.startsWith('refs/heads/')) || []
   const branchLabel = status?.branch || `分离 HEAD · ${status?.head?.slice(0, 8) || '无提交'}`
-  const syncDescription = status?.upstream
-    ? `与 ${status.upstream} 同步 · 领先 ${status.ahead}，落后 ${status.behind}。先拉取并合并，再推送已提交代码（推送需确认）。`
-    : '尚未设置上游，请使用推送菜单发布分支。'
-  const syncDisabled = pushDisabled || !status?.head || !status.tracking || !!status.entries.length
+  const hasConflicts = status?.entries.some((entry) => entry.area === 'conflict')
+  const commitDisabled =
+    disabled || hasConflicts || !status?.entries.some((entry) => entry.area === 'staged')
+  const syncDisabled = pushDisabled || !status?.head || !status.tracking || hasConflicts
   async function remoteAction(action: 'fetch' | 'pull' | 'push' | 'publish' | 'sync') {
     if (action === 'fetch') return mutate({ ...target, action, remote: selectedRemote })
     if (!status?.branch || !status.head) return
@@ -307,7 +308,7 @@ export function SourceControlPanel({
     <section
       className="source-control-panel flex min-h-0 min-w-0 flex-1 flex-col"
       aria-label={`${workspace.name} 源代码管理`}
-      aria-busy={pending}
+      aria-busy={pending || (!status && !error && !readError)}
     >
       <Tabs
         value={session.mode}
@@ -338,12 +339,35 @@ export function SourceControlPanel({
           value="changes"
           className="source-control-changes-content flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
         >
+          <nav
+            className="source-control-changes-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 px-2 py-1.5"
+            aria-label="更改操作"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              className="source-control-view-all"
+              disabled={disabled || !status?.entries.length}
+              onClick={() =>
+                update(workspace.id, { selection: undefined, preview: true, previewAll: true })
+              }
+            >
+              <Files className="source-control-view-all-icon" data-icon="inline-start" />
+              查看全部变更
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="source-control-stage-all"
+              disabled={disabled || !stageable.length}
+              title="暂存所有未暂存和未跟踪文件，不含冲突文件与子模块"
+              onClick={() => filesAction('stage', stageable)}
+            >
+              <Plus className="source-control-stage-all-icon" data-icon="inline-start" />
+              暂存全部
+            </Button>
+          </nav>
           <div className="source-control-files min-h-0 flex-1 overflow-auto px-2 py-2">
-            {!status && !error && !readError && (
-              <p className="source-control-loading p-3 text-xs text-muted-foreground" role="status">
-                正在读取 Git 状态…
-              </p>
-            )}
             {status && status.entries.length === 0 && (
               <Empty className="source-control-clean">
                 <EmptyHeader className="source-control-clean-header">
@@ -459,7 +483,7 @@ export function SourceControlPanel({
                         return (
                           <div
                             key={key}
-                            className="source-control-file-row flex min-w-0 items-center gap-1.5 px-1"
+                            className="source-control-file-row mt-0.5 flex min-w-0 items-center gap-1.5 px-1"
                             data-selected={
                               session.preview &&
                               session.selection &&
@@ -648,17 +672,12 @@ export function SourceControlPanel({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="source-control-fetch"
-                      aria-label={`从 ${selectedRemote || '远端'} Fetch${status.upstream ? ` · ${status.upstream}，领先 ${status.ahead}，落后 ${status.behind}` : ''}`}
-                      title={`从 ${selectedRemote || '远端'} 获取分支，不改工作文件${status.upstream ? `\n上游 ${status.upstream} · 领先 ${status.ahead}，落后 ${status.behind}` : ''}`}
-                      disabled={networkDisabled || !selectedRemote}
-                      onClick={() => void remoteAction('fetch')}
+                      className="source-control-sync"
+                      disabled={syncDisabled}
+                      onClick={() => void remoteAction('sync')}
                     >
-                      <CloudDownload
-                        className="source-control-fetch-icon"
-                        data-icon="inline-start"
-                      />
-                      Fetch
+                      <RefreshCw className="source-control-sync-icon" data-icon="inline-start" />
+                      同步
                       {status.upstream && (status.ahead > 0 || status.behind > 0) && (
                         <span className="source-control-sync-counts flex shrink-0 items-center gap-0.5 tabular-nums">
                           {status.ahead > 0 && (
@@ -694,9 +713,9 @@ export function SourceControlPanel({
                             className="source-control-pull"
                             disabled={syncDisabled}
                             title={
-                              status.entries.length
-                                ? '请先提交或自行处理工作区更改。'
-                                : '从上游拉取，仅允许快进，不自动 stash。'
+                              hasConflicts
+                                ? '请先解决现有合并冲突。'
+                                : '从上游拉取，仅允许快进，不自动 stash；本地更改可能被覆盖时由 Git 拒绝合并。'
                             }
                             onClick={() => void remoteAction('pull')}
                           >
@@ -708,8 +727,8 @@ export function SourceControlPanel({
                             disabled={pushDisabled || !status.head}
                             title={
                               status.tracking
-                                ? `推送至 ${status.tracking.remote}/${status.tracking.branch}（需确认）`
-                                : `发布到 ${selectedRemote}/${status.branch || ''}（需确认）`
+                                ? `推送至 ${status.tracking.remote}/${status.tracking.branch}`
+                                : `发布到 ${selectedRemote}/${status.branch || ''}`
                             }
                             onClick={() => void remoteAction(hasTracking ? 'push' : 'publish')}
                           >
@@ -717,17 +736,13 @@ export function SourceControlPanel({
                             {hasTracking ? '推送' : '发布分支'}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            className="source-control-sync"
-                            disabled={syncDisabled}
-                            title={
-                              status.entries.length
-                                ? `${syncDescription}\n请先提交或自行处理工作区更改。`
-                                : syncDescription
-                            }
-                            onClick={() => void remoteAction('sync')}
+                            className="source-control-fetch"
+                            disabled={networkDisabled || !selectedRemote}
+                            title={`从 ${selectedRemote || '远端'} 获取分支，不改工作文件`}
+                            onClick={() => void remoteAction('fetch')}
                           >
-                            <RefreshCw className="source-control-sync-icon" />
-                            同步
+                            <CloudDownload className="source-control-fetch-icon" />
+                            Fetch
                           </DropdownMenuItem>
                         </DropdownMenuGroup>
                       </DropdownMenuContent>
@@ -741,7 +756,7 @@ export function SourceControlPanel({
         {session.mode !== 'changes' && (
           <TabsContent
             value={session.mode}
-            className="source-control-review-content min-h-0 flex-1 overflow-auto px-2 py-3"
+            className="source-control-review-content flex min-h-0 flex-1 flex-col overflow-hidden"
           >
             <SourceControlReview workspace={workspace} active={active} references={references} />
           </TabsContent>
@@ -812,43 +827,52 @@ export function SourceControlPanel({
                 >
                   <Sparkles className="source-control-generate-message-icon" />
                 </Button>
-                <ButtonGroup
-                  className="source-control-commit-buttons shrink-0"
-                  aria-label="提交操作"
+                <form.Subscribe
+                  selector={(state) => state.isSubmitting || !state.values.message.trim()}
                 >
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    size="sm"
-                    className="source-control-commit-button"
-                  >
-                    <GitCommitHorizontal
-                      className="source-control-commit-icon"
-                      data-icon="inline-start"
-                    />
-                    {pending ? '正在处理…' : '提交'}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      className="source-control-commit-menu-trigger"
-                      render={<Button type="button" variant="outline" size="icon-sm" />}
-                      aria-label="更多提交操作"
+                  {(unavailable) => (
+                    <ButtonGroup
+                      className="source-control-commit-buttons shrink-0"
+                      aria-label="提交操作"
                     >
-                      <ChevronDown className="source-control-commit-menu-icon" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="source-control-commit-menu" align="end">
-                      <DropdownMenuGroup className="source-control-commit-menu-actions">
-                        <DropdownMenuItem
-                          className="source-control-commit-and-push"
-                          onClick={() => void form.handleSubmit({ push: true })}
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        size="sm"
+                        className="source-control-commit-button"
+                        disabled={commitDisabled || unavailable}
+                      >
+                        <GitCommitHorizontal
+                          className="source-control-commit-icon"
+                          data-icon="inline-start"
+                        />
+                        提交
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          className="source-control-commit-menu-trigger"
+                          render={<Button type="button" variant="outline" size="icon-sm" />}
+                          aria-label="更多提交操作"
+                          disabled={commitDisabled || unavailable}
                         >
-                          <Upload className="source-control-commit-and-push-icon" />
-                          提交并推送
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </ButtonGroup>
+                          <ChevronDown className="source-control-commit-menu-icon" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="source-control-commit-menu" align="end">
+                          <DropdownMenuGroup className="source-control-commit-menu-actions">
+                            <DropdownMenuItem
+                              className="source-control-commit-and-push"
+                              disabled={commitDisabled || unavailable}
+                              onClick={() => void form.handleSubmit({ push: true })}
+                            >
+                              <Upload className="source-control-commit-and-push-icon" />
+                              提交并推送
+                            </DropdownMenuItem>
+                          </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </ButtonGroup>
+                  )}
+                </form.Subscribe>
               </div>
             </Collapsible>
           </>

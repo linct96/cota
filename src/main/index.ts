@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -17,6 +18,9 @@ import { ConfigStore } from './config'
 import { projectBranch } from './git'
 import { SourceControlService } from './source-control'
 import { SourceControlWatches } from './source-control-watch'
+import { FileExplorerService } from './file-explorer'
+import { FileExplorerWatches } from './file-explorer-watch'
+import type { FileAction } from '../shared/file-explorer'
 import type {
   GitDiffSelection,
   GitMutation,
@@ -62,6 +66,8 @@ let config: ConfigStore
 let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
 const sourceControlWatches = new SourceControlWatches()
+const files = new FileExplorerService()
+const fileWatches = new FileExplorerWatches()
 let warning: string | undefined
 let exiting = false
 let exitPending = false
@@ -285,6 +291,37 @@ function installIPC(): void {
     if (removingWorkspace || worktrees.removing || closingTabs.size || exitPending || exiting)
       throw new Error('正在关闭或移除工作区，请稍后重试。')
   }
+  handle('files:list', (target: WorkspaceTarget, path: unknown) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => files.list(binding.cwd, path))
+  })
+  handle('files:read', (target: WorkspaceTarget, path: unknown) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => files.read(binding.cwd, path))
+  })
+  handle('files:action', (target: WorkspaceTarget, path: unknown, action: FileAction) => {
+    assertLifecycle()
+    if (!['copy-relative', 'copy-absolute', 'reveal'].includes(action))
+      throw new Error('文件操作无效。')
+    return worktrees.withTerminalTarget(target, async (binding) => {
+      const location = await files.location(binding.cwd, path)
+      if (action === 'reveal') shell.showItemInFolder(location)
+      else clipboard.writeText(action === 'copy-relative' ? String(path) || '.' : location)
+    })
+  })
+  handle('files:watch', (target: WorkspaceTarget, paths: unknown, id: unknown) => {
+    assertLifecycle()
+    return fileWatches.start(
+      id,
+      paths,
+      () => worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+      (event) => {
+        if (window && !window.webContents.isDestroyed())
+          window.webContents.send('files:changed', { id, event })
+      },
+    )
+  })
+  handle('files:unwatch', (id: unknown) => fileWatches.stop(id))
   handle('git:status', (target: WorkspaceTarget) => {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) =>
@@ -330,9 +367,9 @@ function installIPC(): void {
       assertLifecycle()
       return sourceControl.mutate(binding.cwd, input, (description) =>
         requestConfirmation({
-          title: input.action === 'discard' ? '丢弃工作区改动' : '推送提交',
+          title: '丢弃工作区改动',
           description,
-          confirmLabel: input.action === 'discard' ? '丢弃改动' : '确认推送',
+          confirmLabel: '丢弃改动',
         }),
       )
     })
@@ -616,6 +653,7 @@ async function requestExit(): Promise<void> {
     await manager.request('shutdown', [])
     manager.disconnect()
     sourceControlWatches.close()
+    fileWatches.close()
     exiting = true
     app.quit()
   } catch (error) {
@@ -789,6 +827,7 @@ if (!app.requestSingleInstanceLock()) {
       })
       const rendererUnavailable = () => {
         sourceControlWatches.close()
+        fileWatches.close()
         rendererReady = false
         visibleTerminal = undefined
         settleConfirmation(false)

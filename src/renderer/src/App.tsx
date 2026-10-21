@@ -9,6 +9,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  Files,
   GitFork,
   ExternalLink,
   MoreHorizontal,
@@ -25,6 +26,9 @@ import { TerminalView } from './components/TerminalView'
 import { TopStatusBar } from './components/TopStatusBar'
 import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
+import { FilePreview } from './components/FilePreview'
+import { useFileExplorer } from './lib/file-explorer-store'
+import { SourceControlChanges } from './components/SourceControlChanges'
 import { FileTypeIcon } from './components/FileTypeIcon'
 import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from './lib/source-control-store'
@@ -101,6 +105,7 @@ export function App() {
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
   const [navigation, setNavigation] = useState<'home' | 'placeholder'>('home')
+  const [rightTab, setRightTab] = useState('git')
   const activeNavigation = settingsOpen ? 'settings' : navigation
   const menuTrigger = useRef<HTMLElement | null>(null)
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)
@@ -218,11 +223,21 @@ export function App() {
     (state) => state.sessions[workspaceId || ''] || EMPTY_SOURCE_CONTROL,
   )
   const previewSelection = sourceControl.selection
-  const showingDiff = !!previewSelection && sourceControl.preview
+  const hasPreview = !!sourceControl.file || !!previewSelection || sourceControl.previewAll
+  const previewTitle =
+    sourceControl.file || (sourceControl.previewAll ? '全部变更' : previewSelection?.path || '')
+  const showingDiff = hasPreview && sourceControl.preview
   function closePreview() {
     if (!workspaceId) return
-    useSourceControl.getState().update(workspaceId, { selection: undefined, preview: false })
-    requestAnimationFrame(() => document.getElementById(`terminal-tab-${activeId}`)?.focus())
+    useSourceControl
+      .getState()
+      .update(workspaceId, { selection: undefined, preview: false, previewAll: false })
+    requestAnimationFrame(() =>
+      (
+        document.getElementById(`terminal-tab-${activeId}`) ||
+        document.getElementById('right-panel-toggle')
+      )?.focus(),
+    )
   }
   useEffect(() => {
     const current = useSourceControl.getState()
@@ -231,6 +246,14 @@ export function App() {
       useSourceControl.setState({
         sessions: Object.fromEntries(
           Object.entries(current.sessions).filter(([id]) => ids.has(id)),
+        ),
+      })
+    }
+    const explorer = useFileExplorer.getState()
+    if (Object.keys(explorer.sessions).some((id) => !ids.has(id))) {
+      useFileExplorer.setState({
+        sessions: Object.fromEntries(
+          Object.entries(explorer.sessions).filter(([id]) => ids.has(id)),
         ),
       })
     }
@@ -270,7 +293,8 @@ export function App() {
   return (
     <TooltipProvider delay={300}>
       <Tabs
-        defaultValue="git"
+        value={rightTab}
+        onValueChange={(value) => setRightTab(String(value))}
         className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-background text-foreground select-none"
         data-platform={window.desktop.platform}
       >
@@ -285,7 +309,7 @@ export function App() {
               />
               {state.selectedProject && (
                 <>
-                  {(currentTabs.length > 0 || previewSelection) && (
+                  {(currentTabs.length > 0 || hasPreview) && (
                     <div
                       role="tablist"
                       tabIndex={-1}
@@ -329,15 +353,15 @@ export function App() {
                           }}
                         />
                       ))}
-                      {previewSelection && (
+                      {hasPreview && (
                         <div
                           role="tab"
                           id={`source-control-tab-${workspaceId}`}
                           aria-selected={showingDiff}
                           aria-controls={`source-control-panel-${workspaceId}`}
-                          aria-label={`${previewSelection.path} 变更预览`}
+                          aria-label={`${previewTitle} 预览`}
                           tabIndex={showingDiff ? 0 : -1}
-                          title={previewSelection.path}
+                          title={previewTitle}
                           className="source-control-preview-tab inline-flex h-8 w-40 shrink-0 cursor-pointer items-center gap-1.5 px-2.5"
                           onClick={() => {
                             if (workspaceId)
@@ -358,16 +382,20 @@ export function App() {
                             event.currentTarget.click()
                           }}
                         >
-                          <FileTypeIcon path={previewSelection.path} />
+                          {sourceControl.previewAll ? (
+                            <Files className="source-control-preview-all-icon size-3.5 shrink-0" />
+                          ) : (
+                            <FileTypeIcon path={previewTitle} />
+                          )}
                           <span className="source-control-preview-tab-title min-w-0 flex-1 truncate">
-                            {folderName(previewSelection.path)}
+                            {sourceControl.previewAll ? previewTitle : folderName(previewTitle)}
                           </span>
                           <Button
                             variant="ghost"
                             size="icon-sm"
                             tabIndex={-1}
                             className="source-control-preview-tab-close size-4 shrink-0"
-                            aria-label={`关闭 ${previewSelection.path} 预览`}
+                            aria-label={`关闭 ${previewTitle} 预览`}
                             onClick={(event) => {
                               event.stopPropagation()
                               closePreview()
@@ -997,10 +1025,16 @@ export function App() {
                     </nav>
                   </aside>
 
-                  {/* 保持终端挂载，Diff 仅切换可见区域。 */}
+                  {/* 保持终端挂载，文件 / Diff 预览仅切换可见区域。 */}
                   <main
                     className="terminal-workspace flex min-h-0 min-w-0 flex-1 flex-col"
-                    aria-label={showingDiff ? '变更审阅工作区' : '终端工作区'}
+                    aria-label={
+                      showingDiff
+                        ? sourceControl.file
+                          ? '文件预览工作区'
+                          : '变更审阅工作区'
+                        : '终端工作区'
+                    }
                   >
                     {state.worktreeError && (
                       <p
@@ -1010,13 +1044,28 @@ export function App() {
                         {state.worktreeError}
                       </p>
                     )}
-                    {showingDiff && activeWorkspace && (
-                      <SourceControlDiff
-                        key={activeWorkspace.id}
-                        workspace={activeWorkspace}
-                        active={!settingsOpen}
-                      />
-                    )}
+                    {showingDiff &&
+                      activeWorkspace &&
+                      (sourceControl.file ? (
+                        <FilePreview
+                          key={`${activeWorkspace.id}:${sourceControl.file}`}
+                          workspace={activeWorkspace}
+                          path={sourceControl.file}
+                          active={!settingsOpen}
+                        />
+                      ) : sourceControl.previewAll ? (
+                        <SourceControlChanges
+                          key={activeWorkspace.id}
+                          workspace={activeWorkspace}
+                          active={!settingsOpen}
+                        />
+                      ) : (
+                        <SourceControlDiff
+                          key={activeWorkspace.id}
+                          workspace={activeWorkspace}
+                          active={!settingsOpen}
+                        />
+                      ))}
                     <div
                       className={cn(
                         'terminal-stage-container grid grid-cols-1 grid-rows-1 min-h-0 flex-1 overflow-hidden',
@@ -1093,7 +1142,11 @@ export function App() {
                 <Outlet />
               </div>
             </ResizablePanel>
-            <RightPanel workspace={activeWorkspace} active={!settingsOpen} />
+            <RightPanel
+              workspace={activeWorkspace}
+              active={!settingsOpen}
+              filesActive={rightTab === 'files'}
+            />
           </ResizablePanelGroup>
         </div>
 

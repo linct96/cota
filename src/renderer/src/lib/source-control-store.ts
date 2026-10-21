@@ -3,15 +3,18 @@ import { gitFileKey, type GitDiffSelection, type GitStatus } from '../../../shar
 
 interface SourceControlSession {
   selection?: GitDiffSelection
+  file?: string
   mode: 'changes' | 'history' | 'compare'
   baseRef: string
   preview: boolean
+  previewAll: boolean
   draft: string
   status?: GitStatus
   refreshed: number
 }
 export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
   preview: false,
+  previewAll: false,
   mode: 'changes',
   baseRef: '',
   draft: '',
@@ -28,6 +31,11 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
   update(id, patch) {
     set((state) => {
       const session = { ...(state.sessions[id] || EMPTY_SOURCE_CONTROL), ...patch }
+      if (patch.file !== undefined) {
+        session.selection = undefined
+        session.previewAll = false
+      } else if ('selection' in patch || patch.previewAll) session.file = undefined
+      if ('selection' in patch) session.previewAll = patch.previewAll ?? false
       if (patch.status && session.selection && session.selection.area !== 'review') {
         const selection = session.selection
         const entry =

@@ -1,22 +1,21 @@
 import { Fragment, type ReactNode } from 'react'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
-import { gitFileKey, type GitChange } from '../../../shared/source-control'
 import type { GitChangeNode } from '../lib/source-control-tree'
 import { Button } from './ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 
-export function SourceControlFileTree({
+export function SourceControlFileTree<T extends { path: string }>({
   nodes,
   renderFile,
   renderDirectoryActions,
 }: {
-  nodes: GitChangeNode[]
-  renderFile: (entry: GitChange, name: string) => ReactNode
-  renderDirectoryActions: (entries: GitChange[], path: string) => ReactNode
+  nodes: GitChangeNode<T>[]
+  renderFile: (entry: T, name: string) => ReactNode
+  renderDirectoryActions?: (entries: T[], path: string) => ReactNode
 }): ReactNode {
   return nodes.map((node) =>
     node.kind === 'file' ? (
-      <Fragment key={gitFileKey(node.entry)}>{renderFile(node.entry, node.name)}</Fragment>
+      <Fragment key={node.path}>{renderFile(node.entry, node.name)}</Fragment>
     ) : (
       <Collapsible
         key={`directory:${node.path}`}
@@ -38,9 +37,11 @@ export function SourceControlFileTree({
             <FolderOpen className="source-control-directory-open-icon" aria-hidden="true" />
             <span className="source-control-directory-name min-w-0 truncate">{node.name}</span>
           </CollapsibleTrigger>
-          <div className="source-control-directory-actions flex shrink-0 items-center gap-0.5">
-            {renderDirectoryActions(node.entries, node.path)}
-          </div>
+          {renderDirectoryActions && (
+            <div className="source-control-directory-actions flex shrink-0 items-center gap-0.5">
+              {renderDirectoryActions(node.entries, node.path)}
+            </div>
+          )}
         </div>
         <CollapsibleContent className="source-control-directory-children flex min-w-0 flex-col gap-0.5 pl-3">
           <SourceControlFileTree

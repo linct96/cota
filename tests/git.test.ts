@@ -283,9 +283,17 @@ describe('project branch', () => {
     expect((await sourceControl.status(directory)).branch).toBeNull()
     const target = { projectPath: directory, workspaceId: 'fixture' }
     await writeFile(join(worktree, 'file.txt'), 'one\n')
+    await writeFile(join(worktree, 'local.txt'), 'local baseline\n')
     await sourceControl.mutate(
       worktree,
-      { ...target, action: 'stage', files: [{ path: 'file.txt', area: 'untracked' }] },
+      {
+        ...target,
+        action: 'stage',
+        files: [
+          { path: 'file.txt', area: 'untracked' },
+          { path: 'local.txt', area: 'untracked' },
+        ],
+      },
       async () => false,
     )
     expect((await sourceControl.status(worktree)).branch).toBe('feature/worktree')
@@ -350,6 +358,7 @@ describe('project branch', () => {
     })
     expect(branchReview.base).toBe((await git('rev-parse', 'main')).stdout.trim())
     expect(branchReview.entries).toEqual([
+      expect.objectContaining({ path: 'local.txt', status: 'A' }),
       expect.objectContaining({ path: 'renamed 空格.txt', status: 'A' }),
     ])
 
@@ -368,11 +377,12 @@ describe('project branch', () => {
     await expect(
       sourceControl.mutate(worktree, { ...publish, remote: peer }, async () => true),
     ).rejects.toThrow('已配置')
-    expect(await sourceControl.mutate(worktree, publish, async () => false)).toBe(false)
-    await expect(
-      git('--git-dir', remote, 'rev-parse', '--verify', 'refs/heads/feature/worktree'),
-    ).rejects.toThrow()
-    expect(await sourceControl.mutate(worktree, publish, async () => true)).toBe(true)
+    const noConfirmation = vi.fn().mockResolvedValue(false)
+    expect(await sourceControl.mutate(worktree, publish, noConfirmation)).toBe(true)
+    expect(noConfirmation).not.toHaveBeenCalled()
+    expect(
+      (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
+    ).toBe(renameHead)
     let current = await sourceControl.status(worktree)
     expect(current.tracking).toEqual({ remote: 'review', branch: 'feature/worktree' })
     await git('clone', '--branch', 'feature/worktree', remote, peer)
@@ -413,10 +423,18 @@ describe('project branch', () => {
       tracking: current.tracking!,
     }
     await writeFile(join(worktree, 'dirty.txt'), 'keep me')
+    await writeFile(join(worktree, 'local.txt'), 'uncommitted local changes\n')
+    await writeFile(join(worktree, 'renamed 空格.txt'), 'overlapping local changes\n')
     await expect(sourceControl.mutate(worktree, pull, async () => true)).rejects.toThrow(
-      '所有工作区更改',
+      'would be overwritten by merge',
     )
-    await rm(join(worktree, 'dirty.txt'))
+    expect((await sourceControl.status(worktree)).head).toBe(renameHead)
+    expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe(
+      'overlapping local changes\n',
+    )
+    await git('-C', worktree, 'restore', '--worktree', '--', 'renamed 空格.txt')
+    await git('-C', worktree, 'add', '--', 'local.txt')
+    await writeFile(join(worktree, 'local.txt'), 'unstaged local changes\n')
     const exclude = (
       await git('-C', worktree, 'rev-parse', '--path-format=absolute', '--git-path', 'info/exclude')
     ).stdout.trim()
@@ -430,7 +448,18 @@ describe('project branch', () => {
     await rm(join(worktree, 'ignored.txt'))
     await sourceControl.mutate(worktree, pull, async () => true)
     expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe('peer\n')
-    expect((await sourceControl.status(worktree)).entries).toEqual([])
+    expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep me')
+    expect(await readFile(join(worktree, 'local.txt'), 'utf8')).toBe('unstaged local changes\n')
+    expect((await git('-C', worktree, 'show', ':local.txt')).stdout).toBe(
+      'uncommitted local changes\n',
+    )
+    expect((await sourceControl.status(worktree)).entries).toEqual([
+      expect.objectContaining({ path: 'local.txt', area: 'staged' }),
+      expect.objectContaining({ path: 'local.txt', area: 'unstaged' }),
+      expect.objectContaining({ path: 'dirty.txt', area: 'untracked' }),
+    ])
+    await rm(join(worktree, 'dirty.txt'))
+    await git('-C', worktree, 'restore', '--staged', '--worktree', '--', 'local.txt')
 
     await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local change')
     current = await sourceControl.status(worktree)
@@ -444,20 +473,37 @@ describe('project branch', () => {
     const beforePush = (
       await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
     ).stdout.trim()
-    await expect(
-      sourceControl.mutate(worktree, push, async () => {
-        await git('-C', worktree, 'commit', '--allow-empty', '-m', 'agent moved HEAD')
-        return true
-      }),
-    ).rejects.toThrow('HEAD 已改变')
+    const readStatus = sourceControl.status.bind(sourceControl)
+    const movingHead = vi.spyOn(sourceControl, 'status').mockImplementationOnce(async (cwd) => {
+      const snapshot = await readStatus(cwd)
+      await git('-C', worktree, 'commit', '--allow-empty', '-m', 'agent moved HEAD')
+      return snapshot
+    })
+    try {
+      await expect(sourceControl.mutate(worktree, push, noConfirmation)).rejects.toThrow(
+        'HEAD 已改变',
+      )
+    } finally {
+      movingHead.mockRestore()
+    }
     expect(
       (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
     ).toBe(beforePush)
     current = await sourceControl.status(worktree)
-    await sourceControl.mutate(worktree, { ...push, head: current.head! }, async () => true)
+    await writeFile(join(worktree, 'local.txt'), 'staged, not committed\n')
+    await git('-C', worktree, 'add', '--', 'local.txt')
+    await sourceControl.mutate(worktree, { ...push, head: current.head! }, noConfirmation)
+    expect(noConfirmation).not.toHaveBeenCalled()
     expect(
       (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
     ).toBe(current.head)
+    expect((await git('--git-dir', remote, 'show', 'feature/worktree:local.txt')).stdout).toBe(
+      'local baseline\n',
+    )
+    expect((await sourceControl.status(worktree)).entries).toEqual([
+      expect.objectContaining({ path: 'local.txt', area: 'staged' }),
+    ])
+    await git('-C', worktree, 'restore', '--staged', '--worktree', '--', 'local.txt')
 
     // Push and Pull must refuse divergence even if user configuration requests mirror/rebase/autostash.
     await git('-C', peer, 'fetch', 'origin')
@@ -476,28 +522,47 @@ describe('project branch', () => {
     await expect(git('-C', worktree, 'rev-parse', '--verify', 'MERGE_HEAD')).rejects.toThrow()
     expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
 
-    // Sync merges divergence before pushing, but cancellation keeps the merged commit local.
+    // Sync merges divergence and pushes without a separate confirmation.
     await git('-C', worktree, 'config', 'remote.review.mirror', 'false')
     const sync = { ...divergence, action: 'sync' as const }
-    const confirmSync = vi.fn().mockResolvedValue(false)
-    expect(await sourceControl.mutate(worktree, sync, confirmSync)).toBe(false)
-    const merged = await sourceControl.status(worktree)
-    expect(merged.entries).toEqual([])
-    expect((await git('-C', worktree, 'rev-parse', 'HEAD^1')).stdout.trim()).toBe(current.head)
-    expect((await git('-C', worktree, 'rev-parse', 'HEAD^2')).stdout.trim()).toBe(
-      (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
+    const syncRemoteHead = (
+      await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+    ).stdout.trim()
+    await writeFile(join(worktree, 'local.txt'), 'keep during sync\n')
+    await writeFile(join(worktree, 'dirty.txt'), 'keep untracked during sync\n')
+    await git('-C', worktree, 'add', '--', 'local.txt')
+    await expect(sourceControl.mutate(worktree, sync, noConfirmation)).rejects.toThrow(
+      '拉取合并未完成，未执行推送',
     )
-    expect(confirmSync).toHaveBeenCalledOnce()
-    expect(merged.ahead).toBeGreaterThan(0)
-    expect(
-      await sourceControl.mutate(worktree, { ...sync, head: merged.head! }, async () => true),
-    ).toBe(true)
+    expect(noConfirmation).not.toHaveBeenCalled()
+    expect((await sourceControl.status(worktree)).head).toBe(current.head)
+    expect((await sourceControl.status(worktree)).entries).toContainEqual(
+      expect.objectContaining({ path: 'local.txt', area: 'staged' }),
+    )
+    await git('-C', worktree, 'restore', '--staged', '--', 'local.txt')
+    expect(await sourceControl.mutate(worktree, sync, noConfirmation)).toBe(true)
+    const merged = await sourceControl.status(worktree)
+    expect(merged.entries).toEqual([
+      expect.objectContaining({ path: 'local.txt', area: 'unstaged' }),
+      expect.objectContaining({ path: 'dirty.txt', area: 'untracked' }),
+    ])
+    expect((await git('-C', worktree, 'rev-parse', 'HEAD^1')).stdout.trim()).toBe(current.head)
+    expect((await git('-C', worktree, 'rev-parse', 'HEAD^2')).stdout.trim()).toBe(syncRemoteHead)
+    expect(noConfirmation).not.toHaveBeenCalled()
+    expect(merged.ahead).toBe(0)
     expect(
       (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
     ).toBe(merged.head)
+    expect((await git('--git-dir', remote, 'show', 'feature/worktree:local.txt')).stdout).toBe(
+      'local baseline\n',
+    )
+    expect(await readFile(join(worktree, 'local.txt'), 'utf8')).toBe('keep during sync\n')
+    expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep untracked during sync\n')
     const alreadySynced = vi.fn().mockResolvedValue(true)
     await sourceControl.mutate(worktree, { ...sync, head: merged.head! }, alreadySynced)
     expect(alreadySynced).not.toHaveBeenCalled()
+    await rm(join(worktree, 'dirty.txt'))
+    await git('-C', worktree, 'restore', '--worktree', '--', 'local.txt')
 
     await git('-C', peer, 'fetch', 'origin')
     await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
@@ -514,12 +579,11 @@ describe('project branch', () => {
     await writeFile(join(worktree, 'dirty.txt'), 'keep local changes\n')
     await expect(
       sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
-    ).rejects.toThrow('所有工作区更改')
+    ).rejects.toThrow('拉取合并未完成，未执行推送')
     expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep local changes\n')
-    await rm(join(worktree, 'dirty.txt'))
     await expect(
       sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
-    ).rejects.toThrow('拉取合并未完成，未执行推送')
+    ).rejects.toThrow('请先解决现有合并冲突')
     expect(noPushOnConflict).not.toHaveBeenCalled()
     expect((await sourceControl.status(worktree)).entries).toContainEqual(
       expect.objectContaining({ area: 'conflict', path: 'renamed 空格.txt' }),
@@ -529,6 +593,7 @@ describe('project branch', () => {
     ).toBe(conflictRemote)
     expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
     await git('-C', worktree, 'merge', '--abort')
+    await rm(join(worktree, 'dirty.txt'))
 
     const occupiedPath = join(directory, 'occupied')
     await git('worktree', 'add', '-b', 'feature/occupied', occupiedPath, 'HEAD')

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { FileWatchEvent } from '../shared/file-explorer'
 import type {
   AgentUpdate,
   AgentSession,
@@ -19,6 +20,41 @@ const api: DesktopAPI = {
   projectBranch: (path) => ipcRenderer.invoke('project:branch', path),
   inspectRepository: (path) => ipcRenderer.invoke('git:inspect-repository', path),
   listWorktrees: (path) => ipcRenderer.invoke('git:list-worktrees', path),
+  listFiles: (target, path) => ipcRenderer.invoke('files:list', target, path),
+  readFile: (target, path) => ipcRenderer.invoke('files:read', target, path),
+  fileAction: (target, path, action) => ipcRenderer.invoke('files:action', target, path, action),
+  watchFiles: (target, paths, listener) => {
+    const id = crypto.randomUUID()
+    let disposed = false
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      update: { id: string; event: FileWatchEvent },
+    ) => {
+      if (!disposed && update.id === id) listener(update.event)
+    }
+    ipcRenderer.on('files:changed', wrapped)
+    void ipcRenderer
+      .invoke('files:watch', target, paths, id)
+      .then((result: Result<boolean>) => {
+        if (!disposed)
+          listener(
+            result.ok && result.value
+              ? { kind: 'ready' }
+              : {
+                  kind: 'unavailable',
+                  error: result.ok ? '文件监听不可用，请手动刷新。' : result.error,
+                },
+          )
+      })
+      .catch(() => {
+        if (!disposed) listener({ kind: 'unavailable', error: '文件监听不可用，请手动刷新。' })
+      })
+    return () => {
+      disposed = true
+      ipcRenderer.removeListener('files:changed', wrapped)
+      void ipcRenderer.invoke('files:unwatch', id).catch(() => {})
+    }
+  },
   gitStatus: (target) => ipcRenderer.invoke('git:status', target),
   watchGit: (target, listener) => {
     const id = crypto.randomUUID()

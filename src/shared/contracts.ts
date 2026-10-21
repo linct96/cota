@@ -1,3 +1,4 @@
+import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -390,6 +391,14 @@ export interface DesktopAPI {
   projectBranch(path: string): Promise<Result<string | null>>
   inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
   listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
+  listFiles(target: WorkspaceTarget, path: string): Promise<Result<FileEntry[]>>
+  readFile(target: WorkspaceTarget, path: string): Promise<Result<FilePreview>>
+  fileAction(target: WorkspaceTarget, path: string, action: FileAction): Promise<Result<void>>
+  watchFiles(
+    target: WorkspaceTarget,
+    paths: string[],
+    listener: (event: FileWatchEvent) => void,
+  ): () => void
   gitStatus(target: WorkspaceTarget): Promise<Result<GitStatus>>
   watchGit(target: WorkspaceTarget, listener: (event: GitWatchEvent) => void): () => void
   gitDiff(target: WorkspaceTarget, file: GitDiffSelection): Promise<Result<GitDiff>>

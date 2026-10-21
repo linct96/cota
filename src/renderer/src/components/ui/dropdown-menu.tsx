@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { Menu as DropdownMenuPrimitive } from '@base-ui/react/menu'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DropdownMenu = DropdownMenuPrimitive.Root
@@ -64,6 +65,30 @@ function DropdownMenuItem({
   )
 }
 
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+  return (
+    <DropdownMenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-checkbox-item"
+      className={cn(
+        'dropdown-menu-checkbox-item relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-xs outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+        className,
+      )}
+      {...props}
+    >
+      <span className="dropdown-menu-checkbox-indicator pointer-events-none absolute right-2 flex items-center justify-center">
+        <DropdownMenuPrimitive.CheckboxItemIndicator className="dropdown-menu-checkbox-check">
+          <Check className="dropdown-menu-checkbox-check-icon" />
+        </DropdownMenuPrimitive.CheckboxItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.CheckboxItem>
+  )
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -83,5 +108,6 @@ export {
   DropdownMenuGroup,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuCheckboxItem,
   DropdownMenuSeparator,
 }

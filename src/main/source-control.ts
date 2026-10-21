@@ -597,7 +597,6 @@ export class SourceControlService {
     cwd: string,
     status: GitStatus,
     input: GitRemoteMutation,
-    confirm: (description: string) => Promise<boolean>,
   ): Promise<boolean> {
     const remote =
       input.action === 'fetch' || input.action === 'publish' ? input.remote : input.tracking?.remote
@@ -647,8 +646,8 @@ export class SourceControlService {
     const branch = input.action === 'publish' ? status.branch! : input.tracking.branch
     await runGit(root, ['check-ref-format', `refs/heads/${branch}`])
     if (input.action === 'pull' || input.action === 'sync') {
-      if (status.entries.length)
-        throw new Error('拉取或同步前请提交或自行处理所有工作区更改；不会自动 stash。')
+      if (status.entries.some((entry) => entry.area === 'conflict'))
+        throw new Error('请先解决现有合并冲突，再拉取或同步；不会自动 stash。')
       const upstream = `refs/remotes/${remote}/${branch}`
       await runGit(
         root,
@@ -668,8 +667,8 @@ export class SourceControlService {
       const tip = await this.resolveCommit(root, upstream)
       const current = await this.status(cwd)
       verify(current)
-      if (current.entries.length)
-        throw new Error('获取期间工作区已改变，仅完成 Fetch，未更新工作文件。')
+      if (current.entries.some((entry) => entry.area === 'conflict'))
+        throw new Error('获取期间出现合并冲突，仅完成 Fetch，未更新工作文件。')
       try {
         await runGit(
           root,
@@ -703,15 +702,10 @@ export class SourceControlService {
           merged.tracking?.branch !== input.tracking.branch
         )
           throw new Error('分支或上游已改变，请刷新后重试。')
-        if (!merged.head || merged.entries.length)
-          throw new Error('合并后工作区仍有更改，未执行推送。请检查 Git 状态。')
+        if (!merged.head || merged.entries.some((entry) => entry.area === 'conflict'))
+          throw new Error('合并后 HEAD 无效或仍有冲突，未执行推送。请检查 Git 状态。')
         if (!merged.ahead) return true
-        return await this.mutateRemote(
-          cwd,
-          merged,
-          { ...input, action: 'push', head: merged.head },
-          confirm,
-        )
+        return await this.mutateRemote(cwd, merged, { ...input, action: 'push', head: merged.head })
       } catch (error) {
         throw new Error(`已完成拉取合并，但同步未完成。\n${explain(error).message}`)
       }
@@ -719,16 +713,10 @@ export class SourceControlService {
     const urls = await runGit(root, ['remote', 'get-url', '--push', '--all', remote])
     if (urls.trim().split('\n').length !== 1)
       throw new Error('此远端有多个推送地址，请在终端明确处理。')
-    if (
-      !(await confirm(
-        `将提交 ${status.head!.slice(0, 12)} 从 ${status.branch} 推送至 ${remote}/${branch}。${input.action === 'publish' ? '成功后设置为此分支的上游。' : ''}不强推，不推送其他分支、标签或子模块。`,
-      ))
-    )
-      return false
     verify(await this.status(cwd))
     if (urls !== (await runGit(root, ['remote', 'get-url', '--push', '--all', remote])))
-      throw new Error('确认期间远端推送地址已改变，未执行推送。')
-    // Push the reviewed commit, not a HEAD that an Agent could advance while Git connects.
+      throw new Error('推送前远端推送地址已改变，未执行推送。')
+    // Push the selected commit, not a HEAD that an Agent could advance while Git connects.
     await runGit(
       root,
       [
@@ -775,7 +763,7 @@ export class SourceControlService {
         input.action === 'pull' ||
         input.action === 'sync'
       )
-        return await this.mutateRemote(cwd, status, input, confirm)
+        return await this.mutateRemote(cwd, status, input)
       if (input.action === 'switch-branch') {
         if (
           typeof input.ref !== 'string' ||

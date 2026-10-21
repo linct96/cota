@@ -17,6 +17,8 @@ import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-
 import { buildGitChangeTree } from '../src/renderer/src/lib/source-control-tree'
 import type { GitChange } from '../src/shared/source-control'
 import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
+import { explorerRows, useFileExplorer } from '../src/renderer/src/lib/file-explorer-store'
+import type { FileEntry } from '../src/shared/file-explorer'
 import {
   agentIndicatorState,
   agentTabState,
@@ -39,6 +41,7 @@ beforeEach(() => {
   useWorkspace.setState(useWorkspace.getInitialState(), true)
   useSourceControl.setState(useSourceControl.getInitialState(), true)
   useRightPanel.setState(useRightPanel.getInitialState(), true)
+  useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
     platform: 'darwin',
     bootstrap: vi.fn().mockResolvedValue({
@@ -51,6 +54,10 @@ beforeEach(() => {
     projectBranch: vi.fn().mockResolvedValue({ ok: true, value: null }),
     inspectRepository: vi.fn(),
     listWorktrees: vi.fn(),
+    listFiles: vi.fn(),
+    readFile: vi.fn(),
+    fileAction: vi.fn(),
+    watchFiles: vi.fn(() => vi.fn()),
     gitStatus: vi.fn(),
     watchGit: vi.fn(() => vi.fn()),
     gitDiff: vi.fn(),
@@ -1292,6 +1299,24 @@ describe('workspace state', () => {
       selection: undefined,
       draft: 'keep draft',
     })
+    useSourceControl.getState().update(target.id, {
+      selection: undefined,
+      preview: true,
+      previewAll: true,
+      status,
+    })
+    useSourceControl.getState().update(target.id, { status: { ...status, entries: [] } })
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      preview: true,
+      previewAll: true,
+      selection: undefined,
+      draft: 'keep draft',
+    })
+    useSourceControl.getState().showTerminal(target.id)
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      preview: false,
+      previewAll: true,
+    })
     const review = {
       area: 'review' as const,
       path: 'file.txt',
@@ -1308,6 +1333,7 @@ describe('workspace state', () => {
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
       selection: review,
       preview: true,
+      previewAll: false,
     })
     store().selectTab(store().activeTabs[target.id])
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
@@ -1540,6 +1566,90 @@ describe('workspace state', () => {
     expect(await creating).toBe(false)
     expect(store().projects).toEqual([])
     expect(store().workspaces).toEqual([])
+  })
+
+  it('isolates workspace file loads, coalesces refreshes and keeps file and diff previews exclusive', async () => {
+    const pending: Array<(entries: FileEntry[]) => void> = []
+    const listFiles = vi.fn<DesktopAPI['listFiles']>(
+      () =>
+        new Promise((resolve) => {
+          pending.push((value) => resolve({ ok: true, value }))
+        }),
+    )
+    api.listFiles = listFiles
+    const a = { projectPath: '/a', workspaceId: 'a' }
+    const b = { projectPath: '/b', workspaceId: 'b' }
+    const files = [{ name: 'src', path: 'src', kind: 'directory' as const }]
+    const first = useFileExplorer.getState().load(a, '')
+    await useFileExplorer.getState().load(a, '')
+    const second = useFileExplorer.getState().load(b, '')
+    expect(listFiles).toHaveBeenCalledTimes(2)
+    pending[1]([{ name: 'b.txt', path: 'b.txt', kind: 'file' }])
+    await second
+    pending[0](files)
+    await first
+    expect(listFiles).toHaveBeenCalledTimes(3)
+    pending[2](files)
+    await vi.waitFor(() =>
+      expect(useFileExplorer.getState().sessions.a.directories[''].loading).toBe(false),
+    )
+    expect(useFileExplorer.getState().sessions.b.directories[''].entries?.[0].name).toBe('b.txt')
+    useFileExplorer
+      .getState()
+      .update('a', { expanded: { src: true }, selected: 'src', scrollTop: 42 })
+    const child = useFileExplorer.getState().load(a, 'src')
+    pending[3]([{ name: 'child.ts', path: 'src/child.ts', kind: 'file' }])
+    await child
+    expect(
+      explorerRows(useFileExplorer.getState().sessions.a).map((entry) => [entry.path, entry.depth]),
+    ).toEqual([
+      ['src', 0],
+      ['src/child.ts', 1],
+    ])
+    listFiles.mockRejectedValueOnce(new Error('permission denied'))
+    await useFileExplorer.getState().load(a, '')
+    expect(useFileExplorer.getState().sessions.a).toMatchObject({
+      scrollTop: 42,
+      selected: 'src',
+      expanded: { src: true },
+      directories: { '': { entries: files, error: 'permission denied' } },
+    })
+    const deleted = useFileExplorer.getState().load(a, '')
+    useFileExplorer.setState({ sessions: {} })
+    pending[4](files)
+    await deleted
+    expect(useFileExplorer.getState().sessions).toEqual({})
+    const scm = useSourceControl.getState()
+    scm.update('a', {
+      selection: { path: 'old', area: 'unstaged' },
+      preview: true,
+      draft: 'keep draft',
+    })
+    scm.update('a', { file: 'src/child.ts', preview: true })
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: 'src/child.ts',
+      selection: undefined,
+      previewAll: false,
+      preview: true,
+      draft: 'keep draft',
+    })
+    scm.showTerminal('a')
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: 'src/child.ts',
+      preview: false,
+    })
+    scm.update('a', { selection: undefined, previewAll: true, preview: true })
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: undefined,
+      previewAll: true,
+    })
+    scm.update('a', { file: 'src/child.ts', preview: true })
+    scm.update('a', { selection: { path: 'git', area: 'staged' }, preview: true })
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: undefined,
+      selection: { path: 'git', area: 'staged' },
+      previewAll: false,
+    })
   })
 
   it('keeps workspaces unchanged when creation fails, belongs to another project or removal is pending', async () => {

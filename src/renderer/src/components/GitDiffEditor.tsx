@@ -1,38 +1,32 @@
-import { useEffect, useRef } from 'react'
-import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js'
-import 'monaco-editor/esm/vs/basic-languages/typescript/typescript.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/css/css.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/html/html.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/go/go.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js'
-import 'monaco-editor/esm/vs/basic-languages/java/java.contribution.js'
-import workerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?worker&url'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import { Button } from './ui/button'
-
-// A same-origin module worker works under the existing CSP, without CDN or blob scripts.
-globalThis.MonacoEnvironment = { getWorker: () => new Worker(workerUrl, { type: 'module' }) }
+import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
+import { configureMonacoTheme, languageForPath, monaco } from '../lib/monaco'
 const views = new Map<string, monaco.editor.IDiffEditorViewState>()
 
+export type GitDiffEditorHandle = {
+  goToDiff: (direction: 'previous' | 'next') => void
+  collapseUnchangedRegions: () => void
+}
+
 export default function GitDiffEditor({
+  ref,
   identity,
   path,
   original,
   modified,
   sideBySide,
+  wordWrap,
+  showWhitespace,
+  onStatsChange,
 }: {
+  ref?: Ref<GitDiffEditorHandle>
   identity: string
   path: string
   original: string
   modified: string
   sideBySide: boolean
+  wordWrap: boolean
+  showWhitespace: boolean
+  onStatsChange: (stats: { additions: number; deletions: number }) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const instance = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
@@ -43,30 +37,36 @@ export default function GitDiffEditor({
   const content = useRef({ original, modified })
   content.current = { original, modified }
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToDiff: (direction) => instance.current?.goToDiff(direction),
+      collapseUnchangedRegions: () => {
+        // Disabling hidden regions resets their expansion state through Monaco's public options.
+        instance.current?.updateOptions({ hideUnchangedRegions: { enabled: false } })
+        instance.current?.updateOptions({ hideUnchangedRegions: { enabled: true } })
+      },
+    }),
+    [],
+  )
+
   useEffect(() => {
     if (!host.current) return
-    const tokens = getComputedStyle(document.documentElement)
-    monaco.editor.defineTheme('cota-diff', {
-      base: 'vs',
-      inherit: true,
-      rules: [],
-      colors: {
-        'editor.background': tokens.getPropertyValue('--source-control-editor-background').trim(),
-        'diffEditor.insertedLineBackground': tokens
-          .getPropertyValue('--source-control-diff-added')
-          .trim(),
-        'diffEditor.removedLineBackground': tokens
-          .getPropertyValue('--source-control-diff-removed')
-          .trim(),
-      },
-    })
-    const editor = monaco.editor.createDiffEditor(host.current, {
-      theme: 'cota-diff',
+    const container = host.current
+    // Monaco makes descendants visible explicitly; opacity hides the entire subtree without resizing.
+    container.style.visibility = 'hidden'
+    container.style.opacity = '0'
+    container.inert = true
+    configureMonacoTheme()
+    const editor = monaco.editor.createDiffEditor(container, {
+      theme: 'cota-editor',
       readOnly: true,
       originalEditable: false,
       automaticLayout: true,
       renderSideBySide: sideBySide,
-      useInlineViewWhenSpaceIsLimited: true,
+      diffWordWrap: wordWrap ? 'on' : 'off',
+      renderWhitespace: showWhitespace ? 'all' : 'none',
+      useInlineViewWhenSpaceIsLimited: false,
       minimap: { enabled: false },
       fontSize: 13,
       scrollBeyondLastLine: false,
@@ -80,31 +80,54 @@ export default function GitDiffEditor({
       modifiedAriaLabel: '更改后，只读',
       padding: { top: 12 },
     })
-    const name = path.split('/').at(-1) || path
-    const language =
-      monaco.languages
-        .getLanguages()
-        .find(
-          (language) =>
-            language.filenames?.includes(name) ||
-            language.extensions?.some((extension) => name.endsWith(extension)),
-        )?.id || 'plaintext'
-    // shortcut: JSON uses JS highlighting; use a dedicated tokenizer if JSON editing is added.
-    const syntax = /\.jsonc?$/.test(name) ? 'javascript' : language
+    editor.getOriginalEditor().updateOptions({ lineNumbers: sideBySide ? 'on' : 'off' })
+    const syntax = languageForPath(path)
     const originalModel = monaco.editor.createModel(content.current.original, syntax)
     const modifiedModel = monaco.editor.createModel(content.current.modified, syntax)
     models.current = { original: originalModel, modified: modifiedModel }
     editor.setModel(models.current)
     instance.current = editor
     let restored = false
+    let revealFrame: number | undefined
     const subscription = editor.onDidUpdateDiff(() => {
-      if (restored) return
+      const changes = editor.getLineChanges()
+      if (changes) {
+        onStatsChange(
+          changes.reduce(
+            (stats, change) => ({
+              additions:
+                stats.additions +
+                (change.modifiedEndLineNumber === 0
+                  ? 0
+                  : change.modifiedEndLineNumber - change.modifiedStartLineNumber + 1),
+              deletions:
+                stats.deletions +
+                (change.originalEndLineNumber === 0
+                  ? 0
+                  : change.originalEndLineNumber - change.originalStartLineNumber + 1),
+            }),
+            { additions: 0, deletions: 0 },
+          ),
+        )
+      }
+      if (restored || !changes) return
       restored = true
       const saved = views.get(identity)
       if (saved) editor.restoreViewState(saved)
       else editor.revealFirstDiff()
+      revealFrame = requestAnimationFrame(() => {
+        editor.getOriginalEditor().render(true)
+        editor.getModifiedEditor().render(true)
+        container.style.visibility = 'visible'
+        container.style.opacity = '1'
+        container.inert = false
+      })
     })
     return () => {
+      if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+      container.style.visibility = 'hidden'
+      container.style.opacity = '0'
+      container.inert = true
       const saved = editor.saveViewState()
       if (saved) {
         views.delete(identity)
@@ -118,7 +141,7 @@ export default function GitDiffEditor({
       originalModel.dispose()
       modifiedModel.dispose()
     }
-  }, [identity, path])
+  }, [identity, path, onStatsChange])
 
   useEffect(() => {
     const current = models.current
@@ -127,34 +150,13 @@ export default function GitDiffEditor({
     if (current.modified.getValue() !== modified) current.modified.setValue(modified)
   }, [original, modified])
   useEffect(() => {
-    instance.current?.updateOptions({ renderSideBySide: sideBySide })
-  }, [sideBySide])
+    instance.current?.updateOptions({
+      renderSideBySide: sideBySide,
+      diffWordWrap: wordWrap ? 'on' : 'off',
+      renderWhitespace: showWhitespace ? 'all' : 'none',
+    })
+    instance.current?.getOriginalEditor().updateOptions({ lineNumbers: sideBySide ? 'on' : 'off' })
+  }, [sideBySide, wordWrap, showWhitespace])
 
-  return (
-    <div className="git-diff-editor flex min-h-0 flex-1 flex-col">
-      <div className="git-diff-navigation flex shrink-0 items-center justify-end gap-1 px-3 py-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="git-diff-previous"
-          title="上一个变更"
-          aria-label="上一个变更"
-          onClick={() => instance.current?.goToDiff('previous')}
-        >
-          <ChevronUp className="git-diff-previous-icon" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="git-diff-next"
-          title="下一个变更"
-          aria-label="下一个变更"
-          onClick={() => instance.current?.goToDiff('next')}
-        >
-          <ChevronDown className="git-diff-next-icon" />
-        </Button>
-      </div>
-      <div ref={host} className="git-diff-monaco min-h-0 flex-1 select-text" />
-    </div>
-  )
+  return <div ref={host} className="git-diff-monaco min-h-0 flex-1 select-text" />
 }

@@ -233,7 +233,6 @@ button:not([data-slot='button']):focus-visible {
 .project-folder-row:hover,
 .source-control-group-header:hover,
 .source-control-directory-row:hover,
-.source-control-directory-row:focus-within,
 .source-control-file-row:hover,
 .source-control-file-row:focus-within {
   background: var(--project-hover);
@@ -276,6 +275,12 @@ button:not([data-slot='button']):focus-visible {
 .agent-status[data-state='error'],
 .agent-status[data-state='failed'] {
   color: var(--destructive);
+}
+.source-control-commit-buttons [data-slot='button']:disabled {
+  pointer-events: auto;
+  cursor: not-allowed;
+  opacity: 1;
+  transform: none;
 }
 .source-control-context {
   min-width: 0;
@@ -344,12 +349,49 @@ button:not([data-slot='button']):focus-visible {
   height: 2px;
   background: var(--primary);
 }
+.source-control-history-navigation,
+.source-control-changes-navigation {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
 .source-control-file-row {
   content-visibility: auto;
   contain-intrinsic-size: auto 30px;
 }
 .source-control-file-row[data-selected='true'] {
   background: var(--accent);
+}
+.file-explorer-row {
+  height: 28px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 28px;
+}
+.file-explorer-row[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.file-explorer-row .file-explorer-chevron {
+  width: 0.75rem;
+  height: 0.75rem;
+  transition: transform 120ms ease;
+}
+.file-explorer-chevron[data-visible='false'] {
+  visibility: hidden;
+}
+.file-explorer-chevron[data-expanded='true'] {
+  transform: rotate(90deg);
+}
+.file-explorer-folder-icon,
+.file-explorer-link-icon {
+  color: var(--file-icon-neutral);
+}
+.file-explorer-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.file-explorer-entry-name,
+.file-preview-path {
+  unicode-bidi: plaintext;
 }
 .file-type-icon {
   width: 0.875rem;
@@ -437,7 +479,7 @@ button:not([data-slot='button']):focus-visible {
 .source-control-file-row:is(:hover, :focus-within) .source-control-file-summary {
   visibility: hidden;
 }
-.source-control-directory-row:is(:hover, :focus-within) .source-control-directory-actions,
+.source-control-directory-row:is(:hover, :has(:focus-visible)) .source-control-directory-actions,
 .source-control-file-row:is(:hover, :focus-within) .source-control-file-actions {
   opacity: 1;
   pointer-events: auto;
@@ -459,6 +501,14 @@ button:not([data-slot='button']):focus-visible {
 .source-control-file-path,
 .source-control-diff-path {
   unicode-bidi: plaintext;
+}
+.source-control-diff-mode [data-slot='button'] {
+  color: var(--muted-foreground);
+  translate: none;
+}
+.source-control-diff-mode [data-slot='button']:is(:hover, [aria-pressed='true']) {
+  background: var(--muted);
+  color: var(--foreground);
 }
 .xterm {
   height: 100%;

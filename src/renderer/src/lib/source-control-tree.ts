@@ -1,20 +1,22 @@
 import type { GitChange } from '../../../shared/source-control'
 
-export type GitChangeNode =
-  | { kind: 'file'; name: string; path: string; entry: GitChange }
+export type GitChangeNode<T extends { path: string } = GitChange> =
+  | { kind: 'file'; name: string; path: string; entry: T }
   | {
       kind: 'directory'
       name: string
       path: string
-      children: GitChangeNode[]
-      entries: GitChange[]
+      children: GitChangeNode<T>[]
+      entries: T[]
     }
 
 const names = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-export function buildGitChangeTree(entries: readonly GitChange[]): GitChangeNode[] {
-  const root: GitChangeNode[] = []
-  const directories = new Map<string, Extract<GitChangeNode, { kind: 'directory' }>>()
+export function buildGitChangeTree<T extends { path: string }>(
+  entries: readonly T[],
+): GitChangeNode<T>[] {
+  const root: GitChangeNode<T>[] = []
+  const directories = new Map<string, Extract<GitChangeNode<T>, { kind: 'directory' }>>()
   for (const entry of entries) {
     const parts = entry.path.split('/')
     const name = parts.pop()!
