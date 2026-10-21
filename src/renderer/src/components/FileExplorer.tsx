@@ -10,6 +10,7 @@ import {
 } from '../lib/file-explorer-store'
 import { useSourceControl } from '../lib/source-control-store'
 import { useFileWatch } from '../lib/use-file-watch'
+import { useWorkspace } from '../store'
 import { FileTypeIcon } from './FileTypeIcon'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
@@ -30,6 +31,13 @@ export function FileExplorer({
   active: boolean
 }) {
   const session = useFileExplorer((state) => state.sessions[workspace.id] || EMPTY_EXPLORER)
+  const folderPath = useWorkspace((state) =>
+    workspace.kind === 'git-worktree'
+      ? state.worktreeRecords.find((record) => record.id === workspace.worktreeId)?.path
+      : workspace.projectPath,
+  )
+  const folderName =
+    folderPath?.split(/[\\/]/).filter(Boolean).pop() || folderPath || workspace.name
   const scroll = useRef<HTMLDivElement>(null)
   const scrollTop = useRef(session.scrollTop)
   const tree = useRef<HTMLDivElement>(null)
@@ -101,14 +109,14 @@ export function FileExplorer({
   return (
     <section
       className="file-explorer flex min-h-0 flex-1 flex-col"
-      aria-label={`${workspace.name} 文件浏览`}
+      aria-label={`${folderName} 文件浏览`}
     >
       <header className="file-explorer-header flex h-9 shrink-0 items-center gap-1 border-b px-2">
         <h2
           className="file-explorer-title min-w-0 flex-1 truncate px-1 text-xs font-medium"
-          title={workspace.name}
+          title={folderPath || workspace.name}
         >
-          {workspace.name}
+          {folderName}
         </h2>
         <Button
           variant="ghost"
@@ -155,11 +163,6 @@ export function FileExplorer({
             </AlertDescription>
           </Alert>
         )}
-        {!rootLoaded && !root?.error && (
-          <p role="status" className="file-explorer-loading px-2 py-3 text-muted-foreground">
-            正在读取文件…
-          </p>
-        )}
         {rootLoaded && !rows.length && !root.error && (
           <Empty className="file-explorer-empty rounded-none">
             <EmptyHeader className="file-explorer-empty-header">
@@ -173,7 +176,8 @@ export function FileExplorer({
         <div
           ref={tree}
           role="tree"
-          aria-label={`${workspace.name} 文件树`}
+          aria-label={`${folderName} 文件树`}
+          aria-busy={!rootLoaded && !root?.error}
           className="file-explorer-tree flex min-w-0 flex-col gap-0.5"
           onKeyDown={(event) => {
             const element = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]')
@@ -222,9 +226,11 @@ export function FileExplorer({
                     aria-posinset={row.position}
                     aria-setsize={row.siblings}
                     aria-expanded={row.kind === 'directory' ? expanded : undefined}
+                    aria-busy={expanded && !directory?.entries && !directory?.error}
                     aria-selected={session.selected === row.path}
                     tabIndex={focusPath === row.path ? 0 : -1}
                     data-path={row.path}
+                    data-ignored={row.ignored || undefined}
                     className="file-explorer-row w-full min-w-0 justify-start gap-1.5"
                     style={{ paddingLeft: 6 + row.depth * 12 }}
                     title={row.kind === 'link' ? `${row.path}（符号链接，不跟随）` : row.path}
@@ -280,32 +286,31 @@ export function FileExplorer({
                     </ContextMenuGroup>
                   </ContextMenuContent>
                 </ContextMenu>
-                {expanded &&
-                  (directory?.error || !directory?.entries || !directory.entries.length) && (
-                    <div
-                      role="none"
-                      className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-muted-foreground"
-                      style={{ paddingLeft: 24 + row.depth * 12 }}
+                {expanded && (directory?.error || directory?.entries?.length === 0) && (
+                  <div
+                    role="none"
+                    className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-muted-foreground"
+                    style={{ paddingLeft: 24 + row.depth * 12 }}
+                  >
+                    <span
+                      role={directory?.error ? 'alert' : 'status'}
+                      className="file-explorer-directory-message min-w-0 flex-1 break-words"
                     >
-                      <span
-                        role={directory?.error ? 'alert' : 'status'}
-                        className="file-explorer-directory-message min-w-0 flex-1 break-words"
+                      {directory?.error || '空目录'}
+                    </span>
+                    {directory?.error && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="file-explorer-directory-retry"
+                        aria-label={`重新读取 ${row.path}`}
+                        onClick={() => refresh([row.path])}
                       >
-                        {directory?.error || (directory?.entries ? '空目录' : '正在读取…')}
-                      </span>
-                      {directory?.error && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="file-explorer-directory-retry"
-                          aria-label={`重新读取 ${row.path}`}
-                          onClick={() => refresh([row.path])}
-                        >
-                          <RefreshCw className="file-explorer-directory-retry-icon" />
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                        <RefreshCw className="file-explorer-directory-retry-icon" />
+                      </Button>
+                    )}
+                  </div>
+                )}
               </Fragment>
             )
           })}

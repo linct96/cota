@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { FileEntry, FilePreview } from '../shared/file-explorer'
+import { runGitBytes } from './git-runner'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_DIRECTORY_ENTRIES = 10000
@@ -72,6 +73,21 @@ export class FileExplorerService {
               ? 'file'
               : 'other',
       })
+    }
+    if (entries.length) {
+      const names = entries.map((entry) => entry.name + (entry.kind === 'directory' ? '/' : ''))
+      // Ignore styling is optional: ordinary folders and unavailable Git must remain browsable.
+      const output = await runGitBytes(
+        target,
+        ['check-ignore', '-z', '--stdin'],
+        false,
+        2000,
+        names.join('\0') + '\0',
+      ).catch(() => Buffer.alloc(0))
+      const ignored = new Set(output.toString('utf8').split('\0'))
+      for (const [index, entry] of entries.entries()) {
+        if (ignored.has(names[index])) entry.ignored = true
+      }
     }
     await this.location(root, path, false)
     const after = await lstat(target)

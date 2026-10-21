@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import type { FSWatcher } from 'node:fs'
 import {
@@ -12,6 +13,7 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileExplorerService } from '../src/main/file-explorer'
 import { FileExplorerWatches } from '../src/main/file-explorer-watch'
@@ -94,10 +96,44 @@ describe('file explorer', () => {
     await expect(files.read(root, 'file2.txt')).rejects.toThrow()
     expect(await readFile(join(root, '.env'), 'utf8')).toBe('TOKEN=fixture')
     expect(await readFile(join(directory, 'outside', 'secret'), 'utf8')).toBe('must not read')
+
+    const git = (...args: string[]) =>
+      promisify(execFile)('git', args, {
+        cwd: root,
+        env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+        timeout: 5000,
+      })
+    await rm(join(root, '.git'))
+    await git('init', '--quiet')
+    await mkdir(join(root, 'generated'))
+    await writeFile(join(root, '.gitignore'), 'generated/\n*.log\n!keep.log\n')
+    for (const name of ['ignored.log', '-中文 空格\n.log', 'keep.log', 'tracked.log'])
+      await writeFile(join(root, name), 'fixture')
+    await writeFile(join(root, 'generated', 'output.ts'), 'generated')
+    await git('add', '--force', '--', 'tracked.log')
+    const entries = await files.list(root, '')
+    expect(entries.filter((entry) => entry.ignored).map((entry) => entry.name)).toEqual([
+      'generated',
+      '-中文 空格\n.log',
+      'ignored.log',
+    ])
+    expect(entries.find((entry) => entry.name === 'keep.log')?.ignored).toBeUndefined()
+    expect(entries.find((entry) => entry.name === 'tracked.log')?.ignored).toBeUndefined()
+    expect(await files.list(root, 'generated')).toEqual([
+      { name: 'output.ts', path: 'generated/output.ts', kind: 'file', ignored: true },
+    ])
+    await writeFile(join(root, 'src', '.gitignore'), '*.tmp\n!keep.tmp\n')
+    await writeFile(join(root, 'src', 'ignored.tmp'), 'ignored')
+    await writeFile(join(root, 'src', 'keep.tmp'), 'keep')
+    expect((await files.list(root, 'src')).filter((entry) => entry.ignored)).toEqual([
+      { name: 'ignored.tmp', path: 'src/ignored.tmp', kind: 'file', ignored: true },
+    ])
+    await writeFile(join(root, '.gitignore'), '')
+    expect((await files.list(root, '')).some((entry) => entry.ignored)).toBe(false)
   })
 
   it('coalesces directory events and cleans up failed, replaced and cancelled watches', async () => {
-    const watched = new Map<string, { watcher: FSWatcher; emit: () => void }>()
+    const watched = new Map<string, { watcher: FSWatcher; emit: (filename?: string) => void }>()
     const watch = vi.fn((...args: unknown[]) => {
       const [path, , listener] = args
       if (typeof listener !== 'function') throw new Error('Missing listener')
@@ -105,7 +141,10 @@ describe('file explorer', () => {
       watcher.close = vi.fn(() => {
         watcher.emit('close')
       })
-      watched.set(String(path), { watcher, emit: () => listener('change', 'file.txt') })
+      watched.set(String(path), {
+        watcher,
+        emit: (filename = 'file.txt') => listener('change', filename),
+      })
       return watcher
     })
     const service = new FileExplorerWatches(watch)
@@ -122,6 +161,10 @@ describe('file explorer', () => {
       await vi.waitFor(() =>
         expect(notify).toHaveBeenCalledExactlyOnceWith({ kind: 'change', paths: ['', 'src'] }),
       )
+      watched.get(root)!.emit('.gitignore')
+      await vi.advanceTimersByTimeAsync(250)
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(2))
+      expect(notify).toHaveBeenLastCalledWith({ kind: 'change', paths: ['', 'src'] })
       watched.get(root)!.watcher.emit('error', new Error('watch limit'))
       expect(notify).toHaveBeenLastCalledWith({ kind: 'unavailable', error: expect.any(String) })
       for (const { watcher } of watched.values()) expect(watcher.close).toHaveBeenCalledOnce()

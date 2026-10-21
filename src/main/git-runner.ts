@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import type { WorktreeErrorCode, WorktreeFailureDetails } from '../shared/contracts'
 import { projectDirectory } from './validation'
@@ -30,9 +32,10 @@ export async function runGitBytes(
   args: string[],
   writing = false,
   timeout = writing ? 120000 : 10000,
+  input?: string,
 ): Promise<Buffer> {
   try {
-    const { stdout } = await execFileAsync('git', args, {
+    const command = execFileAsync('git', args, {
       cwd,
       env: { ...gitEnvironment(), ...(!writing && { GIT_OPTIONAL_LOCKS: '0' }) },
       timeout,
@@ -40,6 +43,10 @@ export async function runGitBytes(
       encoding: 'buffer',
       windowsHide: true,
     })
+    const [{ stdout }] = await Promise.all([
+      command,
+      input === undefined ? undefined : pipeline(Readable.from([input]), command.child.stdin!),
+    ])
     return stdout
   } catch (error) {
     const failure = error as CommandError

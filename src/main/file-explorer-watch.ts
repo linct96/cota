@@ -49,9 +49,11 @@ export class FileExplorerWatches {
         if (!before.isDirectory()) throw new Error('监听目标不是目录。')
         identities.set(path, before)
         if (closed) return false
-        const watcher = this.watchDirectory(target, { persistent: false }, () => {
+        const watcher = this.watchDirectory(target, { persistent: false }, (_event, filename) => {
           if (closed) return
-          dirty.add(path)
+          if (filename === null || filename?.toString() === '.gitignore') {
+            for (const watched of paths) dirty.add(watched)
+          } else dirty.add(path)
           if (timer !== undefined) return
           timer = setTimeout(async () => {
             timer = undefined
