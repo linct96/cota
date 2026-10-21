@@ -358,7 +358,7 @@ describe('Git Worktree IPC boundaries', () => {
     expect(mocks.gitHistory).not.toHaveBeenCalled()
     expect(mocks.gitCompare).not.toHaveBeenCalled()
     await mocks.handlers.get('git:status')!(event, value)
-    expect(mocks.gitStatus).toHaveBeenCalledExactlyOnceWith(path)
+    expect(mocks.gitStatus).toHaveBeenCalledExactlyOnceWith(path, true)
     const file = { path: 'file.txt', area: 'unstaged' }
     await mocks.handlers.get('git:diff')!(event, value, file)
     expect(mocks.gitDiff).toHaveBeenCalledExactlyOnceWith(path, file)

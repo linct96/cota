@@ -54,7 +54,8 @@ vi.mock('../src/main/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
 }))
-vi.mock('../src/main/shell', () => ({
+vi.mock('../src/main/shell', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/shell')>()),
   resolveShell: async () => '/bin/sh',
   shellEnvironment: () => ({}),
 }))

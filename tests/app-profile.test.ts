@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
     quit: vi.fn(),
   },
 }))
-vi.mock('node:fs', () => ({ mkdirSync: mocks.mkdir }))
+vi.mock('node:fs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs')>()),
+  mkdirSync: mocks.mkdir,
+}))
 vi.mock('electron', () => ({ app: mocks.app }))
 
 beforeEach(() => {

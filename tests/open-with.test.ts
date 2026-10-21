@@ -103,8 +103,13 @@ describe('open-with arguments and validation', () => {
 })
 
 describe('workspace program launch', () => {
-  it('opens the default directory explicitly in Finder without shell evaluation', async () => {
-    await openWorkspaceWith(root, DEFAULT_CONFIG.preferences.openWith[0])
+  it('opens an explicitly configured Finder without shell evaluation', async () => {
+    await openWorkspaceWith(root, {
+      id: 'finder',
+      name: 'Finder',
+      command: '/usr/bin/open',
+      arguments: '-a Finder {path}',
+    })
     expect(mocks.spawn.mock.calls[0].slice(0, 2)).toEqual(['/usr/bin/open', ['-a', 'Finder', root]])
   })
   it('finds login-shell commands and passes a metacharacter/Unicode path as one literal argument', async () => {
