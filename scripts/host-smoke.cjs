@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict')
 const { spawn, spawnSync } = require('node:child_process')
 const { mkdtempSync, rmSync, readFileSync, realpathSync } = require('node:fs')
+const { realpath } = require('node:fs/promises')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 const { connect } = require('node:net')
@@ -165,7 +166,7 @@ if (process.argv[2] === '--launch-host') {
         id: randomUUID(),
         workspaceId: randomUUID(),
         projectPath: directory,
-        cwd: require('node:fs').realpathSync(directory),
+        cwd: await realpath(directory),
         workspaceKind: 'local',
         cols: 91,
         rows: 31,
