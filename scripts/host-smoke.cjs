@@ -10,7 +10,7 @@ const { createHash, randomBytes, randomUUID } = require('node:crypto')
 const windows = process.platform === 'win32'
 const protocol = Number(
   /HOST_PROTOCOL = (\d+)/.exec(
-    readFileSync(join(__dirname, '../src/main/host-protocol.ts'), 'utf8'),
+    readFileSync(join(__dirname, '../src/main/host/host-protocol.ts'), 'utf8'),
   )[1],
 )
 

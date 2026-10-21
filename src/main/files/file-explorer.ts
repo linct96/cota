@@ -2,8 +2,8 @@ import { isUtf8 } from 'node:buffer'
 import { constants } from 'node:fs'
 import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
-import type { FileEntry, FilePreview } from '../shared/file-explorer'
-import { runGitBytes } from './git-runner'
+import type { FileEntry, FilePreview } from '../../shared/file-explorer'
+import { runGitBytes } from '../git/git-runner'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_DIRECTORY_ENTRIES = 10000

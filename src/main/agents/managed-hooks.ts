@@ -3,9 +3,9 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { AGENT_PROVIDERS, type AgentHookStatus, type AgentProvider } from '../../shared/contracts'
-import { findExecutable } from '../shell'
+import { findExecutable } from '../system/shell'
 import { trustCodexHooks } from './codex-hook-trust'
-import { isWindows } from '../platform'
+import { isWindows } from '../system/platform'
 
 const marker = 'cota-managed-agent-hook:v1'
 const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`

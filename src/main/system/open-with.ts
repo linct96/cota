@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
-import type { WorkspaceOpener } from '../shared/contracts'
-import { parseArguments } from '../shared/open-with'
+import type { WorkspaceOpener } from '../../shared/contracts'
+import { parseArguments } from '../../shared/open-with'
 import { findExecutable, loginShellEnvironment, resolveCommand } from './shell'
-import { projectDirectory, workspaceOpeners } from './validation'
+import { projectDirectory, workspaceOpeners } from '../validation'
 
 export async function openWorkspaceWith(path: unknown, value: WorkspaceOpener): Promise<void> {
   const [opener] = workspaceOpeners([value])

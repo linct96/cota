@@ -9,7 +9,7 @@ import type {
   TerminalEvent,
   TerminalSession,
   WorkspaceTarget,
-} from '../shared/contracts'
+} from '../../shared/contracts'
 
 export const HOST_PROTOCOL = 8
 

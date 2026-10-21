@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
-import type { WorktreeErrorCode, WorktreeFailureDetails } from '../shared/contracts'
-import { projectDirectory } from './validation'
+import type { WorktreeErrorCode, WorktreeFailureDetails } from '../../shared/contracts'
+import { projectDirectory } from '../validation'
 
 const execFileAsync = promisify(execFile)
 type CommandError = Error & { code?: string | number; stderr?: Buffer; killed?: boolean }

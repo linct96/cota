@@ -11,8 +11,8 @@ import {
   gitEnvironment,
   parseWorktreeList,
   WorktreeError,
-} from '../src/main/git-worktrees'
-import { WorktreeManager } from '../src/main/worktree-manager'
+} from '../src/main/git/git-worktrees'
+import { WorktreeManager } from '../src/main/git/worktree-manager'
 import { DEFAULT_CONFIG, type WorktreeRecord, type TerminalSession } from '../src/shared/contracts'
 import {
   SPACE_NAMES,

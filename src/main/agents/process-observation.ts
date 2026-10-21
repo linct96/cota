@@ -3,8 +3,8 @@ import { promisify } from 'node:util'
 import { basename, isAbsolute } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import type { AgentProvider } from '../../shared/contracts'
-import { isWindows, powershell } from '../platform'
-import { windowsDescendants, windowsProcesses } from '../windows-processes'
+import { isWindows, powershell } from '../system/platform'
+import { windowsDescendants, windowsProcesses } from '../system/windows-processes'
 
 export interface AgentProcessRow {
   pid: number

@@ -2,9 +2,9 @@ import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
-import { hasRunningJob, stopProcessTree } from '../src/main/process-tree'
-import { nativeWindowsProcesses } from '../src/main/windows-process-snapshot'
-import { powershell } from '../src/main/platform'
+import { hasRunningJob, stopProcessTree } from '../src/main/system/process-tree'
+import { nativeWindowsProcesses } from '../src/main/system/windows-process-snapshot'
+import { powershell } from '../src/main/system/platform'
 
 it('kills a real owned process tree, including a background child', async () => {
   const child = spawn(

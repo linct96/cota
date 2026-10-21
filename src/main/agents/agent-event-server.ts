@@ -1,5 +1,5 @@
 import { createServer, type Socket } from 'node:net'
-import { protectEndpoint, removeEndpoint } from './platform'
+import { protectEndpoint, removeEndpoint } from '../system/platform'
 import type { AgentSessionManager } from './agent-session-manager'
 
 export async function startAgentEventServer(

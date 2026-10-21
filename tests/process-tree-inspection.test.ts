@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { hasRunningJob, stopProcessTree } from '../src/main/process-tree'
+import { hasRunningJob, stopProcessTree } from '../src/main/system/process-tree'
 
 const mocks = vi.hoisted(() => ({ exec: vi.fn() }))
 vi.mock('node:child_process', async () => {

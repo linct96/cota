@@ -4,8 +4,8 @@ import { access, readFile, stat } from 'node:fs/promises'
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
-import type { Preferences } from '../shared/contracts'
-import { executable } from './validation'
+import type { Preferences } from '../../shared/contracts'
+import { executable } from '../validation'
 import { isWindows, powershell } from './platform'
 
 export async function resolveShell(settings: Pick<Preferences, 'shellPath'>): Promise<string> {

@@ -15,10 +15,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { projectBranch } from '../src/main/git'
-import { SourceControlService, parseGitStatus } from '../src/main/source-control'
-import { SourceControlWatches } from '../src/main/source-control-watch'
-import * as gitRunner from '../src/main/git-runner'
+import { projectBranch } from '../src/main/git/project-branch'
+import { SourceControlService, parseGitStatus } from '../src/main/git/source-control'
+import { SourceControlWatches } from '../src/main/git/source-control-watch'
+import * as gitRunner from '../src/main/git/git-runner'
 
 const sourceControl = new SourceControlService()
 

@@ -36,8 +36,8 @@ vi.mock('node:child_process', async () => {
     spawn: mocks.spawn,
   }
 })
-import { openWorkspaceWith } from '../src/main/open-with'
-import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents'
+import { openWorkspaceWith } from '../src/main/system/open-with'
+import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents/registry'
 import {
   hookFiles,
   inspectAgentHook,

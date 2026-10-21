@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { WorktreeError } from '../src/main/git-worktrees'
+import { WorktreeError } from '../src/main/git/git-worktrees'
 import type { AgentSession, AgentUpdate } from '../src/shared/contracts'
 
 const mocks = vi.hoisted(() => {
@@ -130,7 +130,7 @@ vi.mock('electron', () => ({
   shell: { openPath: mocks.openPath },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
 }))
-vi.mock('../src/main/worktree-manager', () => ({
+vi.mock('../src/main/git/worktree-manager', () => ({
   WorktreeManager: class {
     inspectRepository = mocks.inspectRepository
     listWorktrees = mocks.listWorktrees
@@ -140,7 +140,7 @@ vi.mock('../src/main/worktree-manager', () => ({
     removing = false
   },
 }))
-vi.mock('../src/main/source-control', () => ({
+vi.mock('../src/main/git/source-control', () => ({
   SourceControlService: class {
     status = mocks.gitStatus
     diff = mocks.gitDiff
@@ -150,14 +150,14 @@ vi.mock('../src/main/source-control', () => ({
     compare = mocks.gitCompare
   },
 }))
-vi.mock('../src/main/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
-vi.mock('../src/main/agents', () => ({ detectAgents: mocks.detectAgents }))
+vi.mock('../src/main/system/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
+vi.mock('../src/main/agents/registry', () => ({ detectAgents: mocks.detectAgents }))
 vi.mock('../src/main/agents/managed-hooks', () => ({
   inspectAgentHook: mocks.inspectHook,
   installAgentHook: mocks.installHook,
   uninstallAgentHook: mocks.uninstallHook,
 }))
-vi.mock('../src/main/shell', () => ({
+vi.mock('../src/main/system/shell', () => ({
   resolveShell: mocks.resolveShell,
   loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
   shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
@@ -172,7 +172,7 @@ vi.mock('../src/main/config', () => ({
     remember = mocks.remember
   },
 }))
-vi.mock('../src/main/host-client', () => ({
+vi.mock('../src/main/host/host-client', () => ({
   connectTerminalHost: async (
     _path: string,
     _send: unknown,

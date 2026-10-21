@@ -18,7 +18,7 @@ import type {
   GitTracking,
   GitMutation,
   GitStatus,
-} from '../shared/source-control'
+} from '../../shared/source-control'
 import { GitService } from './git-worktrees'
 import { runGit, runGitBytes, WorktreeError } from './git-runner'
 

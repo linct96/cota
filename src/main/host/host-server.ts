@@ -1,8 +1,8 @@
 import { createServer, type Socket } from 'node:net'
-import { hostEndpoint, protectEndpoint, removeEndpoint } from './platform'
+import { hostEndpoint, protectEndpoint, removeEndpoint } from '../system/platform'
 import { timingSafeEqual } from 'node:crypto'
-import { TerminalManager } from './terminals'
-import { startAgentEventServer } from './agent-event-server'
+import { TerminalManager } from '../terminal/terminals'
+import { startAgentEventServer } from '../agents/agent-event-server'
 import {
   HOST_PROTOCOL,
   readMessages,
@@ -12,8 +12,8 @@ import {
   type ResolvedTerminalCreate,
   type ResolvedTerminalAttach,
 } from './host-protocol'
-import { absolutePath, terminalId } from './validation'
-import type { AttachTerminal, Preferences, WorkspaceTarget } from '../shared/contracts'
+import { absolutePath, terminalId } from '../validation'
+import type { AttachTerminal, Preferences, WorkspaceTarget } from '../../shared/contracts'
 
 export async function startHost(directory: string, token: string, onStopped = () => {}) {
   const clients = new Map<Socket, Map<string, string>>()

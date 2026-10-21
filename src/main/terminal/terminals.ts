@@ -2,7 +2,7 @@ import * as pty from 'node-pty'
 import { Terminal } from '@xterm/headless'
 import { randomBytes, randomUUID, timingSafeEqual, createHash } from 'node:crypto'
 import { dirname } from 'node:path'
-import { prepareAgentShell } from './agents/shell-integration'
+import { prepareAgentShell } from '../agents/shell-integration'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import {
   MAX_TERMINALS,
@@ -16,22 +16,22 @@ import {
   type ManagedAgentEvent,
   type AgentUpdate,
   type WorkspaceTarget,
-} from '../shared/contracts'
-import { dimensions, preferences, terminalId, terminalLaunch, workspaceTarget } from './validation'
-import { resolveShell, shellArguments, shellEnvironment } from './shell'
-import { isWindows } from './platform'
-import { agentCapability, resolveAgent } from './agents'
-import { AgentSessionManager, validLifecycleEvent } from './agent-session-manager'
+} from '../../shared/contracts'
+import { dimensions, preferences, terminalId, terminalLaunch, workspaceTarget } from '../validation'
+import { resolveShell, shellArguments, shellEnvironment } from '../system/shell'
+import { isWindows } from '../system/platform'
+import { agentCapability, resolveAgent } from '../agents/registry'
+import { AgentSessionManager, validLifecycleEvent } from '../agents/agent-session-manager'
 import {
   agentProcesses,
   agentOwner,
   foregroundAgent,
   type AgentProcessRow,
-} from './agents/process-observation'
-import { hasRunningJob, stopProcessTree } from './process-tree'
-import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from './host-protocol'
+} from '../agents/process-observation'
+import { hasRunningJob, stopProcessTree } from '../system/process-tree'
+import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from '../host/host-protocol'
 import { sameBinding, terminalBinding, validateTerminalBinding } from './terminal-binding'
-import { createTerminalKeyboardState } from '../shared/terminal-keyboard-state'
+import { createTerminalKeyboardState } from '../../shared/terminal-keyboard-state'
 
 interface Session extends TerminalSession {
   launch: TerminalLaunch

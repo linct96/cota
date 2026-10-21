@@ -11,7 +11,7 @@ export default defineConfig({
         output: { chunkFileNames: '[name]-[hash].js' },
         input: {
           index: resolve('src/main/index.ts'),
-          host: resolve('src/main/host-entry.ts'),
+          host: resolve('src/main/host/host-entry.ts'),
           'pi-extension': resolve('src/main/agents/pi-extension.ts'),
           'agent-hook': resolve('src/main/agents/hook-entry.ts'),
         },

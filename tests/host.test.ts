@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connect } from 'node:net'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { GitService, gitEnvironment } from '../src/main/git-worktrees'
+import { GitService, gitEnvironment } from '../src/main/git/git-worktrees'
 import { once } from 'node:events'
 import {
   chmod,
@@ -19,9 +19,9 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { HostClient, connectTerminalHost, hostDirectory } from '../src/main/host-client'
-import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host-protocol'
-import { startHost } from '../src/main/host-server'
+import { HostClient, connectTerminalHost, hostDirectory } from '../src/main/host/host-client'
+import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
+import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 
 const mocks = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ vi.mock('node:child_process', async (importOriginal) => ({
   spawn: mocks.hostSpawn,
 }))
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
-vi.mock('../src/main/agents', () => ({
+vi.mock('../src/main/agents/registry', () => ({
   resolveAgent: async (provider: string) => ({
     executable: `/fake/${provider}`,
     args: [],
@@ -50,12 +50,12 @@ vi.mock('../src/main/agents/process-observation', async (original) => ({
     { pid: 12346, parent: 12345, group: 12345, foreground: 12345, stat: 'S', started: 'hook' },
   ],
 }))
-vi.mock('../src/main/process-tree', () => ({
+vi.mock('../src/main/system/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
 }))
-vi.mock('../src/main/shell', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/main/shell')>()),
+vi.mock('../src/main/system/shell', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/system/shell')>()),
   resolveShell: async () => '/bin/sh',
   shellEnvironment: () => ({}),
 }))

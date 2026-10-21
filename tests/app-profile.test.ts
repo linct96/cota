@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
-import { hostDirectory } from '../src/main/host-client'
+import { hostDirectory } from '../src/main/host/host-client'
 
 const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(),

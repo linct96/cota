@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
-import { resolveCommand } from '../shell'
+import { resolveCommand } from '../system/shell'
 
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)

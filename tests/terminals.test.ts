@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { Terminal } from '@xterm/headless'
 import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
 import { DEFAULT_CONFIG, type AgentEventType, type TerminalEvent } from '../src/shared/contracts'
-import { AgentSessionManager } from '../src/main/agent-session-manager'
+import { AgentSessionManager } from '../src/main/agents/agent-session-manager'
 import { normalizeHook } from '../src/main/agents/hooks'
 import cotaLifecycle from '../src/main/agents/pi-extension'
 import {
@@ -39,7 +39,7 @@ vi.mock('node:child_process', async (original) => {
     execFile: Object.assign(vi.fn(), { [promisify.custom]: mocks.exec }),
   }
 })
-vi.mock('../src/main/process-tree', () => ({
+vi.mock('../src/main/system/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
 }))
@@ -47,12 +47,12 @@ vi.mock('../src/main/validation', async (original) => ({
   ...(await original<object>()),
   projectDirectory: mocks.directory,
 }))
-vi.mock('../src/main/shell', async (original) => ({
+vi.mock('../src/main/system/shell', async (original) => ({
   ...(await original<object>()),
   resolveShell: mocks.shell,
   shellEnvironment: () => ({ TERM: 'xterm-256color' }),
 }))
-vi.mock('../src/main/agents', () => ({
+vi.mock('../src/main/agents/registry', () => ({
   resolveAgent: mocks.agent,
   agentCapability: mocks.capability,
 }))
@@ -67,7 +67,7 @@ vi.mock('../src/main/agents/event-client', () => ({
   eventConnection: () => ({ destroyed: false, writableLength: 0, write: mocks.eventWrite }),
   lifecycleEvent: (type: string, turnId?: string) => ({ type, turnId }),
 }))
-import { TerminalManager } from '../src/main/terminals'
+import { TerminalManager } from '../src/main/terminal/terminals'
 
 function child() {
   const listeners = {

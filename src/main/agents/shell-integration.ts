@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { inspectAgentHook } from './managed-hooks'
-import { isWindows } from '../platform'
+import { isWindows } from '../system/platform'
 
 export const codexShellFunction = `
 if ! alias codex >/dev/null 2>&1 && ! typeset -f codex >/dev/null 2>&1; then

@@ -15,11 +15,11 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
-import { projectBranch } from './git'
-import { SourceControlService } from './source-control'
-import { SourceControlWatches } from './source-control-watch'
-import { FileExplorerService } from './file-explorer'
-import { FileExplorerWatches } from './file-explorer-watch'
+import { projectBranch } from './git/project-branch'
+import { SourceControlService } from './git/source-control'
+import { SourceControlWatches } from './git/source-control-watch'
+import { FileExplorerService } from './files/file-explorer'
+import { FileExplorerWatches } from './files/file-explorer-watch'
 import type { FileAction } from '../shared/file-explorer'
 import type {
   GitDiffSelection,
@@ -27,15 +27,15 @@ import type {
   GitHistoryRequest,
   GitCompareRequest,
 } from '../shared/source-control'
-import { WorktreeManager } from './worktree-manager'
-import { WorktreeError } from './git-worktrees'
-import { openWorkspaceWith } from './open-with'
-import { detectAgents } from './agents'
+import { WorktreeManager } from './git/worktree-manager'
+import { WorktreeError } from './git/git-worktrees'
+import { openWorkspaceWith } from './system/open-with'
+import { detectAgents } from './agents/registry'
 import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
-import { loginShellEnvironment, resolveShell, shellEnvironment } from './shell'
+import { loginShellEnvironment, resolveShell, shellEnvironment } from './system/shell'
 import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
-import { connectTerminalHost, type HostClient } from './host-client'
-import { AgentNotifications } from './agent-notifications'
+import { connectTerminalHost, type HostClient } from './host/host-client'
+import { AgentNotifications } from './agents/agent-notifications'
 import {
   absolutePath,
   agentProvider,

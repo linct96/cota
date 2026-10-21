@@ -15,8 +15,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { FileExplorerService } from '../src/main/file-explorer'
-import { FileExplorerWatches } from '../src/main/file-explorer-watch'
+import { FileExplorerService } from '../src/main/files/file-explorer'
+import { FileExplorerWatches } from '../src/main/files/file-explorer-watch'
 
 let directory: string
 let root: string

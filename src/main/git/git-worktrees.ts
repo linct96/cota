@@ -1,8 +1,8 @@
 import { realpath, lstat } from 'node:fs/promises'
 import { normalize } from 'node:path'
-import type { GitRepositoryInfo, GitWorktreeInfo, RemovalBlocker } from '../shared/contracts'
-import { absolutePath, projectDirectory } from './validation'
-import { worktreeBranchSegment } from '../shared/worktree-names'
+import type { GitRepositoryInfo, GitWorktreeInfo, RemovalBlocker } from '../../shared/contracts'
+import { absolutePath, projectDirectory } from '../validation'
+import { worktreeBranchSegment } from '../../shared/worktree-names'
 
 import { runGit, WorktreeError } from './git-runner'
 export { gitEnvironment, WorktreeError } from './git-runner'

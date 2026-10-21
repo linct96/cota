@@ -1,8 +1,8 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { lstat } from 'node:fs/promises'
-import type { FileWatchEvent } from '../shared/file-explorer'
+import type { FileWatchEvent } from '../../shared/file-explorer'
 import { FileExplorerService, explorerPath } from './file-explorer'
-import { terminalId } from './validation'
+import { terminalId } from '../validation'
 
 export class FileExplorerWatches {
   private readonly subscriptions = new Map<string, () => void>()

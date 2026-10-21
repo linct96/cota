@@ -8,9 +8,9 @@ import {
   type AgentAvailability,
   type AgentProvider,
   type Preferences,
-} from '../shared/contracts'
-import { agentProvider } from './validation'
-import { findExecutable, loginShellEnvironment, resolveCommand } from './shell'
+} from '../../shared/contracts'
+import { agentProvider } from '../validation'
+import { findExecutable, loginShellEnvironment, resolveCommand } from '../system/shell'
 
 export async function resolveAgent(
   provider: AgentProvider,

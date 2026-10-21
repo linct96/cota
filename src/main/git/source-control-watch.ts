@@ -1,10 +1,10 @@
 import { watch, type FSWatcher } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
-import type { GitWatchEvent } from '../shared/contracts'
+import type { GitWatchEvent } from '../../shared/contracts'
 import { GitService } from './git-worktrees'
 import { runGit } from './git-runner'
-import { terminalId } from './validation'
+import { terminalId } from '../validation'
 
 export class SourceControlWatches {
   private readonly subscriptions = new Map<string, () => void>()

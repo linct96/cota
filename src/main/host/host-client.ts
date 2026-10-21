@@ -6,8 +6,8 @@ import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { HOST_PROTOCOL, readMessages, sendMessage, type HostMethods } from './host-protocol'
-import type { AgentUpdate, TerminalEvent } from '../shared/contracts'
-import { hostEndpoint, isWindows, powershell } from './platform'
+import type { AgentUpdate, TerminalEvent } from '../../shared/contracts'
+import { hostEndpoint, isWindows, powershell } from '../system/platform'
 
 export class HostClient {
   private nextId = 0

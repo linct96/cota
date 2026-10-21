@@ -15,10 +15,10 @@ import type {
   WorktreeScan,
   WorktreeRemovalCheck,
   RemoveWorktreeResult,
-} from '../shared/contracts'
-import { REMOVAL_BLOCKER_LABELS } from '../shared/contracts'
-import { suggestWorktreeName } from '../shared/worktree-names'
-import { ConfigStore } from './config'
+} from '../../shared/contracts'
+import { REMOVAL_BLOCKER_LABELS } from '../../shared/contracts'
+import { suggestWorktreeName } from '../../shared/worktree-names'
+import { ConfigStore } from '../config'
 import { GitService, WorktreeError } from './git-worktrees'
 import {
   absolutePath,
@@ -26,8 +26,8 @@ import {
   projectDirectory,
   workspaceTarget,
   terminalId,
-} from './validation'
-import { validateTerminalBinding } from './terminal-binding'
+} from '../validation'
+import { validateTerminalBinding } from '../terminal/terminal-binding'
 
 export class WorktreeManager {
   private readonly operations = new Map<string, Promise<unknown>>()

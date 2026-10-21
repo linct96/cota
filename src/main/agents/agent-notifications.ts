@@ -1,5 +1,5 @@
 import { Notification } from 'electron'
-import { AGENT_PROVIDERS, type AgentSession, type AgentUpdate } from '../shared/contracts'
+import { AGENT_PROVIDERS, type AgentSession, type AgentUpdate } from '../../shared/contracts'
 
 export class AgentNotifications {
   private entries = new Map<

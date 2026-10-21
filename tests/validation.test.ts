@@ -10,7 +10,7 @@ import {
   projectDirectory,
   terminalId,
 } from '../src/main/validation'
-import { resolveShell, shellEnvironment } from '../src/main/shell'
+import { resolveShell, shellEnvironment } from '../src/main/system/shell'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import {
   shellFormSchema,

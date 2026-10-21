@@ -7,7 +7,7 @@ import type {
   AgentSession,
   AgentUpdate,
   TerminalBinding,
-} from '../shared/contracts'
+} from '../../shared/contracts'
 
 interface Activity {
   activity: AgentActivity

@@ -1,6 +1,6 @@
-import type { TerminalBinding } from '../shared/contracts'
-import { absolutePath, projectDirectory, terminalId, workspaceTarget } from './validation'
-import { GitService, WorktreeError } from './git-worktrees'
+import type { TerminalBinding } from '../../shared/contracts'
+import { absolutePath, projectDirectory, terminalId, workspaceTarget } from '../validation'
+import { GitService, WorktreeError } from '../git/git-worktrees'
 
 export function terminalBinding(value: TerminalBinding): TerminalBinding {
   const target = workspaceTarget(value)
