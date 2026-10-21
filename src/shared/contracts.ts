@@ -67,12 +67,13 @@ export type Shortcut =
   | 'close-terminal'
   | 'settings'
   | `tab-${number}`
-export type TerminalEvent = (
-  | { type: 'data'; id: string; data: string }
-  | { type: 'exit'; id: string; exitCode: number; signal?: number }
-  | { type: 'closing'; id: string; closing: boolean }
-  | { type: 'error'; id: string; error: string }
-) & { attachmentId: string }
+export type TerminalEvent =
+  | ((
+      | { type: 'data'; id: string; data: string }
+      | { type: 'exit'; id: string; exitCode: number; signal?: number }
+      | { type: 'error'; id: string; error: string }
+    ) & { attachmentId: string })
+  | { type: 'closing'; id: string; attachmentId?: string; closing: boolean }
 
 export type WorkspaceKind = 'local' | 'git-worktree'
 
@@ -372,6 +373,7 @@ export interface ConfirmationRequest {
 }
 
 export interface DesktopAPI {
+  readonly platform: string
   bootstrap(): Promise<
     Result<{
       config: AppConfig
@@ -426,6 +428,10 @@ export interface DesktopAPI {
   resizeTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
   acknowledge(id: string, attachmentId: string, length: number): void
   closeTerminal(id: string): Promise<Result<boolean>>
+  minimizeWindow(): void
+  toggleMaximizeWindow(): void
+  isWindowMaximized(): Promise<Result<boolean>>
+  onWindowMaximized(listener: (maximized: boolean) => void): () => void
   closeWindow(): void
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
@@ -443,9 +449,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     shellName: null,
     shellPath: null,
     scrollback: 5000,
-    openWith: [
-      { id: 'finder', name: '文件管理器', command: '/usr/bin/open', arguments: '-a Finder {path}' },
-    ],
+    // The system file manager is a built-in action on every platform.
+    openWith: [],
   },
 }
 

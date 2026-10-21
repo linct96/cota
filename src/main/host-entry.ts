@@ -6,7 +6,9 @@ delete process.env.COTA_HOST_DIRECTORY
 delete process.env.COTA_HOST_TOKEN
 if (!directory || !token) throw new Error('Terminal Host 缺少启动凭据。')
 
-void startHost(directory, token)
+// Native ConPTY workers can retain event-loop handles after their terminal exits.
+// Only this dedicated process exits; in-process Host consumers keep their own lifecycle.
+void startHost(directory, token, () => process.exit(0))
   .then(({ manager, stop }) => {
     let stopping = false
     const shutdown = () => {

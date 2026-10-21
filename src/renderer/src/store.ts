@@ -737,8 +737,18 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     if (!tab || tab.status === 'starting' || tab.closingStatus) return
     // Keep the pre-close presentation while exit events continue updating the actual status.
     get().updateTab(id, { closingStatus: tab.status })
-    try {
-      if (!unwrap(await window.desktop.closeTerminal(id))) return
+    let removed = false
+    let recovery = tab
+    let position = 0
+    let removedFocusVersion = 0
+    const agentUpdates: AgentUpdate[] = []
+    const remove = () => {
+      if (removed) return
+      const current = get().tabs.find((item) => item.id === id)
+      if (!current) return
+      recovery = current
+      position = get().tabs.indexOf(current)
+      removed = true
       set((state) => {
         const tabs = state.tabs.filter((item) => item.id !== id)
         const remaining = tabs.filter((item) => item.workspaceId === tab.workspaceId)
@@ -757,12 +767,67 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           focusVersion: state.focusVersion + 1,
         }
       })
+      removedFocusVersion = get().focusVersion
+    }
+    const restore = () => {
+      if (!removed) return
+      removed = false
+      set((state) => {
+        if (
+          state.tabs.some((item) => item.id === id) ||
+          !state.workspaces.some((item) => item.id === tab.workspaceId)
+        )
+          return state
+        const tabs = [...state.tabs]
+        tabs.splice(position, 0, { ...recovery, closingStatus: undefined })
+        const active = state.activeTabs[tab.workspaceId]
+        return {
+          tabs,
+          activeTabs: tabs.some((item) => item.id === active)
+            ? state.activeTabs
+            : { ...state.activeTabs, [tab.workspaceId]: id },
+          selectedProject:
+            !state.selectedProject && state.focusVersion === removedFocusVersion
+              ? tab.projectPath
+              : state.selectedProject,
+          focusVersion: state.focusVersion + 1,
+        }
+      })
+      // Reuse the normal revision/launch checks for updates received during background teardown.
+      for (const event of agentUpdates) get().receiveAgent(event)
+    }
+    const stopTerminal = window.desktop.onTerminal((event) => {
+      if (event.id !== id) return
+      // The Host client emits this only after Main's required confirmation has completed.
+      if (event.type === 'closing' && event.closing) remove()
+      else if (removed && event.type === 'exit')
+        recovery = { ...recovery, status: 'exited', exitCode: event.exitCode }
+      else if (removed && event.type === 'error')
+        recovery = { ...recovery, status: 'error', error: event.error }
+    })
+    const stopAgents = window.desktop.onAgent((event) => {
+      if (
+        removed &&
+        (event.type === 'disconnected' ||
+          (event.type === 'state' ? event.session.terminalId : event.terminalId) === id)
+      )
+        agentUpdates.push(event)
+    })
+    try {
+      if (!unwrap(await window.desktop.closeTerminal(id))) {
+        restore()
+        return
+      }
+      remove()
     } catch (error) {
+      restore()
       get().updateTab(id, {
         error: `关闭失败：${error instanceof Error ? error.message : String(error)}`,
       })
       console.error(error)
     } finally {
+      stopTerminal()
+      stopAgents()
       if (get().tabs.some((item) => item.id === id))
         get().updateTab(id, { closingStatus: undefined })
     }

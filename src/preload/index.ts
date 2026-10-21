@@ -9,6 +9,7 @@ import type {
 } from '../shared/contracts'
 
 const api: DesktopAPI = {
+  platform: process.platform,
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   saveLayout: (layout) => ipcRenderer.invoke('workspace:save-layout', layout),
   openProject: () => ipcRenderer.invoke('project:open'),
@@ -65,6 +66,14 @@ const api: DesktopAPI = {
   acknowledge: (id, attachmentId, length) =>
     ipcRenderer.send('terminal:ack', id, attachmentId, length),
   closeTerminal: (id) => ipcRenderer.invoke('terminal:close', id),
+  minimizeWindow: () => ipcRenderer.send('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.send('window:toggle-maximize'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onWindowMaximized: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, maximized: boolean) => listener(maximized)
+    ipcRenderer.on('window:maximized-changed', wrapped)
+    return () => ipcRenderer.removeListener('window:maximized-changed', wrapped)
+  },
   closeWindow: () => ipcRenderer.send('app:close-window'),
   respondToConfirmation: (id, confirmed) =>
     ipcRenderer.invoke('app:confirm-response', id, confirmed),

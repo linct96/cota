@@ -102,7 +102,12 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       if (live()) void window.desktop.writeTerminal(id, value).then(unwrap).catch(console.error)
     })
     terminal.attachCustomKeyEventHandler(
-      (event) => !(event.metaKey && ['c', 'v'].includes(event.key.toLowerCase())),
+      (event) =>
+        !(
+          (event.metaKey ||
+            (window.desktop.platform === 'win32' && event.ctrlKey && event.shiftKey)) &&
+          ['c', 'v'].includes(event.key.toLowerCase())
+        ),
     )
     const apply = (event: TerminalEvent) => {
       if (event.type === 'closing') {

@@ -33,6 +33,7 @@ export async function runGitBytes(cwd: string, args: string[], writing = false):
       timeout: writing ? 120000 : 10000,
       maxBuffer: 8 * 1024 * 1024,
       encoding: 'buffer',
+      windowsHide: true,
     })
     return stdout
   } catch (error) {

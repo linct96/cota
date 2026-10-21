@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { inspectAgentHook } from './managed-hooks'
+import { isWindows } from '../platform'
 
 export const codexShellFunction = `
 if ! alias codex >/dev/null 2>&1 && ! typeset -f codex >/dev/null 2>&1; then
@@ -48,6 +49,33 @@ export async function prepareAgentShell(
   runtime: string,
 ): Promise<string[] | undefined> {
   const name = basename(shell)
+  if (isWindows) {
+    if (
+      !/^(?:pwsh|powershell)\.exe$/i.test(name) ||
+      (await inspectAgentHook('codex', env)).state !== 'installed'
+    )
+      return
+    return [
+      '-NoLogo',
+      '-NoExit',
+      '-Command',
+      `
+$cotaCommand = Get-Command codex -ErrorAction SilentlyContinue
+if ($cotaCommand -and $cotaCommand.CommandType -eq 'Application') {
+  function global:codex {
+    $cotaApplication = Get-Command codex -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    $cotaArguments = @($args)
+    if (-not ($cotaArguments | Where-Object { $_ -in @('agents', 'queue', '--no-daemon', '--remote') -or $_ -like '--remote=*' })) {
+      $cotaHelp = & $cotaApplication.Source --help 2>$null | Out-String
+      if ($cotaHelp.Contains('--no-daemon')) { $cotaArguments = @('--no-daemon') + $cotaArguments }
+    }
+    & $cotaApplication.Source @cotaArguments
+  }
+}
+Remove-Variable cotaCommand -ErrorAction SilentlyContinue
+`,
+    ]
+  }
   if (
     !['zsh', 'bash', 'fish'].includes(name) ||
     (await inspectAgentHook('codex', env)).state !== 'installed'

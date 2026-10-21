@@ -90,7 +90,12 @@ describe('trust boundary validation', () => {
     expect(dimensions(80, 24)).toEqual({ cols: 80, rows: 24 })
 
     expect(shellFormSchema.safeParse({ name: '', path: '/bin/bash' }).success).toBe(true)
-    for (const path of ['', 'zsh', '/bin/bash\0'])
+    for (const path of [
+      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      '\\\\server\\share\\pwsh.exe',
+    ])
+      expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(true)
+    for (const path of ['', 'zsh', 'C:pwsh.exe', '/bin/bash\0'])
       expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(false)
     expect(shellFormSchema.safeParse({ name: 'bad\nname', path: '/bin/bash' }).success).toBe(false)
     for (const scrollback of ['1000', '20000'])
@@ -99,6 +104,10 @@ describe('trust boundary validation', () => {
       expect(scrollbackFormSchema.safeParse({ scrollback }).success).toBe(false)
     const opener = { name: '编辑器', command: '/Apps/Code Editor', arguments: '"{path}"' }
     expect(openerFormSchema.safeParse(opener).success).toBe(true)
+    expect(
+      openerFormSchema.safeParse({ ...opener, command: 'C:\\Program Files\\Editor\\code.exe' })
+        .success,
+    ).toBe(true)
     expect(openerFormSchema.safeParse({ ...opener, command: 'code --wait' }).success).toBe(false)
     expect(openerFormSchema.safeParse({ ...opener, name: ' ' }).success).toBe(false)
     for (const args of ['"unclosed', 'trailing\\', 'bad\0arg'])

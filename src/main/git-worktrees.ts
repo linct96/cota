@@ -1,4 +1,5 @@
 import { realpath, lstat } from 'node:fs/promises'
+import { normalize } from 'node:path'
 import type { GitRepositoryInfo, GitWorktreeInfo, RemovalBlocker } from '../shared/contracts'
 import { absolutePath, projectDirectory } from './validation'
 import { worktreeBranchSegment } from '../shared/worktree-names'
@@ -40,7 +41,10 @@ export function parseWorktreeList(output: string): GitWorktreeInfo[] {
       if (current) invalid()
       let path: string
       try {
-        path = absolutePath(field.slice(9))
+        path =
+          process.platform === 'win32'
+            ? normalize(absolutePath(field.slice(9)))
+            : absolutePath(field.slice(9))
       } catch {
         return invalid()
       }

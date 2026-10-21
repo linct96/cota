@@ -47,7 +47,7 @@ jobs:
       - name: Build macOS ARM64 DMG
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: pnpm run dist --publish never "-c.extraMetadata.version=$VERSION"
+        run: pnpm run dist:mac --publish never "-c.extraMetadata.version=$VERSION"
       - name: Verify macOS app signature
         run: codesign --verify --deep --strict --verbose=2 release/mac-arm64/Cota.app
       - name: Check packaged version and Host
@@ -72,3 +72,36 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" --verify-tag --title "Cota $TAG" --generate-notes
           fi
+  windows:
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build Windows x64 installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          TAG: ${{ github.ref_name }}
+        run: pnpm run dist:win --publish never "-c.extraMetadata.version=${TAG#v}"
+      - name: Check packaged Windows Host
+        run: node scripts/host-smoke.cjs --packaged
+      - name: Publish Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          ASSET="release/Cota-${TAG#v}-win-x64-setup.exe"
+          test -s "$ASSET"
+          gh release upload "$TAG" "$ASSET" --clobber

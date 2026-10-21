@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { AGENT_PROVIDERS, type AgentHookStatus, type AgentProvider } from '../../shared/contracts'
 import { findExecutable } from '../shell'
 import { trustCodexHooks } from './codex-hook-trust'
+import { isWindows } from '../platform'
 
 const marker = 'cota-managed-agent-hook:v1'
 const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
@@ -12,7 +13,20 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
 // Stable loaders are shared by Dev/release; the owning terminal supplies its own adapter and credentials.
-const launcher = `#!/bin/sh
+const launcher = isWindows
+  ? `// ${marker}
+const { spawnSync } = require('node:child_process')
+const { join } = require('node:path')
+const { COTA_AGENT_SOCKET, COTA_AGENT_TOKEN, COTA_AGENT_RUNNER, COTA_AGENT_ADAPTER_DIR } = process.env
+if (COTA_AGENT_SOCKET && COTA_AGENT_TOKEN && COTA_AGENT_RUNNER && COTA_AGENT_ADAPTER_DIR) {
+  const result = spawnSync(COTA_AGENT_RUNNER, [join(COTA_AGENT_ADAPTER_DIR, 'agent-hook.js')], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', COTA_AGENT_PROVIDER: process.argv[2] },
+    stdio: ['inherit', 'inherit', 'ignore'], windowsHide: true, timeout: 1500,
+  })
+  if (result.error) process.stdout.write('{}')
+} else process.stdout.write('{}')
+`
+  : `#!/bin/sh
 # ${marker}
 if [ -z "$COTA_AGENT_SOCKET" ] || [ -z "$COTA_AGENT_TOKEN" ] || [ -z "$COTA_AGENT_RUNNER" ] || [ -z "$COTA_AGENT_ADAPTER_DIR" ]; then
   cat >/dev/null
@@ -35,13 +49,18 @@ export default async function cotaManagedStatus(pi) {
 `
 
 export function hookFiles(provider: AgentProvider, env: Record<string, string>) {
-  const home = env.HOME || homedir()
+  const home = env.HOME || env.USERPROFILE || homedir()
   const directory = (value: string | undefined, fallback: string) => {
     const path = value || fallback
     if (!isAbsolute(path)) throw new Error('CLI 配置目录必须是绝对路径。')
     return path
   }
-  const loader = join(directory(home, homedir()), '.cota', 'hooks', 'agent-hook.sh')
+  const loader = join(
+    directory(home, homedir()),
+    '.cota',
+    'hooks',
+    isWindows ? 'agent-hook.cjs' : 'agent-hook.sh',
+  )
   const config =
     provider === 'pi'
       ? join(
@@ -52,7 +71,13 @@ export function hookFiles(provider: AgentProvider, env: Record<string, string>) 
       : provider === 'codex'
         ? join(directory(env.CODEX_HOME, join(home, '.codex')), 'hooks.json')
         : join(directory(env.CLAUDE_CONFIG_DIR, join(home, '.claude')), 'settings.json')
-  return { config, loader, command: `/bin/sh ${quote(loader)} ${provider}` }
+  if (isWindows && /["%\r\n]/.test(loader))
+    throw new Error('Hooks 路径包含 Windows 命令无法安全处理的字符。')
+  return {
+    config,
+    loader,
+    command: isWindows ? `node "${loader}" ${provider}` : `/bin/sh ${quote(loader)} ${provider}`,
+  }
 }
 
 function eventNames(provider: AgentProvider, version?: string) {
@@ -234,6 +259,7 @@ export async function installAgentHook(
   if (!Object.hasOwn(AGENT_PROVIDERS, provider)) throw new Error('Agent 类型无效。')
   const status = await inspectAgentHook(provider, env, version)
   if (status.state === 'conflict' || status.state === 'error') throw new Error(status.detail)
+  if (isWindows && provider !== 'pi') await findExecutable('node.exe', env)
   const { config, loader, command } = hookFiles(provider, env)
   const trustConfig = join(dirname(config), 'config.toml')
   const trustRaw = provider === 'codex' ? await contents(trustConfig) : undefined

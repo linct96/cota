@@ -18,7 +18,8 @@ import {
   type WorkspaceTarget,
 } from '../shared/contracts'
 import { dimensions, preferences, terminalId, terminalLaunch, workspaceTarget } from './validation'
-import { resolveShell, shellEnvironment } from './shell'
+import { resolveShell, shellArguments, shellEnvironment } from './shell'
+import { isWindows } from './platform'
 import { agentCapability, resolveAgent } from './agents'
 import { AgentSessionManager, validLifecycleEvent } from './agent-session-manager'
 import {
@@ -138,7 +139,10 @@ export class TerminalManager {
         const command =
           launch.kind === 'agent'
             ? await resolveAgent(launch.provider, settings)
-            : { executable: await resolveShell(settings), args: ['-il'], env: shellEnvironment() }
+            : await (async () => {
+                const executable = await resolveShell(settings)
+                return { executable, args: shellArguments(executable), env: shellEnvironment() }
+              })()
         if (this.agentSocketPath) {
           const token = randomBytes(32).toString('hex')
           session.managed = { token, settings }
@@ -148,7 +152,7 @@ export class TerminalManager {
             COTA_AGENT_TERMINAL: id,
             COTA_AGENT_MANAGED: '1',
             COTA_AGENT_RUNNER: process.execPath,
-            COTA_AGENT_ADAPTER_DIR: __dirname.replace(/app\.asar(?=\/)/, 'app.asar.unpacked'),
+            COTA_AGENT_ADAPTER_DIR: __dirname.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked'),
           })
           // Optional shell preparation must never prevent a usable terminal.
           if (launch.kind !== 'agent') {
@@ -485,8 +489,9 @@ export class TerminalManager {
       !timingSafeEqual(Buffer.from(context.token), Buffer.from(event.token))
     )
       return false
-    let rows = await agentProcesses()
-    if (!rows.some((row) => row.pid === processId)) rows = await agentProcesses(true)
+    let rows = await agentProcesses(false, [session.child.pid])
+    if (!rows.some((row) => row.pid === processId))
+      rows = await agentProcesses(true, [session.child.pid])
     const descendant = agentOwner(
       rows,
       session.child.pid,
@@ -496,7 +501,10 @@ export class TerminalManager {
     // Menu launches own the foreground PTY root, including native setsid Hook helpers.
     const owner =
       session.launch.kind === 'agent' && descendant
-        ? rows.find((row) => row.pid === session.child!.pid && row.group === descendant.group)
+        ? rows.find(
+            (row) =>
+              row.pid === session.child!.pid && (isWindows || row.group === descendant.group),
+          )
         : descendant
     if (!owner || session.managed !== context || session.exited || session.closing) return false
     let run = context.run
@@ -662,7 +670,8 @@ export class TerminalManager {
               }
             } else if (
               row.stat.includes('T') ||
-              rows.find((row) => row.pid === session.child!.pid)?.foreground !== row.group
+              (!isWindows &&
+                rows.find((row) => row.pid === session.child!.pid)?.foreground !== row.group)
             )
               this.agents.uncertain(session.id)
           }

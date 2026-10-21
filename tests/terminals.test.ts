@@ -45,7 +45,8 @@ vi.mock('../src/main/validation', async (original) => ({
   ...(await original<object>()),
   projectDirectory: mocks.directory,
 }))
-vi.mock('../src/main/shell', () => ({
+vi.mock('../src/main/shell', async (original) => ({
+  ...(await original<object>()),
   resolveShell: mocks.shell,
   shellEnvironment: () => ({ TERM: 'xterm-256color' }),
 }))

@@ -2,6 +2,9 @@ import { execFile } from 'node:child_process'
 import { basename } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
+import { isWindows } from './platform'
+import { join } from 'node:path'
+import { windowsProcesses, windowsDescendants } from './windows-processes'
 
 const exec = promisify(execFile)
 
@@ -24,6 +27,17 @@ function alive(pid: number): boolean {
 }
 
 export async function hasRunningJob(pid: number, shell: string): Promise<boolean> {
+  if (isWindows) {
+    const rows = await windowsProcesses(true)
+    const root = rows.find((row) => row.pid === pid)
+    if (!root) throw new Error('无法读取终端进程状态。')
+    return (
+      root.command.toLowerCase() !== basename(shell).toLowerCase() ||
+      windowsDescendants(rows, pid).some(
+        (row) => row.pid !== pid && !/^(?:conhost|OpenConsole)\.exe$/i.test(row.command),
+      )
+    )
+  }
   const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid=,stat=,comm='], {
     timeout: 2000,
     maxBuffer: 4 * 1024 * 1024,
@@ -46,6 +60,24 @@ export async function hasRunningJob(pid: number, shell: string): Promise<boolean
 }
 
 export async function stopProcessTree(pid: number): Promise<void> {
+  if (isWindows) {
+    if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid)
+      throw new Error('终端进程标识无效。')
+    if (!alive(pid)) return
+    const targets = windowsDescendants(await windowsProcesses(true), pid)
+    await exec(
+      join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'),
+      ['/pid', String(pid), '/t', '/f'],
+      { windowsHide: true, timeout: 5000 },
+    ).catch((error) => {
+      if (alive(pid)) throw error
+    })
+    for (let attempt = 0; attempt < 20 && targets.some((row) => alive(row.pid)); attempt++)
+      await delay(50)
+    if (targets.some((row) => alive(row.pid)))
+      throw new Error(`终端进程 ${pid} 或子进程无法结束，请重试。`)
+    return
+  }
   const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid='], { maxBuffer: 4 * 1024 * 1024 })
   const processes = stdout
     .trim()

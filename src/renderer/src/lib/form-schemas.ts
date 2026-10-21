@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { parseArguments } from '../../../shared/open-with'
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 
+const absolutePathPattern = /^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i
+
 export const shellFormSchema = z.object({
   name: z
     .string()
@@ -10,7 +12,10 @@ export const shellFormSchema = z.object({
   path: z
     .string()
     .max(4096, '路径最多 4096 字符。')
-    .refine((value) => value.trim().startsWith('/'), '请输入以 / 开头的 Shell 绝对路径。')
+    .refine(
+      (value) => absolutePathPattern.test(value.trim()),
+      '请输入 Shell 可执行文件的绝对路径。',
+    )
     .refine((value) => !value.includes('\0'), '路径不能包含空字符。'),
 })
 
@@ -32,7 +37,7 @@ export const openerFormSchema = z.object({
     .max(4096, '启动命令最多 4096 字符。')
     .regex(/^[^\0\r\n]*$/, '启动命令不能包含换行或空字符。')
     .refine(
-      (value) => value.trim().startsWith('/') || /^[\w.+-]+$/.test(value.trim()),
+      (value) => absolutePathPattern.test(value.trim()) || /^[\w.+-]+$/.test(value.trim()),
       '请输入命令名或可执行文件绝对路径，参数请单独填写。',
     ),
   arguments: z

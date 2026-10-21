@@ -15,7 +15,10 @@ export function OpenerIcon({
   id,
   className,
 }: Pick<WorkspaceOpener, 'name' | 'command'> & { id?: string; className?: string }) {
-  const executable = command.split('/').pop()
+  const executable = command
+    .split(/[\\/]/)
+    .pop()
+    ?.replace(/\.(exe|cmd|bat)$/i, '')
   const icon =
     executable === 'zed' ? siZedindustries : executable === 'code' ? siVisualstudiocode : undefined
   const iconClass = cn('open-with-app-icon size-4 shrink-0', className)

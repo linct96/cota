@@ -10,6 +10,8 @@ files:
 asar: true
 asarUnpack:
   - node_modules/node-pty/**
+  - node_modules/koffi/**
+  - node_modules/@koromix/koffi-*/**
   - out/main/**
 mac:
   category: public.app-category.developer-tools
@@ -18,4 +20,13 @@ mac:
       arch: [arm64]
   identity: '-'
   hardenedRuntime: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: '${productName}-${version}-win-${arch}-setup.${ext}'
 artifactName: '${productName}-${version}-${arch}.${ext}'

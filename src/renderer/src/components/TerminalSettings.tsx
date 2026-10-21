@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { shellFormSchema, scrollbackFormSchema } from '../lib/form-schemas'
+import { isWindows } from '../lib/platform'
 import { Check, Loader2, SquareTerminal } from 'lucide-react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
@@ -454,7 +455,11 @@ export function TerminalSettings() {
                         required
                         maxLength={4096}
                         value={field.state.value}
-                        placeholder="/opt/homebrew/bin/fish"
+                        placeholder={
+                          isWindows
+                            ? 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
+                            : '/opt/homebrew/bin/fish'
+                        }
                         className="terminal-settings-shell-input font-mono"
                         disabled={saving}
                         onBlur={field.handleBlur}

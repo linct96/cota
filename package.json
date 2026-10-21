@@ -2,7 +2,7 @@
   "name": "cota",
   "version": "0.1.0",
   "private": true,
-  "description": "A local, terminal-first macOS workspace",
+  "description": "A local, terminal-first desktop workspace",
   "license": "BSD-3-Clause",
   "author": "chaoting lin",
   "main": "./out/main/index.js",
@@ -17,9 +17,11 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "build": "pnpm typecheck && electron-vite build",
-    "postinstall": "install-electron && electron-builder install-app-deps",
-    "pack": "pnpm build && electron-builder --mac --arm64 --dir",
-    "dist": "pnpm build && electron-builder --mac --arm64"
+    "postinstall": "install-electron && node scripts/install-app-deps.cjs",
+    "pack": "pnpm build && electron-builder --config electron-builder.config.cjs --dir",
+    "dist": "pnpm build && electron-builder --config electron-builder.config.cjs",
+    "dist:mac": "pnpm run dist --mac --arm64",
+    "dist:win": "pnpm run dist --win --x64"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -36,6 +38,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.4.0",
+    "koffi": "3.3.3",
     "lucide-react": "^1.58.0",
     "monaco-editor": "^0.55.1",
     "node-pty": "1.1.0",

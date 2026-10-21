@@ -1,6 +1,5 @@
 import { createServer, type Socket } from 'node:net'
-import { chmod, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { hostEndpoint, protectEndpoint, removeEndpoint } from './platform'
 import { timingSafeEqual } from 'node:crypto'
 import { TerminalManager } from './terminals'
 import { startAgentEventServer } from './agent-event-server'
@@ -16,10 +15,10 @@ import {
 import { absolutePath, terminalId } from './validation'
 import type { AttachTerminal, Preferences, WorkspaceTarget } from '../shared/contracts'
 
-export async function startHost(directory: string, token: string) {
+export async function startHost(directory: string, token: string, onStopped = () => {}) {
   const clients = new Map<Socket, Map<string, string>>()
   const authenticatedClients = new Set<Socket>()
-  const agentPath = join(directory, 'agent.sock')
+  const agentPath = hostEndpoint(directory, 'agent')
   const manager = new TerminalManager(
     (event) => {
       for (const [socket, attachments] of clients) {
@@ -48,7 +47,7 @@ export async function startHost(directory: string, token: string) {
     (value, channel) => manager.receiveAgentEvent(value, channel),
     (value) => manager.authenticManagedEvent(value),
   )
-  const socketPath = join(directory, 'host.sock')
+  const socketPath = hostEndpoint(directory, 'host')
   const server = createServer((socket) => {
     const attachments = new Map<string, string>()
     clients.set(socket, attachments)
@@ -176,7 +175,7 @@ export async function startHost(directory: string, token: string) {
         resolve()
       })
     })
-    await chmod(socketPath, 0o600)
+    await protectEndpoint(socketPath)
   } catch (error) {
     if (server.listening) server.close()
     await agentServer.stop()
@@ -190,9 +189,8 @@ export async function startHost(directory: string, token: string) {
     await agentServer.stop()
     for (const socket of clients.keys()) socket.end()
     await new Promise<void>((resolve) => server.close(() => resolve()))
-    await unlink(socketPath).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error
-    })
+    await removeEndpoint(socketPath)
+    onStopped()
   }
   return { manager, stop }
 }
