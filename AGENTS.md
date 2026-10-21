@@ -6,6 +6,15 @@
 
 - 优先复用 shadcn/ui 现成组件，避免重复实现交互或堆叠自定义样式；颜色、圆角、阴影等视觉规范统一通过 `src/renderer/src/styles.css` 中的设计 token 管理，业务组件仅保留必要的布局样式。
 
+## 表单开发
+
+- 提交型表单统一使用 TanStack Form + Zod；简单即时设置、搜索框不强制套表单。
+- 字段值、触碰状态、校验和提交状态由表单管理，不用 `useState` 重复维护；弹窗每次打开时 `form.reset`。
+- 使用 shadcn 的 `FieldGroup`、`Field`、`FieldLabel`、`FieldDescription`、`FieldError`，不另造表单封装。
+- `<form noValidate>` 统一校验反馈；字段绑定 `onBlur`、`onChange`，错误就近展示，并设置 `data-invalid`、`aria-invalid`、`aria-describedby`。
+- Zod 负责同步字段规则；IPC/保存失败单独展示并保留输入。提交时显式规范化数据，不假定 Schema 转换会修改表单值。
+- 提交期间防止重复提交及关闭弹窗；保留草稿、异步预检和原有安全锁。前端校验不得替代主进程安全校验。
+
 ## 代码提交
 
 - 每次执行 `git commit` 前，必须先运行 `pnpm format`，确保格式化成功并将格式化产生的改动一并提交。
