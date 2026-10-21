@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useSourceControl } from './lib/source-control-store'
 import {
   DEFAULT_CONFIG,
   MAX_TERMINALS,
@@ -583,6 +584,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       console.error('最多保留 10 个终端，请先关闭一个标签。')
       return
     }
+    useSourceControl.getState().showTerminal(workspaceId)
     const id = crypto.randomUUID()
     const number =
       Math.max(
@@ -611,11 +613,13 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   },
   selectTab(id) {
     const tab = get().tabs.find((item) => item.id === id)
-    if (tab)
+    if (tab) {
+      useSourceControl.getState().showTerminal(tab.workspaceId)
       set((state) => ({
         activeTabs: { ...state.activeTabs, [tab.workspaceId]: id },
         focusVersion: state.focusVersion + 1,
       }))
+    }
   },
   updateTab(id, value) {
     const { agent, agentRevision, ...fields } = value

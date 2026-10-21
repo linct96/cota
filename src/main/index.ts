@@ -15,6 +15,13 @@ import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
 import { projectBranch } from './git'
+import { SourceControlService } from './source-control'
+import type {
+  GitDiffSelection,
+  GitMutation,
+  GitHistoryRequest,
+  GitCompareRequest,
+} from '../shared/source-control'
 import { WorktreeManager } from './worktree-manager'
 import { WorktreeError } from './git-worktrees'
 import { openWorkspaceWith } from './open-with'
@@ -52,6 +59,7 @@ let window: BrowserWindow | undefined
 let manager: HostClient
 let config: ConfigStore
 let worktrees: WorktreeManager
+const sourceControl = new SourceControlService()
 let warning: string | undefined
 let exiting = false
 let exitPending = false
@@ -274,6 +282,44 @@ function installIPC(): void {
     if (removingWorkspace || worktrees.removing || closingTabs.size || exitPending || exiting)
       throw new Error('正在关闭或移除工作区，请稍后重试。')
   }
+  handle('git:status', (target: WorkspaceTarget) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => sourceControl.status(binding.cwd))
+  })
+  handle('git:references', (target: WorkspaceTarget) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => sourceControl.references(binding.cwd))
+  })
+  handle('git:history', (target: WorkspaceTarget, request?: GitHistoryRequest) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) =>
+      sourceControl.history(binding.cwd, request),
+    )
+  })
+  handle('git:compare', (target: WorkspaceTarget, request: GitCompareRequest) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) =>
+      sourceControl.compare(binding.cwd, request),
+    )
+  })
+  handle('git:diff', (target: WorkspaceTarget, file: GitDiffSelection) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => sourceControl.diff(binding.cwd, file))
+  })
+  handle('git:mutate', (input: GitMutation) => {
+    assertLifecycle()
+    if (!input || typeof input !== 'object') throw new Error('Git 操作参数无效。')
+    return worktrees.withTerminalTarget(input, (binding) => {
+      assertLifecycle()
+      return sourceControl.mutate(binding.cwd, input, (description) =>
+        requestConfirmation({
+          title: input.action === 'discard' ? '丢弃工作区改动' : '推送提交',
+          description,
+          confirmLabel: input.action === 'discard' ? '丢弃改动' : '确认推送',
+        }),
+      )
+    })
+  })
   handle('git:plan-worktree', (input: unknown) => {
     assertLifecycle()
     return worktrees.planWorktree(input)

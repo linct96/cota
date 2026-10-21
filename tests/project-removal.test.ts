@@ -47,6 +47,7 @@ const mocks = vi.hoisted(() => {
       recentProjects: [] as string[],
       worktreeRecords: [],
     },
+    resolveShell: vi.fn().mockResolvedValue('/bin/bash'),
     openWorkspaceWith: vi.fn(),
     openPath: vi.fn(),
     remember: vi.fn(),
@@ -69,6 +70,12 @@ const mocks = vi.hoisted(() => {
     scanWorktrees: vi.fn(),
     saveWorkspaceClosure: vi.fn(),
     withTerminalTarget: vi.fn(),
+    gitStatus: vi.fn(),
+    gitDiff: vi.fn(),
+    gitMutate: vi.fn(),
+    gitReferences: vi.fn(),
+    gitHistory: vi.fn(),
+    gitCompare: vi.fn(),
   }
 })
 vi.mock('node:fs', async (importOriginal) => ({
@@ -133,6 +140,16 @@ vi.mock('../src/main/worktree-manager', () => ({
     removing = false
   },
 }))
+vi.mock('../src/main/source-control', () => ({
+  SourceControlService: class {
+    status = mocks.gitStatus
+    diff = mocks.gitDiff
+    mutate = mocks.gitMutate
+    references = mocks.gitReferences
+    history = mocks.gitHistory
+    compare = mocks.gitCompare
+  },
+}))
 vi.mock('../src/main/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
 vi.mock('../src/main/agents', () => ({ detectAgents: mocks.detectAgents }))
 vi.mock('../src/main/agents/managed-hooks', () => ({
@@ -141,6 +158,7 @@ vi.mock('../src/main/agents/managed-hooks', () => ({
   uninstallAgentHook: mocks.uninstallHook,
 }))
 vi.mock('../src/main/shell', () => ({
+  resolveShell: mocks.resolveShell,
   loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
   shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
 }))
@@ -282,6 +300,19 @@ describe('Git Worktree IPC boundaries', () => {
     expect(mocks.createWorktree).not.toHaveBeenCalled()
   })
   it('discards Renderer cwd and identity fields before forwarding a trusted Main binding to Host', async () => {
+    const defaultShell = mocks.handlers.get('shell:default')!
+    expect(await defaultShell({ ...event, senderFrame: {} })).toMatchObject({ ok: false })
+    expect(mocks.resolveShell).not.toHaveBeenCalled()
+    expect(await defaultShell(event, { shellPath: '/forged' })).toEqual({
+      ok: true,
+      value: '/bin/bash',
+    })
+    expect(mocks.resolveShell).toHaveBeenCalledExactlyOnceWith({ shellPath: null })
+    mocks.resolveShell.mockRejectedValueOnce(new Error('Shell 不存在或不可执行：/bin/zsh'))
+    expect(await defaultShell(event)).toEqual({
+      ok: false,
+      error: 'Shell 不存在或不可执行：/bin/zsh',
+    })
     mocks.config.recentProjects = [path]
     const value = {
       id: randomUUID(),
@@ -308,6 +339,40 @@ describe('Git Worktree IPC boundaries', () => {
       },
       mocks.config.preferences,
     )
+    for (const channel of [
+      'git:status',
+      'git:diff',
+      'git:mutate',
+      'git:references',
+      'git:history',
+      'git:compare',
+    ]) {
+      expect(
+        await mocks.handlers.get(channel)!({ ...event, senderFrame: {} }, value),
+      ).toMatchObject({ ok: false })
+    }
+    expect(mocks.gitStatus).not.toHaveBeenCalled()
+    expect(mocks.gitDiff).not.toHaveBeenCalled()
+    expect(mocks.gitMutate).not.toHaveBeenCalled()
+    expect(mocks.gitReferences).not.toHaveBeenCalled()
+    expect(mocks.gitHistory).not.toHaveBeenCalled()
+    expect(mocks.gitCompare).not.toHaveBeenCalled()
+    await mocks.handlers.get('git:status')!(event, value)
+    expect(mocks.gitStatus).toHaveBeenCalledExactlyOnceWith(path)
+    const file = { path: 'file.txt', area: 'unstaged' }
+    await mocks.handlers.get('git:diff')!(event, value, file)
+    expect(mocks.gitDiff).toHaveBeenCalledExactlyOnceWith(path, file)
+    const mutation = { ...value, action: 'stage', files: [file] }
+    await mocks.handlers.get('git:mutate')!(event, mutation)
+    expect(mocks.gitMutate).toHaveBeenCalledExactlyOnceWith(path, mutation, expect.any(Function))
+    await mocks.handlers.get('git:references')!(event, value)
+    expect(mocks.gitReferences).toHaveBeenCalledExactlyOnceWith(path)
+    const historyRequest = { head: 'a'.repeat(40), offset: 50 }
+    await mocks.handlers.get('git:history')!(event, value, historyRequest)
+    expect(mocks.gitHistory).toHaveBeenCalledExactlyOnceWith(path, historyRequest)
+    const compareRequest = { kind: 'branch', ref: 'refs/heads/main' }
+    await mocks.handlers.get('git:compare')!(event, value, compareRequest)
+    expect(mocks.gitCompare).toHaveBeenCalledExactlyOnceWith(path, compareRequest)
     const launch = { kind: 'agent', provider: 'codex', launchId: randomUUID() }
     expect(
       await mocks.handlers.get('terminal:create')!(event, {

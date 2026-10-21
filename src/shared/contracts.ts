@@ -1,3 +1,15 @@
+import type {
+  GitDiff,
+  GitDiffSelection,
+  GitMutation,
+  GitStatus,
+  GitReferences,
+  GitHistory,
+  GitHistoryRequest,
+  GitComparison,
+  GitCompareRequest,
+} from './source-control'
+
 export interface WorkspaceOpener {
   id: string
   name: string
@@ -374,6 +386,12 @@ export interface DesktopAPI {
   projectBranch(path: string): Promise<Result<string | null>>
   inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
   listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
+  gitStatus(target: WorkspaceTarget): Promise<Result<GitStatus>>
+  gitDiff(target: WorkspaceTarget, file: GitDiffSelection): Promise<Result<GitDiff>>
+  gitReferences(target: WorkspaceTarget): Promise<Result<GitReferences>>
+  gitHistory(target: WorkspaceTarget, request?: GitHistoryRequest): Promise<Result<GitHistory>>
+  gitCompare(target: WorkspaceTarget, request: GitCompareRequest): Promise<Result<GitComparison>>
+  gitMutate(input: GitMutation): Promise<Result<boolean>>
   planGitWorktree(input: CreateWorktreeInput): Promise<Result<WorktreePlan>>
   worktreeBranches(path: string): Promise<Result<string[]>>
   suggestWorktreeName(path: string): Promise<Result<WorktreeNameSuggestion>>

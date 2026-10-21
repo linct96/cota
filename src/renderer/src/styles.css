@@ -92,6 +92,9 @@
   --agent-status-neutral: var(--muted-foreground);
   --agent-status-attention: #a16207;
   --agent-status-completed: #166534;
+  --source-control-editor-background: #ffffff;
+  --source-control-diff-added: #edf9ef;
+  --source-control-diff-removed: #fff0f0;
   --overlay: rgba(0, 0, 0, 0.2);
   --terminal-tab-inactive: #e8e8e8;
   --terminal-tab-inactive-hover: #dedede;
@@ -153,16 +156,20 @@ button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-.project-folder-row {
+.project-folder-row,
+.source-control-group-header {
   border-radius: var(--radius-md);
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.project-folder-row:hover {
+.project-folder-row:hover,
+.source-control-group-header:hover {
   background: var(--project-hover);
 }
 .project-folder-row:hover [data-slot='button'],
 .project-folder-row:hover [data-slot='collapsible-trigger'],
-.project-folder-row:hover .project-folder-trigger {
+.project-folder-row:hover .project-folder-trigger,
+.source-control-group-header:hover [data-slot='button'],
+.source-control-group-header:hover [data-slot='collapsible-trigger'] {
   color: var(--foreground);
 }
 .project-folder-row .project-folder-trigger,
@@ -173,6 +180,9 @@ button:not([data-slot='button']):focus-visible {
 .project-folder-row .project-folder-menu-trigger:hover,
 .project-folder-row .project-folder-trigger:active,
 .project-folder-row .project-folder-menu-trigger:active {
+  background: transparent;
+}
+.source-control-group-header > [data-slot='button'] {
   background: transparent;
 }
 .agent-status {
@@ -189,6 +199,22 @@ button:not([data-slot='button']):focus-visible {
 .agent-status[data-state='error'],
 .agent-status[data-state='failed'] {
   color: var(--destructive);
+}
+.source-control-file-row {
+  border-radius: var(--radius-md);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
+}
+.source-control-file-row[data-selected='true'] {
+  background: var(--accent);
+}
+.source-control-files {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.source-control-file-path,
+.source-control-diff-path {
+  unicode-bidi: plaintext;
 }
 .xterm {
   height: 100%;

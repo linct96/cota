@@ -7,17 +7,32 @@ import type {
 } from '../src/shared/contracts'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from '../src/renderer/src/store'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-renderer'
+import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
+import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
 import {
   agentIndicatorState,
   agentTabState,
   workspaceAgentSummary,
 } from '../src/renderer/src/lib/agent-status'
 
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: vi.fn(
+    class {
+      dispose = vi.fn()
+      onContextLoss = vi.fn((_listener: () => void) => ({ dispose: vi.fn() }))
+    },
+  ),
+}))
+
 let api: DesktopAPI
 beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   useWorkspace.setState(useWorkspace.getInitialState(), true)
+  useSourceControl.setState(useSourceControl.getInitialState(), true)
+  useRightPanel.setState(useRightPanel.getInitialState(), true)
   api = {
     bootstrap: vi.fn().mockResolvedValue({
       ok: true,
@@ -29,6 +44,12 @@ beforeEach(() => {
     projectBranch: vi.fn().mockResolvedValue({ ok: true, value: null }),
     inspectRepository: vi.fn(),
     listWorktrees: vi.fn(),
+    gitStatus: vi.fn(),
+    gitDiff: vi.fn(),
+    gitMutate: vi.fn(),
+    gitReferences: vi.fn(),
+    gitHistory: vi.fn(),
+    gitCompare: vi.fn(),
     createGitWorktree: vi.fn(),
     planGitWorktree: vi.fn(),
     workspacePath: vi.fn(),
@@ -49,6 +70,7 @@ beforeEach(() => {
     openWorkspaceWith: vi.fn().mockResolvedValue({ ok: true }),
     removeWorkspace: vi.fn().mockResolvedValue({ ok: true, value: true }),
     removeProject: vi.fn().mockResolvedValue({ ok: true, value: true }),
+    getDefaultShell: vi.fn().mockResolvedValue({ ok: true, value: '/bin/zsh' }),
     savePreferences: vi.fn(async (value) => ({ ok: true as const, value })),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
     closeWindow: vi.fn(),
@@ -318,7 +340,17 @@ describe('Worktree state transactions and recovery', () => {
 
 describe('workspace state', () => {
   it('updates preferences with the saved result only after success', async () => {
-    const value = { ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash', scrollback: 1000 }
+    const terminal = { loadAddon: vi.fn(), refresh: vi.fn(), rows: 24 }
+    const fit = { fit: vi.fn() }
+    const renderer = createTerminalRenderer(terminal, fit)
+    renderer.update(useWorkspace.getState().preferences.terminalGpuAcceleration, false)
+    expect(terminal.loadAddon).not.toHaveBeenCalled()
+    const value = {
+      ...DEFAULT_CONFIG.preferences,
+      shellPath: '/bin/bash',
+      scrollback: 1000,
+      terminalGpuAcceleration: 'on' as const,
+    }
     const saved = { ...value, scrollback: 2000 }
     let finish!: (result: Result<typeof value>) => void
     vi.mocked(api.savePreferences).mockReturnValueOnce(
@@ -332,10 +364,56 @@ describe('workspace state', () => {
     finish({ ok: true, value: saved })
     await saving
     expect(useWorkspace.getState().preferences).toEqual(saved)
+    renderer.update(useWorkspace.getState().preferences.terminalGpuAcceleration, true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+    const first = vi.mocked(WebglAddon).mock.instances.at(-1)!
+    renderer.update('on', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+    renderer.update('on', false)
+    expect(first.dispose).toHaveBeenCalledOnce()
+    expect(vi.mocked(first.onContextLoss).mock.results[0].value.dispose).toHaveBeenCalledOnce()
+
+    renderer.update('auto', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+    const automatic = vi.mocked(WebglAddon).mock.instances.at(-1)!
+    vi.mocked(automatic.onContextLoss).mock.calls[0][0]()
+    expect(automatic.dispose).toHaveBeenCalledOnce()
+    expect(terminal.refresh).toHaveBeenLastCalledWith(0, 23)
+    renderer.update('auto', false)
+    renderer.update('auto', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+    const other = createTerminalRenderer(terminal, fit)
+    other.update('auto', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+    other.dispose()
+
+    terminal.loadAddon.mockImplementationOnce(() => {
+      throw new Error('WebGL2 not supported')
+    })
+    renderer.update('on', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(WebglAddon).mock.instances.at(-1)!.dispose).toHaveBeenCalledOnce()
+    renderer.update('on', false)
+    renderer.update('on', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+    renderer.update('off', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+    renderer.update('on', true)
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
+    const last = vi.mocked(WebglAddon).mock.instances.at(-1)!
+    renderer.dispose()
+    renderer.update('on', true)
+    expect(last.dispose).toHaveBeenCalledOnce()
+    expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
   })
 
   it('preserves preferences after a failed save, allowing retry', async () => {
-    const value = { ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash', scrollback: 1000 }
+    const value = {
+      ...DEFAULT_CONFIG.preferences,
+      shellPath: '/bin/bash',
+      scrollback: 1000,
+      terminalGpuAcceleration: 'off' as const,
+    }
     const before = useWorkspace.getState().preferences
     vi.mocked(api.savePreferences).mockResolvedValueOnce({ ok: false, error: '保存失败' })
     await expect(useWorkspace.getState().savePreferences(value)).rejects.toThrow('保存失败')
@@ -879,10 +957,24 @@ describe('workspace state', () => {
       status: 'starting',
     })
     expect(store().activeTabs[workspace.id]).toBe(first.id)
+    useSourceControl.getState().update(workspace.id, {
+      preview: true,
+      draft: 'keep draft',
+      selection: { path: 'file.txt', area: 'staged' },
+    })
     store().shortcut('new-terminal')
+    expect(useSourceControl.getState().sessions[workspace.id]).toMatchObject({
+      preview: false,
+      draft: 'keep draft',
+    })
     const second = store().tabs[2]
     expect(second).toMatchObject({ workspaceId: workspace.id, title: 'Terminal 2' })
+    useSourceControl.getState().update(workspace.id, { preview: true })
     store().shortcut('tab-1')
+    expect(useSourceControl.getState().sessions[workspace.id]).toMatchObject({
+      preview: false,
+      selection: { path: 'file.txt', area: 'staged' },
+    })
     expect(store().activeTabs).toEqual({
       [initial.workspaceId]: initial.id,
       [workspace.id]: first.id,
@@ -944,6 +1036,66 @@ describe('workspace state', () => {
     expect(currentWorkspace(store())?.id).toBe(target.id)
     expect(store().activeTabs[target.id]).toBe(agentTab.id)
     expect(store().focusVersion).toBeGreaterThan(focus)
+    useSourceControl.getState().update(target.id, {
+      preview: true,
+      draft: 'keep draft',
+      selection: { path: 'file.txt', area: 'unstaged' },
+    })
+    const status = {
+      rootPath: path,
+      branch: 'main',
+      head: null,
+      ahead: 0,
+      behind: 0,
+      indexVersion: 'fixture',
+      entries: [{ path: 'file.txt', area: 'staged' as const, status: 'A', submodule: false }],
+    }
+    useSourceControl.getState().update(target.id, { status })
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      preview: true,
+      selection: { path: 'file.txt', area: 'staged' },
+    })
+    useSourceControl.getState().update(target.id, { status: { ...status, entries: [] } })
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      preview: false,
+      selection: undefined,
+      draft: 'keep draft',
+    })
+    const review = {
+      area: 'review' as const,
+      path: 'file.txt',
+      base: null,
+      head: 'a'.repeat(40),
+      label: 'snapshot',
+      status: 'A',
+      submodule: false,
+    }
+    useSourceControl
+      .getState()
+      .update(target.id, { selection: review, preview: true, mode: 'history' })
+    useSourceControl.getState().update(target.id, { status: { ...status, entries: [] } })
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      selection: review,
+      preview: true,
+    })
+    store().selectTab(store().activeTabs[target.id])
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      selection: review,
+      preview: false,
+      draft: 'keep draft',
+      mode: 'history',
+    })
+    expect(useRightPanel.getState()).toEqual({ open: false, width: 300 })
+    const gitSession = useSourceControl.getState().sessions[target.id]
+    const tabs = store().tabs
+    useRightPanel.setState({ open: true, width: 420 })
+    await store().selectProject(path, initial.workspaceId)
+    expect(useRightPanel.getState()).toEqual({ open: true, width: 420 })
+    useRightPanel.setState({ open: false })
+    expect(useSourceControl.getState().sessions[target.id]).toBe(gitSession)
+    expect(store().tabs).toBe(tabs)
+    useRightPanel.setState({ open: true })
+    expect(useRightPanel.getState()).toEqual({ open: true, width: 420 })
   })
 
   it('creates exactly one terminal when selecting an empty workspace and reuses existing terminals', async () => {
