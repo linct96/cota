@@ -16,7 +16,7 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "build": "pnpm typecheck && electron-vite build",
+    "build": "pnpm lint && pnpm typecheck && electron-vite build",
     "postinstall": "install-electron && node scripts/install-app-deps.cjs",
     "pack": "pnpm build && electron-builder --config electron-builder.config.cjs --dir",
     "dist": "pnpm build && electron-builder --config electron-builder.config.cjs",
