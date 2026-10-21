@@ -78,24 +78,50 @@ export async function stopProcessTree(pid: number): Promise<void> {
       throw new Error(`终端进程 ${pid} 或子进程无法结束，请重试。`)
     return
   }
-  const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid='], { maxBuffer: 4 * 1024 * 1024 })
-  const processes = stdout
-    .trim()
-    .split('\n')
-    .map((line) => line.trim().split(/\s+/).map(Number))
   const owned = new Set([pid])
-  let count = 0
-  while (count !== owned.size) {
-    count = owned.size
-    for (const [child, parent] of processes) if (owned.has(parent)) owned.add(child)
+  async function running(): Promise<number[]> {
+    const { stdout } = await exec('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat='], {
+      timeout: 2000,
+      maxBuffer: 4 * 1024 * 1024,
+    })
+    const processes = stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*$/.exec(line)
+        if (!match) throw new Error('无法识别终端进程状态。')
+        return {
+          pid: Number(match[1]),
+          parent: Number(match[2]),
+          group: Number(match[3]),
+          stat: match[4],
+        }
+      })
+    let count = 0
+    while (count !== owned.size) {
+      count = owned.size
+      for (const row of processes)
+        if (owned.has(row.parent) || row.group === pid) owned.add(row.pid)
+    }
+    return processes
+      .filter((row) => owned.has(row.pid) && !row.stat.includes('Z'))
+      .map((row) => row.pid)
+      .reverse()
   }
-  // Foreground jobs can have their own process group; include descendants, not only -pid.
-  const targets = [...owned].reverse()
-  for (const target of targets) signal(target, 'SIGHUP')
-  signal(-pid, 'SIGHUP')
-  for (let attempt = 0; attempt < 10 && targets.some(alive); attempt++) await delay(50)
-  for (const target of targets) if (alive(target)) signal(target, 'SIGKILL')
-  signal(-pid, 'SIGKILL')
-  for (let attempt = 0; attempt < 20 && targets.some(alive); attempt++) await delay(50)
-  if (alive(pid)) throw new Error(`终端进程 ${pid} 无法结束，请重试。`)
+  // Signal known members individually: macOS can reject killpg after the group has exited.
+  for (const target of await running()) signal(target, 'SIGHUP')
+  let targets = await running()
+  for (let attempt = 0; attempt < 10 && targets.length; attempt++) {
+    await delay(50)
+    targets = await running()
+  }
+  if (!targets.length) return
+  for (const target of targets) signal(target, 'SIGKILL')
+  targets = await running()
+  for (let attempt = 0; attempt < 20 && targets.length; attempt++) {
+    await delay(50)
+    targets = await running()
+  }
+  if (targets.length) throw new Error(`终端进程 ${pid} 或子进程无法结束，请重试。`)
 }
