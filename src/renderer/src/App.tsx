@@ -30,7 +30,7 @@ import { FilePreview } from './components/FilePreview'
 import { useFileExplorer } from './lib/file-explorer-store'
 import { SourceControlChanges } from './components/SourceControlChanges'
 import { FileTypeIcon } from './components/FileTypeIcon'
-import { ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from './lib/source-control-store'
 import { AgentMenu } from './components/AgentMenu'
 import { AgentStatus } from './components/AgentStatus'
@@ -105,7 +105,8 @@ export function App() {
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
   const [navigation, setNavigation] = useState<'home' | 'placeholder'>('home')
-  const [rightTab, setRightTab] = useState('git')
+  const [rightTab, setRightTab] = useState('files')
+  const [projectSidebarWidth, setProjectSidebarWidth] = useState(240)
   const activeNavigation = settingsOpen ? 'settings' : navigation
   const menuTrigger = useRef<HTMLElement | null>(null)
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)
@@ -298,10 +299,14 @@ export function App() {
         className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-background text-foreground select-none"
         data-platform={window.desktop.platform}
       >
-        <TopStatusBar settingsOpen={settingsOpen} onBack={() => void router.navigate({ to: '/' })}>
+        <TopStatusBar
+          settingsOpen={settingsOpen}
+          sidebarWidth={settingsOpen ? 240 : projectSidebarWidth + 1}
+          onBack={() => void router.navigate({ to: '/' })}
+        >
           {/* 终端标签栏 */}
           {!settingsOpen && (
-            <div className="terminal-tabs-region flex min-w-0 flex-1 items-center gap-2">
+            <div className="terminal-tabs-region flex min-w-0 flex-1 items-center gap-1">
               <Separator
                 aria-hidden="true"
                 orientation="vertical"
@@ -519,632 +524,632 @@ export function App() {
               </Tooltip>
             </div>
           </nav>
-          <ResizablePanelGroup orientation="horizontal" className="app-panels min-w-0 flex-1">
-            <ResizablePanel
-              id="workspace-main"
-              minSize={440}
-              className="workspace-main-panel flex min-w-0 flex-col"
-              style={{ overflow: 'hidden' }}
+          <div className="workspace-layout flex min-h-0 min-w-0 flex-1 flex-col">
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className={cn(
+                'workspace-content app-panels flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card',
+                settingsOpen && 'hidden',
+              )}
             >
-              <div className="workspace-layout flex min-h-0 min-w-0 flex-1 flex-col">
-                {/* 项目侧栏与终端共用工作区，保留左上角圆角。 */}
-                <div
-                  className={cn(
-                    'workspace-content flex min-h-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card',
-                    settingsOpen && 'hidden',
-                  )}
+              <ResizablePanel
+                id="workspace-projects"
+                defaultSize={240}
+                minSize={200}
+                maxSize={400}
+                groupResizeBehavior="preserve-pixel-size"
+                onResize={(size) => {
+                  if (!settingsOpen && size.inPixels > 0) setProjectSidebarWidth(size.inPixels)
+                }}
+                className="project-sidebar-panel flex min-h-0 min-w-0 flex-col"
+                style={{ overflow: 'hidden' }}
+              >
+                <aside
+                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground"
+                  aria-label="项目"
                 >
-                  {/* 侧栏使用 preset 的 sidebar token。 */}
-                  <aside
-                    className="project-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
-                    aria-label="项目"
-                  >
-                    <div className="project-header group/header flex h-8 shrink-0 items-center justify-between px-3">
-                      <h2 className="project-title text-xs font-medium text-muted-foreground">
-                        项目
-                      </h2>
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="project"
-                              size="icon"
-                              className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                              disabled={!state.ready || !!state.removingWorkspace}
-                              aria-label="添加项目"
-                              onClick={() => {
-                                void state.openProject()
-                              }}
-                            />
-                          }
-                        >
-                          <FolderPlus className="project-add-icon" />
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">添加项目 {shortcutModifier}O</TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <nav
-                      className="project-list recent-projects flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2"
-                      aria-label="最近项目"
-                    >
-                      {projects.map((path) => {
-                        const workspaces = state.workspaces.filter(
-                          (workspace) => workspace.projectPath === path,
-                        )
-
-                        return (
-                          <Collapsible
-                            key={path}
-                            open={openProjects[path] !== false}
-                            onOpenChange={(open) =>
-                              setOpenProjects((value) => ({ ...value, [path]: open }))
-                            }
-                            render={<section />}
-                            aria-label={`${folderName(path)} 项目`}
-                            aria-busy={
-                              state.removingWorkspace === path ||
-                              workspaces.some(
-                                (workspace) => workspace.id === state.removingWorkspace,
-                              )
-                            }
-                            className="project-group flex shrink-0 flex-col gap-1"
-                          >
-                            <div className="project-folder-row group/folder flex items-center pr-1 transition-colors">
-                              <h3 className="project-folder-heading min-w-0 flex-1">
-                                <CollapsibleTrigger
-                                  render={(props, { open }) => (
-                                    <Button {...props} variant="project">
-                                      {open ? (
-                                        <FolderOpen className="project-folder-icon" />
-                                      ) : (
-                                        <Folder className="project-folder-icon" />
-                                      )}
-                                      <span className="project-folder-name truncate">
-                                        {folderName(path)}
-                                      </span>
-                                    </Button>
-                                  )}
-                                  className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent hover:bg-transparent group-hover/folder:text-foreground"
-                                  title={path}
-                                  disabled={!!state.removingWorkspace}
-                                />
-                              </h3>
-                              {state.worktreeScans[path]?.repository.status === 'ready' && (
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={<Button variant="project" size="icon-sm" />}
-                                    className={cn(
-                                      'project-worktree-add-button bg-transparent hover:bg-transparent active:bg-transparent',
-                                      activeWorkspace?.projectPath !== path &&
-                                        'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
-                                    )}
-                                    aria-label={`${folderName(path)} 新建工作树`}
-                                    aria-haspopup="dialog"
-                                    disabled={
-                                      !state.ready ||
-                                      !!state.removingWorkspace ||
-                                      state.creatingWorktree
-                                    }
-                                    onClick={() => setWorktreeProject(path)}
-                                  >
-                                    <GitFork
-                                      className="project-worktree-add-icon"
-                                      aria-hidden="true"
-                                    />
-                                  </TooltipTrigger>
-                                  <TooltipContent
-                                    side="bottom"
-                                    className="project-worktree-add-tooltip"
-                                  >
-                                    新建工作树
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                              <DropdownMenu modal={false}>
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <DropdownMenuTrigger
-                                        render={<Button variant="project" size="icon-sm" />}
-                                        className={cn(
-                                          'project-folder-menu-trigger shrink-0 bg-transparent hover:bg-transparent active:bg-transparent',
-                                          activeWorkspace?.projectPath !== path &&
-                                            'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
-                                        )}
-                                        disabled={!!state.removingWorkspace}
-                                        aria-label={`${folderName(path)} 更多操作`}
-                                        onFocus={(event) => {
-                                          menuTrigger.current = event.currentTarget
-                                        }}
-                                      />
-                                    }
-                                  >
-                                    <MoreHorizontal className="project-folder-menu-icon size-3.5" />
-                                  </TooltipTrigger>
-                                  <TooltipContent
-                                    side="bottom"
-                                    className="project-folder-menu-tooltip"
-                                  >
-                                    更多操作
-                                  </TooltipContent>
-                                </Tooltip>
-                                <DropdownMenuContent
-                                  align="end"
-                                  aria-label={`${folderName(path)} 项目操作菜单`}
-                                  className="project-folder-dropdown-menu"
-                                >
-                                  <DropdownMenuGroup className="project-folder-menu-actions">
-                                    <DropdownMenuItem
-                                      className="project-new-local-workspace-item"
-                                      disabled={!state.ready || !!state.removingWorkspace}
-                                      onClick={() => {
-                                        workspaceDialogTrigger.current = menuTrigger.current
-                                        workspaceForm.reset({
-                                          name: nextWorkspaceName(path, state.workspaces),
-                                        })
-                                        setWorkspaceSaveError(undefined)
-                                        setWorkspaceDialog({ projectPath: path })
-                                      }}
-                                    >
-                                      新建工作区
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      className="project-delete-item"
-                                      disabled={!!state.removingWorkspace}
-                                      onClick={() => setProjectToRemove(path)}
-                                    >
-                                      <Trash2 className="project-delete-icon" />
-                                      <span className="project-delete-label">删除项目</span>
-                                    </DropdownMenuItem>
-                                  </DropdownMenuGroup>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                            <CollapsibleContent className="project-workspaces flex flex-col gap-1">
-                              {workspaces.map((workspace) => {
-                                const isSelected =
-                                  path === state.selectedProject && workspace.id === workspaceId
-                                const scanEntry =
-                                  workspace.kind === 'git-worktree'
-                                    ? state.worktreeScans[path]?.entries.find(
-                                        (entry) => entry.record.id === workspace.worktreeId,
-                                      )
-                                    : undefined
-                                const worktree = scanEntry?.worktree
-                                const branch =
-                                  workspace.kind === 'local'
-                                    ? projectBranches[path]
-                                    : worktree?.branch ||
-                                      (worktree?.head
-                                        ? `detached ${worktree.head.slice(0, 8)}`
-                                        : undefined)
-                                const workspaceTabs = state.tabs.filter(
-                                  (tab) => tab.workspaceId === workspace.id,
-                                )
-                                const hasTerminals = workspaceTabs.length > 0
-                                const workspaceAgents = workspaceTabs.filter(
-                                  (tab) => tab.kind === 'agent' || tab.provider || tab.agent,
-                                )
-                                const agentSummary = workspaceAgentSummary(workspaceTabs)
-                                return (
-                                  <ContextMenu
-                                    key={workspace.id}
-                                    disabled={!!state.removingWorkspace}
-                                  >
-                                    <ContextMenuTrigger
-                                      className={cn(
-                                        'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
-                                        isSelected
-                                          ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
-                                          : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
-                                      )}
-                                      onContextMenu={(event) => {
-                                        menuTrigger.current =
-                                          event.currentTarget.querySelector<HTMLButtonElement>(
-                                            '.project-item-button',
-                                          )
-                                      }}
-                                    >
-                                      <Button
-                                        variant="ghost"
-                                        disabled={!!state.removingWorkspace}
-                                        data-active={isSelected}
-                                        aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
-                                        aria-current={isSelected ? 'page' : undefined}
-                                        aria-haspopup="menu"
-                                        className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent focus-visible:ring-0"
-                                        onClick={() => {
-                                          void state.selectProject(path, workspace.id)
-                                        }}
-                                      >
-                                        <span
-                                          className="project-item-status flex size-3.5 items-center justify-center"
-                                          aria-hidden="true"
-                                        >
-                                          {agentSummary && agentSummary.state !== 'other' ? (
-                                            <AgentStatus state={agentSummary.state} />
-                                          ) : (
-                                            <span
-                                              className={cn(
-                                                'project-item-status-dot size-1.5 rounded-full',
-                                                hasTerminals
-                                                  ? 'bg-workspace-status-active'
-                                                  : 'bg-workspace-status-idle',
-                                              )}
-                                            />
-                                          )}
-                                        </span>
-                                        <span className="project-item-name truncate">
-                                          {workspace.name}
-                                        </span>
-                                        {workspace.kind === 'git-worktree' &&
-                                          scanEntry &&
-                                          (scanEntry.status !== 'ready' || worktree?.locked) && (
-                                            <div className="project-item-worktree-alert col-start-2 mt-0.5 flex items-center">
-                                              <Badge
-                                                variant={
-                                                  scanEntry.status === 'ready'
-                                                    ? 'secondary'
-                                                    : 'destructive'
-                                                }
-                                                className="project-item-worktree-status h-4 px-1.5 text-[10px] font-normal"
-                                                title={scanEntry.error}
-                                              >
-                                                {scanEntry.status === 'ready'
-                                                  ? 'Worktree · 已锁定'
-                                                  : `Worktree · ${scanEntry.status}`}
-                                              </Badge>
-                                            </div>
-                                          )}
-                                        {branch && (
-                                          <span
-                                            className="project-item-branch col-start-2 truncate text-xs leading-4 font-normal text-muted-foreground"
-                                            title={branch}
-                                          >
-                                            {branch}
-                                          </span>
-                                        )}
-                                      </Button>
-                                      {workspaceAgents.length > 0 && (
-                                        <div
-                                          className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 pr-2 pb-2"
-                                          role="group"
-                                          aria-label={`${workspace.name} Agent 列表`}
-                                        >
-                                          {workspaceAgents.map((tab) => {
-                                            const agentState = agentTabState(tab)
-                                            const agentActive =
-                                              isSelected &&
-                                              activeNavigation === 'home' &&
-                                              state.activeTabs[workspace.id] === tab.id
-                                            const label = `${tab.title} · ${AGENT_STATE_LABELS[agentState]}`
-                                            return (
-                                              <Tooltip key={tab.id}>
-                                                <TooltipTrigger
-                                                  render={
-                                                    <Button variant="navigation" size="icon" />
-                                                  }
-                                                  className="project-item-agent-button relative"
-                                                  data-active={agentActive}
-                                                  aria-pressed={agentActive}
-                                                  aria-label={`定位到 ${label}`}
-                                                  disabled={
-                                                    !state.ready || !!state.removingWorkspace
-                                                  }
-                                                  onClick={async () => {
-                                                    if (
-                                                      isSelected ||
-                                                      (await state.selectProject(
-                                                        path,
-                                                        workspace.id,
-                                                      ))
-                                                    ) {
-                                                      state.selectTab(tab.id)
-                                                      setNavigation('home')
-                                                    }
-                                                  }}
-                                                >
-                                                  <span
-                                                    className="project-item-agent-provider inline-flex"
-                                                    aria-hidden="true"
-                                                  >
-                                                    <AgentIcon
-                                                      provider={tab.provider || tab.agent?.provider}
-                                                      size={16}
-                                                      className="project-item-agent-provider-icon size-4"
-                                                    />
-                                                  </span>
-                                                  {agentIndicatorState(tab) !== 'other' && (
-                                                    <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-sidebar p-px [&_.agent-status]:size-2.5">
-                                                      <AgentStatus state={agentState} />
-                                                    </span>
-                                                  )}
-                                                </TooltipTrigger>
-                                                <TooltipContent
-                                                  side="bottom"
-                                                  className="project-item-agent-tooltip"
-                                                >
-                                                  {tab.title}
-                                                </TooltipContent>
-                                              </Tooltip>
-                                            )
-                                          })}
-                                        </div>
-                                      )}
-                                    </ContextMenuTrigger>
-                                    <ContextMenuContent
-                                      finalFocus={() => menuTrigger.current}
-                                      aria-label={`${folderName(path)} ${workspace.name} 操作菜单`}
-                                      className="project-dropdown-menu"
-                                    >
-                                      <ContextMenuGroup className="project-menu-actions">
-                                        <AgentMenu
-                                          workspaceId={workspace.id}
-                                          disabled={
-                                            !state.ready ||
-                                            state.creatingWorktree ||
-                                            !!state.removingWorkspace ||
-                                            (workspace.kind === 'git-worktree' &&
-                                              scanEntry?.status !== 'ready')
-                                          }
-                                        />
-                                        <ContextMenuSub>
-                                          <ContextMenuSubTrigger className="workspace-open-with-trigger">
-                                            <ExternalLink className="workspace-open-with-icon" />
-                                            <span className="workspace-open-with-label">
-                                              打开于
-                                            </span>
-                                          </ContextMenuSubTrigger>
-                                          <ContextMenuContent
-                                            className="workspace-open-with-menu"
-                                            aria-label="打开于"
-                                          >
-                                            <ContextMenuGroup className="workspace-open-with-programs">
-                                              {state.preferences.openWith
-                                                .filter(
-                                                  (opener) =>
-                                                    !(
-                                                      opener.id === 'finder' &&
-                                                      opener.command === '/usr/bin/open' &&
-                                                      opener.arguments === '-a Finder {path}'
-                                                    ),
-                                                )
-                                                .map((opener) => (
-                                                  <ContextMenuItem
-                                                    key={opener.id}
-                                                    className="workspace-open-with-item"
-                                                    onClick={() => {
-                                                      void window.desktop
-                                                        .openWorkspaceWith(
-                                                          {
-                                                            projectPath: workspace.projectPath,
-                                                            workspaceId: workspace.id,
-                                                          },
-                                                          opener.id,
-                                                        )
-                                                        .then(unwrap)
-                                                        .catch(console.error)
-                                                    }}
-                                                  >
-                                                    <OpenerIcon
-                                                      name={opener.name}
-                                                      command={opener.command}
-                                                      id={opener.id}
-                                                      className="workspace-open-with-app-icon size-3.5"
-                                                    />
-                                                    {opener.name}
-                                                  </ContextMenuItem>
-                                                ))}
-                                              <ContextMenuItem
-                                                className="workspace-open-file-manager-item"
-                                                onClick={() => {
-                                                  void window.desktop
-                                                    .openWorkspaceWith(
-                                                      {
-                                                        projectPath: workspace.projectPath,
-                                                        workspaceId: workspace.id,
-                                                      },
-                                                      'system-file-manager',
-                                                    )
-                                                    .then(unwrap)
-                                                    .catch(console.error)
-                                                }}
-                                              >
-                                                <FolderOpen className="workspace-open-file-manager-icon" />
-                                                文件管理器
-                                              </ContextMenuItem>
-                                            </ContextMenuGroup>
-                                          </ContextMenuContent>
-                                        </ContextMenuSub>
-                                        <ContextMenuItem
-                                          disabled={!!state.removingWorkspace}
-                                          className="workspace-edit-item"
-                                          onClick={() => {
-                                            workspaceDialogTrigger.current = menuTrigger.current
-                                            workspaceForm.reset({ name: workspace.name })
-                                            setWorkspaceSaveError(undefined)
-                                            setWorkspaceDialog({
-                                              projectPath: path,
-                                              id: workspace.id,
-                                            })
-                                          }}
-                                        >
-                                          <Pencil className="workspace-edit-icon" />
-                                          <span className="workspace-edit-label">编辑</span>
-                                        </ContextMenuItem>
-                                        <ContextMenuItem
-                                          variant="destructive"
-                                          title={
-                                            workspace.kind === 'git-worktree'
-                                              ? '检查并确认后删除工作树及本地分支；存在未提交内容或未合并分支时需确认强制删除'
-                                              : '仅删除此工作区并结束其终端，不影响其他工作区或本地文件'
-                                          }
-                                          disabled={
-                                            !!state.removingWorkspace || state.creatingWorktree
-                                          }
-                                          className="workspace-delete-item"
-                                          onClick={() => {
-                                            if (workspace.kind === 'git-worktree')
-                                              void state.removeWorkspace(workspace.id)
-                                            else setWorkspaceToRemove(workspace.id)
-                                          }}
-                                        >
-                                          <Trash2 className="workspace-delete-icon" />
-                                          <span className="workspace-delete-label">
-                                            {workspace.kind === 'git-worktree'
-                                              ? '删除工作树'
-                                              : '删除工作区'}
-                                          </span>
-                                        </ContextMenuItem>
-                                      </ContextMenuGroup>
-                                    </ContextMenuContent>
-                                  </ContextMenu>
-                                )
-                              })}
-                            </CollapsibleContent>
-                          </Collapsible>
-                        )
-                      })}
-                      {!projects.length && (
-                        <Empty className="project-empty-state flex-none px-3 py-8">
-                          <EmptyHeader className="project-empty-header">
-                            <EmptyMedia variant="icon" className="project-empty-media">
-                              <FolderOpen className="project-empty-icon" aria-hidden="true" />
-                            </EmptyMedia>
-                            <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
-                            <EmptyDescription className="project-empty-description">
-                              点击上方 + 或按 {shortcutModifier}O 添加
-                            </EmptyDescription>
-                          </EmptyHeader>
-                        </Empty>
-                      )}
-                    </nav>
-                  </aside>
-
-                  {/* 保持终端挂载，文件 / Diff 预览仅切换可见区域。 */}
-                  <main
-                    className="terminal-workspace flex min-h-0 min-w-0 flex-1 flex-col"
-                    aria-label={
-                      showingDiff
-                        ? sourceControl.file
-                          ? '文件预览工作区'
-                          : '变更审阅工作区'
-                        : '终端工作区'
-                    }
-                  >
-                    {state.worktreeError && (
-                      <p
-                        className="workspace-worktree-error px-4 py-2 text-xs text-destructive break-words"
-                        role="alert"
-                      >
-                        {state.worktreeError}
-                      </p>
-                    )}
-                    {showingDiff &&
-                      activeWorkspace &&
-                      (sourceControl.file ? (
-                        <FilePreview
-                          key={`${activeWorkspace.id}:${sourceControl.file}`}
-                          workspace={activeWorkspace}
-                          path={sourceControl.file}
-                          active={!settingsOpen}
-                        />
-                      ) : sourceControl.previewAll ? (
-                        <SourceControlChanges
-                          key={activeWorkspace.id}
-                          workspace={activeWorkspace}
-                          active={!settingsOpen}
-                        />
-                      ) : (
-                        <SourceControlDiff
-                          key={activeWorkspace.id}
-                          workspace={activeWorkspace}
-                          active={!settingsOpen}
-                        />
-                      ))}
-                    <div
-                      className={cn(
-                        'terminal-stage-container grid grid-cols-1 grid-rows-1 min-h-0 flex-1 overflow-hidden',
-                        showingDiff && 'hidden',
-                      )}
-                    >
-                      {state.tabs.map((tab) => {
-                        const isSelected =
-                          tab.projectPath === state.selectedProject && tab.id === activeId
-                        return (
-                          <TerminalView
-                            key={tab.id}
-                            tab={tab}
-                            active={
-                              isSelected &&
-                              !settingsOpen &&
-                              !showingDiff &&
-                              activeNavigation === 'home'
-                            }
-                          />
-                        )
-                      })}
-                      {!state.selectedProject && (
-                        <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                          <FolderOpen className="workspace-empty-icon size-6 text-muted-foreground" />
-                          <div className="workspace-empty-content">
-                            <h3 className="workspace-empty-title text-sm font-medium text-foreground">
-                              {projects.length ? '未选择工作区' : '没有打开的项目'}
-                            </h3>
-                            <p className="workspace-empty-desc mt-1 text-xs text-muted-foreground">
-                              {projects.length
-                                ? `从左侧选择一个工作区，或使用快捷键 ${shortcutModifier}O 打开新项目。`
-                                : `从左侧选择最近项目，或使用快捷键 ${shortcutModifier}O 打开新项目。`}
-                            </p>
-                          </div>
+                  <div className="project-header group/header flex h-12 shrink-0 items-center justify-between px-4">
+                    <h2 className="project-title">项目</h2>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
                           <Button
-                            variant="outline"
-                            size="sm"
-                            className="workspace-empty-action mt-1"
+                            variant="project"
+                            size="icon"
+                            className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                            disabled={!state.ready || !!state.removingWorkspace}
+                            aria-label="添加项目"
                             onClick={() => {
                               void state.openProject()
                             }}
-                          >
-                            打开项目 ({shortcutModifier}O)
-                          </Button>
-                        </div>
-                      )}
-                      {state.selectedProject && !currentTabs.length && (
-                        <div className="terminal-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                          <TerminalIcon className="terminal-empty-icon size-6 text-muted-foreground" />
-                          <div className="terminal-empty-content">
-                            <h3 className="terminal-empty-title text-sm font-medium text-foreground">
-                              当前工作区没有运行中的终端
-                            </h3>
-                            <p className="terminal-empty-desc mt-1 text-xs text-muted-foreground">
-                              点击上方 + 按钮，或使用快捷键 {shortcutModifier}T 新建终端。
-                            </p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="terminal-empty-action mt-1"
-                            disabled={!!state.removingWorkspace}
-                            onClick={() => state.newTerminal()}
-                          >
-                            新建终端 ({shortcutModifier}T)
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </main>
-                </div>
+                          />
+                        }
+                      >
+                        <FolderPlus className="project-add-icon" />
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">添加项目 {shortcutModifier}O</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <nav
+                    className="project-list recent-projects flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2"
+                    aria-label="最近项目"
+                  >
+                    {projects.map((path) => {
+                      const workspaces = state.workspaces.filter(
+                        (workspace) => workspace.projectPath === path,
+                      )
 
-                <Outlet />
-              </div>
-            </ResizablePanel>
-            <RightPanel
-              workspace={activeWorkspace}
-              active={!settingsOpen}
-              filesActive={rightTab === 'files'}
-            />
-          </ResizablePanelGroup>
+                      return (
+                        <Collapsible
+                          key={path}
+                          open={openProjects[path] !== false}
+                          onOpenChange={(open) =>
+                            setOpenProjects((value) => ({ ...value, [path]: open }))
+                          }
+                          render={<section />}
+                          aria-label={`${folderName(path)} 项目`}
+                          aria-busy={
+                            state.removingWorkspace === path ||
+                            workspaces.some((workspace) => workspace.id === state.removingWorkspace)
+                          }
+                          className="project-group flex shrink-0 flex-col gap-1"
+                        >
+                          <div className="project-folder-row group/folder flex items-center pr-1 transition-colors">
+                            <h3 className="project-folder-heading min-w-0 flex-1">
+                              <CollapsibleTrigger
+                                render={(props, { open }) => (
+                                  <Button {...props} variant="project">
+                                    {open ? (
+                                      <FolderOpen className="project-folder-icon" />
+                                    ) : (
+                                      <Folder className="project-folder-icon" />
+                                    )}
+                                    <span className="project-folder-name truncate">
+                                      {folderName(path)}
+                                    </span>
+                                  </Button>
+                                )}
+                                className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent hover:bg-transparent group-hover/folder:text-foreground"
+                                title={path}
+                                disabled={!!state.removingWorkspace}
+                              />
+                            </h3>
+                            {state.worktreeScans[path]?.repository.status === 'ready' && (
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={<Button variant="project" size="icon-sm" />}
+                                  className={cn(
+                                    'project-worktree-add-button bg-transparent hover:bg-transparent active:bg-transparent',
+                                    activeWorkspace?.projectPath !== path &&
+                                      'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
+                                  )}
+                                  aria-label={`${folderName(path)} 新建工作树`}
+                                  aria-haspopup="dialog"
+                                  disabled={
+                                    !state.ready ||
+                                    !!state.removingWorkspace ||
+                                    state.creatingWorktree
+                                  }
+                                  onClick={() => setWorktreeProject(path)}
+                                >
+                                  <GitFork
+                                    className="project-worktree-add-icon"
+                                    aria-hidden="true"
+                                  />
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="bottom"
+                                  className="project-worktree-add-tooltip"
+                                >
+                                  新建工作树
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                            <DropdownMenu modal={false}>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={
+                                    <DropdownMenuTrigger
+                                      render={<Button variant="project" size="icon-sm" />}
+                                      className={cn(
+                                        'project-folder-menu-trigger shrink-0 bg-transparent hover:bg-transparent active:bg-transparent',
+                                        activeWorkspace?.projectPath !== path &&
+                                          'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
+                                      )}
+                                      disabled={!!state.removingWorkspace}
+                                      aria-label={`${folderName(path)} 更多操作`}
+                                      onFocus={(event) => {
+                                        menuTrigger.current = event.currentTarget
+                                      }}
+                                    />
+                                  }
+                                >
+                                  <MoreHorizontal className="project-folder-menu-icon size-3.5" />
+                                </TooltipTrigger>
+                                <TooltipContent
+                                  side="bottom"
+                                  className="project-folder-menu-tooltip"
+                                >
+                                  更多操作
+                                </TooltipContent>
+                              </Tooltip>
+                              <DropdownMenuContent
+                                align="end"
+                                aria-label={`${folderName(path)} 项目操作菜单`}
+                                className="project-folder-dropdown-menu"
+                              >
+                                <DropdownMenuGroup className="project-folder-menu-actions">
+                                  <DropdownMenuItem
+                                    className="project-new-local-workspace-item"
+                                    disabled={!state.ready || !!state.removingWorkspace}
+                                    onClick={() => {
+                                      workspaceDialogTrigger.current = menuTrigger.current
+                                      workspaceForm.reset({
+                                        name: nextWorkspaceName(path, state.workspaces),
+                                      })
+                                      setWorkspaceSaveError(undefined)
+                                      setWorkspaceDialog({ projectPath: path })
+                                    }}
+                                  >
+                                    新建工作区
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    className="project-delete-item"
+                                    disabled={!!state.removingWorkspace}
+                                    onClick={() => setProjectToRemove(path)}
+                                  >
+                                    <Trash2 className="project-delete-icon" />
+                                    <span className="project-delete-label">删除项目</span>
+                                  </DropdownMenuItem>
+                                </DropdownMenuGroup>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          <CollapsibleContent className="project-workspaces flex flex-col gap-1">
+                            {workspaces.map((workspace) => {
+                              const isSelected =
+                                path === state.selectedProject && workspace.id === workspaceId
+                              const scanEntry =
+                                workspace.kind === 'git-worktree'
+                                  ? state.worktreeScans[path]?.entries.find(
+                                      (entry) => entry.record.id === workspace.worktreeId,
+                                    )
+                                  : undefined
+                              const worktree = scanEntry?.worktree
+                              const branch =
+                                workspace.kind === 'local'
+                                  ? projectBranches[path]
+                                  : worktree?.branch ||
+                                    (worktree?.head
+                                      ? `detached ${worktree.head.slice(0, 8)}`
+                                      : undefined)
+                              const workspaceTabs = state.tabs.filter(
+                                (tab) => tab.workspaceId === workspace.id,
+                              )
+                              const hasTerminals = workspaceTabs.length > 0
+                              const workspaceAgents = workspaceTabs.filter(
+                                (tab) => tab.kind === 'agent' || tab.provider || tab.agent,
+                              )
+                              const agentSummary = workspaceAgentSummary(workspaceTabs)
+                              return (
+                                <ContextMenu
+                                  key={workspace.id}
+                                  disabled={!!state.removingWorkspace}
+                                >
+                                  <ContextMenuTrigger
+                                    className={cn(
+                                      'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
+                                      isSelected
+                                        ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
+                                        : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
+                                    )}
+                                    onContextMenu={(event) => {
+                                      menuTrigger.current =
+                                        event.currentTarget.querySelector<HTMLButtonElement>(
+                                          '.project-item-button',
+                                        )
+                                    }}
+                                  >
+                                    <Button
+                                      variant="ghost"
+                                      disabled={!!state.removingWorkspace}
+                                      data-active={isSelected}
+                                      aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
+                                      aria-current={isSelected ? 'page' : undefined}
+                                      aria-haspopup="menu"
+                                      className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent focus-visible:ring-0"
+                                      onClick={() => {
+                                        void state.selectProject(path, workspace.id)
+                                      }}
+                                    >
+                                      <span
+                                        className="project-item-status flex size-3.5 items-center justify-center"
+                                        aria-hidden="true"
+                                      >
+                                        {agentSummary && agentSummary.state !== 'other' ? (
+                                          <AgentStatus state={agentSummary.state} />
+                                        ) : (
+                                          <span
+                                            className={cn(
+                                              'project-item-status-dot size-1.5 rounded-full',
+                                              hasTerminals
+                                                ? 'bg-workspace-status-active'
+                                                : 'bg-workspace-status-idle',
+                                            )}
+                                          />
+                                        )}
+                                      </span>
+                                      <span className="project-item-name truncate">
+                                        {workspace.name}
+                                      </span>
+                                      {workspace.kind === 'git-worktree' &&
+                                        scanEntry &&
+                                        (scanEntry.status !== 'ready' || worktree?.locked) && (
+                                          <div className="project-item-worktree-alert col-start-2 mt-0.5 flex items-center">
+                                            <Badge
+                                              variant={
+                                                scanEntry.status === 'ready'
+                                                  ? 'secondary'
+                                                  : 'destructive'
+                                              }
+                                              className="project-item-worktree-status h-4 px-1.5 text-[10px] font-normal"
+                                              title={scanEntry.error}
+                                            >
+                                              {scanEntry.status === 'ready'
+                                                ? 'Worktree · 已锁定'
+                                                : `Worktree · ${scanEntry.status}`}
+                                            </Badge>
+                                          </div>
+                                        )}
+                                      {branch && (
+                                        <span
+                                          className="project-item-branch col-start-2 truncate text-xs leading-4 font-normal text-muted-foreground"
+                                          title={branch}
+                                        >
+                                          {branch}
+                                        </span>
+                                      )}
+                                    </Button>
+                                    {workspaceAgents.length > 0 && (
+                                      <div
+                                        className="project-item-agents ml-7.5 flex min-w-0 flex-wrap gap-1 pr-2 pb-2"
+                                        role="group"
+                                        aria-label={`${workspace.name} Agent 列表`}
+                                      >
+                                        {workspaceAgents.map((tab) => {
+                                          const agentState = agentTabState(tab)
+                                          const agentActive =
+                                            isSelected &&
+                                            activeNavigation === 'home' &&
+                                            state.activeTabs[workspace.id] === tab.id
+                                          const label = `${tab.title} · ${AGENT_STATE_LABELS[agentState]}`
+                                          return (
+                                            <Tooltip key={tab.id}>
+                                              <TooltipTrigger
+                                                render={<Button variant="navigation" size="icon" />}
+                                                className="project-item-agent-button relative"
+                                                data-active={agentActive}
+                                                aria-pressed={agentActive}
+                                                aria-label={`定位到 ${label}`}
+                                                disabled={!state.ready || !!state.removingWorkspace}
+                                                onClick={async () => {
+                                                  if (
+                                                    isSelected ||
+                                                    (await state.selectProject(path, workspace.id))
+                                                  ) {
+                                                    state.selectTab(tab.id)
+                                                    setNavigation('home')
+                                                  }
+                                                }}
+                                              >
+                                                <span
+                                                  className="project-item-agent-provider inline-flex"
+                                                  aria-hidden="true"
+                                                >
+                                                  <AgentIcon
+                                                    provider={tab.provider || tab.agent?.provider}
+                                                    size={16}
+                                                    className="project-item-agent-provider-icon size-4"
+                                                  />
+                                                </span>
+                                                {agentIndicatorState(tab) !== 'other' && (
+                                                  <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-sidebar p-px [&_.agent-status]:size-2.5">
+                                                    <AgentStatus state={agentState} />
+                                                  </span>
+                                                )}
+                                              </TooltipTrigger>
+                                              <TooltipContent
+                                                side="bottom"
+                                                className="project-item-agent-tooltip"
+                                              >
+                                                {tab.title}
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
+                                  </ContextMenuTrigger>
+                                  <ContextMenuContent
+                                    finalFocus={() => menuTrigger.current}
+                                    aria-label={`${folderName(path)} ${workspace.name} 操作菜单`}
+                                    className="project-dropdown-menu"
+                                  >
+                                    <ContextMenuGroup className="project-menu-actions">
+                                      <AgentMenu
+                                        workspaceId={workspace.id}
+                                        disabled={
+                                          !state.ready ||
+                                          state.creatingWorktree ||
+                                          !!state.removingWorkspace ||
+                                          (workspace.kind === 'git-worktree' &&
+                                            scanEntry?.status !== 'ready')
+                                        }
+                                      />
+                                      <ContextMenuSub>
+                                        <ContextMenuSubTrigger className="workspace-open-with-trigger">
+                                          <ExternalLink className="workspace-open-with-icon" />
+                                          <span className="workspace-open-with-label">打开于</span>
+                                        </ContextMenuSubTrigger>
+                                        <ContextMenuContent
+                                          className="workspace-open-with-menu"
+                                          aria-label="打开于"
+                                        >
+                                          <ContextMenuGroup className="workspace-open-with-programs">
+                                            {state.preferences.openWith
+                                              .filter(
+                                                (opener) =>
+                                                  !(
+                                                    opener.id === 'finder' &&
+                                                    opener.command === '/usr/bin/open' &&
+                                                    opener.arguments === '-a Finder {path}'
+                                                  ),
+                                              )
+                                              .map((opener) => (
+                                                <ContextMenuItem
+                                                  key={opener.id}
+                                                  className="workspace-open-with-item"
+                                                  onClick={() => {
+                                                    void window.desktop
+                                                      .openWorkspaceWith(
+                                                        {
+                                                          projectPath: workspace.projectPath,
+                                                          workspaceId: workspace.id,
+                                                        },
+                                                        opener.id,
+                                                      )
+                                                      .then(unwrap)
+                                                      .catch(console.error)
+                                                  }}
+                                                >
+                                                  <OpenerIcon
+                                                    name={opener.name}
+                                                    command={opener.command}
+                                                    id={opener.id}
+                                                    className="workspace-open-with-app-icon size-3.5"
+                                                  />
+                                                  {opener.name}
+                                                </ContextMenuItem>
+                                              ))}
+                                            <ContextMenuItem
+                                              className="workspace-open-file-manager-item"
+                                              onClick={() => {
+                                                void window.desktop
+                                                  .openWorkspaceWith(
+                                                    {
+                                                      projectPath: workspace.projectPath,
+                                                      workspaceId: workspace.id,
+                                                    },
+                                                    'system-file-manager',
+                                                  )
+                                                  .then(unwrap)
+                                                  .catch(console.error)
+                                              }}
+                                            >
+                                              <FolderOpen className="workspace-open-file-manager-icon" />
+                                              文件管理器
+                                            </ContextMenuItem>
+                                          </ContextMenuGroup>
+                                        </ContextMenuContent>
+                                      </ContextMenuSub>
+                                      <ContextMenuItem
+                                        disabled={!!state.removingWorkspace}
+                                        className="workspace-edit-item"
+                                        onClick={() => {
+                                          workspaceDialogTrigger.current = menuTrigger.current
+                                          workspaceForm.reset({ name: workspace.name })
+                                          setWorkspaceSaveError(undefined)
+                                          setWorkspaceDialog({
+                                            projectPath: path,
+                                            id: workspace.id,
+                                          })
+                                        }}
+                                      >
+                                        <Pencil className="workspace-edit-icon" />
+                                        <span className="workspace-edit-label">编辑</span>
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        variant="destructive"
+                                        title={
+                                          workspace.kind === 'git-worktree'
+                                            ? '检查并确认后删除工作树及本地分支；存在未提交内容或未合并分支时需确认强制删除'
+                                            : '仅删除此工作区并结束其终端，不影响其他工作区或本地文件'
+                                        }
+                                        disabled={
+                                          !!state.removingWorkspace || state.creatingWorktree
+                                        }
+                                        className="workspace-delete-item"
+                                        onClick={() => {
+                                          if (workspace.kind === 'git-worktree')
+                                            void state.removeWorkspace(workspace.id)
+                                          else setWorkspaceToRemove(workspace.id)
+                                        }}
+                                      >
+                                        <Trash2 className="workspace-delete-icon" />
+                                        <span className="workspace-delete-label">
+                                          {workspace.kind === 'git-worktree'
+                                            ? '删除工作树'
+                                            : '删除工作区'}
+                                        </span>
+                                      </ContextMenuItem>
+                                    </ContextMenuGroup>
+                                  </ContextMenuContent>
+                                </ContextMenu>
+                              )
+                            })}
+                          </CollapsibleContent>
+                        </Collapsible>
+                      )
+                    })}
+                    {!projects.length && (
+                      <Empty className="project-empty-state flex-none px-3 py-8">
+                        <EmptyHeader className="project-empty-header">
+                          <EmptyMedia variant="icon" className="project-empty-media">
+                            <FolderOpen className="project-empty-icon" aria-hidden="true" />
+                          </EmptyMedia>
+                          <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
+                          <EmptyDescription className="project-empty-description">
+                            点击上方 + 或按 {shortcutModifier}O 添加
+                          </EmptyDescription>
+                        </EmptyHeader>
+                      </Empty>
+                    )}
+                  </nav>
+                </aside>
+              </ResizablePanel>
+              <ResizableHandle
+                className="workspace-resize-handle project-sidebar-resize-handle"
+                aria-label="调整项目面板宽度"
+              />
+              <ResizablePanel
+                id="workspace-main"
+                minSize={200}
+                className="workspace-main-panel flex min-h-0 min-w-0 flex-col"
+                style={{ overflow: 'hidden' }}
+              >
+                {/* 保持终端挂载，文件 / Diff 预览仅切换可见区域。 */}
+                <main
+                  className="terminal-workspace flex min-h-0 min-w-0 flex-1 flex-col"
+                  aria-label={
+                    showingDiff
+                      ? sourceControl.file
+                        ? '文件预览工作区'
+                        : '变更审阅工作区'
+                      : '终端工作区'
+                  }
+                >
+                  {state.worktreeError && (
+                    <p
+                      className="workspace-worktree-error px-4 py-2 text-xs text-destructive break-words"
+                      role="alert"
+                    >
+                      {state.worktreeError}
+                    </p>
+                  )}
+                  {showingDiff &&
+                    activeWorkspace &&
+                    (sourceControl.file ? (
+                      <FilePreview
+                        key={`${activeWorkspace.id}:${sourceControl.file}`}
+                        workspace={activeWorkspace}
+                        path={sourceControl.file}
+                        active={!settingsOpen}
+                      />
+                    ) : sourceControl.previewAll ? (
+                      <SourceControlChanges
+                        key={activeWorkspace.id}
+                        workspace={activeWorkspace}
+                        active={!settingsOpen}
+                      />
+                    ) : (
+                      <SourceControlDiff
+                        key={activeWorkspace.id}
+                        workspace={activeWorkspace}
+                        active={!settingsOpen}
+                      />
+                    ))}
+                  <div
+                    className={cn(
+                      'terminal-stage-container grid grid-cols-1 grid-rows-1 min-h-0 flex-1 overflow-hidden',
+                      showingDiff && 'hidden',
+                    )}
+                  >
+                    {state.tabs.map((tab) => {
+                      const isSelected =
+                        tab.projectPath === state.selectedProject && tab.id === activeId
+                      return (
+                        <TerminalView
+                          key={tab.id}
+                          tab={tab}
+                          active={
+                            isSelected &&
+                            !settingsOpen &&
+                            !showingDiff &&
+                            activeNavigation === 'home'
+                          }
+                        />
+                      )
+                    })}
+                    {!state.selectedProject && (
+                      <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
+                        <FolderOpen className="workspace-empty-icon size-6 text-muted-foreground" />
+                        <div className="workspace-empty-content">
+                          <h3 className="workspace-empty-title text-sm font-medium text-foreground">
+                            {projects.length ? '未选择工作区' : '没有打开的项目'}
+                          </h3>
+                          <p className="workspace-empty-desc mt-1 text-xs text-muted-foreground">
+                            {projects.length
+                              ? `从左侧选择一个工作区，或使用快捷键 ${shortcutModifier}O 打开新项目。`
+                              : `从左侧选择最近项目，或使用快捷键 ${shortcutModifier}O 打开新项目。`}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="workspace-empty-action mt-1"
+                          onClick={() => {
+                            void state.openProject()
+                          }}
+                        >
+                          打开项目 ({shortcutModifier}O)
+                        </Button>
+                      </div>
+                    )}
+                    {state.selectedProject && !currentTabs.length && (
+                      <div className="terminal-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
+                        <TerminalIcon className="terminal-empty-icon size-6 text-muted-foreground" />
+                        <div className="terminal-empty-content">
+                          <h3 className="terminal-empty-title text-sm font-medium text-foreground">
+                            当前工作区没有运行中的终端
+                          </h3>
+                          <p className="terminal-empty-desc mt-1 text-xs text-muted-foreground">
+                            点击上方 + 按钮，或使用快捷键 {shortcutModifier}T 新建终端。
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="terminal-empty-action mt-1"
+                          disabled={!!state.removingWorkspace}
+                          onClick={() => state.newTerminal()}
+                        >
+                          新建终端 ({shortcutModifier}T)
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </main>
+              </ResizablePanel>
+              <RightPanel
+                workspace={activeWorkspace}
+                active={!settingsOpen}
+                filesActive={rightTab === 'files'}
+              />
+            </ResizablePanelGroup>
+
+            <Outlet />
+          </div>
         </div>
 
         {worktreeProject && (

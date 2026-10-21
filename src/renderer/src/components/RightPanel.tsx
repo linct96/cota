@@ -35,7 +35,7 @@ export function RightPanel({
   return (
     <>
       <ResizableHandle
-        className={cn('right-panel-resize-handle', !visible && 'hidden')}
+        className={cn('workspace-resize-handle right-panel-resize-handle', !visible && 'hidden')}
         disabled={!visible}
         aria-label="调整右侧面板宽度"
       />
@@ -62,7 +62,7 @@ export function RightPanel({
         <aside
           id="right-panel-content"
           className={cn(
-            'right-panel min-h-0 min-w-0 flex-1 flex-col border-t bg-card',
+            'right-panel min-h-0 min-w-0 flex-1 flex-col bg-card',
             visible ? 'flex' : 'hidden',
           )}
           aria-label="右侧工具面板"

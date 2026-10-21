@@ -14,7 +14,7 @@ import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-rendere
 import { createTerminalInputHandler } from '../src/renderer/src/lib/terminal-input'
 import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
 import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
-import { buildGitChangeTree } from '../src/renderer/src/lib/source-control-tree'
+import { buildGitChangeTree, gitChangeRows } from '../src/renderer/src/lib/source-control-tree'
 import type { GitChange } from '../src/shared/source-control'
 import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
 import { explorerRows, useFileExplorer } from '../src/renderer/src/lib/file-explorer-store'
@@ -1427,6 +1427,38 @@ describe('workspace state', () => {
     }
     expect(leaves).toHaveLength(entries.length)
     expect(leaves.every((entry) => entries.includes(entry))).toBe(true)
+    const rows = gitChangeRows(tree, new Set())
+    expect(rows.find((row) => row.key === 'file:src/components/file2.tsx')).toMatchObject({
+      node: { entry: entries[2] },
+      depth: 2,
+      parent: 'directory:src/components',
+      position: 1,
+      siblings: 2,
+    })
+    const collapsed = new Set(['src/components'])
+    const visible = gitChangeRows(tree, collapsed)
+    expect(visible.map((row) => row.node.path)).toEqual(
+      rows
+        .filter((row) => !row.node.path.startsWith('src/components/'))
+        .map((row) => row.node.path),
+    )
+    expect(visible.find((row) => row.node.path === 'src/lib')?.parent).toBe('directory:src')
+    expect(gitChangeRows(tree, new Set(['src'])).map((row) => row.node.path)).not.toContain(
+      'src/lib',
+    )
+    expect(gitChangeRows(tree, new Set())).toEqual(rows)
+    expect([...collapsed]).toEqual(['src/components'])
+    // 文件替换为目录时，Git 可在同组同时返回删除的文件和新增的子文件。
+    const replacement = gitChangeRows(
+      buildGitChangeTree([...entries, { ...entries[0], path: 'src' }]),
+      new Set(),
+    )
+    expect(replacement.filter((row) => row.node.path === 'src').map((row) => row.key)).toEqual([
+      'directory:src',
+      'file:src',
+    ])
+    expect(new Set(replacement.map((row) => row.key)).size).toBe(replacement.length)
+    expect(gitChangeRows([], new Set())).toEqual([])
     expect(entries).toEqual(original)
     expect(buildGitChangeTree([])).toEqual([])
     expect(buildGitChangeTree([entries[0]])).toEqual([

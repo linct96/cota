@@ -31,6 +31,7 @@ import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-st
 import { createSourceControlRefreshQueue } from '../lib/source-control-refresh'
 import { useSourceControlWatch } from '../lib/use-source-control-watch'
 import { buildGitChangeTree } from '../lib/source-control-tree'
+import { cn } from '../lib/utils'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -66,7 +67,7 @@ import { Separator } from './ui/separator'
 import { Textarea } from './ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
 import { SourceControlReview } from './SourceControlReview'
-import { SourceControlFileTree } from './SourceControlFileTree'
+import { SourceFileExplorer } from './SourceFileExplorer'
 import { FileTypeIcon } from './FileTypeIcon'
 
 const groups: { area: GitArea; label: string }[] = [
@@ -97,6 +98,7 @@ export function SourceControlPanel({
   const [error, setError] = useState<string>()
   const [readError, setReadError] = useState<string>()
   const [pending, setPending] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [messageExpanded, setMessageExpanded] = useState(false)
   const [references, setReferences] = useState<GitReferences>()
   const [referencesError, setReferencesError] = useState<string>()
@@ -221,7 +223,9 @@ export function SourceControlPanel({
   async function mutate(input: GitMutation) {
     if (writing.current) return false
     writing.current = true
+    const started = performance.now()
     setPending(true)
+    setSyncing(input.action === 'sync')
     setError(undefined)
     try {
       // Keep background reads silent without overlapping them with writes.
@@ -260,8 +264,16 @@ export function SourceControlPanel({
           setReadError(error instanceof Error ? error.message : String(error))
         }
       } finally {
+        if (input.action === 'sync') {
+          await new Promise<void>((resolve) =>
+            setTimeout(resolve, Math.max(0, 500 - (performance.now() - started))),
+          )
+        }
         writing.current = false
-        if (mounted.current) setPending(false)
+        if (mounted.current) {
+          setPending(false)
+          setSyncing(false)
+        }
         refreshQueue.flush()
       }
     }
@@ -433,8 +445,14 @@ export function SourceControlPanel({
                     </Button>
                   </div>
                   <CollapsibleContent className="source-control-group-files flex flex-col gap-0.5">
-                    <SourceControlFileTree
+                    <SourceFileExplorer
                       nodes={nodes}
+                      label={`${label}文件树`}
+                      selectedPath={
+                        session.preview && session.selection?.area === area
+                          ? session.selection.path
+                          : undefined
+                      }
                       renderDirectoryActions={(directoryEntries, path) => {
                         const targets = directoryEntries.filter((entry) => !entry.submodule)
                         return (
@@ -478,12 +496,12 @@ export function SourceControlPanel({
                           </>
                         )
                       }}
-                      renderFile={(entry, name) => {
+                      renderFile={(entry, name, itemProps) => {
                         const key = gitFileKey(entry)
                         return (
                           <div
                             key={key}
-                            className="source-control-file-row mt-0.5 flex min-w-0 items-center gap-1.5 px-1"
+                            className="source-control-file-row flex min-w-0 items-center gap-1 pr-1"
                             data-selected={
                               session.preview &&
                               session.selection &&
@@ -491,8 +509,9 @@ export function SourceControlPanel({
                             }
                           >
                             <Button
-                              variant="ghost"
-                              className="source-control-file-open h-auto min-w-0 flex-1 justify-start gap-2 py-1.5"
+                              {...itemProps}
+                              variant="project"
+                              className="source-file-explorer-item source-control-file-open min-w-0 flex-1 justify-start gap-1.5"
                               title={`${entry.oldPath ? `${entry.oldPath} → ` : ''}${entry.path}`}
                               onClick={() =>
                                 update(workspace.id, {
@@ -501,6 +520,11 @@ export function SourceControlPanel({
                                 })
                               }
                             >
+                              <ChevronRight
+                                className="source-file-explorer-chevron"
+                                data-visible="false"
+                                aria-hidden="true"
+                              />
                               <FileTypeIcon path={entry.path} submodule={entry.submodule} />
                               <span className="source-control-file-path min-w-0 flex-1 truncate text-left">
                                 {name}
@@ -674,9 +698,18 @@ export function SourceControlPanel({
                       size="sm"
                       className="source-control-sync"
                       disabled={syncDisabled}
+                      aria-busy={syncing}
+                      aria-label={syncing ? '正在同步' : undefined}
                       onClick={() => void remoteAction('sync')}
                     >
-                      <RefreshCw className="source-control-sync-icon" data-icon="inline-start" />
+                      <RefreshCw
+                        className={cn(
+                          'source-control-sync-icon',
+                          syncing && 'motion-safe:animate-spin',
+                        )}
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
                       同步
                       {status.upstream && (status.ahead > 0 || status.behind > 0) && (
                         <span className="source-control-sync-counts flex shrink-0 items-center gap-0.5 tabular-nums">

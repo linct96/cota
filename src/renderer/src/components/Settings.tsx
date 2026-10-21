@@ -16,11 +16,13 @@ import {
   Sparkles,
   Sun,
   SquareTerminal,
+  X,
 } from 'lucide-react'
+import { Button } from './ui/button'
 import { Card } from './ui/card'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
 import { Input } from './ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { cn } from '../lib/utils'
 import { GeneralSettings } from './GeneralSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
@@ -94,40 +96,61 @@ export function Settings() {
         if (typeof val === 'string') setActiveCategory(val)
       }}
       aria-labelledby={titleId}
-      className="settings-layout flex min-h-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card text-foreground"
+      className="settings-layout flex min-h-0 flex-1 gap-0 overflow-hidden rounded-tl-2xl border-t border-l bg-card text-foreground"
     >
       {/* 左侧：设置导航栏 */}
       <aside
-        className="settings-sidebar flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground"
+        className="settings-sidebar flex min-h-0 w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground select-none"
         aria-label="设置导航"
       >
-        <div className="settings-nav-header flex flex-col gap-3 p-3">
-          <h2 id={titleId} className="settings-title px-1 text-lg font-bold text-foreground">
+        <div className="settings-header flex h-12 shrink-0 items-center px-4">
+          <h2 id={titleId} className="settings-title">
             设置
           </h2>
+        </div>
+
+        <div className="settings-search shrink-0 px-2 pb-2">
           <div className="settings-search-wrapper relative flex items-center">
-            <Search className="settings-search-icon pointer-events-none absolute left-3 size-3.5 text-muted-foreground" />
+            <Search
+              className="settings-search-icon pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索"
-              className="settings-search-input h-8 w-full rounded-xl border-none bg-muted/80 pl-8 pr-3 text-xs shadow-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setSearch('')
+              }}
+              placeholder="搜索设置"
+              aria-label="搜索设置"
+              className="settings-search-input w-full pl-8 pr-7"
             />
+            {search && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="settings-search-clear absolute right-1 size-5 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearch('')}
+                aria-label="清空搜索"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </Button>
+            )}
           </div>
         </div>
 
         <TabsList
-          variant="line"
-          className="settings-nav-list flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto bg-transparent p-0 px-2 pb-3"
+          className="settings-nav-list flex min-h-0 flex-1 flex-col justify-start gap-2 overflow-y-auto px-2 pb-3"
           aria-label="设置列表"
         >
           {filteredGroups.map((group) => (
-            <div key={group.id} className="settings-group flex w-full flex-col gap-1">
-              <h3 className="settings-group-title px-2.5 pb-0.5 text-xs font-normal text-muted-foreground">
+            <div key={group.id} className="settings-group flex w-full shrink-0 flex-col">
+              <h3 className="settings-group-title flex h-8 shrink-0 items-center px-2">
                 {group.label}
               </h3>
-              <div className="settings-group-items flex w-full flex-col gap-0.5">
+              <div className="settings-group-items flex w-full min-w-0 flex-col gap-px">
                 {group.items.map((item) => {
                   const Icon = item.icon
 
@@ -135,14 +158,9 @@ export function Settings() {
                     <TabsTrigger
                       key={item.id}
                       value={item.id}
-                      className={cn(
-                        'settings-nav-item flex w-full items-center justify-start gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors',
-                        'text-foreground/80 hover:bg-muted/60 hover:text-foreground',
-                        'data-active:bg-accent data-active:font-medium data-active:text-accent-foreground',
-                        'after:hidden',
-                      )}
+                      className="settings-nav-item w-full min-w-0 justify-start overflow-hidden text-left"
                     >
-                      <Icon className="settings-nav-item-icon size-4 shrink-0 text-muted-foreground" />
+                      <Icon className="settings-nav-item-icon" aria-hidden="true" />
                       <span className="settings-nav-item-label truncate">{item.label}</span>
                     </TabsTrigger>
                   )
@@ -152,9 +170,16 @@ export function Settings() {
           ))}
 
           {!filteredGroups.length && (
-            <p className="settings-search-empty px-3 py-6 text-center text-xs text-muted-foreground">
-              未找到相关设置
-            </p>
+            <Empty className="settings-search-empty py-8 text-muted-foreground">
+              <EmptyHeader className="settings-search-empty-header">
+                <EmptyTitle className="settings-search-empty-title text-xs font-medium">
+                  未找到相关设置
+                </EmptyTitle>
+                <EmptyDescription className="settings-search-empty-description text-xs text-muted-foreground">
+                  没有与 &ldquo;{search}&rdquo; 匹配的设置项
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </TabsList>
       </aside>

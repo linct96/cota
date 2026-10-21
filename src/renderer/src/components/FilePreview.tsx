@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import { fileParent, type FilePreview as Preview } from '../../../shared/file-explorer'
-import { useSourceControl } from '../lib/source-control-store'
 import { useFileWatch } from '../lib/use-file-watch'
 import { FileTypeIcon } from './FileTypeIcon'
 import { Alert, AlertDescription } from './ui/alert'
@@ -94,15 +93,6 @@ export function FilePreview({
           }}
         >
           <RefreshCw className="file-preview-refresh-icon" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="file-preview-return"
-          onClick={() => useSourceControl.getState().showTerminal(workspace.id)}
-        >
-          <ArrowLeft className="file-preview-return-icon" />
-          返回终端
         </Button>
       </header>
       {watchError && (

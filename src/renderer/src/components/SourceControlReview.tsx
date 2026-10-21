@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, GitCommitHorizontal } from 'lucide-react'
+import { ArrowLeft, ChevronRight, GitCommitHorizontal } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
-import {
-  gitFileKey,
-  type GitComparison,
-  type GitHistory,
-  type GitReferences,
-} from '../../../shared/source-control'
+import type { GitComparison, GitHistory, GitReferences } from '../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-store'
 import { buildGitChangeTree } from '../lib/source-control-tree'
 import { FileTypeIcon } from './FileTypeIcon'
-import { SourceControlFileTree } from './SourceControlFileTree'
+import { SourceFileExplorer } from './SourceFileExplorer'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './ui/empty'
@@ -296,9 +291,19 @@ export function SourceControlReview({
               </p>
             )}
             <div className="source-control-review-files flex min-w-0 flex-col gap-0.5">
-              <SourceControlFileTree
+              <SourceFileExplorer
+                key={comparisonKey}
                 nodes={nodes}
-                renderFile={(entry, name) => {
+                label={`${mode === 'history' ? '提交审阅' : '分支比较'}文件树`}
+                selectedPath={
+                  session.preview &&
+                  session.selection?.area === 'review' &&
+                  session.selection.base === comparison.base &&
+                  session.selection.head === comparison.head
+                    ? session.selection.path
+                    : undefined
+                }
+                renderFile={(entry, name, itemProps) => {
                   const selection = {
                     ...entry,
                     area: 'review' as const,
@@ -308,13 +313,9 @@ export function SourceControlReview({
                   }
                   return (
                     <Button
-                      variant="ghost"
-                      className="source-control-review-file h-auto w-full min-w-0 justify-start gap-2 py-1.5"
-                      aria-pressed={
-                        session.preview &&
-                        !!session.selection &&
-                        gitFileKey(session.selection) === gitFileKey(selection)
-                      }
+                      {...itemProps}
+                      variant="project"
+                      className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
                       title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
                       onClick={() =>
                         useSourceControl
@@ -322,6 +323,11 @@ export function SourceControlReview({
                           .update(workspace.id, { selection, preview: true })
                       }
                     >
+                      <ChevronRight
+                        className="source-file-explorer-chevron"
+                        data-visible="false"
+                        aria-hidden="true"
+                      />
                       <FileTypeIcon path={entry.path} submodule={entry.submodule} />
                       <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
                         {name}

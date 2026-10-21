@@ -10,6 +10,31 @@ export type GitChangeNode<T extends { path: string } = GitChange> =
       entries: T[]
     }
 
+export function gitChangeRows<T extends { path: string }>(
+  nodes: GitChangeNode<T>[],
+  collapsed: ReadonlySet<string>,
+) {
+  const rows: {
+    key: string
+    node: GitChangeNode<T>
+    depth: number
+    parent?: string
+    position: number
+    siblings: number
+  }[] = []
+  function visit(children: GitChangeNode<T>[], depth: number, parent?: string) {
+    children.forEach((node, index) => {
+      const key = `${node.kind}:${node.path}`
+      rows.push({ key, node, depth, parent, position: index + 1, siblings: children.length })
+      if (node.kind === 'directory' && !collapsed.has(node.path)) {
+        visit(node.children, depth + 1, key)
+      }
+    })
+  }
+  visit(nodes, 0)
+  return rows
+}
+
 const names = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 export function buildGitChangeTree<T extends { path: string }>(

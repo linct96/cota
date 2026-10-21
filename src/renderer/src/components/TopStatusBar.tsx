@@ -19,11 +19,12 @@ import { WindowControls } from './WindowControls'
 
 interface TopStatusBarProps {
   settingsOpen: boolean
+  sidebarWidth: number
   onBack(): void
   children?: ReactNode
 }
 
-export function TopStatusBar({ settingsOpen, onBack, children }: TopStatusBarProps) {
+export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: TopStatusBarProps) {
   const rightPanelOpen = useRightPanel((state) => state.open)
   const rightPanelWidth = useRightPanel((state) => state.width)
   const rightPanelLabel = rightPanelOpen ? '收起右侧面板' : '展开右侧面板'
@@ -35,7 +36,10 @@ export function TopStatusBar({ settingsOpen, onBack, children }: TopStatusBarPro
       data-right-panel-open={isRightPanelVisible}
       aria-label="顶部状态栏"
     >
-      <div className="top-status-bar-leading flex h-full w-[calc(var(--app-navigation-width)+15rem)] shrink-0 items-center">
+      <div
+        className="top-status-bar-leading flex h-full shrink-0 items-center"
+        style={{ width: `calc(var(--app-navigation-width) + ${sidebarWidth}px + 1px)` }}
+      >
         {isWindows && (
           <div
             className="top-status-bar-logo flex h-full w-[var(--app-navigation-width)] shrink-0 items-center justify-center"
@@ -114,20 +118,20 @@ export function TopStatusBar({ settingsOpen, onBack, children }: TopStatusBarPro
                 aria-label="右侧面板功能"
               >
                 <TabsTrigger
-                  value="git"
-                  className="right-panel-git-tab h-8 w-8 flex-none rounded-md bg-terminal-tab-inactive p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-terminal-tab-inactive-hover [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
-                  aria-label="Git 管理"
-                  title="Git 管理"
-                >
-                  <GitBranch className="right-panel-git-tab-icon" />
-                </TabsTrigger>
-                <TabsTrigger
                   value="files"
                   className="right-panel-files-tab h-8 w-8 flex-none rounded-md bg-terminal-tab-inactive p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-terminal-tab-inactive-hover [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
                   aria-label="文件浏览"
                   title="文件浏览"
                 >
                   <Folder className="right-panel-files-tab-icon" />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="git"
+                  className="right-panel-git-tab h-8 w-8 flex-none rounded-md bg-terminal-tab-inactive p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-terminal-tab-inactive-hover [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
+                  aria-label="Git 管理"
+                  title="Git 管理"
+                >
+                  <GitBranch className="right-panel-git-tab-icon" />
                 </TabsTrigger>
               </TabsList>
             </div>
