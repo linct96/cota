@@ -31,6 +31,7 @@ import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
+import { ShortcutSettings } from './ShortcutSettings'
 
 interface SettingItem {
   id: string
@@ -223,6 +224,9 @@ export function Settings() {
           <TabsContent value="file-explorer" className="settings-file-explorer-content mt-0">
             <FileExplorerSettings />
           </TabsContent>
+          <TabsContent value="shortcuts" className="settings-shortcuts-content mt-0">
+            <ShortcutSettings />
+          </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
             .filter(
               (item) =>
@@ -233,6 +237,7 @@ export function Settings() {
                   'source-control',
                   'appearance',
                   'file-explorer',
+                  'shortcuts',
                 ].includes(item.id),
             )
             .map((item) => (

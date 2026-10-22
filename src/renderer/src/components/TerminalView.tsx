@@ -91,6 +91,31 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const input = installTerminalInput(terminal, {
       platform: window.desktop.platform,
       canSend: live,
+      getShortcuts: () => useWorkspace.getState().preferences.shortcuts,
+      onShortcut: (action) => {
+        if (action === 'copy') {
+          if (terminal.hasSelection())
+            void window.desktop
+              .writeClipboard(terminal.getSelection())
+              .then(unwrap)
+              .catch(console.error)
+        } else if (action === 'paste') {
+          void window.desktop
+            .readClipboard()
+            .then(unwrap)
+            .then((text) => {
+              if (live()) terminal.paste(text)
+            })
+            .catch(console.error)
+        } else if (action === 'select-all') terminal.selectAll()
+        else if (action === 'clear') terminal.clear()
+        else if (action === 'new-line' && live())
+          void window.desktop.writeTerminal(id, '\x1b\r').then(unwrap).catch(console.error)
+        else if (action === 'scroll-up') terminal.scrollPages(-1)
+        else if (action === 'scroll-down') terminal.scrollPages(1)
+        else if (action === 'scroll-top') terminal.scrollToTop()
+        else if (action === 'scroll-bottom') terminal.scrollToBottom()
+      },
       write: (value, encoding) => {
         void window.desktop.writeTerminal(id, value, encoding).then(unwrap).catch(console.error)
       },

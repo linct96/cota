@@ -44,6 +44,9 @@ beforeEach(() => {
   useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
     initialAppearance: { theme: 'system', windowBlur: false },
+    readClipboard: vi.fn(),
+    writeClipboard: vi.fn(),
+    setShortcutRecording: vi.fn(),
     accounts: {
       list: vi.fn(),
       add: vi.fn(),

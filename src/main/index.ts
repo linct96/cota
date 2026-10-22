@@ -15,6 +15,7 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
+import { shortcutBinding } from '../shared/shortcuts'
 import { AccountService } from './accounts/service'
 import { projectBranch } from './git/project-branch'
 import { SourceControlService } from './git/source-control'
@@ -532,11 +533,22 @@ function installIPC(): void {
     await config.savePreferences(next)
     nativeTheme.themeSource = next.theme
     updateWindowBackground()
+    installMenu()
     if (JSON.stringify(previous.fileExplorer) !== JSON.stringify(next.fileExplorer))
       fileWatches.close()
     if (next.scrollback !== previous.scrollback)
       await manager.request('setScrollback', [next.scrollback])
     return next
+  })
+  handle('clipboard:read', () => clipboard.readText())
+  handle('clipboard:write', (text: unknown) => {
+    if (typeof text !== 'string' || text.length > 2 * 1024 * 1024)
+      throw new Error('剪贴板文本无效。')
+    clipboard.writeText(text)
+  })
+  ipcMain.on('shortcuts:recording', (event, recording: unknown) => {
+    trusted(event)
+    if (typeof recording === 'boolean') event.sender.setIgnoreMenuShortcuts(recording)
   })
   handle('agent:detect', () => detectAgents(config.snapshot().preferences))
   handle('agent:hooks-detect', async () => {
@@ -760,6 +772,8 @@ async function requestExit(): Promise<void> {
 }
 
 function installMenu(): void {
+  const accelerator = (id: string) =>
+    shortcutBinding(config.snapshot().preferences.shortcuts, id, process.platform) || undefined
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
@@ -769,7 +783,7 @@ function installMenu(): void {
           { type: 'separator' },
           {
             label: 'Settings…',
-            accelerator: 'CommandOrControl+,',
+            accelerator: accelerator('settings'),
             click: () => sendShortcut('settings'),
           },
           { type: 'separator' },
@@ -785,17 +799,17 @@ function installMenu(): void {
         submenu: [
           {
             label: 'Open Folder…',
-            accelerator: 'CommandOrControl+O',
+            accelerator: accelerator('open-folder'),
             click: () => sendShortcut('open-folder'),
           },
           {
             label: 'New Terminal',
-            accelerator: 'CommandOrControl+T',
+            accelerator: accelerator('new-terminal'),
             click: () => sendShortcut('new-terminal'),
           },
           {
             label: 'Close Terminal / Window',
-            accelerator: 'CommandOrControl+W',
+            accelerator: accelerator('close-terminal'),
             click: () => sendShortcut('close-terminal'),
           },
         ],
@@ -809,20 +823,20 @@ function installMenu(): void {
           { role: 'cut' },
           {
             role: 'copy',
-            ...(process.platform === 'win32' ? { accelerator: 'Control+Shift+C' } : {}),
+            accelerator: '',
           },
           {
             role: 'paste',
-            ...(process.platform === 'win32' ? { accelerator: 'Control+Shift+V' } : {}),
+            accelerator: '',
           },
-          { role: 'selectAll' },
+          { role: 'selectAll', accelerator: '' },
         ],
       },
       {
         label: 'Terminal',
         submenu: Array.from({ length: 9 }, (_, i) => ({
           label: `Select Terminal ${i + 1}`,
-          accelerator: `CommandOrControl+${i + 1}`,
+          accelerator: accelerator(`tab-${i + 1}`),
           click: () => sendShortcut(`tab-${i + 1}`),
         })),
       },

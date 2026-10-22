@@ -20,6 +20,9 @@ const api: DesktopAPI = {
         : 'system',
     windowBlur: process.argv.includes('--cota-window-blur'),
   },
+  readClipboard: () => ipcRenderer.invoke('clipboard:read'),
+  writeClipboard: (text) => ipcRenderer.invoke('clipboard:write', text),
+  setShortcutRecording: (recording) => ipcRenderer.send('shortcuts:recording', recording),
   accounts: {
     list: (product) => ipcRenderer.invoke('accounts:list', product),
     add: (input) => ipcRenderer.invoke('accounts:add', input),

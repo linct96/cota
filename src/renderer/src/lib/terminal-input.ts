@@ -2,6 +2,14 @@ import type { Terminal } from '@xterm/xterm'
 import { createTerminalKeyboardState } from '../../../shared/terminal-keyboard-state'
 import { encodeTerminalText } from './terminal-input-encoding'
 import { isTerminalMouseReport } from './terminal-wheel'
+import {
+  COTA_SHORTCUTS,
+  TERMINAL_SHORTCUTS,
+  matchesShortcut,
+  shortcutBinding,
+  type ShortcutBindings,
+  type TerminalShortcut,
+} from '../../../shared/shortcuts'
 
 type TerminalKeyEvent = Pick<
   KeyboardEvent,
@@ -22,6 +30,8 @@ type TerminalInputOptions = {
   platform: string
   canSend: () => boolean
   write: (data: string, encoding?: 'utf8' | 'binary') => void
+  getShortcuts?: () => ShortcutBindings
+  onShortcut?: (action: TerminalShortcut) => void
 }
 
 type TextPress = {
@@ -37,6 +47,8 @@ export function createTerminalInputHandler({
   write,
   getKittyFlags,
   textarea,
+  getShortcuts,
+  onShortcut,
 }: TerminalInputOptions & {
   getKittyFlags: () => number
   textarea: Pick<HTMLTextAreaElement, 'value'>
@@ -51,6 +63,7 @@ export function createTerminalInputHandler({
   let compositionValue = ''
   const textKeys = new Map<string, TextPress>()
   const deferredText: TextPress[] = []
+  const shortcutKeys = new Set<string>()
   const keyId = (event: TerminalKeyEvent) => event.code || event.key
   const send = (data: string) => {
     if (data && !disposed && canSend()) write(data)
@@ -80,6 +93,7 @@ export function createTerminalInputHandler({
     compositionValue = ''
     textKeys.clear()
     deferredText.length = 0
+    shortcutKeys.clear()
   }
   return {
     send,
@@ -126,6 +140,36 @@ export function createTerminalInputHandler({
     },
     handleKeyEvent(event: TerminalKeyEvent): boolean {
       if (disposed) return false
+      const bindings = getShortcuts?.()
+      if (bindings && !composing && !settling && !event.isComposing && event.keyCode !== 229) {
+        const keyId = event.code || event.key
+        if (event.type === 'keyup' && shortcutKeys.delete(keyId)) return false
+        if (event.type === 'keypress' && shortcutKeys.has(keyId)) return false
+        if (
+          COTA_SHORTCUTS.some(([id]) =>
+            matchesShortcut(event, shortcutBinding(bindings, id!, platform), platform),
+          )
+        )
+          return false
+        const action = TERMINAL_SHORTCUTS.find(([id]) =>
+          matchesShortcut(event, shortcutBinding(bindings, id, platform), platform),
+        )?.[0]
+        if (action) {
+          if (
+            action === 'new-line' &&
+            event.code === 'Enter' &&
+            event.shiftKey &&
+            getKittyFlags() > 0
+          )
+            return true
+          if (event.type === 'keydown') {
+            event.preventDefault()
+            shortcutKeys.add(keyId)
+            if (!event.repeat || action.startsWith('scroll-')) onShortcut?.(action)
+          }
+          return false
+        }
+      }
       if (event.type === 'keydown' && !['Shift', 'Control', 'Alt', 'Meta'].includes(event.key))
         pendingText = undefined
       const claimed = textKeys.get(keyId(event))
@@ -155,7 +199,13 @@ export function createTerminalInputHandler({
             heldEnter = 'ime'
             return false
           }
-          if (event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+          if (
+            !getShortcuts &&
+            event.shiftKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey
+          ) {
             if (getKittyFlags() > 0) return true
             heldEnter = 'newline'
             event.preventDefault()
@@ -165,8 +215,16 @@ export function createTerminalInputHandler({
         }
       }
       const key = event.key.toLowerCase()
+      if (
+        platform === 'darwin' &&
+        event.metaKey &&
+        !event.ctrlKey &&
+        ['x', 'z', 'q', 'h', 'm'].includes(key)
+      )
+        return false
       // Keep macOS menu accelerators out of Kitty encoding, including key releases.
       if (
+        !getShortcuts &&
         platform === 'darwin' &&
         event.metaKey &&
         !event.ctrlKey &&
@@ -200,6 +258,7 @@ export function createTerminalInputHandler({
       )
         return false
       if (
+        !getShortcuts &&
         (event.metaKey || (platform === 'win32' && event.ctrlKey && event.shiftKey)) &&
         ['c', 'v'].includes(key)
       )

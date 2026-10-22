@@ -90,7 +90,7 @@ import {
 } from './components/ui/context-menu'
 import { cn, shortenPath } from './lib/utils'
 import { useProjectBranches } from './lib/use-project-branches'
-import { shortcutModifier } from './lib/platform'
+import { formatShortcut, shortcutBinding } from '../../shared/shortcuts'
 
 function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || path
@@ -98,6 +98,11 @@ function folderName(path: string): string {
 
 export function App() {
   const state = useWorkspace()
+  const shortcutLabel = (id: string) =>
+    formatShortcut(
+      shortcutBinding(state.preferences.shortcuts, id, window.desktop.platform),
+      window.desktop.platform,
+    )
   const router = useRouter()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const settingsOpen = pathname === '/settings'
@@ -474,7 +479,7 @@ export function App() {
                     weight={settingsOpen ? 'fill' : 'regular'}
                   />
                 </TooltipTrigger>
-                <TooltipContent side="right">设置 {shortcutModifier},</TooltipContent>
+                <TooltipContent side="right">设置 {shortcutLabel('settings')}</TooltipContent>
               </Tooltip>
             </div>
           </nav>
@@ -522,7 +527,9 @@ export function App() {
                       >
                         <FolderPlus className="project-add-icon" />
                       </TooltipTrigger>
-                      <TooltipContent side="bottom">添加项目 {shortcutModifier}O</TooltipContent>
+                      <TooltipContent side="bottom">
+                        添加项目 {shortcutLabel('open-folder')}
+                      </TooltipContent>
                     </Tooltip>
                   </div>
                   <nav
@@ -963,7 +970,7 @@ export function App() {
                           </EmptyMedia>
                           <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
                           <EmptyDescription className="project-empty-description">
-                            点击上方 + 或按 {shortcutModifier}O 添加
+                            点击上方 + 或按 {shortcutLabel('open-folder')} 添加
                           </EmptyDescription>
                         </EmptyHeader>
                       </Empty>
@@ -1053,8 +1060,8 @@ export function App() {
                           </h3>
                           <p className="workspace-empty-desc mt-1 text-xs text-muted-foreground">
                             {projects.length
-                              ? `从左侧选择一个工作区，或使用快捷键 ${shortcutModifier}O 打开新项目。`
-                              : `从左侧选择最近项目，或使用快捷键 ${shortcutModifier}O 打开新项目。`}
+                              ? `从左侧选择一个工作区，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`
+                              : `从左侧选择最近项目，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`}
                           </p>
                         </div>
                         <Button
@@ -1065,7 +1072,7 @@ export function App() {
                             void state.openProject()
                           }}
                         >
-                          打开项目 ({shortcutModifier}O)
+                          打开项目 ({shortcutLabel('open-folder')})
                         </Button>
                       </div>
                     )}
@@ -1077,7 +1084,7 @@ export function App() {
                             当前工作区没有运行中的终端
                           </h3>
                           <p className="terminal-empty-desc mt-1 text-xs text-muted-foreground">
-                            点击上方 + 按钮，或使用快捷键 {shortcutModifier}T 新建终端。
+                            点击上方 + 按钮，或使用快捷键 {shortcutLabel('new-terminal')} 新建终端。
                           </p>
                         </div>
                         <Button
@@ -1087,7 +1094,7 @@ export function App() {
                           disabled={!!state.removingWorkspace}
                           onClick={() => state.newTerminal()}
                         >
-                          新建终端 ({shortcutModifier}T)
+                          新建终端 ({shortcutLabel('new-terminal')})
                         </Button>
                       </div>
                     )}

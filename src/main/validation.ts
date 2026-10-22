@@ -20,6 +20,7 @@ import {
   DEFAULT_TERMINAL_APPEARANCE,
   terminalAppearanceSchema,
 } from '../shared/terminal-appearance'
+import { validateShortcutBindings } from '../shared/shortcuts'
 
 export function absolutePath(value: unknown): string {
   if (
@@ -62,6 +63,7 @@ export function preferences(value: unknown): Preferences {
     theme = 'system',
     terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer = { showIgnored: true, followSymlinks: false },
+    shortcuts = {},
     shellName,
     shellPath,
     scrollback,
@@ -106,6 +108,7 @@ export function preferences(value: unknown): Preferences {
       showIgnored: fileExplorer.showIgnored,
       followSymlinks: fileExplorer.followSymlinks,
     },
+    shortcuts: validateShortcutBindings(shortcuts, process.platform),
     terminalGpuAcceleration,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,

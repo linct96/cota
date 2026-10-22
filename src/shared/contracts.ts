@@ -1,6 +1,7 @@
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
 import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
+import type { ShortcutBindings } from './shortcuts'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -32,6 +33,7 @@ export interface Preferences {
   theme: ThemePreference
   terminalAppearance: TerminalAppearance
   fileExplorer: FileExplorerPreferences
+  shortcuts: ShortcutBindings
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
   shellName: string | null
@@ -389,6 +391,9 @@ export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
 
 export interface DesktopAPI {
   readonly initialAppearance: { theme: ThemePreference; windowBlur: boolean }
+  readClipboard(): Promise<Result<string>>
+  writeClipboard(text: string): Promise<Result<void>>
+  setShortcutRecording(recording: boolean): void
   readonly accounts: import('./accounts').AccountsAPI
   readonly platform: string
   bootstrap(): Promise<
@@ -477,6 +482,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     theme: 'system',
     terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer: { showIgnored: true, followSymlinks: false },
+    shortcuts: {},
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
     shellName: null,
