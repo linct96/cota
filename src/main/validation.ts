@@ -60,7 +60,14 @@ export function preferences(value: unknown): Preferences {
     scrollback,
     openWith,
     terminalGpuAcceleration = 'auto',
+    commitMessagePrompt = '',
   } = value as Partial<Preferences>
+  if (
+    typeof commitMessagePrompt !== 'string' ||
+    commitMessagePrompt.length > 4000 ||
+    commitMessagePrompt.includes('\0')
+  )
+    throw new Error('提交信息提示词最多 4,000 字符，不能包含空字符。')
   if (
     terminalGpuAcceleration !== 'auto' &&
     terminalGpuAcceleration !== 'on' &&
@@ -80,6 +87,7 @@ export function preferences(value: unknown): Preferences {
   }
   return {
     terminalGpuAcceleration,
+    commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: shellPath as string | null,
     scrollback: scrollback!,

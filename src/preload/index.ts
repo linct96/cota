@@ -103,6 +103,8 @@ const api: DesktopAPI = {
   },
   gitDiff: (target, file) => ipcRenderer.invoke('git:diff', target, file),
   gitMutate: (input) => ipcRenderer.invoke('git:mutate', input),
+  generateCommitMessage: (input) => ipcRenderer.invoke('git:generate-commit-message', input),
+  cancelCommitMessage: (input) => ipcRenderer.invoke('git:cancel-commit-message', input),
   gitReferences: (target) => ipcRenderer.invoke('git:references', target),
   gitHistory: (target, request) => ipcRenderer.invoke('git:history', target, request),
   gitCompare: (target, request) => ipcRenderer.invoke('git:compare', target, request),

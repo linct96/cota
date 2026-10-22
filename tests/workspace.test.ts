@@ -76,6 +76,8 @@ beforeEach(() => {
     watchGit: vi.fn(() => vi.fn()),
     gitDiff: vi.fn(),
     gitMutate: vi.fn(),
+    generateCommitMessage: vi.fn(),
+    cancelCommitMessage: vi.fn(),
     gitReferences: vi.fn(),
     gitHistory: vi.fn(),
     gitCompare: vi.fn(),

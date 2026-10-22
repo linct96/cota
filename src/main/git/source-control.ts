@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { CommitMessageContext } from '../../shared/commit-message'
 import { isUtf8 } from 'node:buffer'
 import { constants } from 'node:fs'
 import { lstat, open, readlink, realpath, unlink } from 'node:fs/promises'
@@ -135,6 +136,65 @@ function explain(error: unknown): Error {
 
 export class SourceControlService {
   private readonly git = new GitService()
+
+  async commitMessageContext(cwd: string, indexVersion: string): Promise<CommitMessageContext> {
+    const status = await this.status(cwd)
+    this.checkCommitMessageStatus(status, indexVersion)
+    let patch = ''
+    try {
+      patch = await runGit(status.rootPath, [
+        'diff',
+        '--cached',
+        '--patch',
+        '--no-color',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--submodule=short',
+        '--find-renames',
+        '--',
+      ])
+    } catch (error) {
+      const cause = error instanceof Error ? error.cause : undefined
+      if (
+        !cause ||
+        typeof cause !== 'object' ||
+        !('code' in cause) ||
+        cause.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+      )
+        throw error
+    }
+    const context = {
+      rootPath: status.rootPath,
+      branch: status.branch,
+      indexVersion: status.indexVersion,
+      summary: status.entries
+        .filter((entry) => entry.area === 'staged')
+        .map(
+          (entry) =>
+            `${entry.status}\t${JSON.stringify(entry.path)}${entry.oldPath ? ` (from ${JSON.stringify(entry.oldPath)})` : ''}`,
+        )
+        .join('\n'),
+      patch,
+    }
+    await this.validateCommitMessageContext(cwd, context)
+    return context
+  }
+
+  async validateCommitMessageContext(cwd: string, context: CommitMessageContext): Promise<void> {
+    const status = await this.status(cwd)
+    this.checkCommitMessageStatus(status, context.indexVersion)
+    if (status.rootPath !== context.rootPath || status.branch !== context.branch)
+      throw new Error('工作目录或分支已改变，请刷新后重新生成提交信息。')
+  }
+
+  private checkCommitMessageStatus(status: GitStatus, indexVersion: string): void {
+    if (status.entries.some((entry) => entry.area === 'conflict'))
+      throw new Error('请先解决所有合并冲突。')
+    if (!status.entries.some((entry) => entry.area === 'staged'))
+      throw new Error('没有已暂存的更改。')
+    if (status.indexVersion !== indexVersion)
+      throw new Error('暂存区或 HEAD 已改变，请刷新后重新生成提交信息。')
+  }
 
   async status(cwd: string, includeStats = false): Promise<GitStatus> {
     try {

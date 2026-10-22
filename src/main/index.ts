@@ -32,6 +32,8 @@ import { WorktreeManager } from './git/worktree-manager'
 import { WorktreeError } from './git/git-worktrees'
 import { openWorkspaceWith } from './system/open-with'
 import { detectAgents } from './agents/registry'
+import { CommitMessageService } from './agents/commit-message-service'
+import type { CommitMessageRequest } from '../shared/commit-message'
 import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
 import { loginShellEnvironment, resolveShell, shellEnvironment } from './system/shell'
 import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
@@ -46,6 +48,7 @@ import {
   terminalId,
   terminalLaunch,
   workspaceRemoval,
+  workspaceTarget,
 } from './validation'
 import type {
   AttachTerminal,
@@ -67,6 +70,7 @@ let config: ConfigStore
 let accounts: AccountService
 let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
+const commitMessages = new CommitMessageService()
 const sourceControlWatches = new SourceControlWatches()
 const files = new FileExplorerService()
 const fileWatches = new FileExplorerWatches()
@@ -341,6 +345,37 @@ function installIPC(): void {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) =>
       sourceControl.status(binding.cwd, true),
+    )
+  })
+  handle('git:generate-commit-message', (input: CommitMessageRequest) => {
+    assertLifecycle()
+    const target = workspaceTarget(input)
+    const requestId = terminalId(input.requestId)
+    if (typeof input.indexVersion !== 'string' || !/^[\da-f]{64}$/.test(input.indexVersion))
+      throw new Error('暂存区版本无效，请刷新后重试。')
+    return commitMessages.generate(
+      `${target.projectPath}\0${target.workspaceId}`,
+      requestId,
+      config.snapshot().preferences,
+      (signal) =>
+        worktrees.withTerminalTarget(target, (binding) => {
+          signal.throwIfAborted()
+          assertLifecycle()
+          return sourceControl.commitMessageContext(binding.cwd, input.indexVersion)
+        }),
+      (context, signal) =>
+        worktrees.withTerminalTarget(target, (binding) => {
+          signal.throwIfAborted()
+          assertLifecycle()
+          return sourceControl.validateCommitMessageContext(binding.cwd, context)
+        }),
+    )
+  })
+  handle('git:cancel-commit-message', (input: WorkspaceTarget & { requestId: string }) => {
+    const target = workspaceTarget(input)
+    return commitMessages.cancel(
+      `${target.projectPath}\0${target.workspaceId}`,
+      terminalId(input.requestId),
     )
   })
   handle('git:watch', (target: WorkspaceTarget, id: unknown) => {
@@ -657,6 +692,7 @@ async function requestRestart(): Promise<void> {
   try {
     await config.flush()
     // Restart Main and the renderer without shutting down the detached terminal Host.
+    await commitMessages.close()
     app.relaunch()
     app.exit(0)
   } catch (error) {
@@ -685,6 +721,7 @@ async function requestExit(): Promise<void> {
     }
     await config.flush()
     await manager.request('shutdown', [])
+    await commitMessages.close()
     manager.disconnect()
     sourceControlWatches.close()
     fileWatches.close()
@@ -872,6 +909,7 @@ if (!app.requestSingleInstanceLock()) {
         }
       })
       const rendererUnavailable = () => {
+        void commitMessages.close()
         sourceControlWatches.close()
         fileWatches.close()
         rendererReady = false

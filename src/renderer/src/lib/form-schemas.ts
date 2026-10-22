@@ -4,6 +4,21 @@ import { worktreeBranchSegment } from '../../../shared/worktree-names'
 
 const absolutePathPattern = /^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i
 
+export const commitMessageFormSchema = z.object({
+  message: z
+    .string()
+    .max(20_000, '提交信息最多 20,000 字符。')
+    .refine((value) => !!value.trim(), '请输入提交信息。')
+    .refine((value) => !value.includes('\0'), '提交信息不能包含空字符。'),
+})
+
+export const commitMessageSettingsSchema = z.object({
+  prompt: z
+    .string()
+    .max(4_000, '自定义提示词最多 4,000 字符。')
+    .refine((value) => !value.includes('\0'), '提示词不能包含空字符。'),
+})
+
 export const shellFormSchema = z.object({
   name: z
     .string()

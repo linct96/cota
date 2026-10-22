@@ -1,4 +1,5 @@
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
+import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -21,6 +22,7 @@ export interface WorkspaceOpener {
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
 
 export interface Preferences {
+  commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
   shellName: string | null
   shellPath: string | null
@@ -407,6 +409,8 @@ export interface DesktopAPI {
   gitHistory(target: WorkspaceTarget, request?: GitHistoryRequest): Promise<Result<GitHistory>>
   gitCompare(target: WorkspaceTarget, request: GitCompareRequest): Promise<Result<GitComparison>>
   gitMutate(input: GitMutation): Promise<Result<boolean>>
+  generateCommitMessage(input: CommitMessageRequest): Promise<Result<CommitMessageResult>>
+  cancelCommitMessage(input: WorkspaceTarget & { requestId: string }): Promise<Result<void>>
   planGitWorktree(input: CreateWorktreeInput): Promise<Result<WorktreePlan>>
   worktreeBranches(path: string): Promise<Result<string[]>>
   suggestWorktreeName(path: string): Promise<Result<WorktreeNameSuggestion>>
@@ -459,6 +463,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   recentProjects: [],
   worktreeRecords: [],
   preferences: {
+    commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
     shellName: null,
     shellPath: null,

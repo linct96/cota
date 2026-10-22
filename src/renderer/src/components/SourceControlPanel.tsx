@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useForm } from '@tanstack/react-form'
+import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { toast } from 'sonner'
 import {
   ArrowDown,
@@ -17,6 +17,8 @@ import {
   Plus,
   RefreshCw,
   Sparkles,
+  LoaderCircle,
+  Square,
   Undo2,
 } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
@@ -30,6 +32,8 @@ import {
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-store'
 import { createSourceControlRefreshQueue } from '../lib/source-control-refresh'
 import { useSourceControlWatch } from '../lib/use-source-control-watch'
+import { useCommitMessageGeneration } from '../lib/use-commit-message-generation'
+import { commitMessageFormSchema } from '../lib/form-schemas'
 import { buildGitChangeTree } from '../lib/source-control-tree'
 import { cn } from '../lib/utils'
 import {
@@ -62,7 +66,8 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty'
-import { Field, FieldGroup } from './ui/field'
+import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from './ui/field'
+import { Alert, AlertDescription } from './ui/alert'
 import { Separator } from './ui/separator'
 import { Textarea } from './ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
@@ -131,6 +136,8 @@ export function SourceControlPanel({
   )
   const form = useForm({
     defaultValues: { message: session.draft },
+    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validators: { onDynamic: commitMessageFormSchema },
     onSubmitMeta: { push: false },
     onSubmit: async ({ value, meta }) => {
       if (
@@ -140,10 +147,13 @@ export function SourceControlPanel({
         status.entries.some((entry) => entry.area === 'conflict')
       )
         return
+      const message = value.message.trim()
+      form.setFieldValue('message', message)
+      update(workspace.id, { draft: message })
       const committed = await mutate({
         ...target,
         action: 'commit',
-        message: value.message,
+        message,
         indexVersion: status.indexVersion,
       })
       if (!committed || !meta.push || !mounted.current) return
@@ -171,6 +181,7 @@ export function SourceControlPanel({
       }
     },
   })
+  const generation = useCommitMessageGeneration(target)
 
   async function refresh() {
     if (writing.current) return
@@ -237,6 +248,7 @@ export function SourceControlPanel({
     setSyncing(input.action === 'sync')
     setError(undefined)
     try {
+      await generation.cancel()
       // Keep background reads silent without overlapping them with writes.
       await readTask.current
       if (!mounted.current) return false
@@ -824,27 +836,70 @@ export function SourceControlPanel({
               <CollapsibleContent className="source-control-commit-content" keepMounted>
                 <FieldGroup className="source-control-commit-fields">
                   <form.Field name="message">
-                    {(field) => (
-                      <Field className="source-control-commit-field" data-disabled={pending}>
-                        <Textarea
-                          id={`commit-${workspace.id}`}
-                          name={field.name}
-                          aria-label="提交信息"
-                          className="source-control-commit-message max-h-32 select-text"
-                          placeholder="描述本次更改…"
-                          maxLength={20000}
-                          value={field.state.value}
-                          disabled={pending}
-                          onBlur={field.handleBlur}
-                          onChange={(event) => {
-                            field.handleChange(event.target.value)
-                            update(workspace.id, { draft: event.target.value })
-                          }}
-                        />
-                      </Field>
-                    )}
+                    {(field) => {
+                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                      return (
+                        <Field
+                          className="source-control-commit-field"
+                          data-disabled={pending}
+                          data-invalid={invalid}
+                        >
+                          <FieldLabel
+                            className="source-control-commit-label sr-only"
+                            htmlFor={`commit-${workspace.id}`}
+                          >
+                            提交信息
+                          </FieldLabel>
+                          <Textarea
+                            id={`commit-${workspace.id}`}
+                            name={field.name}
+                            aria-label="提交信息"
+                            className="source-control-commit-message max-h-32 select-text"
+                            placeholder="描述本次更改…"
+                            maxLength={20000}
+                            value={field.state.value}
+                            aria-invalid={invalid}
+                            aria-describedby={`commit-description-${workspace.id}${invalid ? ` commit-error-${workspace.id}` : ''}`}
+                            disabled={pending}
+                            onBlur={field.handleBlur}
+                            onChange={(event) => {
+                              field.handleChange(event.target.value)
+                              update(workspace.id, { draft: event.target.value })
+                            }}
+                          />
+                          <FieldDescription
+                            id={`commit-description-${workspace.id}`}
+                            className="source-control-commit-description"
+                            role="status"
+                          >
+                            {generation.state === 'running'
+                              ? '正在使用 Pi 生成提交信息…'
+                              : generation.state === 'stopping'
+                                ? '正在停止生成…'
+                                : '仅提交已暂存的更改。'}
+                          </FieldDescription>
+                          {invalid && (
+                            <FieldError
+                              id={`commit-error-${workspace.id}`}
+                              className="source-control-commit-error"
+                              errors={field.state.meta.errors}
+                            />
+                          )}
+                        </Field>
+                      )
+                    }}
                   </form.Field>
                 </FieldGroup>
+                {generation.feedback && (
+                  <Alert
+                    className="source-control-generation-feedback"
+                    variant={generation.feedback.error ? 'destructive' : 'default'}
+                  >
+                    <AlertDescription className="source-control-generation-feedback-description">
+                      {generation.feedback.message}
+                    </AlertDescription>
+                  </Alert>
+                )}
               </CollapsibleContent>
               <div className="source-control-commit-actions flex min-w-0 items-center justify-between gap-1">
                 <CollapsibleTrigger
@@ -864,10 +919,33 @@ export function SourceControlPanel({
                   variant="ghost"
                   size="icon-sm"
                   className="source-control-generate-message ml-auto"
-                  aria-label="AI 生成提交信息（暂未开放）"
-                  title="AI 生成提交信息（暂未开放）"
+                  aria-label={
+                    generation.state === 'idle' ? '使用 Pi 生成提交信息' : '停止生成提交信息'
+                  }
+                  title={generation.state === 'idle' ? '使用 Pi 生成提交信息' : '停止生成提交信息'}
+                  disabled={
+                    generation.state === 'stopping' ||
+                    (generation.state === 'idle' && commitDisabled)
+                  }
+                  onClick={() => {
+                    setMessageExpanded(true)
+                    if (generation.state !== 'idle') {
+                      void generation.cancel().catch(() => {})
+                    } else if (status && !writing.current) {
+                      void generation.generate(status.indexVersion, (message) => {
+                        form.setFieldValue('message', message)
+                        update(workspace.id, { draft: message })
+                      })
+                    }
+                  }}
                 >
-                  <Sparkles className="source-control-generate-message-icon" />
+                  {generation.state === 'stopping' ? (
+                    <LoaderCircle className="source-control-generating-icon animate-spin" />
+                  ) : generation.state === 'running' ? (
+                    <Square className="source-control-stop-generation-icon" />
+                  ) : (
+                    <Sparkles className="source-control-generate-message-icon" />
+                  )}
                 </Button>
                 <form.Subscribe
                   selector={(state) => state.isSubmitting || !state.values.message.trim()}

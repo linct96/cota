@@ -9,6 +9,7 @@ interface SourceControlSession {
   preview: boolean
   previewAll: boolean
   draft: string
+  draftRevision: number
   status?: GitStatus
   refreshed: number
 }
@@ -18,6 +19,7 @@ export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
   mode: 'changes',
   baseRef: '',
   draft: '',
+  draftRevision: 0,
   refreshed: 0,
 }
 interface SourceControlState {
@@ -30,7 +32,10 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
   sessions: {},
   update(id, patch) {
     set((state) => {
-      const session = { ...(state.sessions[id] || EMPTY_SOURCE_CONTROL), ...patch }
+      const previous = state.sessions[id] || EMPTY_SOURCE_CONTROL
+      const session = { ...previous, ...patch }
+      if ('draft' in patch && patch.draft !== previous.draft)
+        session.draftRevision = previous.draftRevision + 1
       if (patch.file !== undefined) {
         session.selection = undefined
         session.previewAll = false

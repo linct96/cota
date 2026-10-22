@@ -5,6 +5,7 @@ import {
   Blocks,
   Download,
   Folder,
+  GitBranch,
   Keyboard,
   Mic,
   Navigation as NavigationIcon,
@@ -24,6 +25,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
 import { Input } from './ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { GeneralSettings } from './GeneralSettings'
+import { SourceControlSettings } from './SourceControlSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
 
@@ -46,6 +48,7 @@ const SETTING_GROUPS: SettingGroup[] = [
     items: [
       { id: 'general', label: '常规', icon: SettingsIcon },
       { id: 'terminal', label: '终端', icon: SquareTerminal },
+      { id: 'source-control', label: '源代码管理', icon: GitBranch },
       { id: 'import', label: '导入', icon: Download },
       { id: 'appearance', label: '外观', icon: Sun },
       { id: 'archived-chats', label: 'Archived chats', icon: Archive },
@@ -199,8 +202,13 @@ export function Settings() {
           <TabsContent value="open-with" className="mt-0">
             <OpenWithSettings />
           </TabsContent>
+          <TabsContent value="source-control" className="settings-source-control-content mt-0">
+            <SourceControlSettings />
+          </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
-            .filter((item) => !['general', 'terminal', 'open-with'].includes(item.id))
+            .filter(
+              (item) => !['general', 'terminal', 'open-with', 'source-control'].includes(item.id),
+            )
             .map((item) => (
               <TabsContent key={item.id} value={item.id} className="mt-0">
                 <div className="settings-section-header mb-6">
