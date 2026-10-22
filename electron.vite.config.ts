@@ -20,7 +20,15 @@ export default defineConfig({
   },
   preload: {},
   renderer: {
-    resolve: { alias: { '@': resolve('src/renderer/src') } },
+    resolve: {
+      alias: {
+        '@': resolve('src/renderer/src'),
+        // The ESM entry imports Node diagnostics; the bundled browser entry is self-contained.
+        '@xterm/addon-ligatures': resolve(
+          'node_modules/@xterm/addon-ligatures/lib/addon-ligatures.js',
+        ),
+      },
+    },
     plugins: [
       react(),
       tailwindcss(),

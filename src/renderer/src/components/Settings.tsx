@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AppWindow,
   Archive,
@@ -28,11 +28,13 @@ import { GeneralSettings } from './GeneralSettings'
 import { SourceControlSettings } from './SourceControlSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
+import { AppearanceSettings } from './AppearanceSettings'
 
 interface SettingItem {
   id: string
   label: string
   icon: React.ComponentType<{ className?: string }>
+  keywords?: string
 }
 
 interface SettingGroup {
@@ -50,7 +52,7 @@ const SETTING_GROUPS: SettingGroup[] = [
       { id: 'terminal', label: '终端', icon: SquareTerminal },
       { id: 'source-control', label: '源代码管理', icon: GitBranch },
       { id: 'import', label: '导入', icon: Download },
-      { id: 'appearance', label: '外观', icon: Sun },
+      { id: 'appearance', label: '外观', icon: Sun, keywords: '主题 自动 浅色 深色' },
       { id: 'archived-chats', label: 'Archived chats', icon: Archive },
       { id: 'voice', label: '语音', icon: Mic },
       { id: 'storage', label: '存储', icon: Folder },
@@ -77,6 +79,10 @@ export function Settings() {
   const [activeCategory, setActiveCategory] = useState('general')
   const [search, setSearch] = useState('')
   const titleId = useId()
+  const detailPane = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    detailPane.current?.scrollTo({ top: 0 })
+  }, [activeCategory])
 
   const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -86,7 +92,9 @@ export function Settings() {
       ...group,
       items: group.items.filter(
         (item) =>
-          item.label.toLowerCase().includes(query) || group.label.toLowerCase().includes(query),
+          item.label.toLowerCase().includes(query) ||
+          group.label.toLowerCase().includes(query) ||
+          !!item.keywords?.includes(query),
       ),
     })).filter((group) => group.items.length > 0)
   }, [search])
@@ -189,6 +197,7 @@ export function Settings() {
 
       {/* 右侧：设置详情内容区 */}
       <main
+        ref={detailPane}
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-card"
         aria-label="设置详情"
       >
@@ -205,9 +214,15 @@ export function Settings() {
           <TabsContent value="source-control" className="settings-source-control-content mt-0">
             <SourceControlSettings />
           </TabsContent>
+          <TabsContent value="appearance" className="settings-appearance-content mt-0">
+            <AppearanceSettings />
+          </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
             .filter(
-              (item) => !['general', 'terminal', 'open-with', 'source-control'].includes(item.id),
+              (item) =>
+                !['general', 'terminal', 'open-with', 'source-control', 'appearance'].includes(
+                  item.id,
+                ),
             )
             .map((item) => (
               <TabsContent key={item.id} value={item.id} className="mt-0">

@@ -8,6 +8,8 @@ import { installTerminalInput } from '../lib/terminal-input'
 import { installTerminalScroll } from '../lib/terminal-scroll'
 import { installTerminalWheel } from '../lib/terminal-wheel'
 import { shortenPath } from '../lib/utils'
+import { installTerminalAppearance, terminalAppearanceOptions } from '../lib/terminal-appearance'
+import { observeDocumentTheme } from '../lib/theme'
 
 export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
   const host = useRef<HTMLDivElement>(null)
@@ -30,56 +32,18 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
 
   useEffect(() => {
     const container = host.current
-    const tokens = getComputedStyle(document.documentElement)
-    const background = tokens.getPropertyValue('--surface-canvas').trim()
-    const foreground = tokens.getPropertyValue('--foreground').trim()
     const terminal = new Terminal({
-      cursorBlink: true,
-      cursorStyle: 'bar',
       cursorInactiveStyle: 'none',
-      fontSize: 14,
-      fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
-      lineHeight: 1.25,
       scrollback: useWorkspace.getState().preferences.scrollback,
       scrollbar: { width: 6 },
       scrollSensitivity: 1.15,
       fastScrollSensitivity: 5,
       macOptionIsMeta: false,
       macOptionClickForcesSelection: true,
-      minimumContrastRatio: 4.5,
-      theme: {
-        background,
-        foreground,
-        cursor: foreground,
-        cursorAccent: background,
-        overviewRulerBorder: 'transparent',
-        selectionBackground: tokens.getPropertyValue('--terminal-selection').trim(),
-        selectionInactiveBackground: tokens
-          .getPropertyValue('--terminal-selection-inactive')
-          .trim(),
-        scrollbarSliderBackground: tokens.getPropertyValue('--scrollbar-thumb').trim(),
-        scrollbarSliderHoverBackground: tokens.getPropertyValue('--scrollbar-thumb-hover').trim(),
-        scrollbarSliderActiveBackground: tokens.getPropertyValue('--scrollbar-thumb-active').trim(),
-        black: foreground,
-        red: tokens.getPropertyValue('--destructive').trim(),
-        green: '#15803d',
-        yellow: '#b45309',
-        blue: '#1d4ed8',
-        magenta: '#86198f',
-        cyan: '#0e7490',
-        white: '#e4e4e7',
-        brightBlack: tokens.getPropertyValue('--muted-foreground').trim(),
-        brightRed: '#ef4444',
-        brightGreen: '#22c55e',
-        brightYellow: '#eab308',
-        brightBlue: '#3b82f6',
-        brightMagenta: '#a855f7',
-        brightCyan: '#06b6d4',
-        brightWhite: '#fafafa',
-      },
       allowProposedApi: false,
       vtExtensions: { kittyKeyboard: true },
-      allowTransparency: false,
+      allowTransparency: true,
+      ...terminalAppearanceOptions(useWorkspace.getState().preferences.terminalAppearance),
     })
     const fit = new StableCellFitAddon()
     terminal.loadAddon(fit)
@@ -88,6 +52,21 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     const wheel = installTerminalWheel(terminal)
     const viewportFit = { fit: () => scrolling.preserve(() => fit.fit()) }
     const renderer = createTerminalRenderer(terminal, viewportFit)
+    const appearance = installTerminalAppearance(terminal, container!)
+    const updateAppearance = () => {
+      const settings = useWorkspace.getState().preferences
+      const ligaturesChanged = appearance.update(settings.terminalAppearance)
+      if (ligaturesChanged) {
+        renderer.update('off', false)
+        renderer.update(settings.terminalGpuAcceleration, !!container?.clientWidth)
+      }
+      fitAndResize()
+    }
+    const stopAppearance = useWorkspace.subscribe((state, previous) => {
+      if (state.preferences.terminalAppearance !== previous.preferences.terminalAppearance)
+        updateAppearance()
+    })
+    const stopTheme = observeDocumentTheme(updateAppearance)
     instance.current = { terminal, fit: viewportFit, renderer }
     let disposed = false
     let connected = false
@@ -161,8 +140,22 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       else pending.push(event)
     })
     const observer = new ResizeObserver(fitAndResize)
+    const showMouse = () => container?.classList.remove('terminal-mouse-hidden')
+    const hideMouse = (event: KeyboardEvent) => {
+      if (
+        useWorkspace.getState().preferences.terminalAppearance.mouseHideWhileTyping &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)
+      )
+        container?.classList.add('terminal-mouse-hidden')
+    }
+    container?.addEventListener('keydown', hideMouse)
+    container?.addEventListener('pointermove', showMouse)
+    container?.addEventListener('pointerleave', showMouse)
+    container?.addEventListener('blur', showMouse, true)
     observer.observe(host.current!)
-    fitAndResize()
+    updateAppearance()
     void (async () => {
       if (useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'starting')
         unwrap(
@@ -218,6 +211,13 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       scrolling.dispose()
       if (container) container.inert = false
       observer.disconnect()
+      container?.removeEventListener('keydown', hideMouse)
+      container?.removeEventListener('pointermove', showMouse)
+      container?.removeEventListener('pointerleave', showMouse)
+      container?.removeEventListener('blur', showMouse, true)
+      stopAppearance()
+      stopTheme()
+      appearance.dispose()
       unsubscribe()
       void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
       resize.dispose()
@@ -279,7 +279,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
           Exited · 退出码 {tab.exitCode ?? '未知'} · 请新建终端继续。
         </output>
       )}
-      <div className="terminal-screen-container relative min-h-0 flex-1 overflow-hidden pt-1.5 pl-1.5">
+      <div className="terminal-screen-container relative min-h-0 flex-1 overflow-hidden">
         <div ref={host} className="terminal-screen size-full overflow-hidden" />
       </div>
     </section>

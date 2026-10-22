@@ -1,5 +1,6 @@
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
+import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -20,8 +21,11 @@ export interface WorkspaceOpener {
 }
 
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
+export type ThemePreference = 'system' | 'light' | 'dark'
 
 export interface Preferences {
+  theme: ThemePreference
+  terminalAppearance: TerminalAppearance
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
   shellName: string | null
@@ -378,6 +382,7 @@ export interface ConfirmationRequest {
 export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
 
 export interface DesktopAPI {
+  readonly initialAppearance: { theme: ThemePreference; windowBlur: boolean }
   readonly accounts: import('./accounts').AccountsAPI
   readonly platform: string
   bootstrap(): Promise<
@@ -463,6 +468,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   recentProjects: [],
   worktreeRecords: [],
   preferences: {
+    theme: 'system',
+    terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
     shellName: null,

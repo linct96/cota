@@ -14,6 +14,7 @@ import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution.js'
 import workerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?worker&url'
 import { monacoColor } from './monaco-color'
+import { observeDocumentTheme } from './theme'
 
 // A same-origin module worker works under the existing CSP, without CDN or blob scripts.
 globalThis.MonacoEnvironment = { getWorker: () => new Worker(workerUrl, { type: 'module' }) }
@@ -21,7 +22,7 @@ globalThis.MonacoEnvironment = { getWorker: () => new Worker(workerUrl, { type: 
 export function configureMonacoTheme(): void {
   const tokens = getComputedStyle(document.documentElement)
   monaco.editor.defineTheme('cota-editor', {
-    base: 'vs',
+    base: document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs',
     inherit: true,
     rules: [],
     colors: {
@@ -37,6 +38,12 @@ export function configureMonacoTheme(): void {
     },
   })
 }
+
+const stopTheme = observeDocumentTheme(() => {
+  configureMonacoTheme()
+  monaco.editor.setTheme('cota-editor')
+})
+import.meta.hot?.dispose(stopTheme)
 
 export function languageForPath(path: string): string {
   const name = path.split('/').at(-1) || path

@@ -43,6 +43,7 @@ beforeEach(() => {
   useRightPanel.setState(useRightPanel.getInitialState(), true)
   useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
+    initialAppearance: { theme: 'system', windowBlur: false },
     accounts: {
       list: vi.fn(),
       add: vi.fn(),

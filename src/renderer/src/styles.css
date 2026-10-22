@@ -138,6 +138,22 @@
   --destructive: oklch(0.577 0.245 27.325);
   --terminal-selection: var(--accent);
   --terminal-selection-inactive: var(--muted);
+  --terminal-black: var(--foreground);
+  --terminal-red: #c42b1c;
+  --terminal-green: #15803d;
+  --terminal-yellow: #b45309;
+  --terminal-blue: #1d4ed8;
+  --terminal-magenta: #86198f;
+  --terminal-cyan: #0e7490;
+  --terminal-white: #e4e4e7;
+  --terminal-bright-black: var(--muted-foreground);
+  --terminal-bright-red: #ef4444;
+  --terminal-bright-green: #22c55e;
+  --terminal-bright-yellow: #eab308;
+  --terminal-bright-blue: #3b82f6;
+  --terminal-bright-magenta: #a855f7;
+  --terminal-bright-cyan: #06b6d4;
+  --terminal-bright-white: #fafafa;
   font-size: 16px;
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -753,6 +769,18 @@ button:not([data-slot='button']):focus-visible {
 .xterm {
   height: 100%;
 }
+.terminal-screen {
+  box-sizing: border-box;
+}
+.terminal-screen.terminal-mouse-hidden,
+.terminal-screen.terminal-mouse-hidden * {
+  cursor: none !important;
+}
+.window-blur body,
+.window-blur .app-container,
+.window-blur .workspace-content {
+  background: transparent;
+}
 /* 为末列字形保留缓冲，避免小数像素误差导致右侧笔画被裁切。 */
 .terminal-screen .xterm-rows > div {
   box-sizing: content-box;
@@ -838,6 +866,7 @@ button:not([data-slot='button']):focus-visible {
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --text-normal: oklch(0.87 0 0);
@@ -857,6 +886,18 @@ button:not([data-slot='button']):focus-visible {
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --source-control-stat-added: #86efac;
+  --source-control-editor-background: #262626;
+  --source-control-diff-added: #233b2a;
+  --source-control-diff-removed: #442727;
+  --titlebar-separator: var(--border);
+  --terminal-black: #282c34;
+  --terminal-red: #e06c75;
+  --terminal-green: #98c379;
+  --terminal-yellow: #e5c07b;
+  --terminal-blue: #61afef;
+  --terminal-magenta: #c678dd;
+  --terminal-cyan: #56b6c2;
+  --terminal-white: #dcdfe4;
   --file-icon-yellow: #d7b75f;
   --file-icon-blue: #80ace0;
   --file-icon-cyan: #79b6c8;

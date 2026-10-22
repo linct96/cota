@@ -30,9 +30,15 @@ export class StableCellFitAddon extends FitAddon {
     const width = Math.max(0, Number.parseInt(parentStyle.width, 10) || 0)
     const height = Math.max(0, Number.parseInt(parentStyle.height, 10) || 0)
     const paddingX =
-      (Number.parseInt(style.paddingLeft, 10) || 0) + (Number.parseInt(style.paddingRight, 10) || 0)
+      (Number.parseInt(style.paddingLeft, 10) || 0) +
+      (Number.parseInt(style.paddingRight, 10) || 0) +
+      (Number.parseInt(parentStyle.paddingLeft, 10) || 0) +
+      (Number.parseInt(parentStyle.paddingRight, 10) || 0)
     const paddingY =
-      (Number.parseInt(style.paddingTop, 10) || 0) + (Number.parseInt(style.paddingBottom, 10) || 0)
+      (Number.parseInt(style.paddingTop, 10) || 0) +
+      (Number.parseInt(style.paddingBottom, 10) || 0) +
+      (Number.parseInt(parentStyle.paddingTop, 10) || 0) +
+      (Number.parseInt(parentStyle.paddingBottom, 10) || 0)
     const scrollbarWidth =
       terminal.options.scrollback === 0 || terminal.options.scrollbar?.showScrollbar === false
         ? 0

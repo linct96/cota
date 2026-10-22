@@ -65,6 +65,14 @@ import type {
 type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject: boolean }
 
 let window: BrowserWindow | undefined
+let windowBlurEnabled = false
+
+function updateWindowBackground(): void {
+  if (window && !window.isDestroyed())
+    window.setBackgroundColor(
+      windowBlurEnabled ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#171717' : '#f0f0f0',
+    )
+}
 let manager: HostClient
 let config: ConfigStore
 let accounts: AccountService
@@ -515,10 +523,14 @@ function installIPC(): void {
   )
   handle('shell:default', () => resolveShell({ shellPath: null }))
   handle('preferences:save', async (value: unknown) => {
+    const previous = config.snapshot().preferences
     const next = preferences(value)
     if (next.shellPath) await executable(next.shellPath)
     await config.savePreferences(next)
-    await manager.request('setScrollback', [next.scrollback])
+    nativeTheme.themeSource = next.theme
+    updateWindowBackground()
+    if (next.scrollback !== previous.scrollback)
+      await manager.request('setScrollback', [next.scrollback])
     return next
   })
   handle('agent:detect', () => detectAgents(config.snapshot().preferences))
@@ -840,7 +852,6 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       app.setName(appName)
-      nativeTheme.themeSource = 'light'
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       accounts = new AccountService(
         join(app.getPath('userData'), 'cortana.sqlite3'),
@@ -850,6 +861,11 @@ if (!app.requestSingleInstanceLock()) {
         },
       )
       warning = (await config.load()).warning
+      nativeTheme.themeSource = config.snapshot().preferences.theme
+      windowBlurEnabled =
+        config.snapshot().preferences.terminalAppearance.windowBlur &&
+        ['darwin', 'win32'].includes(process.platform)
+      nativeTheme.on('updated', updateWindowBackground)
       worktrees = new WorktreeManager(
         config,
         join(homedir(), app.isPackaged ? '.cota' : '.cota-dev', 'worktrees'),
@@ -873,7 +889,21 @@ if (!app.requestSingleInstanceLock()) {
         height: 780,
         minWidth: 760,
         minHeight: 480,
-        backgroundColor: '#ffffff',
+        backgroundColor: windowBlurEnabled
+          ? '#00000000'
+          : nativeTheme.shouldUseDarkColors
+            ? '#171717'
+            : '#f0f0f0',
+        ...(windowBlurEnabled && process.platform === 'darwin'
+          ? {
+              vibrancy: 'under-window' as const,
+              visualEffectState: 'active' as const,
+              transparent: true,
+            }
+          : {}),
+        ...(windowBlurEnabled && process.platform === 'win32'
+          ? { backgroundMaterial: 'acrylic' as const }
+          : {}),
         show: false,
         title: appName,
         titleBarStyle:
@@ -881,6 +911,10 @@ if (!app.requestSingleInstanceLock()) {
         ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 14 } } : {}),
         autoHideMenuBar: process.platform === 'win32',
         webPreferences: {
+          additionalArguments: [
+            `--cota-theme=${config.snapshot().preferences.theme}`,
+            ...(windowBlurEnabled ? ['--cota-window-blur'] : []),
+          ],
           preload: join(__dirname, '../preload/index.js'),
           nodeIntegration: false,
           contextIsolation: true,

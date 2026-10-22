@@ -5,6 +5,7 @@ import { isWindows } from '../lib/platform'
 import { Check, SquareTerminal } from 'lucide-react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
+import { TerminalAppearanceSettings } from './TerminalAppearanceSettings'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
@@ -360,6 +361,7 @@ export function TerminalSettings() {
         )}
       </section>
 
+      <TerminalAppearanceSettings />
       {defaultShellError && (
         <p role="alert" className="terminal-settings-default-shell-error text-xs text-destructive">
           无法读取系统默认 Shell：{defaultShellError}

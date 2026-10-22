@@ -12,6 +12,14 @@ import type {
 } from '../shared/contracts'
 
 const api: DesktopAPI = {
+  initialAppearance: {
+    theme: process.argv.includes('--cota-theme=dark')
+      ? 'dark'
+      : process.argv.includes('--cota-theme=light')
+        ? 'light'
+        : 'system',
+    windowBlur: process.argv.includes('--cota-window-blur'),
+  },
   accounts: {
     list: (product) => ipcRenderer.invoke('accounts:list', product),
     add: (input) => ipcRenderer.invoke('accounts:add', input),

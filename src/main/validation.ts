@@ -16,6 +16,10 @@ import {
   type CreateWorktreeInput,
 } from '../shared/contracts'
 import { parseArguments } from '../shared/open-with'
+import {
+  DEFAULT_TERMINAL_APPEARANCE,
+  terminalAppearanceSchema,
+} from '../shared/terminal-appearance'
 
 export function absolutePath(value: unknown): string {
   if (
@@ -55,6 +59,8 @@ export async function executable(value: unknown): Promise<string> {
 export function preferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object') throw new Error('设置格式无效。')
   const {
+    theme = 'system',
+    terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
     shellName,
     shellPath,
     scrollback,
@@ -62,6 +68,7 @@ export function preferences(value: unknown): Preferences {
     terminalGpuAcceleration = 'auto',
     commitMessagePrompt = '',
   } = value as Partial<Preferences>
+  if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
   if (
     typeof commitMessagePrompt !== 'string' ||
     commitMessagePrompt.length > 4000 ||
@@ -86,6 +93,8 @@ export function preferences(value: unknown): Preferences {
     throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
   }
   return {
+    theme,
+    terminalAppearance: terminalAppearanceSchema.parse(terminalAppearance),
     terminalGpuAcceleration,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
