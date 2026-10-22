@@ -33,7 +33,7 @@ import { FileTypeIcon } from './components/FileTypeIcon'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from './lib/source-control-store'
 import { AgentMenu } from './components/AgentMenu'
-import { AgentStatus } from './components/AgentStatus'
+import { DotStatus } from './components/DotStatus'
 import { AgentIcon } from './components/AgentIcon'
 import {
   AGENT_STATE_LABELS,
@@ -88,7 +88,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from './components/ui/context-menu'
-import { cn } from './lib/utils'
+import { cn, shortenPath } from './lib/utils'
 import { useProjectBranches } from './lib/use-project-branches'
 import { shortcutModifier } from './lib/platform'
 
@@ -728,7 +728,7 @@ export function App() {
                                         aria-hidden="true"
                                       >
                                         {agentSummary && agentSummary.state !== 'other' ? (
-                                          <AgentStatus state={agentSummary.state} />
+                                          <DotStatus state={agentSummary.state} />
                                         ) : (
                                           <span
                                             className={cn(
@@ -782,49 +782,48 @@ export function App() {
                                             isSelected &&
                                             activeNavigation === 'home' &&
                                             state.activeTabs[workspace.id] === tab.id
-                                          const label = `${tab.title} · ${AGENT_STATE_LABELS[agentState]}`
+                                          const label = `${shortenPath(tab.cwd || tab.projectPath)} · ${AGENT_STATE_LABELS[agentState]}`
                                           return (
-                                            <Tooltip key={tab.id}>
-                                              <TooltipTrigger
-                                                render={<Button variant="project" size="icon" />}
-                                                className="project-item-agent-button relative text-inherit"
-                                                data-active={agentActive}
-                                                aria-pressed={agentActive}
-                                                aria-label={`定位到 ${label}`}
-                                                disabled={!state.ready || !!state.removingWorkspace}
-                                                onClick={async () => {
-                                                  if (
-                                                    isSelected ||
-                                                    (await state.selectProject(path, workspace.id))
-                                                  ) {
-                                                    state.selectTab(tab.id)
-                                                    setNavigation('home')
-                                                  }
-                                                }}
+                                            <Button
+                                              key={tab.id}
+                                              variant="project"
+                                              size="icon"
+                                              className="project-item-agent-button relative text-inherit"
+                                              data-active={agentActive}
+                                              aria-pressed={agentActive}
+                                              aria-label={`定位到 ${label}`}
+                                              disabled={!state.ready || !!state.removingWorkspace}
+                                              onClick={async () => {
+                                                if (
+                                                  isSelected ||
+                                                  (await state.selectProject(path, workspace.id))
+                                                ) {
+                                                  state.selectTab(tab.id)
+                                                  setNavigation('home')
+                                                }
+                                              }}
+                                            >
+                                              <span
+                                                className="project-item-agent-provider relative inline-flex size-3.5 shrink-0"
+                                                aria-hidden="true"
                                               >
-                                                <span
-                                                  className="project-item-agent-provider inline-flex"
-                                                  aria-hidden="true"
-                                                >
-                                                  <AgentIcon
-                                                    provider={tab.provider || tab.agent?.provider}
-                                                    size={16}
-                                                    className="project-item-agent-provider-icon size-4"
-                                                  />
-                                                </span>
+                                                <AgentIcon
+                                                  provider={tab.provider || tab.agent?.provider}
+                                                  size={14}
+                                                  className="project-item-agent-provider-icon size-3.5 shrink-0"
+                                                />
                                                 {agentIndicatorState(tab) !== 'other' && (
-                                                  <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-inherit p-px [&_.agent-status]:size-2.5">
-                                                    <AgentStatus state={agentState} />
+                                                  <span
+                                                    className={cn(
+                                                      'project-item-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2',
+                                                      agentActive ? 'bg-card' : 'bg-background',
+                                                    )}
+                                                  >
+                                                    <DotStatus state={agentState} />
                                                   </span>
                                                 )}
-                                              </TooltipTrigger>
-                                              <TooltipContent
-                                                side="bottom"
-                                                className="project-item-agent-tooltip"
-                                              >
-                                                {tab.title}
-                                              </TooltipContent>
-                                            </Tooltip>
+                                              </span>
+                                            </Button>
                                           )
                                         })}
                                       </fieldset>

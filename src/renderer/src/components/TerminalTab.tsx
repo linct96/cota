@@ -1,9 +1,9 @@
 import { useSortable } from '@dnd-kit/react/sortable'
 import { Terminal as TerminalIcon, X } from 'lucide-react'
 import { AgentIcon } from './AgentIcon'
-import { AgentStatus } from './AgentStatus'
-import { AGENT_STATE_LABELS, agentIndicatorState, agentTabState } from '../lib/agent-status'
-import { cn } from '../lib/utils'
+import { DotStatus } from './DotStatus'
+import { agentIndicatorState, AGENT_STATE_LABELS } from '../lib/agent-status'
+import { cn, shortenPath } from '../lib/utils'
 import type { TerminalTab as TerminalTabData } from '../store'
 
 export interface TerminalTabProps {
@@ -25,17 +25,18 @@ export function TerminalTab({
   onClose,
   className,
 }: TerminalTabProps) {
+  const path = tab.cwd || tab.projectPath
+  const title = shortenPath(path)
   const { ref } = useSortable({
     id: tab.id,
     index,
     group: tab.workspaceId,
     disabled: closeDisabled,
-    data: { title: tab.title },
+    data: { title },
   })
   const isAgent = tab.kind === 'agent' || !!tab.provider || !!tab.agent
   const provider = tab.provider || tab.agent?.provider
-  const agentState = agentIndicatorState(tab)
-  const agentLabel = isAgent ? AGENT_STATE_LABELS[agentTabState(tab)] : undefined
+  const agentState = isAgent ? agentIndicatorState(tab) : 'other'
 
   return (
     <div
@@ -45,9 +46,9 @@ export function TerminalTab({
       id={`terminal-tab-${tab.id}`}
       aria-selected={active}
       aria-controls={`terminal-panel-${tab.id}`}
-      aria-label={agentLabel ? `${tab.title}，${agentLabel}` : undefined}
+      aria-label={agentState === 'other' ? title : `${title}，${AGENT_STATE_LABELS[agentState]}`}
       tabIndex={active ? 0 : -1}
-      title={agentLabel ? `${tab.projectPath}\n${agentLabel}` : tab.projectPath}
+      title={path}
       onClick={(event) => {
         if (!event.defaultPrevented) onSelect()
       }}
@@ -68,51 +69,50 @@ export function TerminalTab({
         }
       }}
       className={cn(
-        'terminal-tab group/terminal-tab relative inline-flex h-8 w-40 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs/relaxed font-medium transition-colors select-none outline-none',
+        'terminal-tab workspace-tab group/terminal-tab relative inline-flex h-8 w-auto max-w-40 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs/relaxed font-medium transition-colors select-none outline-none',
         'focus-visible:ring-2 focus-visible:ring-ring/30',
-        active
-          ? 'bg-card text-foreground shadow-xs'
-          : 'bg-transparent text-accent-foreground hover:bg-terminal-tab-hover',
+        active && 'shadow-xs',
         className,
       )}
     >
       {isAgent ? (
-        <AgentIcon provider={provider} size={14} className="terminal-tab-icon size-3.5 shrink-0" />
+        <span className="terminal-tab-agent-icon relative inline-flex size-3.5 shrink-0">
+          <AgentIcon
+            provider={provider}
+            size={14}
+            className="terminal-tab-icon size-3.5 shrink-0"
+          />
+          {agentState !== 'other' && (
+            <span
+              className={cn(
+                'terminal-tab-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2',
+                active ? 'bg-card' : 'bg-background',
+              )}
+            >
+              <DotStatus state={agentState} />
+            </span>
+          )}
+        </span>
       ) : (
         <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
       )}
 
-      <span className="terminal-tab-title min-w-0 flex-1 truncate">{tab.title}</span>
+      <span className="terminal-tab-title min-w-0 flex-1 truncate">{title}</span>
 
-      <span className="terminal-tab-actions inline-grid size-4 shrink-0 place-items-center">
+      <span className="terminal-tab-actions pointer-events-none absolute inset-y-0 right-0 flex w-12 max-w-[calc(100%-1.5rem)] items-center justify-end rounded-r-md pr-2.5 opacity-0 transition-opacity group-focus-visible/terminal-tab:opacity-100 group-hover/terminal-tab:opacity-100 has-focus-visible:opacity-100 motion-reduce:transition-none">
         <button
           type="button"
           tabIndex={-1}
-          aria-label={`关闭 ${tab.title}`}
+          aria-label={`关闭 ${title}`}
           disabled={closeDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onClose()
           }}
-          className={cn(
-            'terminal-tab-close-button peer/terminal-tab-close col-start-1 row-start-1 inline-flex size-4 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none [&:disabled>svg]:opacity-30',
-            !isAgent && active
-              ? 'opacity-100'
-              : 'pointer-events-none opacity-0 group-hover/terminal-tab:pointer-events-auto group-hover/terminal-tab:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100',
-          )}
+          className="terminal-tab-close-button pointer-events-none relative inline-flex size-4 shrink-0 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors group-focus-visible/terminal-tab:pointer-events-auto group-hover/terminal-tab:pointer-events-auto focus-visible:pointer-events-auto hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none [&:disabled>svg]:opacity-30"
         >
           <X className="terminal-tab-close-icon size-3" />
         </button>
-
-        {isAgent && agentState !== 'other' && (
-          <span
-            className="terminal-tab-agent-status pointer-events-none col-start-1 row-start-1 inline-flex size-3.5 items-center justify-center group-hover/terminal-tab:opacity-0 peer-focus-visible/terminal-tab-close:opacity-0"
-            title={agentLabel}
-            aria-hidden="true"
-          >
-            <AgentStatus state={agentState} />
-          </span>
-        )}
       </span>
     </div>
   )

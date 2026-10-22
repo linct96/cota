@@ -195,12 +195,17 @@ describe('Worktree state transactions and recovery', () => {
     expect(state.worktreeRecords).toEqual([value.record])
     expect(currentWorkspace(state)).toEqual(value.workspace)
     expect(state.tabs).toHaveLength(1)
-    expect(state.tabs[0]).toMatchObject({ workspaceId: value.workspace.id, status: 'starting' })
+    expect(state.tabs[0]).toMatchObject({
+      workspaceId: value.workspace.id,
+      cwd: value.record.path,
+      status: 'starting',
+    })
     state.updateTab(state.tabs[0].id, { status: 'error', error: 'Shell startup failed' })
     expect(useWorkspace.getState().worktreeRecords).toEqual([value.record])
     expect(api.removeGitWorktree).not.toHaveBeenCalled()
     state.newTerminal()
     expect(useWorkspace.getState().tabs).toHaveLength(2)
+    expect(useWorkspace.getState().tabs[1].cwd).toBe(value.record.path)
   })
   it('keeps selection, tabs and workspace unchanged on partial create failure', async () => {
     await useWorkspace.getState().bootstrap()
@@ -1423,6 +1428,7 @@ describe('workspace state', () => {
       projectPath: path,
       workspaceId: workspace.id,
       title: 'Terminal 1',
+      cwd: path,
       status: 'starting',
     })
     expect(store().activeTabs[workspace.id]).toBe(first.id)

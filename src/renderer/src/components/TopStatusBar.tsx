@@ -3,7 +3,7 @@ import { OpenAI } from '@lobehub/icons'
 import {
   ArrowLeft,
   ArrowRight,
-  Folder,
+  Files,
   GitBranch,
   PanelRightClose,
   PanelRightOpen,
@@ -116,19 +116,21 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
               >
                 <TabsTrigger
                   value="files"
-                  className="right-panel-files-tab h-8 w-8 flex-none rounded-md bg-foreground/5 p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-foreground/10 [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
-                  aria-label="文件浏览"
-                  title="文件浏览"
+                  className="right-panel-files-tab workspace-tab h-8 flex-none cursor-pointer rounded-md border-0 px-2.5 transition-colors data-active:shadow-xs data-active:cursor-default"
+                  aria-label="文件"
+                  title="文件"
                 >
-                  <Folder className="right-panel-files-tab-icon" />
+                  <Files className="right-panel-files-tab-icon" />
+                  <span className="right-panel-files-tab-label">文件</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="git"
-                  className="right-panel-git-tab h-8 w-8 flex-none rounded-md bg-foreground/5 p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-foreground/10 [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
-                  aria-label="Git 管理"
-                  title="Git 管理"
+                  className="right-panel-git-tab workspace-tab h-8 flex-none cursor-pointer rounded-md border-0 px-2.5 transition-colors data-active:shadow-xs data-active:cursor-default"
+                  aria-label="Git"
+                  title="Git"
                 >
                   <GitBranch className="right-panel-git-tab-icon" />
+                  <span className="right-panel-git-tab-label">Git</span>
                 </TabsTrigger>
               </TabsList>
             </div>

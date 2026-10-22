@@ -100,9 +100,10 @@
   --project-action-active: #d6d6d6;
   --workspace-status-idle: var(--muted-foreground);
   --workspace-status-active: #16a34a;
-  --agent-status-neutral: var(--muted-foreground);
-  --agent-status-attention: #a16207;
-  --agent-status-completed: #166534;
+  --dot-status-neutral: var(--muted-foreground);
+  --dot-status-attention: #a16207;
+  --dot-status-completed: #299f51;
+  --dot-status-working: #38bdf8;
   --source-control-editor-background: #ffffff;
   --source-control-diff-added: #edf9ef;
   --source-control-diff-removed: #fff0f0;
@@ -192,8 +193,31 @@ body,
   padding: 0;
   border: 0;
 }
+.workspace-tab {
+  background-color: transparent;
+  color: var(--accent-foreground);
+}
+.workspace-tab:hover {
+  background-color: var(--terminal-tab-hover);
+}
+.workspace-tab[aria-selected='true'] {
+  background-color: var(--card);
+  color: var(--foreground);
+}
 .terminal-tab {
   touch-action: pan-y;
+}
+.terminal-tab-actions::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(var(--terminal-tab-hover), var(--terminal-tab-hover))
+    var(--background);
+  mask-image: linear-gradient(to right, transparent, #000 55%);
+}
+.terminal-tab[aria-selected='true'] .terminal-tab-actions::before {
+  background: var(--card);
 }
 .terminal-tab[data-dnd-dragging] {
   -webkit-app-region: no-drag;
@@ -207,6 +231,13 @@ body,
 }
 .terminal-tab[data-dnd-placeholder] {
   opacity: 0.35;
+}
+.terminal-tab-new-button {
+  color: var(--accent-foreground);
+}
+.terminal-tab-new-button:hover:not(:disabled) {
+  background-color: var(--terminal-tab-hover);
+  color: var(--accent-foreground);
 }
 .app-container[data-platform='win32'] {
   --window-controls-width: calc(3 * var(--window-control-width));
@@ -321,6 +352,14 @@ button:not([data-slot='button']):focus-visible {
   position: relative;
   z-index: 1;
 }
+.project-item-agent-button[data-active='false']:hover {
+  background-color: var(--terminal-tab-hover);
+}
+.project-item-agent-button[data-active='true'] {
+  background-color: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
 .project-folder-row,
 .source-control-group-header,
 .source-control-directory-row,
@@ -345,20 +384,54 @@ button:not([data-slot='button']):focus-visible {
 .source-control-file-row [data-slot='button'] {
   background: transparent;
 }
-.agent-status {
-  color: var(--agent-status-neutral);
+.dot-status {
+  color: var(--dot-status-neutral);
 }
-.agent-status[data-state='working'],
-.agent-status[data-state='needs-input'] {
-  color: var(--agent-status-attention);
+.dot-status-breath,
+.agent-dot-breath {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--dot-status-working);
+  display: inline-block;
+  vertical-align: middle;
 }
-.agent-status[data-state='completed'],
-.agent-status[data-state='succeeded'] {
-  color: var(--agent-status-completed);
+.dot-status-success {
+  border-radius: 50%;
+  background: currentColor;
 }
-.agent-status[data-state='error'],
-.agent-status[data-state='failed'] {
+.dot-status[data-state='needs-input'] {
+  color: var(--dot-status-attention);
+}
+.dot-status[data-state='completed'],
+.dot-status[data-state='succeeded'] {
+  color: var(--dot-status-completed);
+}
+.dot-status[data-state='error'],
+.dot-status[data-state='failed'] {
   color: var(--destructive);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dot-status-breath,
+  .agent-dot-breath {
+    animation: dot-status-breath 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+}
+@keyframes dot-status-breath {
+  0%,
+  100% {
+    transform: scale(0.9);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--dot-status-working) 25%, transparent),
+      0 0 3px color-mix(in srgb, var(--dot-status-working) 45%, transparent);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
+      0 0 8px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
+      0 0 13px color-mix(in srgb, var(--dot-status-working) 8%, transparent);
+  }
 }
 .source-control-commit-buttons [data-slot='button']:disabled {
   pointer-events: auto;
@@ -812,8 +885,9 @@ button:not([data-slot='button']):focus-visible {
   --project-active-foreground: oklch(0.985 0 0);
   --project-action-hover: oklch(0.32 0 0);
   --project-action-active: oklch(0.38 0 0);
-  --agent-status-attention: #fbbf24;
-  --agent-status-completed: #4ade80;
+  --dot-status-attention: #fbbf24;
+  --dot-status-completed: #35c264;
+  --dot-status-working: #38bdf8;
   --scrollbar-thumb: rgba(180, 180, 185, 0.4);
   --scrollbar-thumb-hover: rgba(180, 180, 185, 0.6);
   --scrollbar-thumb-active: rgba(180, 180, 185, 0.8);

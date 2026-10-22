@@ -572,12 +572,13 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     if (!workspace || get().creatingWorktree) return
     const selectedProject = workspace.projectPath
     const workspaceId = workspace.id
-    if (
-      workspace.kind === 'git-worktree' &&
-      get().worktreeScans[selectedProject]?.entries.find(
-        (entry) => entry.record.id === workspace.worktreeId,
-      )?.status !== 'ready'
-    ) {
+    const worktree =
+      workspace.kind === 'git-worktree'
+        ? get().worktreeScans[selectedProject]?.entries.find(
+            (entry) => entry.record.id === workspace.worktreeId,
+          )
+        : undefined
+    if (workspace.kind === 'git-worktree' && worktree?.status !== 'ready') {
       set({
         worktreeError: 'Worktree 不可用，请在“编辑”中重新检查或在终端中修复；不会回退到项目目录。',
       })
@@ -604,6 +605,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           projectPath: selectedProject,
           workspaceId,
           title: provider ? `${AGENT_PROVIDERS[provider].name} · ${number}` : `Terminal ${number}`,
+          cwd: worktree?.record.path || selectedProject,
           ...(provider ? { kind: 'agent' as const, provider, launchId: crypto.randomUUID() } : {}),
           status: 'starting',
         },
@@ -896,6 +898,7 @@ function adoptWorktree({ record, workspace, worktree }: CreateWorktreeResult): v
             projectPath: record.projectPath,
             workspaceId: workspace.id,
             title: 'Terminal 1',
+            cwd: record.path,
             status: 'starting',
           }
         : undefined

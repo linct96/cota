@@ -7,6 +7,7 @@ import { createTerminalRenderer } from '../lib/terminal-renderer'
 import { installTerminalInput } from '../lib/terminal-input'
 import { installTerminalScroll } from '../lib/terminal-scroll'
 import { installTerminalWheel } from '../lib/terminal-wheel'
+import { shortenPath } from '../lib/utils'
 
 export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
   const host = useRef<HTMLDivElement>(null)
@@ -259,7 +260,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       id={`terminal-panel-${tab.id}`}
       role="tabpanel"
       aria-labelledby={`terminal-tab-${tab.id}`}
-      aria-label={tab.title}
+      aria-label={shortenPath(tab.cwd || tab.projectPath)}
       tabIndex={0}
       hidden={!active}
       style={{ display: active ? 'flex' : 'none' }}
