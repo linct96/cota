@@ -623,6 +623,7 @@ function installIPC(): void {
     ],
     // Enter the existing exit guard directly; Windows IPC-triggered close events can be unreliable.
     ['app:close-window', () => void requestExit()],
+    ['app:restart', () => void requestRestart()],
   ] as const) {
     ipcMain.on(channel, (event) => {
       try {
@@ -632,6 +633,20 @@ function installIPC(): void {
         /* No capabilities for other frames. */
       }
     })
+  }
+}
+
+async function requestRestart(): Promise<void> {
+  if (exiting) return
+  exiting = true
+  try {
+    await config.flush()
+    // Restart Main and the renderer without shutting down the detached terminal Host.
+    app.relaunch()
+    app.exit(0)
+  } catch (error) {
+    exiting = false
+    dialog.showErrorBox('重新启动失败', String(error))
   }
 }
 

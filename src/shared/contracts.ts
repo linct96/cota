@@ -445,6 +445,7 @@ export interface DesktopAPI {
   isWindowMaximized(): Promise<Result<boolean>>
   onWindowMaximized(listener: (maximized: boolean) => void): () => void
   closeWindow(): void
+  restartApp(): void
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
   onTerminal(listener: (event: TerminalEvent) => void): () => void

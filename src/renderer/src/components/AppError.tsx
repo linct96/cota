@@ -1,10 +1,11 @@
 import type { ErrorComponentProps } from '@tanstack/react-router'
 import { TriangleAlert } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './ui/empty'
 import { WindowControls } from './WindowControls'
 
-export function AppError({ error, reset }: ErrorComponentProps) {
+export function AppError({ error }: ErrorComponentProps) {
   return (
     <div
       className="app-container app-error-page flex h-full flex-col bg-background text-foreground"
@@ -24,12 +25,12 @@ export function AppError({ error, reset }: ErrorComponentProps) {
               <h1 className="app-error-heading">界面暂时无法显示</h1>
             </EmptyTitle>
             <EmptyDescription className="app-error-description">
-              可以重试恢复界面，或退出应用。退出前会确认是否结束运行中的终端。
+              可以重新启动应用恢复界面，或退出应用。退出前会确认是否结束运行中的终端。
             </EmptyDescription>
           </EmptyHeader>
           <div className="app-error-actions flex flex-wrap justify-center gap-2">
-            <Button className="app-error-retry" onClick={reset}>
-              重试
+            <Button className="app-error-restart" onClick={() => window.desktop.restartApp()}>
+              重新启动
             </Button>
             <Button
               className="app-error-exit"
@@ -39,12 +40,17 @@ export function AppError({ error, reset }: ErrorComponentProps) {
               退出应用
             </Button>
           </div>
-          <details className="app-error-details w-full max-w-md text-left text-xs text-muted-foreground">
-            <summary className="app-error-details-toggle cursor-pointer py-1">错误详情</summary>
-            <pre className="app-error-message mt-2 max-h-40 overflow-auto whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
-              {error instanceof Error ? error.message : String(error)}
-            </pre>
-          </details>
+          <Alert
+            variant="destructive"
+            className="app-error-details max-h-48 w-full max-w-md shrink-0 gap-2 overflow-auto"
+          >
+            <AlertTitle className="app-error-details-title">错误详情</AlertTitle>
+            <AlertDescription className="app-error-alert-description">
+              <pre className="app-error-message whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+                {error instanceof Error ? error.message : String(error)}
+              </pre>
+            </AlertDescription>
+          </Alert>
         </Empty>
       </main>
     </div>

@@ -89,6 +89,7 @@ beforeEach(() => {
     savePreferences: vi.fn(async (value) => ({ ok: true as const, value })),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
     closeWindow: vi.fn(),
+    restartApp: vi.fn(),
     minimizeWindow: vi.fn(),
     toggleMaximizeWindow: vi.fn(),
     isWindowMaximized: vi.fn().mockResolvedValue({ ok: true, value: false }),

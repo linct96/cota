@@ -138,6 +138,7 @@ const api: DesktopAPI = {
     return () => ipcRenderer.removeListener('window:maximized-changed', wrapped)
   },
   closeWindow: () => ipcRenderer.send('app:close-window'),
+  restartApp: () => ipcRenderer.send('app:restart'),
   respondToConfirmation: (id, confirmed) =>
     ipcRenderer.invoke('app:confirm-response', id, confirmed),
   onConfirmation: (listener) => {
