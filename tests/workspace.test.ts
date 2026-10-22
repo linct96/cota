@@ -1710,6 +1710,47 @@ describe('workspace state', () => {
     expect(buildGitChangeTree([entries[0]])).toEqual([
       { kind: 'file', name: 'README.md', path: 'README.md', entry: entries[0] },
     ])
+
+    const compactEntries = [
+      'src/components/ui/button.tsx',
+      'src/components/ui/input.tsx',
+      'packages/app/main.ts',
+      'packages/README.md',
+      'README.md',
+    ].map((path) => ({ path }))
+    const compactOriginal = structuredClone(compactEntries)
+    const compactTree = buildGitChangeTree(compactEntries)
+    expect(compactTree.map((node) => node.name)).toEqual([
+      'packages',
+      'src/components/ui',
+      'README.md',
+    ])
+    const compactSource = compactTree[1]
+    if (compactSource.kind !== 'directory') throw new Error('Missing compact src directory')
+    expect(compactSource.path).toBe('src/components/ui')
+    expect(compactSource.entries).toEqual(compactEntries.slice(0, 2))
+    expect(compactSource.entries[0]).toBe(compactEntries[0])
+    expect(compactSource.children.map((node) => node.name)).toEqual(['button.tsx', 'input.tsx'])
+    expect(gitChangeRows(compactTree, new Set())).toContainEqual(
+      expect.objectContaining({
+        key: 'file:src/components/ui/button.tsx',
+        node: expect.objectContaining({ entry: compactEntries[0] }),
+        depth: 1,
+        parent: 'directory:src/components/ui',
+        position: 1,
+        siblings: 2,
+      }),
+    )
+    const compactCollapsed = gitChangeRows(compactTree, new Set(['src/components/ui']))
+    expect(compactCollapsed.map((row) => row.node.path)).toEqual([
+      'packages',
+      'packages/app',
+      'packages/app/main.ts',
+      'packages/README.md',
+      'src/components/ui',
+      'README.md',
+    ])
+    expect(compactEntries).toEqual(compactOriginal)
   })
 
   it('coalesces Git refreshes and retains trailing signals across reads and writes', async () => {

@@ -10,7 +10,7 @@ import {
   ChevronUp,
   Upload,
   CloudDownload,
-  Files,
+  FileDiff,
   GitBranch,
   GitCommitHorizontal,
   Minus,
@@ -373,7 +373,7 @@ export function SourceControlPanel({
                 update(workspace.id, { selection: undefined, preview: true, previewAll: true })
               }
             >
-              <Files className="source-control-view-all-icon" data-icon="inline-start" />
+              <FileDiff className="source-control-view-all-icon" data-icon="inline-start" />
               查看全部变更
             </Button>
             <Button
@@ -581,7 +581,7 @@ export function SourceControlPanel({
                                   aria-label={labels[entry.status] || '冲突'}
                                   title={labels[entry.status] || '冲突'}
                                 >
-                                  {entry.status}
+                                  {entry.status === '?' ? 'U' : entry.status}
                                 </span>
                               </div>
                               <div className="source-control-file-actions flex items-center gap-0.5">

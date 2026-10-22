@@ -69,5 +69,15 @@ export function buildGitChangeTree<T extends { path: string }>(
           : 1,
     )
   }
-  return root
+  function compact(node: GitChangeNode<T>): GitChangeNode<T> {
+    if (node.kind === 'file') return node
+    let directory = node
+    let name = node.name
+    while (directory.children.length === 1 && directory.children[0].kind === 'directory') {
+      directory = directory.children[0]
+      name += `/${directory.name}`
+    }
+    return { ...directory, name, children: directory.children.map(compact) }
+  }
+  return root.map(compact)
 }
