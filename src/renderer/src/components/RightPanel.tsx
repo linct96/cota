@@ -13,10 +13,12 @@ export function RightPanel({
   workspace,
   active,
   filesActive,
+  gitAvailable,
 }: {
   workspace?: ProjectWorkspace
   active: boolean
   filesActive: boolean
+  gitAvailable: boolean
 }) {
   const open = useRightPanel((state) => state.open)
   const [panel, panelRef] = usePanelCallbackRef()
@@ -68,24 +70,15 @@ export function RightPanel({
           aria-label="右侧工具面板"
           inert={!visible}
         >
-          <TabsContent
-            value="git"
-            keepMounted
-            className="right-panel-git-content flex min-h-0 flex-col overflow-hidden [&[hidden]]:hidden"
-          >
-            {workspace ? (
+          {gitAvailable && workspace && (
+            <TabsContent
+              value="git"
+              keepMounted
+              className="right-panel-git-content flex min-h-0 flex-col overflow-hidden [&[hidden]]:hidden"
+            >
               <SourceControlPanel key={workspace.id} workspace={workspace} active={visible} />
-            ) : (
-              <Empty className="right-panel-no-workspace rounded-none">
-                <EmptyHeader className="right-panel-no-workspace-header">
-                  <EmptyTitle className="right-panel-no-workspace-title">尚未选择工作区</EmptyTitle>
-                  <EmptyDescription className="right-panel-no-workspace-description">
-                    选择工作区后，在这里管理 Git 更改、历史和分支比较。
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-          </TabsContent>
+            </TabsContent>
+          )}
           <TabsContent
             value="files"
             keepMounted

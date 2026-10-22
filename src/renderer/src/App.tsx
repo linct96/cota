@@ -225,6 +225,9 @@ export function App() {
 
   const activeWorkspace = currentWorkspace(state)
   const workspaceId = activeWorkspace?.id
+  const repository = activeWorkspace && state.worktreeScans[activeWorkspace.projectPath]?.repository
+  const gitAvailable = !!repository && repository.status !== 'nonGit'
+  const activeRightTab = rightTab === 'git' && !gitAvailable ? 'files' : rightTab
   const currentTabs = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
   const activeId = state.activeTabs[workspaceId || '']
   const sourceControl = useSourceControl(
@@ -301,13 +304,14 @@ export function App() {
   return (
     <TooltipProvider delay={300}>
       <Tabs
-        value={rightTab}
+        value={activeRightTab}
         onValueChange={(value) => setRightTab(String(value))}
         className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-background text-foreground select-none"
         data-platform={window.desktop.platform}
       >
         <TopStatusBar
           secondaryPageOpen={secondaryPageOpen}
+          gitAvailable={gitAvailable}
           sidebarWidth={secondaryPageOpen ? 240 : projectSidebarWidth + 1}
           onBack={() => void router.navigate({ to: '/' })}
         >
@@ -1104,7 +1108,8 @@ export function App() {
               <RightPanel
                 workspace={activeWorkspace}
                 active={!secondaryPageOpen}
-                filesActive={rightTab === 'files'}
+                filesActive={activeRightTab === 'files'}
+                gitAvailable={gitAvailable}
               />
             </ResizablePanelGroup>
 

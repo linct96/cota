@@ -19,6 +19,7 @@ import { WindowControls } from './WindowControls'
 
 interface TopStatusBarProps {
   secondaryPageOpen: boolean
+  gitAvailable: boolean
   sidebarWidth: number
   onBack(): void
   children?: ReactNode
@@ -26,6 +27,7 @@ interface TopStatusBarProps {
 
 export function TopStatusBar({
   secondaryPageOpen,
+  gitAvailable,
   sidebarWidth,
   onBack,
   children,
@@ -128,15 +130,17 @@ export function TopStatusBar({
                   <Files className="right-panel-files-tab-icon" />
                   <span className="right-panel-files-tab-label">文件</span>
                 </TabsTrigger>
-                <TabsTrigger
-                  value="git"
-                  className="right-panel-git-tab workspace-tab h-8 flex-none cursor-pointer rounded-md border-0 px-2.5 transition-colors data-active:shadow-xs data-active:cursor-default"
-                  aria-label="Git"
-                  title="Git"
-                >
-                  <GitBranch className="right-panel-git-tab-icon" />
-                  <span className="right-panel-git-tab-label">Git</span>
-                </TabsTrigger>
+                {gitAvailable && (
+                  <TabsTrigger
+                    value="git"
+                    className="right-panel-git-tab workspace-tab h-8 flex-none cursor-pointer rounded-md border-0 px-2.5 transition-colors data-active:shadow-xs data-active:cursor-default"
+                    aria-label="Git"
+                    title="Git"
+                  >
+                    <GitBranch className="right-panel-git-tab-icon" />
+                    <span className="right-panel-git-tab-label">Git</span>
+                  </TabsTrigger>
+                )}
               </TabsList>
             </div>
             <Tooltip>
