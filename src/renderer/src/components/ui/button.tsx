@@ -11,13 +11,13 @@ const buttonVariants = cva(
         outline:
           'border-border hover:not-disabled:bg-input/50 hover:not-disabled:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:bg-input/30',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
+          'bg-secondary text-secondary-foreground hover:bg-secondary-hover aria-expanded:bg-secondary aria-expanded:text-secondary-foreground',
         ghost:
           'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50',
         navigation:
-          'text-muted-foreground hover:bg-foreground/3 hover:text-foreground data-[active=true]:bg-foreground/6 data-[active=true]:text-foreground data-[active=true]:hover:bg-foreground/6',
+          'text-app-muted-foreground hover:bg-foreground/3 hover:text-foreground data-[active=true]:bg-foreground/6 data-[active=true]:text-foreground data-[active=true]:hover:bg-foreground/6',
         project:
-          'text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
+          'text-app-muted-foreground hover:bg-accent hover:text-accent-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
         'window-control':
           'rounded-none text-foreground hover:bg-window-control-hover focus-visible:ring-inset active:not-aria-[haspopup]:translate-y-0 data-[window-action=close]:hover:bg-window-close-hover data-[window-action=close]:hover:text-window-close-foreground',
         destructive:

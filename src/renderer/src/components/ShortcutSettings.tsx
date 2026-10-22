@@ -210,7 +210,7 @@ export function ShortcutSettings() {
                   全部恢复默认
                 </Button>
                 <div className="shortcut-settings-save-actions flex items-center gap-3">
-                  <output className="shortcut-settings-status text-xs text-muted-foreground">
+                  <output className="shortcut-settings-status text-xs text-app-muted-foreground">
                     {saved ? '已保存' : ''}
                   </output>
                   <Button className="shortcut-settings-save" type="submit">

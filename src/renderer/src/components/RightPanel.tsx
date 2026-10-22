@@ -64,7 +64,7 @@ export function RightPanel({
         <aside
           id="right-panel-content"
           className={cn(
-            'right-panel min-h-0 min-w-0 flex-1 flex-col bg-card',
+            'right-panel min-h-0 min-w-0 flex-1 flex-col bg-background',
             visible ? 'flex' : 'hidden',
           )}
           aria-label="右侧工具面板"

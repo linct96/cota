@@ -551,7 +551,7 @@ export function SourceControlPanel({
                                 {name}
                               </span>
                               {entry.submodule && (
-                                <span className="source-control-submodule text-muted-foreground">
+                                <span className="source-control-submodule text-app-muted-foreground">
                                   子模块
                                 </span>
                               )}
@@ -589,7 +589,7 @@ export function SourceControlPanel({
                                   )}
                                 </span>
                                 <span
-                                  className="source-control-file-status shrink-0 font-mono text-muted-foreground"
+                                  className="source-control-file-status shrink-0 font-mono text-app-muted-foreground"
                                   aria-label={labels[entry.status] || '冲突'}
                                   title={labels[entry.status] || '冲突'}
                                 >
@@ -700,7 +700,7 @@ export function SourceControlPanel({
                                 {branch.label}
                               </span>
                               {occupied && (
-                                <span className="source-control-branch-occupied shrink-0 text-muted-foreground">
+                                <span className="source-control-branch-occupied shrink-0 text-app-muted-foreground">
                                   已占用
                                 </span>
                               )}

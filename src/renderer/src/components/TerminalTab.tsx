@@ -2,6 +2,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { Terminal as TerminalIcon, X } from 'lucide-react'
 import { AgentIcon } from './AgentIcon'
 import { DotStatus } from './DotStatus'
+import { buttonVariants } from './ui/button'
 import { agentIndicatorState, AGENT_STATE_LABELS } from '../lib/agent-status'
 import { cn, shortenPath } from '../lib/utils'
 import type { TerminalTab as TerminalTabData } from '../store'
@@ -69,8 +70,8 @@ export function TerminalTab({
         }
       }}
       className={cn(
-        'terminal-tab workspace-tab group/terminal-tab relative inline-flex h-8 w-auto max-w-40 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs/relaxed font-medium transition-colors select-none outline-none',
-        'focus-visible:ring-2 focus-visible:ring-ring/30',
+        buttonVariants({ variant: 'secondary', size: 'lg' }),
+        'terminal-tab group/terminal-tab relative w-auto max-w-40 cursor-pointer gap-1.5 border-0 bg-muted text-foreground transition-colors hover:bg-muted-hover motion-reduce:transition-none',
         active && 'shadow-xs',
         className,
       )}
@@ -83,12 +84,7 @@ export function TerminalTab({
             className="terminal-tab-icon size-3.5 shrink-0"
           />
           {agentState !== 'other' && (
-            <span
-              className={cn(
-                'terminal-tab-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2',
-                active ? 'bg-card' : 'bg-background',
-              )}
-            >
+            <span className="terminal-tab-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2">
               <DotStatus state={agentState} />
             </span>
           )}
@@ -109,7 +105,7 @@ export function TerminalTab({
             event.stopPropagation()
             onClose()
           }}
-          className="terminal-tab-close-button pointer-events-none relative inline-flex size-4 shrink-0 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors group-focus-visible/terminal-tab:pointer-events-auto group-hover/terminal-tab:pointer-events-auto focus-visible:pointer-events-auto hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none [&:disabled>svg]:opacity-30"
+          className="terminal-tab-close-button pointer-events-none relative inline-flex size-4 shrink-0 items-center justify-center rounded-xs text-app-muted-foreground/80 transition-colors group-focus-visible/terminal-tab:pointer-events-auto group-hover/terminal-tab:pointer-events-auto focus-visible:pointer-events-auto hover:bg-foreground/10 hover:text-foreground active:scale-90 focus-visible:outline-none disabled:pointer-events-none [&:disabled>svg]:opacity-30"
         >
           <X className="terminal-tab-close-icon size-3" />
         </button>

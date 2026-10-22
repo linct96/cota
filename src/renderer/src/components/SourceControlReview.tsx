@@ -157,7 +157,7 @@ export function SourceControlReview({
             返回列表
           </Button>
           {comparison && (
-            <span className="source-control-history-range min-w-0 truncate text-xs text-muted-foreground select-text">
+            <span className="source-control-history-range min-w-0 truncate text-xs text-app-muted-foreground select-text">
               {comparison.base?.slice(0, 8) || '空树'} → {comparison.head.slice(0, 8)}
             </span>
           )}
@@ -197,7 +197,7 @@ export function SourceControlReview({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <p className="source-control-base-help text-xs text-muted-foreground">
+            <p className="source-control-base-help text-xs text-app-muted-foreground">
               仅比较共同祖先到 HEAD 的已提交改动，不含暂存区或工作文件；远端引用以最近一次 Fetch
               为准。
             </p>
@@ -242,7 +242,7 @@ export function SourceControlReview({
                       <span className="source-control-history-subject truncate">
                         {item.subject || '（无提交标题）'}
                       </span>
-                      <span className="source-control-history-metadata truncate text-muted-foreground">
+                      <span className="source-control-history-metadata truncate text-app-muted-foreground">
                         {item.oid.slice(0, 8)} · {item.author} ·{' '}
                         <time className="source-control-history-date" dateTime={item.date}>
                           {new Date(item.date).toLocaleDateString()}
@@ -265,21 +265,21 @@ export function SourceControlReview({
               </Button>
             )}
             {!!history?.commits.length && (
-              <p className="source-control-history-limit px-2 text-xs text-muted-foreground">
+              <p className="source-control-history-limit px-2 text-xs text-app-muted-foreground">
                 当前 HEAD 的历史，每页 50 条，最多 10,000 条。
               </p>
             )}
           </>
         )}
         {mode === 'compare' && !head && (
-          <p className="source-control-compare-unborn p-2 text-xs text-muted-foreground">
+          <p className="source-control-compare-unborn p-2 text-xs text-app-muted-foreground">
             当前分支还没有提交，暂不能比较。
           </p>
         )}
         {comparison && (
           <>
             {mode === 'compare' && (
-              <p className="source-control-comparison-summary px-2 text-xs text-muted-foreground select-text">
+              <p className="source-control-comparison-summary px-2 text-xs text-app-muted-foreground select-text">
                 {comparison.label}
                 <br className="source-control-comparison-break" />
                 {comparison.base?.slice(0, 8) || '空树'} → {comparison.head.slice(0, 8)} ·{' '}
@@ -287,7 +287,7 @@ export function SourceControlReview({
               </p>
             )}
             {!comparison.entries.length && (
-              <p className="source-control-comparison-empty px-2 text-xs text-muted-foreground">
+              <p className="source-control-comparison-empty px-2 text-xs text-app-muted-foreground">
                 没有文件差异。
               </p>
             )}
@@ -333,7 +333,7 @@ export function SourceControlReview({
                       <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
                         {name}
                       </span>
-                      <span className="source-control-review-status shrink-0 font-mono text-muted-foreground">
+                      <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
                         {entry.status}
                       </span>
                     </Button>

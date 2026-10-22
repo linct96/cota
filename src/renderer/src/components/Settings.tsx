@@ -119,7 +119,7 @@ export function Settings() {
         if (typeof val === 'string') setActiveCategory(val)
       }}
       aria-labelledby={titleId}
-      className="settings-layout flex min-h-0 flex-1 gap-0 overflow-hidden rounded-tl-2xl border-t border-l bg-card text-foreground"
+      className="settings-layout flex min-h-0 flex-1 gap-0 overflow-hidden rounded-tl-2xl border-t border-l bg-background text-foreground"
     >
       {/* 左侧：设置导航栏 */}
       <aside
@@ -135,7 +135,7 @@ export function Settings() {
         <div className="settings-search shrink-0 px-2 pb-2">
           <div className="settings-search-wrapper relative flex items-center">
             <Search
-              className="settings-search-icon pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground"
+              className="settings-search-icon pointer-events-none absolute left-2.5 size-3.5 text-app-muted-foreground"
               aria-hidden="true"
             />
             <Input
@@ -154,7 +154,7 @@ export function Settings() {
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                className="settings-search-clear absolute right-1 size-5 text-muted-foreground hover:text-foreground"
+                className="settings-search-clear absolute right-1 size-5 text-app-muted-foreground hover:text-foreground"
                 onClick={() => setSearch('')}
                 aria-label="清空搜索"
               >
@@ -193,12 +193,12 @@ export function Settings() {
           ))}
 
           {!filteredGroups.length && (
-            <Empty className="settings-search-empty py-8 text-muted-foreground">
+            <Empty className="settings-search-empty py-8 text-app-muted-foreground">
               <EmptyHeader className="settings-search-empty-header">
                 <EmptyTitle className="settings-search-empty-title text-xs font-medium">
                   未找到相关设置
                 </EmptyTitle>
-                <EmptyDescription className="settings-search-empty-description text-xs text-muted-foreground">
+                <EmptyDescription className="settings-search-empty-description text-xs text-app-muted-foreground">
                   没有与 &ldquo;{search}&rdquo; 匹配的设置项
                 </EmptyDescription>
               </EmptyHeader>
@@ -210,7 +210,7 @@ export function Settings() {
       {/* 右侧：设置详情内容区 */}
       <main
         ref={detailPane}
-        className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-card"
+        className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
         aria-label="设置详情"
       >
         <div className="settings-detail-container mx-auto w-full max-w-2xl p-8">
@@ -258,11 +258,11 @@ export function Settings() {
                   <h3 className="settings-section-title text-base font-semibold text-foreground">
                     {item.label}
                   </h3>
-                  <p className="settings-description mt-1 text-xs text-muted-foreground">
+                  <p className="settings-description mt-1 text-xs text-app-muted-foreground">
                     该功能暂未开放配置。
                   </p>
                 </div>
-                <Card className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground shadow-none ring-0">
+                <Card className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-app-muted-foreground shadow-none ring-0">
                   此项设置暂未开放，请前往「终端」查看终端配置。
                 </Card>
               </TabsContent>

@@ -69,7 +69,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
                 <span className="workspace-agent-provider-name flex-1">
                   {AGENT_PROVIDERS[provider].name}
                 </span>
-                <span className="workspace-agent-provider-version text-muted-foreground">
+                <span className="workspace-agent-provider-version text-app-muted-foreground">
                   {loading ? null : available ? result.version || '版本未知' : '未检测到'}
                 </span>
               </ContextMenuItem>
@@ -86,7 +86,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
           </ContextMenuItem>
         </ContextMenuGroup>
         <p
-          className="workspace-agent-help max-w-64 px-2 py-1.5 text-xs text-muted-foreground"
+          className="workspace-agent-help max-w-64 px-2 py-1.5 text-xs text-app-muted-foreground"
           role={error ? 'alert' : undefined}
         >
           {error ||

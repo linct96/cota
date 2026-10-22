@@ -306,7 +306,7 @@ export function App() {
       <Tabs
         value={activeRightTab}
         onValueChange={(value) => setRightTab(String(value))}
-        className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-background text-foreground select-none"
+        className="app-container flex h-screen w-screen flex-col gap-0 overflow-hidden bg-muted text-foreground select-none"
         data-platform={window.desktop.platform}
       >
         <TopStatusBar
@@ -491,7 +491,7 @@ export function App() {
             <ResizablePanelGroup
               orientation="horizontal"
               className={cn(
-                'workspace-content app-panels flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card',
+                'workspace-content app-panels flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background',
                 // Group 强制内联 display: flex，隐藏时必须覆盖它并保留终端挂载。
                 secondaryPageOpen && 'hidden!',
               )}
@@ -509,7 +509,7 @@ export function App() {
                 style={{ overflow: 'hidden' }}
               >
                 <aside
-                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-muted/40 text-muted-foreground"
+                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-muted/40 text-app-muted-foreground"
                   aria-label="项目"
                 >
                   <div className="project-header group/header flex h-12 shrink-0 items-center justify-between px-4">
@@ -707,8 +707,8 @@ export function App() {
                                     className={cn(
                                       'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
                                       isSelected
-                                        ? 'project-item-active bg-accent text-accent-foreground'
-                                        : 'project-item-inactive text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+                                        ? 'project-item-active bg-sidebar-accent text-sidebar-accent-foreground'
+                                        : 'project-item-inactive text-app-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                                     )}
                                     onContextMenu={(event) => {
                                       menuTrigger.current =
@@ -770,7 +770,7 @@ export function App() {
                                         )}
                                       {branch && (
                                         <span
-                                          className="project-item-branch col-start-2 truncate text-xs leading-4 font-normal text-muted-foreground"
+                                          className="project-item-branch col-start-2 truncate text-xs leading-4 font-normal text-app-muted-foreground"
                                           title={branch}
                                         >
                                           {branch}
@@ -822,7 +822,7 @@ export function App() {
                                                   <span
                                                     className={cn(
                                                       'project-item-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2',
-                                                      agentActive ? 'bg-card' : 'bg-background',
+                                                      agentActive ? 'bg-background' : 'bg-muted',
                                                     )}
                                                   >
                                                     <DotStatus state={agentState} />
@@ -1057,12 +1057,12 @@ export function App() {
                     })}
                     {!state.selectedProject && (
                       <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                        <FolderOpen className="workspace-empty-icon size-6 text-muted-foreground" />
+                        <FolderOpen className="workspace-empty-icon size-6 text-app-muted-foreground" />
                         <div className="workspace-empty-content">
                           <h3 className="workspace-empty-title text-sm font-medium text-foreground">
                             {projects.length ? '未选择工作区' : '没有打开的项目'}
                           </h3>
-                          <p className="workspace-empty-desc mt-1 text-xs text-muted-foreground">
+                          <p className="workspace-empty-desc mt-1 text-xs text-app-muted-foreground">
                             {projects.length
                               ? `从左侧选择一个工作区，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`
                               : `从左侧选择最近项目，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`}
@@ -1082,12 +1082,12 @@ export function App() {
                     )}
                     {state.selectedProject && !currentTabs.length && (
                       <div className="terminal-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                        <TerminalIcon className="terminal-empty-icon size-6 text-muted-foreground" />
+                        <TerminalIcon className="terminal-empty-icon size-6 text-app-muted-foreground" />
                         <div className="terminal-empty-content">
                           <h3 className="terminal-empty-title text-sm font-medium text-foreground">
                             当前工作区没有运行中的终端
                           </h3>
-                          <p className="terminal-empty-desc mt-1 text-xs text-muted-foreground">
+                          <p className="terminal-empty-desc mt-1 text-xs text-app-muted-foreground">
                             点击上方 + 按钮，或使用快捷键 {shortcutLabel('new-terminal')} 新建终端。
                           </p>
                         </div>
@@ -1202,11 +1202,11 @@ export function App() {
                   className="workspace-worktree-details flex flex-col gap-2 text-xs"
                   aria-label="工作树信息"
                 >
-                  <p className="workspace-worktree-path break-all text-muted-foreground">
+                  <p className="workspace-worktree-path break-all text-app-muted-foreground">
                     {editingRecord.path}
                   </p>
                   <output
-                    className="workspace-worktree-status text-muted-foreground"
+                    className="workspace-worktree-status text-app-muted-foreground"
                     aria-busy={checkingWorktree}
                   >
                     {!checkingWorktree &&
@@ -1377,7 +1377,7 @@ export function App() {
                   : '将结束该工作区的所有终端和程序，终端输出不保留。不影响其他工作区或本地文件。'}
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <p className="workspace-removal-name min-w-0 text-xs break-all text-muted-foreground">
+            <p className="workspace-removal-name min-w-0 text-xs break-all text-app-muted-foreground">
               {projectToRemove ||
                 (pendingWorkspace &&
                   `${folderName(pendingWorkspace.projectPath)} / ${pendingWorkspace.name}`)}

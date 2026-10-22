@@ -180,13 +180,13 @@ export function TerminalSettings() {
         </div>
       </div>
 
-      <Card className="terminal-settings-card divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/80 bg-card py-0 shadow-xs ring-0">
+      <Card className="terminal-settings-card divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/80 bg-background py-0 shadow-xs ring-0">
         <div className="terminal-settings-row flex min-h-[4.25rem] items-center justify-between gap-4 px-5 py-4">
           <div className="terminal-settings-row-text flex min-w-0 flex-col gap-0.5 pr-2">
             <span className="terminal-settings-row-title text-sm font-medium text-foreground">
               默认终端 Shell
             </span>
-            <span className="terminal-settings-row-desc text-xs text-muted-foreground">
+            <span className="terminal-settings-row-desc text-xs text-app-muted-foreground">
               新建终端时启动的命令行解释器，以交互式登录模式启动（-il）
             </span>
           </div>
@@ -208,7 +208,7 @@ export function TerminalSettings() {
                 aria-label="默认终端 Shell"
                 className="terminal-settings-select-trigger h-8 max-w-64 gap-2 rounded-lg px-3 text-xs font-normal"
               >
-                <SquareTerminal className="terminal-settings-shell-icon size-3.5 text-muted-foreground" />
+                <SquareTerminal className="terminal-settings-shell-icon size-3.5 text-app-muted-foreground" />
                 <SelectValue className="terminal-settings-shell-value truncate">
                   <span
                     className="terminal-settings-shell-label truncate"
@@ -254,7 +254,7 @@ export function TerminalSettings() {
             <span className="terminal-settings-row-title text-sm font-medium text-foreground">
               滚动缓冲行数
             </span>
-            <span className="terminal-settings-row-desc text-xs text-muted-foreground">
+            <span className="terminal-settings-row-desc text-xs text-app-muted-foreground">
               终端保留的最大历史输出行数（范围 1,000–20,000，减小会丢弃旧输出）
             </span>
           </div>
@@ -317,7 +317,7 @@ export function TerminalSettings() {
         >
           渲染
         </h4>
-        <Card className="terminal-rendering-card overflow-hidden rounded-2xl border border-border/80 bg-card py-0 shadow-xs ring-0">
+        <Card className="terminal-rendering-card overflow-hidden rounded-2xl border border-border/80 bg-background py-0 shadow-xs ring-0">
           <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-4 px-5 py-4">
             <div className="terminal-gpu-description flex min-w-0 flex-1 flex-col gap-0.5">
               <FieldLabel id="terminal-gpu-label" className="terminal-gpu-label">

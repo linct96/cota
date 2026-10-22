@@ -11,23 +11,27 @@
 }
 
 .app-toaster[data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-hover: var(--background-hover);
+  --color-app-muted-foreground: var(--app-muted-foreground);
   --color-foreground: var(--foreground);
   --color-text-normal: var(--text-normal);
   --color-text-subtle: var(--text-subtle);
-  --color-card: var(--card);
   --color-sidebar: var(--sidebar);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
+  --color-muted-hover: var(--muted-hover);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-terminal-tab-hover: var(--terminal-tab-hover);
   --color-project-hover: var(--project-hover);
@@ -80,17 +84,22 @@
 :root {
   color-scheme: light;
   /* Mira / Neutral preset. */
-  --background: #f0f0f0;
+  --background: oklch(1 0 0);
+  /* App-specific colors stay independent of the Mira preset. */
+  --background-hover: color-mix(in oklab, var(--input) 50%, transparent);
+  --app-muted-foreground: oklch(0.488 0 0);
   --foreground: oklch(0.145 0 0);
   --text-normal: oklch(0.371 0 0);
   --text-subtle: oklch(0.535 0 0);
-  --card: oklch(1 0 0);
-  --surface-canvas: var(--card);
+  --surface-canvas: var(--background);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.488 0 0);
+  --secondary-hover: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
+  --muted-hover: color-mix(in oklch, var(--muted), var(--foreground) 5%);
+  --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
+  --accent-hover: color-mix(in oklch, var(--accent), var(--foreground) 5%);
   --terminal-tab-hover: color-mix(in oklab, var(--foreground) 6%, transparent);
   --project-hover: #f2f2f2;
   --project-active: #eeeeee;
@@ -98,9 +107,9 @@
   --project-active-foreground: oklch(0.145 0 0);
   --project-action-hover: #e0e0e0;
   --project-action-active: #d6d6d6;
-  --workspace-status-idle: var(--muted-foreground);
+  --workspace-status-idle: var(--app-muted-foreground);
   --workspace-status-active: #16a34a;
-  --dot-status-neutral: var(--muted-foreground);
+  --dot-status-neutral: var(--app-muted-foreground);
   --dot-status-attention: #a16207;
   --dot-status-completed: #299f51;
   --dot-status-working: #38bdf8;
@@ -109,7 +118,7 @@
   --source-control-diff-removed: #fff0f0;
   --source-control-stat-added: #166534;
   --source-control-stat-removed: var(--destructive);
-  --file-icon-neutral: var(--muted-foreground);
+  --file-icon-neutral: var(--app-muted-foreground);
   --file-icon-yellow: #947000;
   --file-icon-blue: #326bad;
   --file-icon-cyan: #237d91;
@@ -124,8 +133,8 @@
   --scrollbar-thumb-active: rgba(121, 121, 121, 0.9);
   --border: oklch(0.922 0 0);
   --titlebar-separator: #e3e3e3;
-  --panel-separator-hover: color-mix(in oklab, var(--text-normal) 22%, var(--card));
-  --panel-separator-active: color-mix(in oklab, var(--text-normal) 35%, var(--card));
+  --panel-separator-hover: color-mix(in oklab, var(--text-normal) 22%, var(--background));
+  --panel-separator-active: color-mix(in oklab, var(--text-normal) 35%, var(--background));
   --app-titlebar-height: 44px;
   --app-navigation-width: 48px;
   --titlebar-leading-inset: 12px;
@@ -146,7 +155,7 @@
   --terminal-magenta: #86198f;
   --terminal-cyan: #0e7490;
   --terminal-white: #e4e4e7;
-  --terminal-bright-black: var(--muted-foreground);
+  --terminal-bright-black: var(--app-muted-foreground);
   --terminal-bright-red: #ef4444;
   --terminal-bright-green: #22c55e;
   --terminal-bright-yellow: #eab308;
@@ -186,7 +195,7 @@ body,
   overflow: hidden;
 }
 .app-error-details {
-  background-color: color-mix(in oklab, var(--destructive) 5%, var(--card));
+  background-color: color-mix(in oklab, var(--destructive) 5%, var(--background));
   border-color: color-mix(in oklab, var(--destructive) 22%, var(--border));
 }
 .app-error-message {
@@ -218,33 +227,42 @@ body,
   background-color: var(--terminal-tab-hover);
 }
 .workspace-tab[aria-selected='true'] {
-  background-color: var(--card);
+  background-color: var(--background);
   color: var(--foreground);
 }
 .terminal-tab {
+  --terminal-tab-background: var(--muted);
   touch-action: pan-y;
+}
+.terminal-tab:hover {
+  --terminal-tab-background: var(--muted-hover);
+}
+.terminal-tab:active {
+  translate: none;
+}
+.terminal-tab[aria-selected='true'] {
+  --terminal-tab-background: var(--background);
+  background-color: var(--terminal-tab-background);
+  color: var(--foreground);
+}
+.terminal-tab-agent-status,
+.terminal-tab-actions::before {
+  background-color: var(--terminal-tab-background);
+  transition: background-color var(--default-transition-duration, 150ms)
+    var(--default-transition-timing-function, ease);
 }
 .terminal-tab-actions::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(var(--terminal-tab-hover), var(--terminal-tab-hover))
-    var(--background);
   mask-image: linear-gradient(to right, transparent, #000 55%);
-}
-.terminal-tab[aria-selected='true'] .terminal-tab-actions::before {
-  background: var(--card);
 }
 .terminal-tab[data-dnd-dragging] {
   -webkit-app-region: no-drag;
   cursor: grabbing;
-  background: linear-gradient(var(--terminal-tab-hover), var(--terminal-tab-hover))
-    var(--background);
+  background-color: var(--terminal-tab-background);
   outline: 1px solid var(--border);
-}
-.terminal-tab[data-dnd-dragging][aria-selected='true'] {
-  background: var(--card);
 }
 .terminal-tab[data-dnd-placeholder] {
   opacity: 0.35;
@@ -305,6 +323,8 @@ body,
   box-shadow: none;
 }
 @media (prefers-reduced-motion: reduce) {
+  .terminal-tab-agent-status,
+  .terminal-tab-actions::before,
   .workspace-resize-handle::before {
     transition: none;
   }
@@ -346,12 +366,9 @@ button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
-.project-sidebar .project-title {
-  color: inherit;
-}
 .project-folder-row:hover {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
 }
 /* Extend workspace activation across the card without nesting the Agent buttons. */
 .project-item-button::after {
@@ -374,7 +391,7 @@ button:not([data-slot='button']):focus-visible {
   background-color: var(--terminal-tab-hover);
 }
 .project-item-agent-button[data-active='true'] {
-  background-color: var(--card);
+  background-color: var(--background);
   color: var(--foreground);
   box-shadow: var(--shadow-xs);
 }
@@ -465,7 +482,7 @@ button:not([data-slot='button']):focus-visible {
 .source-control-preview-tab {
   border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--foreground) 5%, transparent);
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
   font-size: var(--text-xs);
   font-weight: 500;
   transition:
@@ -478,7 +495,7 @@ button:not([data-slot='button']):focus-visible {
   color: var(--foreground);
 }
 .source-control-preview-tab[aria-selected='true'] {
-  background: var(--card);
+  background: var(--background);
   color: var(--foreground);
   box-shadow: var(--shadow-xs);
 }
@@ -509,7 +526,7 @@ button:not([data-slot='button']):focus-visible {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
   transition-property: color, background-color;
 }
 .source-control-section-tabs > [data-slot='tabs-trigger']:hover {
@@ -526,7 +543,7 @@ button:not([data-slot='button']):focus-visible {
 }
 .source-control-history-navigation,
 .source-control-changes-navigation {
-  background: var(--card);
+  background: var(--background);
   border-bottom: 1px solid var(--border);
 }
 .source-control-file-row {
@@ -647,7 +664,7 @@ button:not([data-slot='button']):focus-visible {
 .source-control-file-stats {
   display: flex;
   justify-content: flex-end;
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
   font-size: 0.625rem;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -693,7 +710,7 @@ button:not([data-slot='button']):focus-visible {
   unicode-bidi: plaintext;
 }
 .source-control-diff-mode [data-slot='button'] {
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
   translate: none;
 }
 .source-control-diff-mode [data-slot='button']:is(:hover, [aria-pressed='true']) {
@@ -728,7 +745,7 @@ button:not([data-slot='button']):focus-visible {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 .settings-group-title {
-  color: var(--muted-foreground);
+  color: var(--app-muted-foreground);
   font-size: var(--text-xs);
   font-weight: 500;
 }
@@ -868,10 +885,10 @@ button:not([data-slot='button']):focus-visible {
 .dark {
   color-scheme: dark;
   --background: oklch(0.145 0 0);
+  --app-muted-foreground: var(--muted-foreground);
   --foreground: oklch(0.985 0 0);
   --text-normal: oklch(0.87 0 0);
   --text-subtle: oklch(0.627 0 0);
-  --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
@@ -946,7 +963,7 @@ button:not([data-slot='button']):focus-visible {
     overscroll-behavior: none;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-muted text-foreground antialiased;
   }
   html {
     @apply font-sans;

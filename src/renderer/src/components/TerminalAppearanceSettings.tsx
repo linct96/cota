@@ -519,7 +519,7 @@ export function TerminalAppearanceSettings() {
                   恢复默认
                 </Button>
                 <div className="terminal-appearance-save-actions flex items-center gap-3">
-                  <output className="terminal-appearance-save-status text-xs text-muted-foreground">
+                  <output className="terminal-appearance-save-status text-xs text-app-muted-foreground">
                     {saved ? '已保存' : ''}
                   </output>
                   <Button className="terminal-appearance-save" type="submit">

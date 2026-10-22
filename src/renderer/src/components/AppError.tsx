@@ -8,11 +8,11 @@ import { WindowControls } from './WindowControls'
 export function AppError({ error }: ErrorComponentProps) {
   return (
     <div
-      className="app-container app-error-page flex h-full flex-col bg-background text-foreground"
+      className="app-container app-error-page flex h-full flex-col bg-muted text-foreground"
       data-platform={window.desktop.platform}
     >
       <header className="app-error-titlebar title-bar flex h-[var(--app-titlebar-height)] shrink-0 items-center justify-center">
-        <span className="app-error-app-name text-xs text-muted-foreground">Cota</span>
+        <span className="app-error-app-name text-xs text-app-muted-foreground">Cota</span>
         {window.desktop.platform === 'win32' && <WindowControls />}
       </header>
       <main className="app-error-content flex min-h-0 flex-1 overflow-auto">

@@ -200,7 +200,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
       <header className="accounts-header flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
         <div className="accounts-heading flex min-w-0 flex-col gap-1">
           <h2 className="accounts-title text-sm font-medium">账号管理</h2>
-          <p className="accounts-description text-xs text-muted-foreground">
+          <p className="accounts-description text-xs text-app-muted-foreground">
             管理本机 CLI 账号与登录状态
           </p>
         </div>
@@ -261,7 +261,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                 <div className="accounts-current-heading flex flex-wrap items-center justify-between gap-3">
                   <div className="accounts-current-summary flex min-w-0 flex-col gap-1">
                     <div className="accounts-current-label-row flex items-center gap-2">
-                      <span className="accounts-current-label text-xs text-muted-foreground">
+                      <span className="accounts-current-label text-xs text-app-muted-foreground">
                         当前登录
                       </span>
                       <Badge className="accounts-current-state" variant="secondary">
@@ -299,11 +299,11 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                     导入当前登录
                   </Button>
                 </div>
-                <p className="accounts-auth-message text-xs text-muted-foreground">
+                <p className="accounts-auth-message text-xs text-app-muted-foreground">
                   {status.authMessage}
                 </p>
                 <p
-                  className="accounts-auth-path break-all text-xs text-muted-foreground"
+                  className="accounts-auth-path break-all text-xs text-app-muted-foreground"
                   title={status.authPath}
                 >
                   {status.authPath}
@@ -316,7 +316,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                 <div className="accounts-list-tools flex items-center gap-2">
                   <div className="accounts-search relative">
                     <Search
-                      className="accounts-search-icon pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                      className="accounts-search-icon pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-app-muted-foreground"
                       aria-hidden="true"
                     />
                     <Input
@@ -374,7 +374,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                             </Badge>
                           )}
                         </div>
-                        <p className="account-row-identity truncate text-xs text-muted-foreground">
+                        <p className="account-row-identity truncate text-xs text-app-muted-foreground">
                           {account.email ||
                             account.apiBaseUrl ||
                             (account.providerKey ? `${account.providerKey} · ` : '') +
@@ -386,12 +386,12 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                           </p>
                         )}
                         {account.switchUnavailable && (
-                          <p className="account-unavailable-message text-xs text-muted-foreground">
+                          <p className="account-unavailable-message text-xs text-app-muted-foreground">
                             {account.switchUnavailable}
                           </p>
                         )}
                         {account.usageUpdatedAt && (
-                          <p className="account-usage-updated text-xs text-muted-foreground">
+                          <p className="account-usage-updated text-xs text-app-muted-foreground">
                             {account.product === 'claude' ? '令牌更新' : '额度更新'}：
                             {new Date(account.usageUpdatedAt).toLocaleString()}
                           </p>
@@ -598,7 +598,7 @@ function UsageWindow({
     window.windowMinutes === 300 ? '5 小时' : window.windowMinutes === 10080 ? '每周' : fallback
   return (
     <span
-      className="account-usage-window text-xs text-muted-foreground"
+      className="account-usage-window text-xs text-app-muted-foreground"
       title={window.resetsAt ? `重置：${new Date(window.resetsAt).toLocaleString()}` : undefined}
     >
       {label}剩余{' '}

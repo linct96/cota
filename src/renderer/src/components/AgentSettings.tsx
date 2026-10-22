@@ -140,7 +140,7 @@ export function AgentSettings() {
               <FieldDescription className="agent-settings-cli-path break-all select-text">
                 {agent?.executable || agent?.error || '等待检测…'}
               </FieldDescription>
-              <code className="agent-settings-install-command break-all text-xs text-muted-foreground select-text">
+              <code className="agent-settings-install-command break-all text-xs text-app-muted-foreground select-text">
                 npm install -g {provider === 'pi' ? '--ignore-scripts ' : ''}
                 {AGENT_CLI_PACKAGES[provider]}@latest
               </code>

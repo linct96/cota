@@ -88,7 +88,7 @@ export function AgentHookSettings() {
       </div>
       <p
         id="agent-hook-settings-help"
-        className="agent-hook-settings-help text-xs text-muted-foreground"
+        className="agent-hook-settings-help text-xs text-app-muted-foreground"
       >
         安装对应 Hooks / Extension 后，新建终端即可显示 Agent 状态，菜单启动与手动启动一致。
         未安装不影响 CLI 使用，任务状态显示“未知”。
@@ -127,12 +127,14 @@ export function AgentHookSettings() {
                   </Badge>
                 </div>
                 {status && (
-                  <p className="agent-hook-detail text-xs text-muted-foreground">{status.detail}</p>
+                  <p className="agent-hook-detail text-xs text-app-muted-foreground">
+                    {status.detail}
+                  </p>
                 )}
                 {status?.paths.map((path) => (
                   <p
                     key={path}
-                    className="agent-hook-path break-all font-mono text-xs text-muted-foreground"
+                    className="agent-hook-path break-all font-mono text-xs text-app-muted-foreground"
                   >
                     {path}
                   </p>
@@ -170,19 +172,19 @@ export function AgentHookSettings() {
           )
         })}
       </ul>
-      <p className="agent-hook-install-help text-xs text-muted-foreground">
+      <p className="agent-hook-install-help text-xs text-app-muted-foreground">
         检测只读；安装和卸载均需确认路径，安装或更新时备份已有配置。卸载不创建备份，仅移除 Cota
         集成，保留其他 Hooks，不结束运行中的 Agent。
       </p>
       <p
         id="agent-hook-settings-limits"
-        className="agent-hook-settings-limits text-xs text-muted-foreground"
+        className="agent-hook-settings-limits text-xs text-app-muted-foreground"
       >
         仅接收状态，不采集对话或工具内容。Codex 确认安装时仅信任 Cota Hooks；定义变更后需重新确认。
         不修改 Hooks 功能开关，不绕过 CLI 权限或企业策略。
       </p>
       <div className="agent-hook-feedback" aria-live="polite">
-        {notice && <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>}
+        {notice && <p className="agent-hook-notice text-xs text-app-muted-foreground">{notice}</p>}
         {error && (
           <p className="agent-hook-error text-xs text-destructive" role="alert">
             {error}

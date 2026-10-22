@@ -117,7 +117,7 @@ export function OpenWithSettings() {
           <h3 className="open-with-settings-title text-base font-semibold text-foreground">
             在应用程序中打开
           </h3>
-          <p className="open-with-settings-description mt-1 text-xs text-muted-foreground">
+          <p className="open-with-settings-description mt-1 text-xs text-app-muted-foreground">
             从工作区的“打开于”菜单中选择应用程序；系统文件管理器始终可用。
           </p>
         </div>
@@ -155,7 +155,7 @@ export function OpenWithSettings() {
                         name={preset.name}
                         command={preset.command}
                         id={preset.id}
-                        className="open-with-preset-icon size-3.5 text-muted-foreground"
+                        className="open-with-preset-icon size-3.5 text-app-muted-foreground"
                       />
                       <span className="open-with-preset-name">{preset.name}</span>
                     </span>
@@ -186,7 +186,7 @@ export function OpenWithSettings() {
       {/* 列表区域 */}
       <div className="open-with-list flex flex-col gap-1.5 pt-1">
         {!openers.length && (
-          <Card className="open-with-empty-state rounded-xl border-dashed py-8 text-center text-xs text-muted-foreground shadow-none ring-0">
+          <Card className="open-with-empty-state rounded-xl border-dashed py-8 text-center text-xs text-app-muted-foreground shadow-none ring-0">
             暂无打开方式，请点击右上角「添加应用程序」进行添加。
           </Card>
         )}
@@ -197,7 +197,7 @@ export function OpenWithSettings() {
             className="open-with-item group flex items-center justify-between gap-4 rounded-xl px-2.5 py-2 transition-colors hover:bg-muted/40"
           >
             <div className="open-with-item-main flex min-w-0 items-center gap-3">
-              <div className="open-with-item-icon-box flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-background text-foreground shadow-xs">
+              <div className="open-with-item-icon-box flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted text-foreground shadow-xs">
                 <OpenerIcon
                   name={opener.name}
                   command={opener.command}
@@ -209,7 +209,7 @@ export function OpenWithSettings() {
                 <span className="open-with-item-name truncate text-xs font-semibold text-foreground">
                   {opener.name}
                 </span>
-                <span className="open-with-item-command truncate font-mono text-[11px] text-muted-foreground">
+                <span className="open-with-item-command truncate font-mono text-[11px] text-app-muted-foreground">
                   {opener.command}
                 </span>
               </div>
@@ -220,7 +220,7 @@ export function OpenWithSettings() {
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="open-with-item-edit text-muted-foreground hover:text-foreground"
+                className="open-with-item-edit text-app-muted-foreground hover:text-foreground"
                 aria-label={`编辑 ${opener.name}`}
                 title={`编辑 ${opener.name}`}
                 disabled={saving}
@@ -232,7 +232,7 @@ export function OpenWithSettings() {
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="open-with-item-delete text-muted-foreground hover:text-destructive"
+                className="open-with-item-delete text-app-muted-foreground hover:text-destructive"
                 aria-label={`删除 ${opener.name}`}
                 title={`删除 ${opener.name}`}
                 disabled={saving}

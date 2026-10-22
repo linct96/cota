@@ -83,7 +83,9 @@ export function FilePreview({
         <h2 className="file-preview-path min-w-0 flex-1 truncate text-xs font-medium" title={path}>
           {path}
         </h2>
-        <span className="file-preview-readonly shrink-0 text-xs text-muted-foreground">只读</span>
+        <span className="file-preview-readonly shrink-0 text-xs text-app-muted-foreground">
+          只读
+        </span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -114,7 +116,7 @@ export function FilePreview({
       ) : result?.kind === 'text' ? (
         <Suspense
           fallback={
-            <output className="file-preview-editor-loading p-4 text-muted-foreground">
+            <output className="file-preview-editor-loading p-4 text-app-muted-foreground">
               正在加载预览…
             </output>
           }
@@ -135,7 +137,9 @@ export function FilePreview({
           </EmptyHeader>
         </Empty>
       ) : (
-        <output className="file-preview-loading p-4 text-muted-foreground">正在读取文件…</output>
+        <output className="file-preview-loading p-4 text-app-muted-foreground">
+          正在读取文件…
+        </output>
       )}
     </section>
   )

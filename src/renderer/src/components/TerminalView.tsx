@@ -300,7 +300,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
         </p>
       )}
       {status === 'exited' && (
-        <output className="terminal-exited-status shrink-0 pb-2 text-muted-foreground">
+        <output className="terminal-exited-status shrink-0 pb-2 text-app-muted-foreground">
           Exited · 退出码 {tab.exitCode ?? '未知'} · 请新建终端继续。
         </output>
       )}

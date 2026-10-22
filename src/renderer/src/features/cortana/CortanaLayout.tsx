@@ -27,7 +27,7 @@ export function CortanaLayout() {
 
   return (
     <section
-      className="cortana-layout flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card"
+      className="cortana-layout flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background"
       aria-label="Cortana"
     >
       <aside

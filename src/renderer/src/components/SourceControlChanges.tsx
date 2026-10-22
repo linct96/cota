@@ -102,7 +102,7 @@ export function SourceControlChanges({
             <span className="source-control-all-file-path min-w-0 flex-1 truncate text-left">
               {entry.path}
             </span>
-            <span className="source-control-all-file-area shrink-0 text-muted-foreground">
+            <span className="source-control-all-file-area shrink-0 text-app-muted-foreground">
               {areaLabels[entry.area]}
             </span>
           </CollapsibleTrigger>

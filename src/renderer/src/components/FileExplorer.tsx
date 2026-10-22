@@ -328,7 +328,7 @@ export function FileExplorer({
                 {expanded && (directory?.error || directory?.entries?.length === 0) && (
                   <div
                     role="none"
-                    className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-muted-foreground"
+                    className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-app-muted-foreground"
                     style={{ paddingLeft: 24 + row.depth * 12 }}
                   >
                     <span
