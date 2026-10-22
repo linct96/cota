@@ -23,6 +23,8 @@ import { HostClient, connectTerminalHost, hostDirectory } from '../src/main/host
 import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
 import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
+import { Terminal } from '@xterm/xterm'
+import { installTerminalInput } from '../src/renderer/src/lib/terminal-input'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -112,6 +114,83 @@ describe('local terminal Host', () => {
     await expect(client(token, HOST_PROTOCOL - 1)).rejects.toThrow('断开')
     expect(mocks.spawn).not.toHaveBeenCalled()
     expect(await (await client()).request('list', [])).toEqual([])
+  })
+  it('preserves legacy mouse bytes through input forwarding and the Host', async () => {
+    const connection = await client()
+    const id = randomUUID()
+    await connection.request('create', [
+      {
+        id,
+        workspaceId: randomUUID(),
+        projectPath: directory,
+        cwd: directory,
+        workspaceKind: 'local',
+        cols: 80,
+        rows: 24,
+      },
+      DEFAULT_CONFIG.preferences,
+    ])
+    const terminal = new Terminal()
+    // Exercise input routing without opening a DOM terminal or spawning a real PTY.
+    Object.defineProperties(terminal, {
+      textarea: { value: Object.assign(new EventTarget(), { value: '' }) },
+      element: { value: new EventTarget() },
+    })
+    const core = (
+      terminal as unknown as {
+        _core: { coreService: { triggerBinaryEvent(data: string): void } }
+      }
+    )._core.coreService
+    let active = true
+    const pending: Promise<void>[] = []
+    const input = installTerminalInput(terminal, {
+      platform: 'darwin',
+      canSend: () => active,
+      write: (data, encoding = 'utf8') => {
+        pending.push(connection.request('write', [id, data, encoding]))
+      },
+    })
+    const ptyWrite = mocks.spawn.mock.results[0].value.write
+    const legacy = '\x1b[M' + String.fromCharCode(32, 128, 255)
+    try {
+      terminal.input('\x1b[<65;1;1M', true)
+      core.triggerBinaryEvent(legacy)
+      terminal.input('中文\r', true)
+      await Promise.all(pending.splice(0))
+      expect(ptyWrite.mock.calls).toEqual([
+        ['\x1b[<65;1;1M'],
+        [Buffer.from([27, 91, 77, 32, 128, 255])],
+        ['中文\r'],
+      ])
+      ptyWrite.mockClear()
+      active = false
+      core.triggerBinaryEvent(legacy)
+      active = true
+      terminal.options.disableStdin = true
+      core.triggerBinaryEvent(legacy)
+      terminal.options.disableStdin = false
+      input.dispose()
+      core.triggerBinaryEvent(legacy)
+      await Promise.all(pending.splice(0))
+      expect(ptyWrite).not.toHaveBeenCalled()
+
+      await expect(connection.request('write', [id, '\u0100', 'binary'])).rejects.toThrow(
+        '无效字节',
+      )
+      await expect(connection.request('write', [id, legacy, 'hex' as 'binary'])).rejects.toThrow(
+        '编码无效',
+      )
+      await expect(
+        connection.request('write', [id, 'x'.repeat(1024 * 1024 + 1), 'binary']),
+      ).rejects.toThrow('1 MiB')
+      expect(ptyWrite).not.toHaveBeenCalled()
+      await connection.request('close', [id])
+      await expect(connection.request('write', [id, legacy, 'binary'])).rejects.toThrow()
+      expect(ptyWrite).not.toHaveBeenCalled()
+    } finally {
+      input.dispose()
+      terminal.dispose()
+    }
   })
   it('reconnects to the same shell and final screen after the entire client disconnects', async () => {
     const events = vi.fn()

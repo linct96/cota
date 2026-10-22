@@ -83,7 +83,7 @@ export async function startHost(directory: string, token: string, onStopped = ()
           return
         }
         case 'write':
-          return manager.write(terminalId(args[0]), args[1])
+          return manager.write(terminalId(args[0]), args[1], args[2])
         case 'resize':
           return manager.resize(terminalId(args[0]), args[1] as number, args[2] as number)
         case 'setScrollback':

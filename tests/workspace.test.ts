@@ -383,7 +383,8 @@ describe('workspace state', () => {
       platform: 'darwin',
       canSend: () => running,
       write,
-      isKittyEnabled: () => keyboard.flags > 0,
+      getKittyFlags: () => keyboard.flags,
+      textarea: { value: '' },
     })
     type KeyEvent = Parameters<typeof input.handleKeyEvent>[0]
     const key = (overrides: Partial<KeyEvent> = {}): KeyEvent => ({
@@ -463,7 +464,8 @@ describe('workspace state', () => {
           platform,
           canSend: () => running,
           write,
-          isKittyEnabled: () => true,
+          getKittyFlags: () => 1,
+          textarea: { value: '' },
         })
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, metaKey: true }))).toBe(true)
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, ctrlKey: true }))).toBe(true)
@@ -564,6 +566,163 @@ describe('workspace state', () => {
       input.dispose()
       keyboard.dispose()
       screen.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('routes native text commits once, preserving composition order, Kitty releases and cancellation', () => {
+    vi.useFakeTimers()
+    let flags = 0
+    let running = true
+    const textarea = { value: '' }
+    const write = vi.fn()
+    const input = createTerminalInputHandler({
+      platform: 'darwin',
+      canSend: () => running,
+      write,
+      getKittyFlags: () => flags,
+      textarea,
+    })
+    type KeyEvent = Parameters<typeof input.handleKeyEvent>[0]
+    const key = (overrides: Partial<KeyEvent> = {}): KeyEvent => ({
+      type: 'keydown',
+      key: '.',
+      code: 'Period',
+      keyCode: 190,
+      shiftKey: false,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      repeat: false,
+      isComposing: false,
+      preventDefault: vi.fn(),
+      ...overrides,
+    })
+    const commit = (data: string, overrides = {}) => {
+      textarea.value += data
+      const event = {
+        inputType: 'insertText',
+        data,
+        isComposing: false,
+        stopImmediatePropagation: vi.fn(),
+        ...overrides,
+      }
+      input.handleInput(event)
+      return event
+    }
+    const output = () => write.mock.calls.map(([data]) => data).join('')
+    try {
+      for (const initial of ['', '上次提交']) {
+        textarea.value = initial
+        for (const process of [false, true]) {
+          for (const delayed of [false, true]) {
+            const event = key(process ? { key: 'Process', keyCode: 229 } : {})
+            expect(input.handleKeyEvent(event)).toBe(false)
+            expect(event.preventDefault).not.toHaveBeenCalled()
+            expect(textarea.value).toBe('')
+            expect(input.handleKeyEvent(key({ ...event, type: 'keypress' }))).toBe(false)
+            if (delayed) {
+              vi.runAllTimers()
+              expect(input.handleKeyEvent(key({ ...event, type: 'keyup' }))).toBe(false)
+            }
+            expect(commit('。').stopImmediatePropagation).toHaveBeenCalledOnce()
+            if (!delayed) input.handleKeyEvent(key({ ...event, type: 'keyup' }))
+            expect(textarea.value).toBe('')
+          }
+        }
+      }
+      expect(output()).toBe('。'.repeat(8))
+      write.mockClear()
+
+      // A claimed printable key can open a real composition instead of committing directly.
+      input.handleKeyEvent(key({ key: 'n', code: 'KeyN', keyCode: 78 }))
+      input.compositionStart()
+      expect(commit('ni', { isComposing: true }).stopImmediatePropagation).not.toHaveBeenCalled()
+      textarea.value = '你'
+      setTimeout(() => input.send(textarea.value), 0) // xterm's deferred composition commit
+      input.compositionEnd()
+      expect(commit('你').stopImmediatePropagation).not.toHaveBeenCalled()
+      textarea.value = '你'
+      input.handleKeyEvent(key({ key: 'Process', keyCode: 229 }))
+      commit('。')
+      input.handleKeyEvent(key({ type: 'keyup' }))
+      expect(output()).toBe('')
+      expect(textarea.value).toBe('你')
+      vi.runAllTimers()
+      expect(output()).toBe('你。')
+
+      write.mockClear()
+      input.compositionStart()
+      textarea.value = '好'
+      input.compositionEnd()
+      input.handleKeyEvent(key())
+      commit('。')
+      const control = key({ key: 'c', code: 'KeyC', ctrlKey: true })
+      expect(input.handleKeyEvent(control)).toBe(true)
+      input.send('好') // xterm finalizes before onKey, then emits the control byte.
+      input.flushText()
+      input.send('\x03')
+      vi.runAllTimers()
+      expect(output()).toBe('好。\x03')
+      input.reset()
+
+      for (flags of [0, 1, 2, 4, 7, 8, 10, 16, 24, 31]) {
+        write.mockClear()
+        input.handleKeyEvent(key())
+        commit('。')
+        input.handleKeyEvent(key({ type: 'keyup' }))
+        const press = flags & 8 ? (flags & 16 ? '\x1b[46;;12290u' : '\x1b[46u') : '。'
+        expect(output()).toBe(press + (flags & 2 ? '\x1b[46;1:3u' : ''))
+      }
+      flags = 7
+      write.mockClear()
+      input.handleKeyEvent(key({ key: '?', code: 'Slash', shiftKey: true }))
+      input.handleKeyEvent(key({ key: '/', code: 'Slash', type: 'keyup' }))
+      commit('？') // Key release may precede the native commit.
+      expect(output()).toBe('？\x1b[47;1:3u')
+      write.mockClear()
+      input.handleKeyEvent(key())
+      commit('。')
+      flags = 0 // An exiting CLI must not leak a release report into its successor.
+      input.handleKeyEvent(key({ type: 'keyup' }))
+      expect(output()).toBe('。')
+
+      write.mockClear()
+      const letter = key({ key: 'a', code: 'KeyA' })
+      input.handleKeyEvent(letter)
+      commit('a')
+      input.handleKeyEvent(key({ ...letter, repeat: true }))
+      commit('a')
+      input.handleKeyEvent(key({ ...letter, type: 'keyup' }))
+      input.handleKeyEvent(key({ key: 'Process', keyCode: 229 }))
+      commit('🙂')
+      expect(output()).toBe('aa🙂')
+      write.mockClear()
+      expect(input.handleKeyEvent(key({ key: 'Dead', code: 'Quote' }))).toBe(true)
+      expect(input.handleKeyEvent(key({ key: 'e', code: 'KeyE' }))).toBe(true)
+      expect(commit('é').stopImmediatePropagation).not.toHaveBeenCalled()
+      input.handleKeyEvent(key())
+      input.reset() // Blur cancels a pending native commit.
+      expect(commit('。').stopImmediatePropagation).not.toHaveBeenCalled()
+      input.handleKeyEvent(key())
+      running = false
+      commit('。')
+      running = true
+      flags = 7
+      input.handleKeyEvent(key({ type: 'keyup' }))
+      expect(write).not.toHaveBeenCalled()
+      input.compositionStart()
+      textarea.value = '再'
+      input.compositionEnd()
+      input.handleKeyEvent(key())
+      commit('。')
+      input.dispose()
+      vi.runAllTimers()
+      input.send('late')
+      expect(write).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      input.dispose()
       vi.useRealTimers()
     }
   })

@@ -436,7 +436,7 @@ export interface DesktopAPI {
   createTerminal(options: CreateTerminal): Promise<Result<void>>
   attachTerminal(options: AttachTerminal): Promise<Result<TerminalAttachment>>
   detachTerminal(id: string, attachmentId: string): Promise<Result<void>>
-  writeTerminal(id: string, data: string): Promise<Result<void>>
+  writeTerminal(id: string, data: string, encoding?: 'utf8' | 'binary'): Promise<Result<void>>
   resizeTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
   acknowledge(id: string, attachmentId: string, length: number): void
   closeTerminal(id: string): Promise<Result<boolean>>

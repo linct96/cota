@@ -573,9 +573,9 @@ function installIPC(): void {
   handle('terminal:detach', (id: string, attachmentId: string) =>
     manager.request('detach', [id, attachmentId]),
   )
-  handle('terminal:write', (id: string, data: string) => {
+  handle('terminal:write', (id: string, data: string, encoding: 'utf8' | 'binary' = 'utf8') => {
     if (closingTabs.has(id)) throw new Error('终端正在关闭，暂不接受输入。')
-    return manager.request('write', [id, data])
+    return manager.request('write', [id, data, encoding])
   })
   handle('terminal:resize', (id: string, cols: number, rows: number) =>
     manager.request('resize', [id, cols, rows]),

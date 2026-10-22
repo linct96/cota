@@ -357,13 +357,17 @@ export class TerminalManager {
     return [...this.sessions.values()].some((session) => !session.exited)
   }
 
-  write(id: string, data: unknown): void {
+  write(id: string, data: unknown, encoding: unknown = 'utf8'): void {
     const session = this.live(id)
     if (typeof data !== 'string' || data.length > 1024 * 1024)
       throw new Error('输入文本过大（上限 1 MiB 字符）。')
-    session.child!.write(data)
+    if (encoding !== 'utf8' && encoding !== 'binary') throw new Error('终端输入编码无效。')
+    if (encoding === 'binary' && /[\u0100-\uffff]/.test(data))
+      throw new Error('终端二进制输入包含无效字节。')
+    // Legacy mouse coordinates are single bytes, not UTF-8 text.
+    session.child!.write(encoding === 'binary' ? Buffer.from(data, 'latin1') : data)
     // A submitted command only requests an identity check, never a task-state transition.
-    if (session.managed && /[\r\n]/.test(data)) this.observeAgents()
+    if (encoding === 'utf8' && session.managed && /[\r\n]/.test(data)) this.observeAgents()
   }
 
   resize(id: string, cols: number, rows: number): void {

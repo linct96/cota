@@ -123,7 +123,8 @@ const api: DesktopAPI = {
   createTerminal: (options) => ipcRenderer.invoke('terminal:create', options),
   attachTerminal: (options) => ipcRenderer.invoke('terminal:attach', options),
   detachTerminal: (id, attachmentId) => ipcRenderer.invoke('terminal:detach', id, attachmentId),
-  writeTerminal: (id, data) => ipcRenderer.invoke('terminal:write', id, data),
+  writeTerminal: (id, data, encoding = 'utf8') =>
+    ipcRenderer.invoke('terminal:write', id, data, encoding),
   resizeTerminal: (id, cols, rows) => ipcRenderer.invoke('terminal:resize', id, cols, rows),
   acknowledge: (id, attachmentId, length) =>
     ipcRenderer.send('terminal:ack', id, attachmentId, length),
