@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from './store'
 import { unwrap } from '../../shared/contracts'
-import { TerminalTab } from './components/TerminalTab'
+import { TerminalTabList } from './components/TerminalTabList'
 import { TerminalView } from './components/TerminalView'
 import { TopStatusBar } from './components/TopStatusBar'
 import { RightPanel } from './components/RightPanel'
@@ -308,7 +308,7 @@ export function App() {
         >
           {/* 终端标签栏 */}
           {!settingsOpen && (
-            <div className="terminal-tabs-region flex min-w-0 flex-1 items-center gap-1">
+            <div className="terminal-tabs-region flex h-full min-w-0 flex-1 items-center gap-1">
               <Separator
                 aria-hidden="true"
                 orientation="vertical"
@@ -316,50 +316,14 @@ export function App() {
               />
               {state.selectedProject && (
                 <>
-                  {(currentTabs.length > 0 || hasPreview) && (
-                    <div
-                      role="tablist"
-                      tabIndex={-1}
-                      aria-label="工作区标签"
-                      className="terminal-tab-list flex min-w-0 items-center gap-1 overflow-x-auto"
-                      onKeyDown={(event) => {
-                        if ((event.target as HTMLElement).getAttribute('role') !== 'tab') return
-                        const tabs = Array.from(
-                          event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
-                        )
-                        const index = tabs.indexOf(event.target as HTMLElement)
-                        const next =
-                          event.key === 'ArrowRight'
-                            ? tabs[(index + 1) % tabs.length]
-                            : event.key === 'ArrowLeft'
-                              ? tabs[(index - 1 + tabs.length) % tabs.length]
-                              : event.key === 'Home'
-                                ? tabs[0]
-                                : event.key === 'End'
-                                  ? tabs.at(-1)
-                                  : undefined
-                        if (!next) return
-                        event.preventDefault()
-                        next.click()
-                        next.focus()
-                      }}
+                  {workspaceId && (currentTabs.length > 0 || hasPreview) && (
+                    <TerminalTabList
+                      key={workspaceId}
+                      workspaceId={workspaceId}
+                      tabs={currentTabs}
+                      activeId={showingDiff ? undefined : activeId}
+                      disabled={!!state.removingWorkspace}
                     >
-                      {currentTabs.map((tab) => (
-                        <TerminalTab
-                          key={tab.id}
-                          tab={tab}
-                          active={tab.id === activeId && !showingDiff}
-                          closeDisabled={
-                            tab.status === 'starting' ||
-                            !!tab.closingStatus ||
-                            !!state.removingWorkspace
-                          }
-                          onSelect={() => state.selectTab(tab.id)}
-                          onClose={() => {
-                            void state.closeTab(tab.id)
-                          }}
-                        />
-                      ))}
                       {hasPreview && (
                         <div
                           role="tab"
@@ -412,33 +376,26 @@ export function App() {
                           </Button>
                         </div>
                       )}
-                    </div>
+                    </TerminalTabList>
                   )}
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          variant="navigation"
-                          size="icon"
-                          className="terminal-tab-new-button shrink-0"
-                          disabled={
-                            !activeWorkspace ||
-                            !!state.removingWorkspace ||
-                            state.creatingWorktree ||
-                            (activeWorkspace.kind === 'git-worktree' &&
-                              state.worktreeScans[activeWorkspace.projectPath]?.entries.find(
-                                (entry) => entry.record.id === activeWorkspace.worktreeId,
-                              )?.status !== 'ready')
-                          }
-                          aria-label="新建终端"
-                          onClick={() => state.newTerminal()}
-                        />
-                      }
-                    >
-                      <Plus className="terminal-tab-new-icon" />
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">新建终端 {shortcutModifier}T</TooltipContent>
-                  </Tooltip>
+                  <Button
+                    variant="navigation"
+                    size="icon"
+                    className="terminal-tab-new-button shrink-0"
+                    disabled={
+                      !activeWorkspace ||
+                      !!state.removingWorkspace ||
+                      state.creatingWorktree ||
+                      (activeWorkspace.kind === 'git-worktree' &&
+                        state.worktreeScans[activeWorkspace.projectPath]?.entries.find(
+                          (entry) => entry.record.id === activeWorkspace.worktreeId,
+                        )?.status !== 'ready')
+                    }
+                    aria-label="新建终端"
+                    onClick={() => state.newTerminal()}
+                  >
+                    <Plus className="terminal-tab-new-icon" />
+                  </Button>
                 </>
               )}
               <div className="workspace-header-spacer min-w-0 flex-1" />
@@ -531,7 +488,8 @@ export function App() {
               orientation="horizontal"
               className={cn(
                 'workspace-content app-panels flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card',
-                settingsOpen && 'hidden',
+                // Group 强制内联 display: flex，隐藏时必须覆盖它并保留终端挂载。
+                settingsOpen && 'hidden!',
               )}
             >
               <ResizablePanel
@@ -547,7 +505,7 @@ export function App() {
                 style={{ overflow: 'hidden' }}
               >
                 <aside
-                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-sidebar text-sidebar-foreground"
+                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-muted/40 text-muted-foreground"
                   aria-label="项目"
                 >
                   <div className="project-header group/header flex h-12 shrink-0 items-center justify-between px-4">
@@ -611,7 +569,7 @@ export function App() {
                                     </span>
                                   </Button>
                                 )}
-                                className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent hover:bg-transparent group-hover/folder:text-foreground"
+                                className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent text-inherit hover:bg-transparent hover:text-inherit"
                                 title={path}
                                 disabled={!!state.removingWorkspace}
                               />
@@ -621,7 +579,7 @@ export function App() {
                                 <TooltipTrigger
                                   render={<Button variant="project" size="icon-sm" />}
                                   className={cn(
-                                    'project-worktree-add-button bg-transparent hover:bg-transparent active:bg-transparent',
+                                    'project-worktree-add-button bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent',
                                     activeWorkspace?.projectPath !== path &&
                                       'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
                                   )}
@@ -654,7 +612,7 @@ export function App() {
                                     <DropdownMenuTrigger
                                       render={<Button variant="project" size="icon-sm" />}
                                       className={cn(
-                                        'project-folder-menu-trigger shrink-0 bg-transparent hover:bg-transparent active:bg-transparent',
+                                        'project-folder-menu-trigger shrink-0 bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent',
                                         activeWorkspace?.projectPath !== path &&
                                           'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
                                       )}
@@ -743,8 +701,8 @@ export function App() {
                                     className={cn(
                                       'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
                                       isSelected
-                                        ? 'project-item-active bg-project-active text-foreground hover:bg-project-active-hover'
-                                        : 'project-item-inactive text-muted-foreground hover:bg-project-hover hover:text-foreground',
+                                        ? 'project-item-active bg-accent text-accent-foreground'
+                                        : 'project-item-inactive text-muted-foreground hover:bg-accent hover:text-accent-foreground',
                                     )}
                                     onContextMenu={(event) => {
                                       menuTrigger.current =
@@ -760,7 +718,7 @@ export function App() {
                                       aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
                                       aria-current={isSelected ? 'page' : undefined}
                                       aria-haspopup="menu"
-                                      className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left hover:bg-transparent focus-visible:ring-0"
+                                      className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left text-inherit hover:bg-transparent hover:text-inherit focus-visible:ring-0 dark:hover:bg-transparent"
                                       onClick={() => {
                                         void state.selectProject(path, workspace.id)
                                       }}
@@ -828,8 +786,8 @@ export function App() {
                                           return (
                                             <Tooltip key={tab.id}>
                                               <TooltipTrigger
-                                                render={<Button variant="navigation" size="icon" />}
-                                                className="project-item-agent-button relative"
+                                                render={<Button variant="project" size="icon" />}
+                                                className="project-item-agent-button relative text-inherit"
                                                 data-active={agentActive}
                                                 aria-pressed={agentActive}
                                                 aria-label={`定位到 ${label}`}
@@ -855,7 +813,7 @@ export function App() {
                                                   />
                                                 </span>
                                                 {agentIndicatorState(tab) !== 'other' && (
-                                                  <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-sidebar p-px [&_.agent-status]:size-2.5">
+                                                  <span className="project-item-agent-status pointer-events-none absolute right-0.5 bottom-0.5 inline-flex rounded-full bg-inherit p-px [&_.agent-status]:size-2.5">
                                                     <AgentStatus state={agentState} />
                                                   </span>
                                                 )}

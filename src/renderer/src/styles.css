@@ -29,8 +29,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-navigation-accent: var(--navigation-accent);
-  --color-navigation-accent-foreground: var(--navigation-accent-foreground);
+  --color-terminal-tab-hover: var(--terminal-tab-hover);
   --color-project-hover: var(--project-hover);
   --color-project-active: var(--project-active);
   --color-project-active-hover: var(--project-active-hover);
@@ -40,8 +39,6 @@
   --color-workspace-status-idle: var(--workspace-status-idle);
   --color-workspace-status-active: var(--workspace-status-active);
   --color-overlay: var(--overlay);
-  --color-terminal-tab-inactive: var(--terminal-tab-inactive);
-  --color-terminal-tab-inactive-hover: var(--terminal-tab-inactive-hover);
   --color-scrollbar-thumb: var(--scrollbar-thumb);
   --color-scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
   --color-scrollbar-thumb-active: var(--scrollbar-thumb-active);
@@ -94,8 +91,7 @@
   --secondary: oklch(0.97 0 0);
   --muted-foreground: oklch(0.488 0 0);
   --accent: oklch(0.97 0 0);
-  --navigation-accent: #dedede;
-  --navigation-accent-foreground: oklch(0.145 0 0);
+  --terminal-tab-hover: color-mix(in oklab, var(--foreground) 6%, transparent);
   --project-hover: #f2f2f2;
   --project-active: #eeeeee;
   --project-active-hover: #e6e6e6;
@@ -122,8 +118,6 @@
   --file-icon-pink: #a05f88;
   --file-icon-red: #a45656;
   --overlay: rgba(0, 0, 0, 0.2);
-  --terminal-tab-inactive: #e8e8e8;
-  --terminal-tab-inactive-hover: #dedede;
   --scrollbar-thumb: rgba(121, 121, 121, 0.4);
   --scrollbar-thumb-hover: rgba(121, 121, 121, 0.7);
   --scrollbar-thumb-active: rgba(121, 121, 121, 0.9);
@@ -183,6 +177,36 @@ body,
 .title-bar {
   -webkit-app-region: drag;
   user-select: none;
+}
+.terminal-tab-scroll-area {
+  -webkit-app-region: no-drag;
+}
+.terminal-tab-scroll-area [data-slot='scroll-area-viewport'] {
+  overscroll-behavior-x: contain;
+}
+.terminal-tab-scroll-area .ui-scroll-area-content {
+  height: 100%;
+}
+.terminal-tab-scrollbar[data-orientation='horizontal'] {
+  height: 4px;
+  padding: 0;
+  border: 0;
+}
+.terminal-tab {
+  touch-action: pan-y;
+}
+.terminal-tab[data-dnd-dragging] {
+  -webkit-app-region: no-drag;
+  cursor: grabbing;
+  background: linear-gradient(var(--terminal-tab-hover), var(--terminal-tab-hover))
+    var(--background);
+  outline: 1px solid var(--border);
+}
+.terminal-tab[data-dnd-dragging][aria-selected='true'] {
+  background: var(--card);
+}
+.terminal-tab[data-dnd-placeholder] {
+  opacity: 0.35;
 }
 .app-container[data-platform='win32'] {
   --window-controls-width: calc(3 * var(--window-control-width));
@@ -273,6 +297,13 @@ button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+.project-sidebar .project-title {
+  color: inherit;
+}
+.project-folder-row:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
 /* Extend workspace activation across the card without nesting the Agent buttons. */
 .project-item-button::after {
   content: '';
@@ -297,31 +328,17 @@ button:not([data-slot='button']):focus-visible {
   border-radius: var(--radius-md);
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.project-folder-row:hover,
 .source-control-group-header:hover,
 .source-control-directory-row:hover,
 .source-control-file-row:hover,
 .source-control-file-row:focus-within {
   background: var(--project-hover);
 }
-.project-folder-row:hover [data-slot='button'],
-.project-folder-row:hover [data-slot='collapsible-trigger'],
-.project-folder-row:hover .project-folder-trigger,
 .source-control-group-header:hover [data-slot='button'],
 .source-control-group-header:hover [data-slot='collapsible-trigger'],
 .source-control-directory-row:hover [data-slot='button'],
 .source-control-file-row:hover [data-slot='button'] {
   color: var(--foreground);
-}
-.project-folder-row .project-folder-trigger,
-.project-folder-row .project-folder-menu-trigger {
-  background: transparent;
-}
-.project-folder-row .project-folder-trigger:hover,
-.project-folder-row .project-folder-menu-trigger:hover,
-.project-folder-row .project-folder-trigger:active,
-.project-folder-row .project-folder-menu-trigger:active {
-  background: transparent;
 }
 .source-control-group-header > [data-slot='button'],
 .source-control-directory-row [data-slot='button'],
@@ -356,7 +373,7 @@ button:not([data-slot='button']):focus-visible {
 }
 .source-control-preview-tab {
   border-radius: var(--radius-md);
-  background: var(--terminal-tab-inactive);
+  background: color-mix(in oklab, var(--foreground) 5%, transparent);
   color: var(--muted-foreground);
   font-size: var(--text-xs);
   font-weight: 500;
@@ -366,7 +383,7 @@ button:not([data-slot='button']):focus-visible {
   outline: none;
 }
 .source-control-preview-tab:hover {
-  background: var(--terminal-tab-inactive-hover);
+  background: color-mix(in oklab, var(--foreground) 10%, transparent);
   color: var(--foreground);
 }
 .source-control-preview-tab[aria-selected='true'] {
@@ -707,36 +724,14 @@ button:not([data-slot='button']):focus-visible {
   caret-color: transparent;
 }
 
-/* macOS 风格悬浮胶囊滚动条（针对 xterm.js 虚拟滚动条，参考 Orca） */
-.xterm .xterm-scrollable-element > .scrollbar.vertical,
-.xterm .xterm-scrollable-element > .xterm-scrollbar {
-  background: transparent !important;
-}
-.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider,
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
-  border-radius: 7px !important;
-  box-sizing: border-box !important;
-  border: 3px solid transparent !important;
-  background-clip: padding-box !important;
-  background-color: var(--scrollbar-thumb) !important;
-  transition:
-    background-color 150ms ease,
-    border-width 150ms ease;
+  border-radius: 7px;
+  transition: background-color 150ms ease;
 }
-.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider:hover,
-.xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider:hover {
-  border-width: 2px !important;
-  background-color: var(--scrollbar-thumb-hover) !important;
-}
-.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active,
-.xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider.active {
-  border-width: 2px !important;
-  background-color: var(--scrollbar-thumb-active) !important;
-}
-.xterm .xterm-scrollable-element > .visible {
+.terminal-screen .xterm .xterm-scrollable-element > .xterm-visible {
   transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.xterm .xterm-scrollable-element > .invisible.fade {
+.terminal-screen .xterm .xterm-scrollable-element > .xterm-invisible.xterm-fade {
   transition: opacity 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -783,6 +778,7 @@ button:not([data-slot='button']):focus-visible {
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
+  --terminal-tab-hover: var(--accent);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --source-control-stat-added: #86efac;
@@ -818,8 +814,6 @@ button:not([data-slot='button']):focus-visible {
   --project-action-active: oklch(0.38 0 0);
   --agent-status-attention: #fbbf24;
   --agent-status-completed: #4ade80;
-  --terminal-tab-inactive: oklch(0.24 0 0);
-  --terminal-tab-inactive-hover: oklch(0.28 0 0);
   --scrollbar-thumb: rgba(180, 180, 185, 0.4);
   --scrollbar-thumb-hover: rgba(180, 180, 185, 0.6);
   --scrollbar-thumb-active: rgba(180, 180, 185, 0.8);

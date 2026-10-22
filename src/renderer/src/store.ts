@@ -72,6 +72,7 @@ interface Workspace {
   removeProject(path: string): Promise<boolean>
   newTerminal(provider?: AgentProvider, workspaceId?: string): void
   selectTab(id: string): void
+  reorderTab(workspaceId: string, id: string, toIndex: number): void
   updateTab(id: string, value: Partial<TerminalTab>): void
   closeTab(id?: string): Promise<void>
   savePreferences(value: Preferences): Promise<void>
@@ -240,6 +241,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           exitCode: session.exitCode,
         })
       }
+      const savedOrder = new Map(layout?.tabs.map((tab, index) => [tab.id, index]))
+      tabs.sort((a, b) => (savedOrder.get(a.id) ?? Infinity) - (savedOrder.get(b.id) ?? Infinity))
       for (const path of config.recentProjects)
         if (!workspaces.some((workspace) => workspace.projectPath === path))
           workspaces.push(createWorkspace(path))
@@ -620,6 +623,27 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         focusVersion: state.focusVersion + 1,
       }))
     }
+  },
+  reorderTab(workspaceId, id, toIndex) {
+    const state = get()
+    if (state.removingWorkspace || currentWorkspace(state)?.id !== workspaceId) return
+    const ordered = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
+    const fromIndex = ordered.findIndex((tab) => tab.id === id)
+    if (
+      fromIndex < 0 ||
+      fromIndex === toIndex ||
+      !Number.isInteger(toIndex) ||
+      toIndex < 0 ||
+      toIndex >= ordered.length ||
+      ordered[fromIndex].closingStatus
+    )
+      return
+    const [tab] = ordered.splice(fromIndex, 1)
+    ordered.splice(toIndex, 0, tab)
+    let index = 0
+    set({
+      tabs: state.tabs.map((item) => (item.workspaceId === workspaceId ? ordered[index++] : item)),
+    })
   },
   updateTab(id, value) {
     const { agent, agentRevision, ...fields } = value

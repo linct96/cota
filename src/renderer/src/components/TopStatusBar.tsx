@@ -116,7 +116,7 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
               >
                 <TabsTrigger
                   value="files"
-                  className="right-panel-files-tab h-8 w-8 flex-none rounded-md bg-terminal-tab-inactive p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-terminal-tab-inactive-hover [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
+                  className="right-panel-files-tab h-8 w-8 flex-none rounded-md bg-foreground/5 p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-foreground/10 [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
                   aria-label="文件浏览"
                   title="文件浏览"
                 >
@@ -124,7 +124,7 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
                 </TabsTrigger>
                 <TabsTrigger
                   value="git"
-                  className="right-panel-git-tab h-8 w-8 flex-none rounded-md bg-terminal-tab-inactive p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-terminal-tab-inactive-hover [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
+                  className="right-panel-git-tab h-8 w-8 flex-none rounded-md bg-foreground/5 p-0 text-muted-foreground transition-colors [&:not([data-active])]:hover:bg-foreground/10 [&:not([data-active])]:hover:text-foreground data-active:bg-card data-active:hover:bg-card data-active:text-foreground data-active:hover:text-foreground data-active:shadow-xs data-active:cursor-default"
                   aria-label="Git 管理"
                   title="Git 管理"
                 >

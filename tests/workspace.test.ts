@@ -1226,6 +1226,86 @@ describe('workspace state', () => {
     ])
   })
 
+  it('persists workspace tab sorting without changing terminal identity and restores it before new sessions', async () => {
+    const path = '/tmp/project'
+    const workspace = { id: 'workspace', projectPath: path, name: '工作区', kind: 'local' as const }
+    const other = { ...workspace, id: 'other-workspace' }
+    const a = {
+      id: 'a',
+      workspaceId: workspace.id,
+      projectPath: path,
+      title: 'A',
+      status: 'running' as const,
+    }
+    const b = { ...a, id: 'b', title: 'Pi', kind: 'agent' as const, provider: 'pi' as const }
+    const c = { ...a, id: 'c', title: 'C' }
+    const sibling = { ...a, id: 'sibling', workspaceId: other.id }
+    const original = [a, sibling, b, c]
+    const store = () => useWorkspace.getState()
+    useWorkspace.setState({
+      ready: true,
+      layoutLoaded: true,
+      projects: [path],
+      workspaces: [workspace, other],
+      selectedProject: path,
+      selectedWorkspaces: { [path]: workspace.id },
+      tabs: original,
+      activeTabs: { [workspace.id]: a.id, [other.id]: sibling.id },
+    })
+    vi.mocked(api.saveLayout).mockClear()
+    const focus = store().focusVersion
+    store().reorderTab(workspace.id, a.id, 2)
+    expect(store().tabs).toEqual([b, sibling, c, a])
+    expect(store().tabs.every((tab) => original.some((item) => item === tab))).toBe(true)
+    expect(store().focusVersion).toBe(focus)
+    expect(store().activeTabs).toEqual({ [workspace.id]: a.id, [other.id]: sibling.id })
+    expect(api.saveLayout).toHaveBeenCalledTimes(1)
+    const saved = vi.mocked(api.saveLayout).mock.calls[0][0]
+    store().reorderTab(workspace.id, a.id, 2)
+    store().reorderTab(workspace.id, sibling.id, 0)
+    store().reorderTab(other.id, sibling.id, 0)
+    store().reorderTab(workspace.id, 'closed-tab', 0)
+    for (const index of [-1, 3, 0.5, NaN]) store().reorderTab(workspace.id, a.id, index)
+    useWorkspace.setState({ removingWorkspace: workspace.id })
+    store().reorderTab(workspace.id, a.id, 0)
+    useWorkspace.setState({ removingWorkspace: undefined })
+    store().updateTab(a.id, { closingStatus: 'running' })
+    store().reorderTab(workspace.id, a.id, 0)
+    expect(api.saveLayout).toHaveBeenCalledTimes(1)
+    expect(store().tabs.map((tab) => tab.id)).toEqual(['b', 'sibling', 'c', 'a'])
+
+    const fresh = { ...a, id: 'fresh' }
+    vi.mocked(api.bootstrap).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        config: {
+          ...structuredClone(DEFAULT_CONFIG),
+          recentProjects: [path],
+          layout: { ...saved, tabs: [{ ...saved.tabs[0], id: 'lost' }, ...saved.tabs] },
+        },
+        sessions: [...original, fresh].map((tab) => ({
+          id: tab.id,
+          workspaceId: tab.workspaceId,
+          projectPath: path,
+          cwd: path,
+          workspaceKind: 'local' as const,
+          kind: tab === b ? ('agent' as const) : ('shell' as const),
+          provider: tab === b ? ('pi' as const) : undefined,
+          cols: 80,
+          rows: 24,
+          exited: false,
+        })),
+      },
+    })
+    await store().bootstrap()
+    expect(store().tabs.map((tab) => tab.id)).toEqual(['b', 'sibling', 'c', 'a', 'fresh'])
+    expect(store().tabs[0]).toMatchObject({ title: 'Pi', kind: 'agent', provider: 'pi' })
+    expect(store().activeTabs[workspace.id]).toBe(a.id)
+    expect(api.createTerminal).not.toHaveBeenCalled()
+    expect(api.attachTerminal).not.toHaveBeenCalled()
+    expect(api.closeTerminal).not.toHaveBeenCalled()
+  })
+
   it('does not overwrite the saved layout when bootstrap fails', async () => {
     vi.mocked(api.bootstrap).mockResolvedValueOnce({ ok: false, error: 'Host 不可用' })
     await useWorkspace.getState().bootstrap()
