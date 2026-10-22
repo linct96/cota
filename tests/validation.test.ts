@@ -11,6 +11,7 @@ import {
   terminalId,
 } from '../src/main/validation'
 import { resolveShell, shellEnvironment } from '../src/main/system/shell'
+import * as validation from '../src/main/validation'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import {
   shellFormSchema,
@@ -30,7 +31,7 @@ describe('trust boundary validation', () => {
     const root = await mkdtemp(join(tmpdir(), 'cota 中文-'))
     try {
       const alias = `${root}-alias`
-      await symlink(root, alias)
+      await symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir')
       try {
         expect(await projectDirectory(root)).toBe(await projectDirectory(alias))
       } finally {
@@ -39,7 +40,13 @@ describe('trust boundary validation', () => {
       const file = join(root, 'not-directory')
       await writeFile(file, '')
       await expect(projectDirectory(file)).rejects.toThrow('不可访问')
-      await expect(executable(file)).rejects.toThrow('不可执行')
+      if (process.platform === 'win32') {
+        // Windows ignores X_OK; a regular file passes this accessibility check.
+        await expect(executable(file)).resolves.toBe(file)
+      } else {
+        await expect(executable(file)).rejects.toThrow('不可执行')
+      }
+      await expect(executable(root)).rejects.toThrow('不可执行')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -120,19 +127,27 @@ describe('trust boundary validation', () => {
       expect(worktreeFormSchema.safeParse({ name, baseRef: 'main' }).success).toBe(false)
     expect(worktreeFormSchema.safeParse({ name: 'jupiter', baseRef: ' ' }).success).toBe(false)
   })
-  it('uses an executable SHELL, falls back to zsh, and never falls back from an invalid custom shell', async () => {
+  it('resolves platform defaults and never falls back from an invalid custom shell', async () => {
     const settings = DEFAULT_CONFIG.preferences
-    vi.stubEnv('SHELL', '/bin/bash')
-    expect(await resolveShell(settings)).toBe('/bin/bash')
-    const custom = { ...settings, shellName: '只做回显;不是命令', shellPath: '/bin/zsh' }
-    expect(await resolveShell(custom)).toBe('/bin/zsh')
+    const windows = process.platform === 'win32'
+    const programFiles = join(tmpdir(), 'cota shell defaults')
+    vi.stubEnv('ProgramFiles', programFiles)
+    const defaultShell = windows ? join(programFiles, 'PowerShell', '7', 'pwsh.exe') : '/bin/zsh'
+    vi.spyOn(validation, 'executable').mockImplementation(async (value) => {
+      if (value === process.execPath || value === defaultShell) return value
+      throw new Error('Shell 不存在或不可执行。')
+    })
+    vi.stubEnv('SHELL', process.execPath)
+    expect(await resolveShell(settings)).toBe(windows ? defaultShell : process.execPath)
+    const custom = { ...settings, shellName: '只做回显;不是命令', shellPath: process.execPath }
+    expect(await resolveShell(custom)).toBe(process.execPath)
     vi.stubEnv('SHELL', '')
-    expect(await resolveShell(settings)).toBe('/bin/zsh')
+    expect(await resolveShell(settings)).toBe(defaultShell)
     vi.stubEnv('SHELL', 'not-an-absolute-path')
-    expect(await resolveShell(settings)).toBe('/bin/zsh')
-    await expect(resolveShell({ ...settings, shellPath: '/missing-shell' })).rejects.toThrow(
-      '不可执行',
-    )
+    expect(await resolveShell(settings)).toBe(defaultShell)
+    await expect(
+      resolveShell({ ...settings, shellPath: join(tmpdir(), 'missing-shell') }),
+    ).rejects.toThrow('不可执行')
   })
   it('does not leak Electron runtime flags into interactive CLI children', () => {
     vi.stubEnv('ELECTRON_RUN_AS_NODE', '1')
