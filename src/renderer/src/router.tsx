@@ -5,6 +5,8 @@ import {
   createRouter,
   Navigate,
   type RouterHistory,
+  lazyRouteComponent,
+  redirect,
 } from '@tanstack/react-router'
 import { App } from './App'
 import { AppError } from './components/AppError'
@@ -29,7 +31,29 @@ const settingsRoute = createRoute({
   component: Settings,
 })
 
-const routeTree = rootRoute.addChildren([workspaceRoute, settingsRoute])
+const cortanaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cortana',
+  component: lazyRouteComponent(() => import('./features/cortana/CortanaLayout'), 'CortanaLayout'),
+  beforeLoad: ({ location }) => {
+    if (location.pathname === '/cortana') throw redirect({ to: '/cortana/accounts' })
+  },
+})
+
+const accountsRoute = createRoute({
+  getParentRoute: () => cortanaRoute,
+  path: '/accounts',
+  component: lazyRouteComponent(
+    () => import('./features/cortana/accounts/AccountsPage'),
+    'AccountsPage',
+  ),
+})
+
+const routeTree = rootRoute.addChildren([
+  workspaceRoute,
+  settingsRoute,
+  cortanaRoute.addChildren([accountsRoute]),
+])
 
 export function createAppRouter(history: RouterHistory = createHashHistory()) {
   return createRouter({ routeTree, history, defaultErrorComponent: AppError })

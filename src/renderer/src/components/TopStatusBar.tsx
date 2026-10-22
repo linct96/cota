@@ -18,17 +18,22 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { WindowControls } from './WindowControls'
 
 interface TopStatusBarProps {
-  settingsOpen: boolean
+  secondaryPageOpen: boolean
   sidebarWidth: number
   onBack(): void
   children?: ReactNode
 }
 
-export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: TopStatusBarProps) {
+export function TopStatusBar({
+  secondaryPageOpen,
+  sidebarWidth,
+  onBack,
+  children,
+}: TopStatusBarProps) {
   const rightPanelOpen = useRightPanel((state) => state.open)
   const rightPanelWidth = useRightPanel((state) => state.width)
   const rightPanelLabel = rightPanelOpen ? '收起右侧面板' : '展开右侧面板'
-  const isRightPanelVisible = rightPanelOpen && !settingsOpen
+  const isRightPanelVisible = rightPanelOpen && !secondaryPageOpen
 
   return (
     <header
@@ -59,7 +64,7 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
                   size="icon"
                   className="history-back-button"
                   aria-label="后退"
-                  disabled={!settingsOpen}
+                  disabled={!secondaryPageOpen}
                   onClick={onBack}
                 />
               }
@@ -67,7 +72,7 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
               <ArrowLeft className="history-back-icon" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {settingsOpen ? '后退到工作区' : '后退（功能待接入）'}
+              {secondaryPageOpen ? '后退到工作区' : '后退（功能待接入）'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -96,7 +101,7 @@ export function TopStatusBar({ settingsOpen, sidebarWidth, onBack, children }: T
         className={cn(
           'right-panel-header flex h-full shrink-0 items-center',
           rightPanelOpen ? 'justify-between' : 'justify-end',
-          settingsOpen && 'hidden',
+          secondaryPageOpen && 'hidden',
         )}
         data-open={isRightPanelVisible}
         // +1px 对齐下方渲染在面板外侧的 1px ResizableHandle 分割线。

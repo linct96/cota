@@ -12,6 +12,27 @@ import type {
 } from '../shared/contracts'
 
 const api: DesktopAPI = {
+  accounts: {
+    list: (product) => ipcRenderer.invoke('accounts:list', product),
+    add: (input) => ipcRenderer.invoke('accounts:add', input),
+    importCurrent: (product) => ipcRenderer.invoke('accounts:import-current', product),
+    importCortana: () => ipcRenderer.invoke('accounts:import-cortana'),
+    switch: (input) => ipcRenderer.invoke('accounts:switch', input),
+    rename: (input) => ipcRenderer.invoke('accounts:rename', input),
+    remove: (id) => ipcRenderer.invoke('accounts:remove', id),
+    refresh: (id) => ipcRenderer.invoke('accounts:refresh', id),
+    reorder: (product, ids) => ipcRenderer.invoke('accounts:reorder', product, ids),
+    startOAuth: (product, alias) => ipcRenderer.invoke('accounts:oauth-start', product, alias),
+    cancelOAuth: () => ipcRenderer.invoke('accounts:oauth-cancel'),
+    onOAuth: (listener) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        progress: import('../shared/accounts').AccountOAuthProgress,
+      ) => listener(progress)
+      ipcRenderer.on('accounts:oauth-progress', wrapped)
+      return () => ipcRenderer.removeListener('accounts:oauth-progress', wrapped)
+    },
+  },
   platform: process.platform,
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   saveLayout: (layout) => ipcRenderer.invoke('workspace:save-layout', layout),

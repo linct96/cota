@@ -7,6 +7,7 @@ files:
   - package.json
   - LICENSE
   - THIRD_PARTY_NOTICES.md
+  - resources/licenses/**
 asar: true
 asarUnpack:
   - node_modules/node-pty/**

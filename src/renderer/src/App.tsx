@@ -4,7 +4,6 @@ import { workspaceFormSchema } from './lib/form-schemas'
 import { Outlet, useRouter, useRouterState } from '@tanstack/react-router'
 import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
 import { HouseIcon } from '@phosphor-icons/react/dist/csr/House'
-import { SquaresFourIcon } from '@phosphor-icons/react/dist/csr/SquaresFour'
 import {
   Folder,
   FolderOpen,
@@ -18,6 +17,7 @@ import {
   Terminal as TerminalIcon,
   Trash2,
   X,
+  CircleDot,
 } from 'lucide-react'
 import { currentWorkspace, nextWorkspaceName, useWorkspace } from './store'
 import { unwrap } from '../../shared/contracts'
@@ -99,15 +99,15 @@ function folderName(path: string): string {
 export function App() {
   const state = useWorkspace()
   const router = useRouter()
-  const settingsOpen = useRouterState({
-    select: (state) => state.location.pathname === '/settings',
-  })
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const settingsOpen = pathname === '/settings'
+  const cortanaOpen = pathname.startsWith('/cortana')
+  const secondaryPageOpen = settingsOpen || cortanaOpen
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
-  const [navigation, setNavigation] = useState<'home' | 'placeholder'>('home')
   const [rightTab, setRightTab] = useState('files')
   const [projectSidebarWidth, setProjectSidebarWidth] = useState(240)
-  const activeNavigation = settingsOpen ? 'settings' : navigation
+  const activeNavigation = settingsOpen ? 'settings' : cortanaOpen ? 'cortana' : 'home'
   const menuTrigger = useRef<HTMLElement | null>(null)
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)
   const [workspaceToRemove, setWorkspaceToRemove] = useState<string | null>(null)
@@ -302,12 +302,12 @@ export function App() {
         data-platform={window.desktop.platform}
       >
         <TopStatusBar
-          settingsOpen={settingsOpen}
-          sidebarWidth={settingsOpen ? 240 : projectSidebarWidth + 1}
+          secondaryPageOpen={secondaryPageOpen}
+          sidebarWidth={secondaryPageOpen ? 240 : projectSidebarWidth + 1}
           onBack={() => void router.navigate({ to: '/' })}
         >
           {/* 终端标签栏 */}
-          {!settingsOpen && (
+          {!secondaryPageOpen && (
             <div className="terminal-tabs-region flex h-full min-w-0 flex-1 items-center gap-1">
               <Separator
                 aria-hidden="true"
@@ -420,7 +420,6 @@ export function App() {
                       className="nav-home-button"
                       data-active={activeNavigation === 'home'}
                       onClick={() => {
-                        setNavigation('home')
                         void router.navigate({ to: '/' })
                       }}
                     />
@@ -441,21 +440,17 @@ export function App() {
                       type="button"
                       variant="navigation"
                       size="icon-xl"
-                      aria-label="占位导航（仅测试样式）"
-                      aria-pressed={activeNavigation === 'placeholder'}
-                      className="nav-placeholder-button"
-                      data-active={activeNavigation === 'placeholder'}
-                      onClick={() => setNavigation('placeholder')}
+                      aria-label="Cortana"
+                      aria-current={cortanaOpen ? 'page' : undefined}
+                      className="nav-cortana-button"
+                      data-active={cortanaOpen}
+                      onClick={() => void router.navigate({ to: '/cortana/accounts' })}
                     />
                   }
                 >
-                  <SquaresFourIcon
-                    className="nav-placeholder-icon"
-                    aria-hidden="true"
-                    weight={activeNavigation === 'placeholder' ? 'fill' : 'regular'}
-                  />
+                  <CircleDot className="nav-cortana-icon" aria-hidden="true" />
                 </TooltipTrigger>
-                <TooltipContent side="right">占位导航（仅测试激活样式）</TooltipContent>
+                <TooltipContent side="right">Cortana</TooltipContent>
               </Tooltip>
             </div>
             <div className="primary-navigation-bottom flex flex-col items-center">
@@ -489,7 +484,7 @@ export function App() {
               className={cn(
                 'workspace-content app-panels flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-card',
                 // Group 强制内联 display: flex，隐藏时必须覆盖它并保留终端挂载。
-                settingsOpen && 'hidden!',
+                secondaryPageOpen && 'hidden!',
               )}
             >
               <ResizablePanel
@@ -499,7 +494,7 @@ export function App() {
                 maxSize={400}
                 groupResizeBehavior="preserve-pixel-size"
                 onResize={(size) => {
-                  if (!settingsOpen && size.inPixels > 0) setProjectSidebarWidth(size.inPixels)
+                  if (!secondaryPageOpen && size.inPixels > 0) setProjectSidebarWidth(size.inPixels)
                 }}
                 className="project-sidebar-panel flex min-h-0 min-w-0 flex-col"
                 style={{ overflow: 'hidden' }}
@@ -799,7 +794,7 @@ export function App() {
                                                   (await state.selectProject(path, workspace.id))
                                                 ) {
                                                   state.selectTab(tab.id)
-                                                  setNavigation('home')
+                                                  void router.navigate({ to: '/' })
                                                 }
                                               }}
                                             >
@@ -1012,19 +1007,19 @@ export function App() {
                         key={`${activeWorkspace.id}:${sourceControl.file}`}
                         workspace={activeWorkspace}
                         path={sourceControl.file}
-                        active={!settingsOpen}
+                        active={!secondaryPageOpen}
                       />
                     ) : sourceControl.previewAll ? (
                       <SourceControlChanges
                         key={activeWorkspace.id}
                         workspace={activeWorkspace}
-                        active={!settingsOpen}
+                        active={!secondaryPageOpen}
                       />
                     ) : (
                       <SourceControlDiff
                         key={activeWorkspace.id}
                         workspace={activeWorkspace}
-                        active={!settingsOpen}
+                        active={!secondaryPageOpen}
                       />
                     ))}
                   <div
@@ -1042,7 +1037,7 @@ export function App() {
                           tab={tab}
                           active={
                             isSelected &&
-                            !settingsOpen &&
+                            !secondaryPageOpen &&
                             !showingDiff &&
                             activeNavigation === 'home'
                           }
@@ -1101,7 +1096,7 @@ export function App() {
               </ResizablePanel>
               <RightPanel
                 workspace={activeWorkspace}
-                active={!settingsOpen}
+                active={!secondaryPageOpen}
                 filesActive={rightTab === 'files'}
               />
             </ResizablePanelGroup>

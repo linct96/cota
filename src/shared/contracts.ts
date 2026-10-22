@@ -376,6 +376,7 @@ export interface ConfirmationRequest {
 export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
 
 export interface DesktopAPI {
+  readonly accounts: import('./accounts').AccountsAPI
   readonly platform: string
   bootstrap(): Promise<
     Result<{

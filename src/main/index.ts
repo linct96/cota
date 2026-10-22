@@ -15,6 +15,7 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
+import { AccountService } from './accounts/service'
 import { projectBranch } from './git/project-branch'
 import { SourceControlService } from './git/source-control'
 import { SourceControlWatches } from './git/source-control-watch'
@@ -63,6 +64,7 @@ type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject:
 let window: BrowserWindow | undefined
 let manager: HostClient
 let config: ConfigStore
+let accounts: AccountService
 let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
 const sourceControlWatches = new SourceControlWatches()
@@ -199,6 +201,19 @@ async function removeTarget(target: RemovalTarget): Promise<boolean> {
 }
 
 function installIPC(): void {
+  handle('accounts:list', (product: unknown) => accounts.list(product))
+  handle('accounts:add', (input: unknown) => accounts.add(input))
+  handle('accounts:import-current', (product: unknown) => accounts.importCurrent(product))
+  handle('accounts:import-cortana', () => accounts.importCortana())
+  handle('accounts:switch', (input: unknown) => accounts.switch(input))
+  handle('accounts:rename', (input: unknown) => accounts.rename(input))
+  handle('accounts:remove', (id: unknown) => accounts.remove(id))
+  handle('accounts:refresh', (id: unknown) => accounts.refresh(id))
+  handle('accounts:reorder', (product: unknown, ids: unknown) => accounts.reorder(product, ids))
+  handle('accounts:oauth-start', (product: unknown, alias: unknown) =>
+    accounts.startOAuth(product, alias),
+  )
+  handle('accounts:oauth-cancel', () => accounts.cancelOAuth())
   handle('app:bootstrap', async () => {
     rendererReady = true
     const sessions = await manager.request('list', [])
@@ -673,6 +688,7 @@ async function requestExit(): Promise<void> {
     manager.disconnect()
     sourceControlWatches.close()
     fileWatches.close()
+    await accounts.close()
     exiting = true
     app.quit()
   } catch (error) {
@@ -789,6 +805,13 @@ if (!app.requestSingleInstanceLock()) {
       app.setName(appName)
       nativeTheme.themeSource = 'light'
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
+      accounts = new AccountService(
+        join(app.getPath('userData'), 'cortana.sqlite3'),
+        (progress) => {
+          if (window && !window.webContents.isDestroyed())
+            window.webContents.send('accounts:oauth-progress', progress)
+        },
+      )
       warning = (await config.load()).warning
       worktrees = new WorktreeManager(
         config,

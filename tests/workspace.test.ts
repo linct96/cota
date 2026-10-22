@@ -43,6 +43,20 @@ beforeEach(() => {
   useRightPanel.setState(useRightPanel.getInitialState(), true)
   useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
+    accounts: {
+      list: vi.fn(),
+      add: vi.fn(),
+      importCurrent: vi.fn(),
+      importCortana: vi.fn(),
+      switch: vi.fn(),
+      rename: vi.fn(),
+      remove: vi.fn(),
+      refresh: vi.fn(),
+      reorder: vi.fn(),
+      startOAuth: vi.fn(),
+      cancelOAuth: vi.fn(),
+      onOAuth: vi.fn(() => vi.fn()),
+    },
     platform: 'darwin',
     bootstrap: vi.fn().mockResolvedValue({
       ok: true,
