@@ -47,6 +47,8 @@ beforeEach(() => {
     readClipboard: vi.fn(),
     writeClipboard: vi.fn(),
     setShortcutRecording: vi.fn(),
+    inspectAgentClis: vi.fn(),
+    installAgentCli: vi.fn(),
     accounts: {
       list: vi.fn(),
       add: vi.fn(),

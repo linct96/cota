@@ -33,6 +33,7 @@ import { WorktreeManager } from './git/worktree-manager'
 import { WorktreeError } from './git/git-worktrees'
 import { openWorkspaceWith } from './system/open-with'
 import { detectAgents } from './agents/registry'
+import { AgentCliManagement } from './agents/cli-management'
 import { CommitMessageService } from './agents/commit-message-service'
 import type { CommitMessageRequest } from '../shared/commit-message'
 import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
@@ -80,6 +81,7 @@ let accounts: AccountService
 let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
 const commitMessages = new CommitMessageService()
+const agentClis = new AgentCliManagement()
 const sourceControlWatches = new SourceControlWatches()
 const files = new FileExplorerService(() => config.snapshot().preferences.fileExplorer)
 const fileWatches = new FileExplorerWatches(
@@ -551,6 +553,21 @@ function installIPC(): void {
     if (typeof recording === 'boolean') event.sender.setIgnoreMenuShortcuts(recording)
   })
   handle('agent:detect', () => detectAgents(config.snapshot().preferences))
+  handle('agent:cli-inspect', (checkUpdates: unknown = false) => {
+    if (typeof checkUpdates !== 'boolean') throw new Error('版本检查选项无效。')
+    return agentClis.inspect(config.snapshot().preferences, checkUpdates)
+  })
+  handle('agent:cli-install', async (value: unknown) => {
+    assertLifecycle()
+    const provider = agentProvider(value)
+    if (
+      (await manager.request('list', [])).some(
+        (session) => session.provider === provider && !session.exited,
+      )
+    )
+      throw new Error('请先关闭 Cota 中正在运行的该智能体终端，再安装或更新。')
+    return agentClis.install(provider, config.snapshot().preferences)
+  })
   handle('agent:hooks-detect', async () => {
     const settings = config.snapshot().preferences
     const [env, agents] = await Promise.all([

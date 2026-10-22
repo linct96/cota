@@ -122,6 +122,21 @@ export function shellArguments(path: string): string[] {
 export async function resolveCommand(path: string, args: string[], env: Record<string, string>) {
   if (!isWindows || !/\.(cmd|bat)$/i.test(path)) return { executable: path, args, env }
   const source = await readFile(path, 'utf8')
+  // Node's npm.cmd stores its entrypoint in a variable instead of invoking a literal path.
+  const npmEntry =
+    basename(path).toLowerCase() === 'npm.cmd'
+      ? /^\s*SET\s+"NPM_CLI_JS=%~dp0[\\/]?([^"\r\n]+\.js)"\s*$/im.exec(source)
+      : null
+  if (npmEntry) {
+    const entry = resolve(dirname(path), npmEntry[1])
+    if ((await stat(entry).catch(() => undefined))?.isFile()) {
+      const localNode = join(dirname(path), 'node.exe')
+      const runtime = (await stat(localNode).catch(() => undefined))?.isFile()
+        ? await executable(localNode)
+        : await findExecutable('node.exe', env)
+      return { executable: runtime, args: [entry, ...args], env }
+    }
+  }
   const matches = [...source.matchAll(/"%(?:~dp0|dp0%|basedir%)([^"\r\n]+\.js)"/gi)]
   for (const match of matches) {
     const entry = resolve(dirname(path), match[1])

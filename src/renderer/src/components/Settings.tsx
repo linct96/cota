@@ -3,6 +3,7 @@ import {
   AppWindow,
   Archive,
   Blocks,
+  Bot,
   Download,
   Folder,
   FolderTree,
@@ -32,6 +33,7 @@ import { OpenWithSettings } from './OpenWithSettings'
 import { AppearanceSettings } from './AppearanceSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
+import { AgentSettings } from './AgentSettings'
 
 interface SettingItem {
   id: string
@@ -53,6 +55,12 @@ const SETTING_GROUPS: SettingGroup[] = [
     items: [
       { id: 'general', label: '常规', icon: SettingsIcon },
       { id: 'terminal', label: '终端', icon: SquareTerminal },
+      {
+        id: 'agents',
+        label: '智能体',
+        icon: Bot,
+        keywords: 'agent cli 安装 更新 版本 codex claude pi',
+      },
       { id: 'file-explorer', label: '文件浏览器', icon: FolderTree, keywords: 'git 忽略 符号链接' },
       { id: 'source-control', label: '源代码管理', icon: GitBranch },
       { id: 'import', label: '导入', icon: Download },
@@ -227,6 +235,9 @@ export function Settings() {
           <TabsContent value="shortcuts" className="settings-shortcuts-content mt-0">
             <ShortcutSettings />
           </TabsContent>
+          <TabsContent value="agents" className="settings-agents-content mt-0">
+            <AgentSettings />
+          </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
             .filter(
               (item) =>
@@ -238,6 +249,7 @@ export function Settings() {
                   'appearance',
                   'file-explorer',
                   'shortcuts',
+                  'agents',
                 ].includes(item.id),
             )
             .map((item) => (

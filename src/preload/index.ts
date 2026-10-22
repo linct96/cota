@@ -23,6 +23,8 @@ const api: DesktopAPI = {
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
   writeClipboard: (text) => ipcRenderer.invoke('clipboard:write', text),
   setShortcutRecording: (recording) => ipcRenderer.send('shortcuts:recording', recording),
+  inspectAgentClis: (checkUpdates = false) => ipcRenderer.invoke('agent:cli-inspect', checkUpdates),
+  installAgentCli: (provider) => ipcRenderer.invoke('agent:cli-install', provider),
   accounts: {
     list: (product) => ipcRenderer.invoke('accounts:list', product),
     add: (input) => ipcRenderer.invoke('accounts:add', input),
