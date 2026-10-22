@@ -23,9 +23,15 @@ export interface WorkspaceOpener {
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
 export type ThemePreference = 'system' | 'light' | 'dark'
 
+export interface FileExplorerPreferences {
+  showIgnored: boolean
+  followSymlinks: boolean
+}
+
 export interface Preferences {
   theme: ThemePreference
   terminalAppearance: TerminalAppearance
+  fileExplorer: FileExplorerPreferences
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
   shellName: string | null
@@ -470,6 +476,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   preferences: {
     theme: 'system',
     terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
+    fileExplorer: { showIgnored: true, followSymlinks: false },
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
     shellName: null,

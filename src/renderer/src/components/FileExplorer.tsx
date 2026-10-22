@@ -39,6 +39,7 @@ export function FileExplorer({
   active: boolean
 }) {
   const session = useFileExplorer((state) => state.sessions[workspace.id] || EMPTY_EXPLORER)
+  const explorerOptions = useWorkspace((state) => state.preferences.fileExplorer)
   const folderPath = useWorkspace((state) =>
     workspace.kind === 'git-worktree'
       ? state.worktreeRecords.find((record) => record.id === workspace.worktreeId)?.path
@@ -51,7 +52,25 @@ export function FileExplorer({
   const tree = useRef<HTMLDivElement>(null)
   const [restart, setRestart] = useState(0)
   const [actionError, setActionError] = useState<string>()
-  const rows = explorerRows(session)
+  const visibleSession = {
+    ...session,
+    directories: Object.fromEntries(
+      Object.entries(session.directories).map(([path, directory]) => [
+        path,
+        {
+          ...directory,
+          entries: directory.entries
+            ?.filter((entry) => explorerOptions.showIgnored || !entry.ignored)
+            .map((entry) =>
+              !explorerOptions.followSymlinks && entry.symlink
+                ? { ...entry, kind: 'link' as const }
+                : entry,
+            ),
+        },
+      ]),
+    ),
+  }
+  const rows = explorerRows(visibleSession)
   const directories = [
     '',
     ...rows
@@ -68,7 +87,13 @@ export function FileExplorer({
   const focusPath = rows.some((row) => row.path === session.selected)
     ? session.selected
     : rows[0]?.path
-  const watchError = useFileWatch(target, directories, active, refresh, restart)
+  const watchError = useFileWatch(
+    target,
+    directories,
+    active,
+    refresh,
+    `${restart}:${JSON.stringify(explorerOptions)}`,
+  )
 
   function refresh(paths = directories) {
     for (const path of paths) void useFileExplorer.getState().load(target, path)
@@ -76,7 +101,7 @@ export function FileExplorer({
   const refreshActive = useEffectEvent(() => refresh())
   useEffect(() => {
     if (active) refreshActive()
-  }, [active, target])
+  }, [active, target, explorerOptions])
   useEffect(() => {
     if (!active) return
     const current = useFileExplorer.getState().sessions[workspace.id]

@@ -6,7 +6,7 @@ export function useFileWatch(
   paths: string[],
   active: boolean,
   onChange: (paths: string[]) => void,
-  restart = 0,
+  restart: string | number = 0,
 ): string | undefined {
   const changed = useEffectEvent(onChange)
   const { projectPath, workspaceId } = target

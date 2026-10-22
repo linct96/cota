@@ -61,6 +61,7 @@ export function preferences(value: unknown): Preferences {
   const {
     theme = 'system',
     terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
+    fileExplorer = { showIgnored: true, followSymlinks: false },
     shellName,
     shellPath,
     scrollback,
@@ -69,6 +70,12 @@ export function preferences(value: unknown): Preferences {
     commitMessagePrompt = '',
   } = value as Partial<Preferences>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
+  if (
+    !fileExplorer ||
+    typeof fileExplorer.showIgnored !== 'boolean' ||
+    typeof fileExplorer.followSymlinks !== 'boolean'
+  )
+    throw new Error('文件浏览器选项无效。')
   if (
     typeof commitMessagePrompt !== 'string' ||
     commitMessagePrompt.length > 4000 ||
@@ -95,6 +102,10 @@ export function preferences(value: unknown): Preferences {
   return {
     theme,
     terminalAppearance: terminalAppearanceSchema.parse(terminalAppearance),
+    fileExplorer: {
+      showIgnored: fileExplorer.showIgnored,
+      followSymlinks: fileExplorer.followSymlinks,
+    },
     terminalGpuAcceleration,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,

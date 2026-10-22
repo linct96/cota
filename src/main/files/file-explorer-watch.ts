@@ -3,12 +3,18 @@ import { lstat } from 'node:fs/promises'
 import type { FileWatchEvent } from '../../shared/file-explorer'
 import { FileExplorerService, explorerPath } from './file-explorer'
 import { terminalId } from '../validation'
+import type { FileExplorerPreferences } from '../../shared/contracts'
 
 export class FileExplorerWatches {
   private readonly subscriptions = new Map<string, () => void>()
-  private readonly files = new FileExplorerService()
+  private readonly files: FileExplorerService
 
-  constructor(private readonly watchDirectory: typeof watch = watch) {}
+  constructor(
+    private readonly watchDirectory: typeof watch = watch,
+    options?: () => FileExplorerPreferences,
+  ) {
+    this.files = new FileExplorerService(options)
+  }
 
   async start(
     value: unknown,

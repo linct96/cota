@@ -80,8 +80,11 @@ let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
 const commitMessages = new CommitMessageService()
 const sourceControlWatches = new SourceControlWatches()
-const files = new FileExplorerService()
-const fileWatches = new FileExplorerWatches()
+const files = new FileExplorerService(() => config.snapshot().preferences.fileExplorer)
+const fileWatches = new FileExplorerWatches(
+  undefined,
+  () => config.snapshot().preferences.fileExplorer,
+)
 let warning: string | undefined
 let exiting = false
 let exitPending = false
@@ -529,6 +532,8 @@ function installIPC(): void {
     await config.savePreferences(next)
     nativeTheme.themeSource = next.theme
     updateWindowBackground()
+    if (JSON.stringify(previous.fileExplorer) !== JSON.stringify(next.fileExplorer))
+      fileWatches.close()
     if (next.scrollback !== previous.scrollback)
       await manager.request('setScrollback', [next.scrollback])
     return next

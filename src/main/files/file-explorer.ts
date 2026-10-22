@@ -1,9 +1,10 @@
 import { isUtf8 } from 'node:buffer'
 import { constants } from 'node:fs'
-import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises'
+import { lstat, open, opendir, readlink, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, sep } from 'node:path'
 import type { FileEntry, FilePreview } from '../../shared/file-explorer'
 import { runGitBytes } from '../git/git-runner'
+import type { FileExplorerPreferences } from '../../shared/contracts'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_DIRECTORY_ENTRIES = 10000
@@ -25,17 +26,27 @@ export function explorerPath(value: unknown): string {
 }
 
 export class FileExplorerService {
+  constructor(
+    private readonly options: () => FileExplorerPreferences = () => ({
+      showIgnored: true,
+      followSymlinks: false,
+    }),
+  ) {}
+
   async location(root: string, value: unknown, allowLink = true): Promise<string> {
     const path = explorerPath(value)
     if ((await realpath(root)) !== root) throw new Error('工作区真实路径已改变，请重新选择工作区。')
     let target = root
     const parts = path ? path.split('/') : []
+    const ancestors = new Set([root])
+    if (parts.length > 128) throw new Error('目录层级过深。')
     for (const [index, part] of parts.entries()) {
       target = join(target, part)
       const info = await lstat(target)
       if (info.isSymbolicLink()) {
         if (allowLink && index === parts.length - 1) break
-        throw new Error('不跟随符号链接目录，请在终端或外部编辑器中查看。')
+        if (!this.options().followSymlinks) throw new Error('不跟随符号链接目录，请在设置中开启。')
+        if (!(await stat(target)).isDirectory()) throw new Error('仅允许跟随符号链接目录。')
       }
       const canonical = await realpath(target)
       const within = relative(root, canonical)
@@ -43,9 +54,13 @@ export class FileExplorerService {
         within === '..' ||
         within.startsWith(`..${sep}`) ||
         isAbsolute(within) ||
-        canonical !== target
+        (!this.options().followSymlinks && canonical !== target) ||
+        within.split(sep).some((part) => part.toLowerCase() === '.git')
       )
         throw new Error('文件真实路径已改变或位于工作区外，已拒绝访问。')
+      if (ancestors.has(canonical)) throw new Error('符号链接指向上级目录，已阻止循环访问。')
+      ancestors.add(canonical)
+      target = canonical
     }
     return target
   }
@@ -73,9 +88,23 @@ export class FileExplorerService {
               ? 'file'
               : 'other',
       })
+      if (entry.isSymbolicLink() && this.options().followSymlinks) {
+        const listed = entries[entries.length - 1]!
+        try {
+          const linked = await this.location(root, listed.path, false)
+          if ((await stat(linked)).isDirectory()) {
+            listed.kind = 'directory'
+            listed.symlink = true
+          }
+        } catch {
+          /* Broken, external, and cyclic links remain inspectable as links. */
+        }
+      }
     }
     if (entries.length) {
-      const names = entries.map((entry) => entry.name + (entry.kind === 'directory' ? '/' : ''))
+      const names = entries.map(
+        (entry) => entry.name + (entry.kind === 'directory' && !entry.symlink ? '/' : ''),
+      )
       // Ignore styling is optional: ordinary folders and unavailable Git must remain browsable.
       const output = await runGitBytes(
         target,
@@ -93,12 +122,14 @@ export class FileExplorerService {
     const after = await lstat(target)
     if (before.ino !== after.ino || before.dev !== after.dev)
       throw new Error('目录在读取期间被替换，请刷新。')
-    return entries.sort(
-      (a, b) =>
-        Number(b.kind === 'directory') - Number(a.kind === 'directory') ||
-        names.compare(a.name, b.name) ||
-        a.name.localeCompare(b.name),
-    )
+    return entries
+      .filter((entry) => this.options().showIgnored || !entry.ignored)
+      .sort(
+        (a, b) =>
+          Number(b.kind === 'directory') - Number(a.kind === 'directory') ||
+          names.compare(a.name, b.name) ||
+          a.name.localeCompare(b.name),
+      )
   }
 
   async read(root: string, value: unknown): Promise<FilePreview> {

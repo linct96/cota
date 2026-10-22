@@ -5,6 +5,7 @@ import {
   Blocks,
   Download,
   Folder,
+  FolderTree,
   GitBranch,
   Keyboard,
   Mic,
@@ -29,6 +30,7 @@ import { SourceControlSettings } from './SourceControlSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
 import { AppearanceSettings } from './AppearanceSettings'
+import { FileExplorerSettings } from './FileExplorerSettings'
 
 interface SettingItem {
   id: string
@@ -50,6 +52,7 @@ const SETTING_GROUPS: SettingGroup[] = [
     items: [
       { id: 'general', label: '常规', icon: SettingsIcon },
       { id: 'terminal', label: '终端', icon: SquareTerminal },
+      { id: 'file-explorer', label: '文件浏览器', icon: FolderTree, keywords: 'git 忽略 符号链接' },
       { id: 'source-control', label: '源代码管理', icon: GitBranch },
       { id: 'import', label: '导入', icon: Download },
       { id: 'appearance', label: '外观', icon: Sun, keywords: '主题 自动 浅色 深色' },
@@ -217,12 +220,20 @@ export function Settings() {
           <TabsContent value="appearance" className="settings-appearance-content mt-0">
             <AppearanceSettings />
           </TabsContent>
+          <TabsContent value="file-explorer" className="settings-file-explorer-content mt-0">
+            <FileExplorerSettings />
+          </TabsContent>
           {SETTING_GROUPS.flatMap((g) => g.items)
             .filter(
               (item) =>
-                !['general', 'terminal', 'open-with', 'source-control', 'appearance'].includes(
-                  item.id,
-                ),
+                ![
+                  'general',
+                  'terminal',
+                  'open-with',
+                  'source-control',
+                  'appearance',
+                  'file-explorer',
+                ].includes(item.id),
             )
             .map((item) => (
               <TabsContent key={item.id} value={item.id} className="mt-0">
