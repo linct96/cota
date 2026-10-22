@@ -15,7 +15,7 @@ const buttonVariants = cva(
         ghost:
           'hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50',
         navigation:
-          'text-app-muted-foreground hover:bg-foreground/3 hover:text-foreground data-[active=true]:bg-foreground/6 data-[active=true]:text-foreground data-[active=true]:hover:bg-foreground/6',
+          'text-app-muted-foreground hover:bg-muted-hover hover:text-foreground data-[active=true]:bg-foreground/6 data-[active=true]:text-foreground data-[active=true]:hover:bg-muted-hover',
         project:
           'text-app-muted-foreground hover:bg-accent hover:text-accent-foreground data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
         'window-control':
