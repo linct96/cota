@@ -762,9 +762,10 @@ export function App() {
                                     disabled={!state.ready || !!state.removingWorkspace}
                                     onClick={() => {
                                       workspaceDialogTrigger.current = menuTrigger.current
-                                      workspaceForm.reset({
-                                        name: nextWorkspaceName(path, state.workspaces),
-                                      })
+                                      workspaceForm.reset(
+                                        { name: nextWorkspaceName(path, state.workspaces) },
+                                        { keepDefaultValues: true },
+                                      )
                                       setWorkspaceSaveError(undefined)
                                       setWorkspaceDialog({ projectPath: path })
                                     }}
@@ -1035,7 +1036,10 @@ export function App() {
                                         className="workspace-edit-item"
                                         onClick={() => {
                                           workspaceDialogTrigger.current = menuTrigger.current
-                                          workspaceForm.reset({ name: workspace.name })
+                                          workspaceForm.reset(
+                                            { name: workspace.name },
+                                            { keepDefaultValues: true },
+                                          )
                                           setWorkspaceSaveError(undefined)
                                           setWorkspaceDialog({
                                             projectPath: path,
