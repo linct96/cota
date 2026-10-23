@@ -10,7 +10,6 @@ import {
   FolderPlus,
   FileDiff,
   GitFork,
-  ExternalLink,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -51,7 +50,6 @@ import {
   agentTabState,
   workspaceAgentSummary,
 } from './lib/agent-status'
-import { OpenerIcon } from './components/OpenWithIcons'
 import { WorktreeDialog } from './components/WorktreeDialog'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
@@ -93,8 +91,6 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from './components/ui/context-menu'
 import { cn, shortenPath } from './lib/utils'
@@ -964,73 +960,6 @@ export function App() {
                                             scanEntry?.status !== 'ready')
                                         }
                                       />
-                                      <ContextMenuSub>
-                                        <ContextMenuSubTrigger className="workspace-open-with-trigger">
-                                          <ExternalLink className="workspace-open-with-icon" />
-                                          <span className="workspace-open-with-label">打开于</span>
-                                        </ContextMenuSubTrigger>
-                                        <ContextMenuContent
-                                          className="workspace-open-with-menu"
-                                          aria-label="打开于"
-                                        >
-                                          <ContextMenuGroup className="workspace-open-with-programs">
-                                            {state.workspaceOpeners
-                                              .filter(
-                                                (opener) =>
-                                                  opener.id !== 'system-file-manager' &&
-                                                  !(
-                                                    opener.id === 'finder' &&
-                                                    opener.command === '/usr/bin/open' &&
-                                                    opener.arguments === '-a Finder {path}'
-                                                  ),
-                                              )
-                                              .map((opener) => (
-                                                <ContextMenuItem
-                                                  key={opener.id}
-                                                  className="workspace-open-with-item"
-                                                  onClick={() => {
-                                                    void window.desktop
-                                                      .openWorkspaceWith(
-                                                        {
-                                                          projectPath: workspace.projectPath,
-                                                          workspaceId: workspace.id,
-                                                        },
-                                                        opener.id,
-                                                      )
-                                                      .then(unwrap)
-                                                      .catch(console.error)
-                                                  }}
-                                                >
-                                                  <OpenerIcon
-                                                    name={opener.name}
-                                                    command={opener.command}
-                                                    id={opener.id}
-                                                    className="workspace-open-with-app-icon size-3.5"
-                                                  />
-                                                  {opener.name}
-                                                </ContextMenuItem>
-                                              ))}
-                                            <ContextMenuItem
-                                              className="workspace-open-file-manager-item"
-                                              onClick={() => {
-                                                void window.desktop
-                                                  .openWorkspaceWith(
-                                                    {
-                                                      projectPath: workspace.projectPath,
-                                                      workspaceId: workspace.id,
-                                                    },
-                                                    'system-file-manager',
-                                                  )
-                                                  .then(unwrap)
-                                                  .catch(console.error)
-                                              }}
-                                            >
-                                              <FolderOpen className="workspace-open-file-manager-icon" />
-                                              文件管理器
-                                            </ContextMenuItem>
-                                          </ContextMenuGroup>
-                                        </ContextMenuContent>
-                                      </ContextMenuSub>
                                       <ContextMenuItem
                                         disabled={!!state.removingWorkspace}
                                         className="workspace-edit-item"
