@@ -4,6 +4,7 @@ import { createAppRouter } from './router'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
 import './styles.css'
 import { useWorkspace } from './store'
+import { unwrap } from '../../shared/contracts'
 import { applyDocumentTheme } from './lib/theme'
 import { playNotificationSound } from './lib/notification-sound'
 
@@ -39,6 +40,27 @@ import.meta.hot?.dispose(() => {
 })
 
 if (import.meta.env.DEV) {
+  document.documentElement.classList.add('dev-text-selection')
+  const copyText = (event: KeyboardEvent) => {
+    if (
+      !(window.desktop.platform === 'darwin' ? event.metaKey : event.ctrlKey) ||
+      event.altKey ||
+      event.shiftKey ||
+      event.key.toLowerCase() !== 'c' ||
+      !(event.target instanceof Element) ||
+      event.target.closest('.xterm, input, textarea, [contenteditable]')
+    )
+      return
+    const text = window.getSelection()?.toString()
+    if (!text) return
+    event.preventDefault()
+    void window.desktop.writeClipboard(text).then(unwrap).catch(console.error)
+  }
+  document.addEventListener('keydown', copyText)
+  import.meta.hot?.dispose(() => {
+    document.removeEventListener('keydown', copyText)
+    document.documentElement.classList.remove('dev-text-selection')
+  })
   void import('react-grab')
 }
 
