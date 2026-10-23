@@ -213,12 +213,12 @@ export function TerminalSettings() {
               <Card className="terminal-settings-card" aria-busy={saving}>
                 <Field className="terminal-settings-shell-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
                   <div className="terminal-settings-shell-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                    <label
-                      htmlFor="terminal-settings-shell"
+                    <span
+                      id="terminal-settings-shell-label"
                       className="terminal-settings-shell-label text-sm leading-5 font-medium"
                     >
                       默认终端 Shell
-                    </label>
+                    </span>
                     <p
                       id="terminal-settings-shell-description"
                       className="terminal-settings-shell-description text-xs text-muted-foreground"
@@ -260,6 +260,7 @@ export function TerminalSettings() {
                     >
                       <SelectTrigger
                         id="terminal-settings-shell"
+                        aria-labelledby="terminal-settings-shell-label"
                         aria-describedby="terminal-settings-shell-description terminal-settings-default-shell-error terminal-settings-shell-error"
                         className="terminal-settings-select-trigger min-w-0 max-w-64"
                       >
@@ -307,12 +308,12 @@ export function TerminalSettings() {
 
                 <Field className="terminal-settings-scrollback-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
                   <div className="terminal-settings-scrollback-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                    <label
-                      htmlFor="terminal-settings-scrollback"
+                    <span
+                      id="terminal-settings-scrollback-label"
                       className="terminal-settings-scrollback-label text-sm leading-5 font-medium"
                     >
                       滚动缓冲行数
-                    </label>
+                    </span>
                     <p
                       id="terminal-settings-scrollback-description"
                       className="terminal-settings-scrollback-description text-xs text-muted-foreground"
@@ -343,6 +344,7 @@ export function TerminalSettings() {
                   >
                     <SelectTrigger
                       id="terminal-settings-scrollback"
+                      aria-labelledby="terminal-settings-scrollback-label"
                       aria-describedby="terminal-settings-scrollback-description terminal-settings-scrollback-save-error"
                       className="terminal-settings-select-trigger"
                     >

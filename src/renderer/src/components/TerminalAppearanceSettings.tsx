@@ -417,12 +417,12 @@ export function TerminalAppearanceSettings({
                                   }
                                 >
                                   <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                                    <label
-                                      htmlFor="terminal-font-family"
+                                    <span
+                                      id="terminal-font-family-label"
                                       className="terminal-font-family-label text-sm leading-5 font-medium"
                                     >
                                       字体
-                                    </label>
+                                    </span>
                                     <p
                                       id="terminal-font-family-help"
                                       className="terminal-font-family-description text-xs text-muted-foreground"
@@ -455,6 +455,7 @@ export function TerminalAppearanceSettings({
                                   >
                                     <ComboboxInput
                                       id="terminal-font-family"
+                                      aria-labelledby="terminal-font-family-label"
                                       className="terminal-font-family-input w-64 min-w-0 max-w-full shrink-0"
                                       onBlur={field.handleBlur}
                                       aria-invalid={
@@ -680,12 +681,12 @@ export function TerminalAppearanceSettings({
                               <form.Field key={name} name={name}>
                                 {(field) => (
                                   <Field className="terminal-theme-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                                    <label
-                                      htmlFor={`terminal-${name}`}
+                                    <span
+                                      id={`terminal-${name}-label`}
                                       className="terminal-theme-label text-sm font-medium leading-5"
                                     >
                                       {name === 'themeDark' ? '深色模式配色' : '浅色模式配色'}
-                                    </label>
+                                    </span>
                                     <Select
                                       value={field.state.value}
                                       onValueChange={(value) => {
@@ -697,6 +698,7 @@ export function TerminalAppearanceSettings({
                                     >
                                       <SelectTrigger
                                         id={`terminal-${name}`}
+                                        aria-labelledby={`terminal-${name}-label`}
                                         className="terminal-theme-trigger min-w-0 max-w-full"
                                         onBlur={field.handleBlur}
                                       >
