@@ -10,7 +10,6 @@ import {
 } from '@tanstack/react-router'
 import { App } from './App'
 import { AppError } from './components/AppError'
-import { Settings } from './components/Settings'
 
 const rootRoute = createRootRoute({
   component: App,
@@ -34,7 +33,7 @@ const settingsRoute = createRoute({
     search.section === 'open-with' || search.section === 'quick-commands'
       ? { section: search.section }
       : {},
-  component: Settings,
+  component: lazyRouteComponent(() => import('./components/Settings'), 'Settings'),
 })
 
 const cortanaRoute = createRoute({
