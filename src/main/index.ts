@@ -19,7 +19,7 @@ import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
 import { readNotificationSound } from './notification-sound'
 import { NOTIFICATION_SOUND_EXTENSIONS } from '../shared/notification-sounds'
-import { shortcutBinding } from '../shared/shortcuts'
+import { COTA_SHORTCUTS, shortcutBinding } from '../shared/shortcuts'
 import { AccountService } from './accounts/service'
 import { projectBranch } from './git/project-branch'
 import { SourceControlService } from './git/source-control'
@@ -935,6 +935,40 @@ async function requestExit(): Promise<void> {
 function installMenu(): void {
   const accelerator = (id: string) =>
     shortcutBinding(config.snapshot().preferences.shortcuts, id, process.platform) || undefined
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        {
+          label: appName,
+          submenu: [
+            { role: 'about' },
+            {
+              label: 'Settings',
+              accelerator: accelerator('settings'),
+              click: () => sendShortcut('settings'),
+            },
+            { role: 'quit' },
+            // Hidden menu items keep application and native editing shortcuts registered.
+            ...COTA_SHORTCUTS.filter(([id]) => id !== 'settings').map(([id, label]) => ({
+              label,
+              visible: false,
+              accelerator: accelerator(id!),
+              click: () => sendShortcut(id as Shortcut),
+            })),
+            ...(
+              ['undo', 'redo', 'cut', 'hide', 'hideOthers', 'unhide', 'minimize', 'zoom'] as const
+            ).map((role) => ({ role, visible: false })),
+            ...(['copy', 'paste', 'selectAll'] as const).map((role) => ({
+              role,
+              visible: false,
+              accelerator: '',
+            })),
+          ],
+        },
+      ]),
+    )
+    return
+  }
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
