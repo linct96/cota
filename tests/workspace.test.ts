@@ -5,8 +5,16 @@ import type {
   CreateWorktreeResult,
   WorktreeScan,
 } from '../src/shared/contracts'
-import { DEFAULT_CONFIG } from '../src/shared/contracts'
-import { currentWorkspace, nextWorkspaceName, useWorkspace } from '../src/renderer/src/store'
+import { DEFAULT_CONFIG, MAX_TERMINALS } from '../src/shared/contracts'
+import { terminalPaneIds } from '../src/shared/terminal-layout'
+import { shortcutBinding, validateShortcutBindings } from '../src/shared/shortcuts'
+import {
+  currentWorkspace,
+  nextWorkspaceName,
+  terminalTabs,
+  useWorkspace,
+  type TerminalTab,
+} from '../src/renderer/src/store'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/headless'
 import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
@@ -15,7 +23,7 @@ import { createTerminalInputHandler } from '../src/renderer/src/lib/terminal-inp
 import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
 import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
 import { buildGitChangeTree, gitChangeRows } from '../src/renderer/src/lib/source-control-tree'
-import type { GitChange } from '../src/shared/source-control'
+import { gitFileKey, type GitChange } from '../src/shared/source-control'
 import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
 import { explorerRows, useFileExplorer } from '../src/renderer/src/lib/file-explorer-store'
 import type { FileEntry } from '../src/shared/file-explorer'
@@ -104,14 +112,18 @@ beforeEach(() => {
     inspectWorktreeRemoval: vi.fn(),
     removeGitWorktree: vi.fn(),
     unlinkGitWorktree: vi.fn(),
+    listWorkspaceOpeners: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     openWorkspaceWith: vi.fn().mockResolvedValue({ ok: true }),
     removeWorkspace: vi.fn().mockResolvedValue({ ok: true, value: true }),
     removeProject: vi.fn().mockResolvedValue({ ok: true, value: true }),
     getDefaultShell: vi.fn().mockResolvedValue({ ok: true, value: '/bin/zsh' }),
     savePreferences: vi.fn(async (value) => ({ ok: true as const, value })),
+    sendTestNotification: vi.fn().mockResolvedValue({ ok: true }),
+    chooseNotificationSound: vi.fn(),
+    onNotificationSound: vi.fn(() => vi.fn()),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
     closeWindow: vi.fn(),
-    restartApp: vi.fn(),
+    forceExitApp: vi.fn(),
     minimizeWindow: vi.fn(),
     toggleMaximizeWindow: vi.fn(),
     isWindowMaximized: vi.fn().mockResolvedValue({ ok: true, value: false }),
@@ -187,6 +199,83 @@ function scanFor(value: CreateWorktreeResult): WorktreeScan {
   }
 }
 describe('Worktree state transactions and recovery', () => {
+  it('runs quick commands only in their scoped workspace and never saves or replays startup text', async () => {
+    await useWorkspace.getState().bootstrap()
+    const value = managedWorktree()
+    const local = {
+      id: crypto.randomUUID(),
+      projectPath: value.record.projectPath,
+      name: '本地',
+      kind: 'local' as const,
+    }
+    const scan = scanFor(value)
+    useWorkspace.setState({
+      projects: [value.record.projectPath],
+      workspaces: [local, value.workspace],
+      worktreeScans: { [value.record.projectPath]: scan },
+      preferences: {
+        ...DEFAULT_CONFIG.preferences,
+        quickCommands: [
+          {
+            id: 'dev',
+            name: '开发服务',
+            command: 'pnpm dev',
+            scope: { type: 'project', projectPath: value.record.projectPath },
+          },
+          { id: 'global', name: '全局', command: 'git status', scope: { type: 'global' } },
+          {
+            id: 'other',
+            name: '其他项目',
+            command: 'false',
+            scope: { type: 'project', projectPath: '/tmp/other' },
+          },
+        ],
+      },
+    })
+    const store = () => useWorkspace.getState()
+    store().runQuickCommand('dev', value.workspace.id)
+    const tab = store().tabs[0]
+    expect(tab).toMatchObject({
+      workspaceId: value.workspace.id,
+      cwd: value.record.path,
+      title: '开发服务',
+      startupCommand: 'pnpm dev',
+      status: 'starting',
+    })
+    expect(store().activeTabs[value.workspace.id]).toBe(tab.id)
+    expect(store().recentQuickCommands[value.workspace.id]).toBe('dev')
+    expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].tabs[0]).not.toHaveProperty(
+      'startupCommand',
+    )
+    store().updateTab(tab.id, { status: 'running', startupCommand: undefined })
+    await store().closeTab(tab.id)
+    store().reopenTab()
+    expect(store().tabs[0].id).not.toBe(tab.id)
+    expect(store().tabs[0].startupCommand).toBeUndefined()
+    store().runQuickCommand('global', local.id)
+    expect(store().tabs.at(-1)).toMatchObject({
+      workspaceId: local.id,
+      cwd: value.record.projectPath,
+      startupCommand: 'git status',
+    })
+    const before = store().tabs
+    expect(() => store().runQuickCommand('other', local.id)).toThrow('不属于当前项目')
+    expect(() => store().runQuickCommand('deleted', local.id)).toThrow('快捷命令不存在')
+    scan.entries[0].status = 'missing'
+    expect(() => store().runQuickCommand('dev', value.workspace.id)).toThrow('不可用')
+    useWorkspace.setState({ removingWorkspace: local.id })
+    expect(() => store().runQuickCommand('global', local.id)).toThrow('正在关闭')
+    expect(store().tabs).toBe(before)
+    useWorkspace.setState({
+      removingWorkspace: undefined,
+      tabs: Array.from({ length: MAX_TERMINALS }, () => ({
+        ...before[0],
+        id: crypto.randomUUID(),
+      })),
+    })
+    expect(() => store().runQuickCommand('global', local.id)).toThrow('最多保留 10 个终端')
+    expect(api.writeTerminal).not.toHaveBeenCalled()
+  })
   it('adopts only Main success once, prevents duplicate submission and retains Worktree after Shell failure', async () => {
     await useWorkspace.getState().bootstrap()
     const value = managedWorktree()
@@ -228,6 +317,24 @@ describe('Worktree state transactions and recovery', () => {
     state.newTerminal()
     expect(useWorkspace.getState().tabs).toHaveLength(2)
     expect(useWorkspace.getState().tabs[1].cwd).toBe(value.record.path)
+    const tab = useWorkspace.getState().tabs[1]
+    state.updateTab(tab.id, { status: 'running' })
+    await state.closeTab(tab.id)
+    const history = useSourceControl.getState().sessions[value.workspace.id].closedTabs
+    const scan = scanFor(value)
+    scan.entries[0].status = 'missing'
+    useWorkspace.setState({ worktreeScans: { [value.record.projectPath]: scan } })
+    state.shortcut('reopen-tab')
+    expect(useWorkspace.getState().tabs).toHaveLength(1)
+    expect(useSourceControl.getState().sessions[value.workspace.id].closedTabs).toBe(history)
+    scan.entries[0].status = 'ready'
+    state.shortcut('reopen-tab')
+    expect(useWorkspace.getState().tabs[1]).toMatchObject({
+      workspaceId: value.workspace.id,
+      cwd: value.record.path,
+      status: 'starting',
+    })
+    expect(useWorkspace.getState().tabs[1].id).not.toBe(tab.id)
   })
   it('keeps selection, tabs and workspace unchanged on partial create failure', async () => {
     await useWorkspace.getState().bootstrap()
@@ -434,6 +541,7 @@ describe('workspace state', () => {
         ...[
           'o',
           't',
+          'd',
           'w',
           ',',
           '1',
@@ -455,6 +563,8 @@ describe('workspace state', () => {
           'm',
         ].map((key) => ({ key })),
         { key: 'Z', shiftKey: true },
+        { key: 'T', code: 'KeyT', shiftKey: true },
+        { key: 'D', code: 'KeyD', shiftKey: true },
         { key: '˙', code: 'KeyH', altKey: true },
       ]
       for (const shortcut of shortcuts) {
@@ -486,6 +596,39 @@ describe('workspace state', () => {
       ).toBe(true)
     }
     try {
+      for (const platform of ['darwin', 'win32', 'linux']) {
+        expect(shortcutBinding({}, 'toggle-right-panel', platform)).toBe('CommandOrControl+L')
+        const bindings = validateShortcutBindings(
+          { 'toggle-right-panel': 'CommandOrControl+P' },
+          platform,
+        )
+        let configured = false
+        const panelInput = createTerminalInputHandler({
+          platform,
+          canSend: () => running,
+          write,
+          getKittyFlags: () => 1,
+          textarea: { value: '' },
+          getShortcuts: () => (configured ? bindings : {}),
+        })
+        for (const value of ['l', 'p']) {
+          for (const type of ['keydown', 'keypress', 'keyup'])
+            expect(
+              panelInput.handleKeyEvent(
+                key({
+                  key: value,
+                  code: `Key${value.toUpperCase()}`,
+                  type,
+                  shiftKey: false,
+                  metaKey: platform === 'darwin',
+                  ctrlKey: platform !== 'darwin',
+                }),
+              ),
+            ).toBe(false)
+          configured = true
+        }
+        panelInput.dispose()
+      }
       expectMenuShortcuts()
       for (const platform of ['win32', 'linux']) {
         const other = createTerminalInputHandler({
@@ -497,7 +640,16 @@ describe('workspace state', () => {
         })
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, metaKey: true }))).toBe(true)
         expect(other.handleKeyEvent(key({ key: 'w', shiftKey: false, ctrlKey: true }))).toBe(true)
+        expect(
+          other.handleKeyEvent(key({ key: 'd', code: 'KeyD', shiftKey: false, ctrlKey: true })),
+        ).toBe(true)
         expect(other.handleKeyEvent(key({ key: 'c', ctrlKey: true }))).toBe(platform !== 'win32')
+        for (const type of ['keydown', 'keypress', 'keyup']) {
+          const reopen = key({ key: 'T', code: 'KeyT', ctrlKey: true, type })
+          expect(other.handleKeyEvent(reopen)).toBe(false)
+          expect(reopen.preventDefault).not.toHaveBeenCalled()
+        }
+        expect(other.handleKeyEvent(key({ key: 't', ctrlKey: true, shiftKey: false }))).toBe(true)
         other.dispose()
       }
       expect(input.handleKeyEvent(key({ shiftKey: false }))).toBe(true)
@@ -829,6 +981,7 @@ describe('workspace state', () => {
       shellPath: '/bin/bash',
       scrollback: 1000,
       terminalGpuAcceleration: 'off' as const,
+      preferredOpenerId: 'zed',
     }
     const before = useWorkspace.getState().preferences
     vi.mocked(api.savePreferences).mockResolvedValueOnce({ ok: false, error: '保存失败' })
@@ -1026,6 +1179,46 @@ describe('workspace state', () => {
       count: 1,
       description: '1 个已完成',
     })
+    const groupIndicator = (background: TerminalTab, focused = store().tabs[0]) =>
+      terminalTabs({
+        ...store(),
+        tabs: [focused, background],
+        terminalLayouts: [
+          {
+            id: 'group',
+            activePaneId: focused.id,
+            root: {
+              type: 'split',
+              id: 'split',
+              direction: 'horizontal',
+              ratio: 0.5,
+              children: [
+                { type: 'terminal', id: focused.id },
+                { type: 'terminal', id: background.id },
+              ],
+            },
+          },
+        ],
+      })[0]
+    for (const background of [working, succeeded, store().tabs[1], failed]) {
+      const grouped = groupIndicator(background)
+      expect(grouped.indicatorTab).toBe(background)
+      expect(grouped).toMatchObject({ id: 'group', kind: 'shell', cwd: other.cwd })
+    }
+    const focusedAgent = { ...succeeded, id: other.id }
+    expect(groupIndicator(working, focusedAgent).indicatorTab).toBe(working)
+    expect(groupIndicator(succeeded, focusedAgent).indicatorTab).toBe(focusedAgent)
+    expect(groupIndicator(succeeded, { ...store().tabs[0], status: 'error' }).indicatorTab).toBe(
+      succeeded,
+    )
+    for (const background of [
+      { ...succeeded, agent: { ...succeeded.agent, unread: false } },
+      { ...working, closingStatus: 'running' as const },
+      { ...working, agent: { ...buffered, runtimeState: 'exited' as const } },
+      { ...working, agent: { ...buffered, activityState: 'idle' as const } },
+    ]) {
+      expect(groupIndicator(background).indicatorTab).toBe(store().tabs[0])
+    }
     vi.useFakeTimers()
     try {
       vi.advanceTimersByTime(5000)
@@ -1485,6 +1678,8 @@ describe('workspace state', () => {
     })
     expect(store().tabs).toEqual([initial, first, second])
     expect(api.closeTerminal).not.toHaveBeenCalled()
+    expect(store().activeTabs[workspace.id]).toBe(second.id)
+    store().selectTab(first.id)
     store().updateTab(first.id, { status: 'running' })
     store().shortcut('close-terminal')
     await vi.waitFor(() => expect(store().tabs).toEqual([initial, second]))
@@ -1567,24 +1762,38 @@ describe('workspace state', () => {
       selection: undefined,
       draft: 'keep draft',
     })
-    useSourceControl.getState().update(target.id, {
-      selection: undefined,
-      preview: true,
-      previewAll: true,
-      status,
-    })
+    const terminalTabs = store().tabs
+    const closeCalls = vi.mocked(api.closeTerminal).mock.calls.length
+    useSourceControl.getState().update(target.id, { status })
+    useSourceControl.getState().openChanges(target.id)
+    useSourceControl.getState().openChanges(target.id)
     useSourceControl.getState().update(target.id, { status: { ...status, entries: [] } })
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
-      preview: true,
-      previewAll: true,
+      preview: false,
+      changesOpen: true,
+      changesActive: true,
       selection: undefined,
       draft: 'keep draft',
     })
-    useSourceControl.getState().showTerminal(target.id)
+    store().shortcut('tab-1')
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
       preview: false,
-      previewAll: true,
+      changesOpen: true,
+      changesActive: false,
     })
+    expect(store().tabs.filter((tab) => tab.workspaceId === target.id)).toHaveLength(5)
+    store().shortcut('tab-6')
+    expect(useSourceControl.getState().sessions[target.id].changesActive).toBe(true)
+    store().shortcut('close-terminal')
+    expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
+      changesOpen: false,
+      changesActive: false,
+      draft: 'keep draft',
+    })
+    expect(store().tabs).toBe(terminalTabs)
+    expect(api.closeTerminal).toHaveBeenCalledTimes(closeCalls)
+    expect(useSourceControl.getState().sessions[initial.workspaceId]?.changesOpen).not.toBe(true)
+    useSourceControl.getState().openChanges(target.id)
     const review = {
       area: 'review' as const,
       path: 'file.txt',
@@ -1601,7 +1810,8 @@ describe('workspace state', () => {
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
       selection: review,
       preview: true,
-      previewAll: false,
+      changesOpen: true,
+      changesActive: false,
     })
     store().selectTab(store().activeTabs[target.id])
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
@@ -1616,11 +1826,283 @@ describe('workspace state', () => {
     useRightPanel.setState({ open: true, width: 420 })
     await store().selectProject(path, initial.workspaceId)
     expect(useRightPanel.getState()).toEqual({ open: true, width: 420 })
-    useRightPanel.setState({ open: false })
+    store().shortcut('toggle-right-panel')
+    expect(useRightPanel.getState()).toEqual({ open: false, width: 420 })
     expect(useSourceControl.getState().sessions[target.id]).toBe(gitSession)
     expect(store().tabs).toBe(tabs)
-    useRightPanel.setState({ open: true })
+    store().shortcut('toggle-right-panel')
     expect(useRightPanel.getState()).toEqual({ open: true, width: 420 })
+  })
+
+  it('reuses Git diff previews and keeps pinned diffs independent of previews and terminals', async () => {
+    const store = () => useWorkspace.getState()
+    await store().bootstrap()
+    await store().openProject()
+    const id = currentWorkspace(store())!.id
+    const scm = useSourceControl.getState()
+    const session = () => useSourceControl.getState().sessions[id]
+    const first = { path: 'first.ts', area: 'unstaged' as const }
+    const second = { path: 'second.ts', area: 'unstaged' as const }
+    const staged = { ...second, area: 'staged' as const }
+    const terminals = store().tabs
+    scm.update(id, { draft: 'keep draft' })
+    scm.openDiff(id, first)
+    scm.openDiff(id, second)
+    expect(session()).toMatchObject({ selection: second, preview: true, pinnedDiffs: [] })
+    scm.pinDiff(id)
+    scm.pinDiff(id)
+    expect(session()).toMatchObject({
+      selection: undefined,
+      preview: false,
+      activePinnedDiff: second,
+      pinnedDiffs: [second],
+    })
+    scm.openDiff(id, first)
+    expect(session()).toMatchObject({
+      selection: first,
+      preview: true,
+      activePinnedDiff: undefined,
+    })
+    scm.openDiff(id, second)
+    expect(session()).toMatchObject({ selection: first, preview: false, activePinnedDiff: second })
+    scm.openDiff(id, staged)
+    scm.pinDiff(id)
+    expect(session().pinnedDiffs).toEqual([second, staged])
+    scm.openDiff(id, first)
+    scm.openChanges(id)
+    expect(session().tabOrder).toEqual([
+      `terminal:${terminals[0].id}`,
+      `diff:${gitFileKey(second)}`,
+      `diff:${gitFileKey(staged)}`,
+      'preview',
+      'changes',
+    ])
+    store().shortcut('tab-2')
+    expect(session()).toMatchObject({
+      activePinnedDiff: second,
+      changesActive: false,
+      preview: false,
+    })
+    store().shortcut('tab-4')
+    expect(session()).toMatchObject({
+      selection: first,
+      preview: true,
+      activePinnedDiff: undefined,
+    })
+    store().shortcut('tab-3')
+    store().shortcut('close-terminal')
+    expect(session()).toMatchObject({
+      pinnedDiffs: [second],
+      activePinnedDiff: undefined,
+      selection: first,
+    })
+    store().shortcut('tab-2')
+    scm.closeChanges(id)
+    scm.update(id, { selection: undefined, preview: false })
+    expect(session().activePinnedDiff).toEqual(second)
+    scm.update(id, { file: 'plain.ts', preview: true })
+    expect(session()).toMatchObject({
+      activePinnedDiff: undefined,
+      file: 'plain.ts',
+      preview: true,
+    })
+    scm.pinDiff(id)
+    expect(session().pinnedDiffs).toEqual([second])
+    scm.openDiff(id, second)
+    scm.showTerminal(id)
+    expect(session()).toMatchObject({ activePinnedDiff: undefined, pinnedDiffs: [second] })
+    scm.openDiff(id, second)
+    scm.update(id, {
+      status: {
+        rootPath: '/tmp/repo',
+        branch: 'main',
+        head: null,
+        ahead: 0,
+        behind: 0,
+        indexVersion: 'fixture',
+        entries: [],
+      },
+    })
+    expect(session()).toMatchObject({
+      activePinnedDiff: second,
+      pinnedDiffs: [second],
+      draft: 'keep draft',
+    })
+    scm.openDiff('other-workspace', first)
+    scm.pinDiff('other-workspace')
+    scm.closePinnedDiff('other-workspace', gitFileKey(first))
+    expect(session().pinnedDiffs).toEqual([second])
+    store().shortcut('close-terminal')
+    expect(session()).toMatchObject({
+      pinnedDiffs: [],
+      activePinnedDiff: undefined,
+      file: 'plain.ts',
+    })
+    expect(store().tabs).toBe(terminals)
+    expect(api.closeTerminal).not.toHaveBeenCalled()
+
+    scm.openChanges(id)
+    store().newTerminal('pi')
+    const added = store().tabs.at(-1)!
+    const order = [`terminal:${terminals[0].id}`, 'preview', 'changes', `terminal:${added.id}`]
+    expect(session().tabOrder).toEqual(order)
+    const stableOrder = session().tabOrder
+    store().selectTab(terminals[0].id)
+    scm.update(id, { preview: true })
+    scm.openChanges(id)
+    expect(session().tabOrder).toBe(stableOrder)
+    store().shortcut('tab-4')
+    expect(store().activeTabs[id]).toBe(added.id)
+    expect(session().changesActive).toBe(false)
+    store().shortcut('tab-2')
+    expect(session().preview).toBe(true)
+
+    store().reorderTab(id, added.id, 0)
+    expect(session().tabOrder).toEqual([order[3], ...order.slice(0, 3)])
+    expect(store().tabs.map((tab) => tab.id)).toEqual([added.id, terminals[0].id])
+    store().shortcut('tab-3')
+    expect(session().preview).toBe(true)
+    scm.openDiff(id, first)
+    scm.pinDiff(id)
+    expect(session().tabOrder).toEqual([order[3], order[0], `diff:${gitFileKey(first)}`, 'changes'])
+    scm.closePinnedDiff(id, gitFileKey(first))
+    scm.openDiff(id, first)
+    scm.pinDiff(id)
+    expect(session().tabOrder.at(-1)).toBe(`diff:${gitFileKey(first)}`)
+    scm.update(id, { file: 'new-preview.ts', preview: true })
+    expect(session().tabOrder.at(-1)).toBe('preview')
+    scm.closeChanges(id)
+    scm.openChanges(id)
+    expect(session().tabOrder.at(-1)).toBe('changes')
+    expect(useSourceControl.getState().sessions['other-workspace'].tabOrder).toEqual([])
+    store().updateTab(added.id, { status: 'running' })
+    await store().closeTab(added.id)
+    expect(session().tabOrder).not.toContain(`terminal:${added.id}`)
+  })
+
+  it('reopens closed tabs in workspace-local reverse order without reviving terminal identity', async () => {
+    const store = () => useWorkspace.getState()
+    await store().bootstrap()
+    await store().openProject()
+    const first = store().tabs[0]
+    const id = first.workspaceId
+    const scm = useSourceControl.getState()
+    const session = () => useSourceControl.getState().sessions[id]
+    const diff = { path: 'pinned.ts', area: 'staged' as const }
+    const preview = {
+      path: 'review.ts',
+      area: 'review' as const,
+      base: null,
+      head: 'a'.repeat(40),
+      label: 'snapshot',
+      status: 'A',
+      submodule: false,
+    }
+    scm.update(id, { file: 'plain.ts', preview: true, draft: 'keep draft' })
+    scm.closePreview(id)
+    scm.openDiff(id, diff)
+    scm.pinDiff(id)
+    scm.closePinnedDiff(id, gitFileKey(diff))
+    scm.openDiff(id, preview)
+    store().shortcut('close-terminal')
+    scm.openChanges(id)
+    scm.closeChanges(id)
+    store().newTerminal('pi')
+    const agent = store().tabs.at(-1)!
+    store().updateTab(agent.id, { status: 'exited', exitCode: 1, error: 'old failure' })
+    await store().closeTab(agent.id)
+    expect(session().closedTabs.map((tab) => tab.kind)).toEqual([
+      'preview',
+      'diff',
+      'preview',
+      'changes',
+      'terminal',
+    ])
+
+    await store().newWorkspace(first.projectPath)
+    const other = currentWorkspace(store())!.id
+    const before = store().tabs
+    store().shortcut('reopen-tab')
+    expect(store().tabs).toBe(before)
+    await store().selectProject(first.projectPath, id)
+    const history = session().closedTabs
+    for (const busy of [{ removingWorkspace: id }, { creatingWorktree: true }]) {
+      useWorkspace.setState(busy)
+      store().shortcut('reopen-tab')
+      expect(session().closedTabs).toBe(history)
+      useWorkspace.setState({ removingWorkspace: undefined, creatingWorktree: false })
+    }
+    const tabs = store().tabs
+    const activeTabs = store().activeTabs
+    while (store().tabs.length < 10) store().newTerminal()
+    store().shortcut('reopen-tab')
+    expect(session().closedTabs).toBe(history)
+    useWorkspace.setState({ tabs, activeTabs })
+
+    store().shortcut('reopen-tab')
+    const restored = store().tabs.at(-1)!
+    expect(restored).toMatchObject({
+      workspaceId: id,
+      cwd: first.projectPath,
+      kind: 'agent',
+      provider: 'pi',
+      title: agent.title,
+      status: 'starting',
+    })
+    expect(restored.id).not.toBe(agent.id)
+    expect(restored.launchId).not.toBe(agent.launchId)
+    expect(restored.exitCode).toBeUndefined()
+    expect(restored.error).toBeUndefined()
+    expect(restored.agent).toBeUndefined()
+    expect(session().tabOrder.at(-1)).toBe(`terminal:${restored.id}`)
+    store().shortcut('reopen-tab')
+    expect(session().changesActive).toBe(true)
+    store().shortcut('reopen-tab')
+    expect(session()).toMatchObject({ selection: preview, preview: true })
+    store().shortcut('reopen-tab')
+    expect(session()).toMatchObject({
+      pinnedDiffs: [diff],
+      activePinnedDiff: diff,
+      selection: preview,
+    })
+    store().shortcut('reopen-tab')
+    expect(session()).toMatchObject({
+      file: 'plain.ts',
+      preview: true,
+      draft: 'keep draft',
+      closedTabs: [],
+    })
+    const unchanged = store()
+    store().shortcut('reopen-tab')
+    expect(store()).toBe(unchanged)
+    expect(useSourceControl.getState().sessions[other].closedTabs).toEqual([])
+
+    // Non-terminal tabs keep the workspace open after its last terminal closes.
+    store().updateTab(restored.id, { status: 'running' })
+    await store().closeTab(restored.id)
+    store().updateTab(first.id, { status: 'running' })
+    await store().closeTab(first.id)
+    expect(currentWorkspace(store())?.id).toBe(id)
+    expect(session().preview).toBe(true)
+    store().shortcut('reopen-tab')
+    expect(currentWorkspace(store())?.id).toBe(id)
+    expect(store().tabs.at(-1)).toMatchObject({
+      title: first.title,
+      cwd: first.projectPath,
+      status: 'starting',
+    })
+    expect(store().tabs.at(-1)!.id).not.toBe(first.id)
+
+    for (let index = 0; index < 25; index++) {
+      scm.openChanges(id)
+      scm.closeChanges(id)
+    }
+    expect(session().closedTabs).toHaveLength(20)
+    await store().removeWorkspace(id)
+    const remaining = store().tabs
+    store().shortcut('reopen-tab')
+    expect(store().tabs).toBe(remaining)
+    expect(store().tabs.some((tab) => tab.workspaceId === id)).toBe(false)
   })
 
   it('builds sorted Git directory trees without changing file identity or paths', () => {
@@ -1970,7 +2452,7 @@ describe('workspace state', () => {
     expect(useSourceControl.getState().sessions.a).toMatchObject({
       file: 'src/child.ts',
       selection: undefined,
-      previewAll: false,
+      changesOpen: false,
       preview: true,
       draft: 'keep draft',
     })
@@ -1979,17 +2461,35 @@ describe('workspace state', () => {
       file: 'src/child.ts',
       preview: false,
     })
-    scm.update('a', { selection: undefined, previewAll: true, preview: true })
+    scm.openChanges('a')
     expect(useSourceControl.getState().sessions.a).toMatchObject({
-      file: undefined,
-      previewAll: true,
+      file: 'src/child.ts',
+      preview: false,
+      changesOpen: true,
+      changesActive: true,
     })
     scm.update('a', { file: 'src/child.ts', preview: true })
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: 'src/child.ts',
+      preview: true,
+      changesOpen: true,
+      changesActive: false,
+    })
+    scm.closeChanges('a')
+    expect(useSourceControl.getState().sessions.a).toMatchObject({
+      file: 'src/child.ts',
+      preview: true,
+      changesOpen: false,
+      changesActive: false,
+    })
+    scm.openChanges('a')
     scm.update('a', { selection: { path: 'git', area: 'staged' }, preview: true })
     expect(useSourceControl.getState().sessions.a).toMatchObject({
       file: undefined,
       selection: { path: 'git', area: 'staged' },
-      previewAll: false,
+      preview: true,
+      changesOpen: true,
+      changesActive: false,
     })
   })
 
@@ -2016,6 +2516,173 @@ describe('workspace state', () => {
     expect(useWorkspace.getState().workspaces).toEqual(before)
   })
 
+  it('shares one tab across split panes, persists layout and closes or reopens groups safely', async () => {
+    const store = () => useWorkspace.getState()
+    const splitShortcuts = ['split-terminal', 'split-terminal-down'] as const
+    await store().bootstrap()
+    for (const shortcut of splitShortcuts) store().shortcut(shortcut)
+    expect(store().tabs).toHaveLength(0)
+    await store().openProject()
+    const a = store().tabs[0]
+    for (const shortcut of splitShortcuts) store().shortcut(shortcut)
+    expect(store().tabs).toHaveLength(1)
+    store().updateTab(a.id, { status: 'running' })
+    useSourceControl.getState().openChanges(a.workspaceId)
+    for (const shortcut of splitShortcuts) store().shortcut(shortcut)
+    expect(store().tabs).toHaveLength(1)
+    useSourceControl.getState().update(a.workspaceId, { changesOpen: false, changesActive: false })
+    store().selectTab(a.id)
+    store().shortcut('split-terminal')
+    const b = store().tabs[1]
+    expect(b).toMatchObject({ workspaceId: a.workspaceId, cwd: a.cwd, status: 'starting' })
+    expect(store().activeTabs[a.workspaceId]).toBe(b.id)
+    const order = () => useSourceControl.getState().sessions[a.workspaceId].tabOrder
+    expect(terminalTabs(store()).map((tab) => tab.id)).toEqual([a.id])
+    expect(order()).toEqual([`terminal:${a.id}`])
+    expect(store().terminalLayouts[0]).toMatchObject({
+      id: a.id,
+      activePaneId: b.id,
+      root: { type: 'split', direction: 'horizontal', ratio: 0.5 },
+    })
+    expect(terminalPaneIds(store().terminalLayouts[0].root)).toEqual([a.id, b.id])
+    const root = store().terminalLayouts[0].root.id
+    store().resizeTerminalSplit(root, 0.63)
+    store().resizeTerminalSplit(root, NaN)
+    store().resizeTerminalSplit(root, 0)
+    store().updateTab(b.id, { status: 'running' })
+    store().selectTab(a.id)
+    store().shortcut('split-terminal-down')
+    const c = store().tabs[2]
+    store().updateTab(c.id, { status: 'running' })
+    const layout = structuredClone(store().terminalLayouts)
+    expect(layout[0]).toMatchObject({
+      activePaneId: c.id,
+      root: {
+        ratio: 0.63,
+        children: [
+          {
+            type: 'split',
+            direction: 'vertical',
+            ratio: 0.5,
+            children: [{ id: a.id }, { id: c.id }],
+          },
+          { id: b.id },
+        ],
+      },
+    })
+    expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+    expect(terminalPaneIds(layout[0].root)).toEqual([a.id, c.id, b.id])
+    expect(order()).toEqual([`terminal:${a.id}`])
+    expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].terminalLayouts).toEqual(layout)
+
+    useWorkspace.setState({ removingWorkspace: a.workspaceId })
+    store().splitTerminal(a.id)
+    useWorkspace.setState({ removingWorkspace: undefined, creatingWorktree: true })
+    store().splitTerminal(a.id)
+    useWorkspace.setState({ creatingWorktree: false })
+    expect(store().tabs).toHaveLength(3)
+    store().selectTab(a.id)
+    vi.mocked(api.closeTerminal).mockImplementationOnce(async () => {
+      store().shortcut('close-terminal')
+      expect(api.closeTerminal).toHaveBeenCalledExactlyOnceWith(a.id)
+      vi.mocked(api.onTerminal).mock.calls.at(-1)![0]({ type: 'closing', id: a.id, closing: true })
+      expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+      throw new Error('cleanup failed')
+    })
+    store().shortcut('close-terminal')
+    await vi.waitFor(() =>
+      expect(store().tabs.find((tab) => tab.id === a.id)).toMatchObject({
+        error: '关闭失败：cleanup failed',
+        closingStatus: undefined,
+      }),
+    )
+    expect(store().terminalLayouts[0].root).toEqual(layout[0].root)
+    expect(store().activeTabs[a.workspaceId]).toBe(a.id)
+    store().shortcut('close-terminal')
+    await vi.waitFor(() =>
+      expect(terminalPaneIds(store().terminalLayouts[0].root)).toEqual([c.id, b.id]),
+    )
+    expect(vi.mocked(api.closeTerminal).mock.calls.map(([id]) => id)).toEqual([a.id, a.id])
+    expect(order()).toEqual([`terminal:${a.id}`])
+    expect(terminalTabs(store()).map((tab) => tab.id)).toEqual([a.id])
+    expect(useSourceControl.getState().sessions[a.workspaceId].closedTabs).toEqual([])
+    expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+    const persisted = structuredClone(vi.mocked(api.saveLayout).mock.calls.at(-1)![0])
+    vi.mocked(api.bootstrap).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        config: {
+          ...structuredClone(DEFAULT_CONFIG),
+          recentProjects: [a.projectPath],
+          layout: persisted,
+        },
+        sessions: store().tabs.map((tab) => ({
+          id: tab.id,
+          projectPath: tab.projectPath,
+          workspaceId: tab.workspaceId,
+          cwd: tab.cwd!,
+          workspaceKind: 'local' as const,
+          kind: 'shell' as const,
+          cols: 80,
+          rows: 24,
+          exited: false,
+        })),
+      },
+    })
+    await store().bootstrap()
+    expect(store().terminalLayouts).toEqual(persisted.terminalLayouts)
+    const d = store().newTerminal()!
+    store().updateTab(d, { status: 'running' })
+    store().selectWorkspaceTab(a.workspaceId, `terminal:${a.id}`)
+    expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+    expect(order()).toEqual([`terminal:${a.id}`, `terminal:${d}`])
+    store().selectTab(b.id)
+    expect(order()).toEqual([`terminal:${a.id}`, `terminal:${d}`])
+    store().reorderTab(a.workspaceId, a.id, 1)
+    expect(order()).toEqual([`terminal:${d}`, `terminal:${a.id}`])
+    vi.mocked(api.closeTerminal).mockImplementationOnce(async () => {
+      expect(store().closingTerminalTabs).toEqual([a.id])
+      store().splitTerminal(c.id)
+      expect(store().tabs).toHaveLength(3)
+      await store().closeTab(a.id)
+      return { ok: true, value: false }
+    })
+    await store().closeTab(a.id)
+    expect(store().tabs).toHaveLength(3)
+    expect(store().closingTerminalTabs).toEqual([])
+    expect(useSourceControl.getState().sessions[a.workspaceId].closedTabs).toEqual([])
+    await store().closeTab(a.id)
+    expect(store().terminalLayouts).toEqual([])
+    expect(store().activeTabs[a.workspaceId]).toBe(d)
+    expect(store().tabs.map((tab) => tab.id)).toEqual([d])
+    expect(useSourceControl.getState().sessions[a.workspaceId].closedTabs).toMatchObject([
+      { kind: 'terminal-group' },
+    ])
+    store().reopenTab()
+    expect(store().tabs).toHaveLength(3)
+    const reopened = store().terminalLayouts[0]
+    const reopenedIds = terminalPaneIds(reopened.root)
+    expect(reopenedIds).toHaveLength(2)
+    expect(reopenedIds.some((id) => [c.id, b.id].includes(id))).toBe(false)
+    expect(store().activeTabs[a.workspaceId]).toBe(reopened.activePaneId)
+    expect(terminalTabs(store())).toHaveLength(2)
+    expect(order()).toEqual([`terminal:${d}`, `terminal:${reopened.id}`])
+    for (const id of reopenedIds) store().updateTab(id, { status: 'running' })
+    store().selectTab(reopenedIds[0])
+    store().shortcut('close-terminal')
+    await vi.waitFor(() =>
+      expect(store().tabs.some((tab) => tab.id === reopenedIds[0])).toBe(false),
+    )
+    expect(terminalTabs(store()).map((tab) => tab.id)).toEqual([d, reopened.id])
+    expect(store().terminalLayouts[0].root).toEqual({ type: 'terminal', id: reopenedIds[1] })
+    store().selectWorkspaceTab(a.workspaceId, `terminal:${reopened.id}`)
+    expect(store().activeTabs[a.workspaceId]).toBe(reopenedIds[1])
+    store().shortcut('close-terminal')
+    await vi.waitFor(() => expect(store().terminalLayouts).toEqual([]))
+    expect(store().tabs.map((tab) => tab.id)).toEqual([d])
+    expect(api.closeWindow).not.toHaveBeenCalled()
+  })
+
   it('respects close cancellation and chooses a surviving tab after confirmation', async () => {
     await useWorkspace.getState().openProject()
     useWorkspace.getState().newTerminal()
@@ -2028,6 +2695,7 @@ describe('workspace state', () => {
       status: 'running',
       closingStatus: undefined,
     })
+    expect(useSourceControl.getState().sessions[b.workspaceId].closedTabs).toEqual([])
     vi.mocked(api.closeTerminal).mockResolvedValueOnce({
       ok: false,
       error: 'process cleanup failed',
@@ -2038,9 +2706,63 @@ describe('workspace state', () => {
       error: '关闭失败：process cleanup failed',
       closingStatus: undefined,
     })
+    expect(useSourceControl.getState().sessions[b.workspaceId].closedTabs).toEqual([])
     await useWorkspace.getState().closeTab(b.id)
     expect(useWorkspace.getState().tabs).toHaveLength(1)
     expect(useWorkspace.getState().activeTabs[b.workspaceId]).toBe(a.id)
+
+    const store = () => useWorkspace.getState()
+    const scm = useSourceControl.getState()
+    const id = a.workspaceId
+    const session = () => useSourceControl.getState().sessions[id]
+    store().newTerminal()
+    const middle = store().tabs.at(-1)!
+    store().newTerminal()
+    const right = store().tabs.at(-1)!
+    for (const tab of [a, middle, right]) store().updateTab(tab.id, { status: 'running' })
+    store().selectTab(a.id)
+    await store().closeTab(a.id)
+    expect(store().activeTabs[id]).toBe(middle.id)
+
+    const diff = { path: 'neighbor.ts', area: 'unstaged' as const }
+    scm.openDiff(id, diff)
+    scm.pinDiff(id)
+    scm.openChanges(id)
+    scm.update(id, { file: 'preview.ts', preview: true })
+    store().reorderTab(id, right.id, 3)
+    expect(session().tabOrder).toEqual([
+      `terminal:${middle.id}`,
+      `diff:${gitFileKey(diff)}`,
+      'changes',
+      `terminal:${right.id}`,
+      'preview',
+    ])
+    store().selectWorkspaceTab(id, 'changes')
+    await store().closeTab(middle.id)
+    expect(session().changesActive).toBe(true)
+    store().selectWorkspaceTab(id, `diff:${gitFileKey(diff)}`)
+    store().closeWorkspaceTab(id, `diff:${gitFileKey(diff)}`)
+    expect(session()).toMatchObject({ changesActive: true, activePinnedDiff: undefined })
+    store().shortcut('close-terminal')
+    expect(store().activeTabs[id]).toBe(right.id)
+    expect(session()).toMatchObject({ changesActive: false, preview: false })
+    store().selectWorkspaceTab(id, 'preview')
+    store().closeWorkspaceTab(id, 'preview')
+    expect(store().activeTabs[id]).toBe(right.id)
+    expect(session().preview).toBe(false)
+
+    scm.openChanges(id)
+    scm.update(id, { file: 'last-preview.ts', preview: true })
+    store().selectTab(right.id)
+    await store().closeTab(right.id)
+    expect(store().tabs).toEqual([])
+    expect(currentWorkspace(store())?.id).toBe(id)
+    expect(session().changesActive).toBe(true)
+    store().closeWorkspaceTab(id, 'changes')
+    expect(session().preview).toBe(true)
+    store().closeWorkspaceTab(id, 'preview')
+    expect(session().tabOrder).toEqual([])
+    expect(store().selectedProject).toBeUndefined()
   })
   it('keeps the pre-close presentation until confirmation, then removes the tab before cleanup finishes', async () => {
     await useWorkspace.getState().openProject()
@@ -2108,6 +2830,8 @@ describe('workspace state', () => {
       await useWorkspace.getState().openProject()
       const tab = useWorkspace.getState().tabs[0]
       useWorkspace.getState().updateTab(tab.id, { status: 'running' })
+      useSourceControl.getState().openChanges(tab.workspaceId)
+      useWorkspace.getState().selectTab(tab.id)
       vi.mocked(api.closeTerminal).mockImplementationOnce(async () => {
         if (outcome === 'rejected') {
           const onTerminal = vi.mocked(api.onTerminal).mock.calls.at(-1)![0]
@@ -2127,6 +2851,12 @@ describe('workspace state', () => {
       })
       expect(useWorkspace.getState().activeTabs[tab.workspaceId]).toBe(tab.id)
       expect(currentWorkspace(useWorkspace.getState())?.id).toBe(tab.workspaceId)
+      expect(useSourceControl.getState().sessions[tab.workspaceId].tabOrder).toEqual([
+        `terminal:${tab.id}`,
+        'changes',
+      ])
+      expect(useSourceControl.getState().sessions[tab.workspaceId].closedTabs).toEqual([])
+      expect(useSourceControl.getState().sessions[tab.workspaceId].changesActive).toBe(false)
       if (outcome === 'cancelled') expect(console.error).not.toHaveBeenCalled()
       else expect(console.error).toHaveBeenCalled()
     },

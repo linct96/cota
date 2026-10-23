@@ -1,5 +1,16 @@
 import { create } from 'zustand'
 import { useSourceControl } from './lib/source-control-store'
+import { useRightPanel } from './lib/right-panel-store'
+import { agentIndicatorState, workspaceAgentSummary } from './lib/agent-status'
+import { gitFileKey } from '../../shared/source-control'
+import {
+  mapTerminalPane,
+  pruneTerminalLayouts,
+  removeTerminalPanes,
+  terminalPaneIds,
+  type TerminalPane,
+  type TerminalLayout,
+} from '../../shared/terminal-layout'
 import {
   DEFAULT_CONFIG,
   MAX_TERMINALS,
@@ -9,6 +20,7 @@ import {
   type AgentUpdate,
   unwrap,
   type Preferences,
+  type WorkspaceOpener,
   type ProjectWorkspace,
   type WorkspaceLayout,
   type Shortcut,
@@ -35,6 +47,7 @@ export interface TerminalTab {
   status: 'starting' | 'running' | 'exited' | 'error'
   exitCode?: number
   error?: string
+  startupCommand?: string
   closingStatus?: TerminalTab['status']
 }
 
@@ -47,13 +60,18 @@ interface Workspace {
   selectedWorkspaces: Record<string, string>
   removingWorkspace?: string
   preferences: Preferences
+  workspaceOpeners: WorkspaceOpener[]
+  refreshWorkspaceOpeners(): Promise<void>
   tabs: TerminalTab[]
+  terminalLayouts: TerminalLayout[]
+  closingTerminalTabs: string[]
   pendingAgentUpdates: Record<string, Exclude<AgentUpdate, { type: 'disconnected' }>>
   agentConnectionLost: boolean
   visibleTerminal?: string
   receiveAgent(event: AgentUpdate): void
   setVisibleTerminal(id?: string): void
   activeTabs: Record<string, string>
+  lastClosedWorkspaceId?: string
   focusVersion: number
   worktreeRecords: WorktreeRecord[]
   worktreeScans: Record<string, WorktreeScan>
@@ -70,11 +88,23 @@ interface Workspace {
   renameWorkspace(id: string, name: string): boolean
   removeWorkspace(id: string): Promise<boolean>
   removeProject(path: string): Promise<boolean>
-  newTerminal(provider?: AgentProvider, workspaceId?: string): void
+  newTerminal(
+    provider?: AgentProvider,
+    workspaceId?: string,
+    command?: { name: string; command: string },
+  ): string | undefined
+  recentQuickCommands: Record<string, string>
+  runQuickCommand(id: string, workspaceId: string): void
+  splitTerminal(id: string, direction?: 'horizontal' | 'vertical'): void
+  resizeTerminalSplit(id: string, ratio: number): void
+  reopenTab(): void
   selectTab(id: string): void
+  selectWorkspaceTab(workspaceId: string, key: string): void
+  closeWorkspaceTab(workspaceId: string, key: string): void
   reorderTab(workspaceId: string, id: string, toIndex: number): void
   updateTab(id: string, value: Partial<TerminalTab>): void
   closeTab(id?: string): Promise<void>
+  closePane(id: string, remember?: boolean): Promise<void>
   savePreferences(value: Preferences): Promise<void>
   shortcut(value: Exclude<Shortcut, 'settings'>): void
 }
@@ -110,6 +140,70 @@ export function currentWorkspace(
       (workspace) => workspace.id === state.selectedWorkspaces[state.selectedProject || ''],
     ) || workspaces[0]
   )
+}
+
+export function terminalTabId(state: Pick<Workspace, 'terminalLayouts'>, id: string): string {
+  return (
+    state.terminalLayouts.find(
+      (group) => group.id === id || terminalPaneIds(group.root).includes(id),
+    )?.id || id
+  )
+}
+
+export function terminalTabs(
+  state: Pick<Workspace, 'tabs' | 'terminalLayouts' | 'closingTerminalTabs'>,
+): (TerminalTab & { indicatorTab?: TerminalTab })[] {
+  const seen = new Set<string>()
+  return state.tabs.flatMap((tab) => {
+    const group = state.terminalLayouts.find((group) =>
+      terminalPaneIds(group.root).includes(tab.id),
+    )
+    const id = group?.id || tab.id
+    if (seen.has(id)) return []
+    seen.add(id)
+    if (!group) return [tab]
+    const ids = terminalPaneIds(group.root)
+    const panes = state.tabs.filter((pane) => ids.includes(pane.id))
+    const focused = panes.find((pane) => pane.id === group.activePaneId) || panes[0]
+    const indicatorState = workspaceAgentSummary(panes)?.state
+    const indicatorTab =
+      indicatorState !== 'other'
+        ? [focused, ...panes].find(
+            (pane) =>
+              (pane.kind === 'agent' || pane.provider || pane.agent) &&
+              agentIndicatorState(pane) === indicatorState,
+          )
+        : undefined
+    return [
+      {
+        ...focused,
+        id,
+        indicatorTab: indicatorTab || focused,
+        status: panes.some((pane) => pane.status === 'starting')
+          ? ('starting' as const)
+          : focused.status,
+        closingStatus: state.closingTerminalTabs.includes(id)
+          ? focused.status
+          : panes.find((pane) => pane.closingStatus)?.closingStatus,
+      },
+    ]
+  })
+}
+
+function activeWorkspaceTab(workspaceId: string): string | undefined {
+  const session = useSourceControl.getState().sessions[workspaceId]
+  if (session?.changesActive) return 'changes'
+  if (session?.activePinnedDiff) return `diff:${gitFileKey(session.activePinnedDiff)}`
+  if (session?.preview) return 'preview'
+  const state = useWorkspace.getState()
+  const id = state.activeTabs[workspaceId]
+  return id ? `terminal:${terminalTabId(state, id)}` : undefined
+}
+
+function adjacentWorkspaceTab(workspaceId: string, key: string): string | undefined {
+  const order = useSourceControl.getState().sessions[workspaceId]?.tabOrder || []
+  const index = order.indexOf(key)
+  return index < 0 ? undefined : order[index + 1] || order[index - 1]
 }
 
 let completionRead: { session: AgentSession; timer: ReturnType<typeof setTimeout> } | undefined
@@ -162,6 +256,7 @@ function readVisibleAgent(state: Workspace): void {
 }
 
 const scanRequests = new Map<string, number>()
+let openersRequest = 0
 
 export const useWorkspace = create<Workspace>((set, get) => ({
   ready: false,
@@ -170,7 +265,15 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   workspaces: [],
   selectedWorkspaces: {},
   preferences: DEFAULT_CONFIG.preferences,
+  workspaceOpeners: [],
+  async refreshWorkspaceOpeners() {
+    const request = ++openersRequest
+    const openers = unwrap(await window.desktop.listWorkspaceOpeners())
+    if (request === openersRequest) set({ workspaceOpeners: openers })
+  },
   tabs: [],
+  terminalLayouts: [],
+  closingTerminalTabs: [],
   pendingAgentUpdates: {},
   agentConnectionLost: false,
   activeTabs: {},
@@ -267,12 +370,17 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           : undefined,
         selectedWorkspaces,
         tabs,
+        terminalLayouts: pruneTerminalLayouts(
+          layout?.terminalLayouts || [],
+          new Set(tabs.map((tab) => tab.id)),
+        ),
         activeTabs,
         preferences: config.preferences,
         worktreeRecords: config.worktreeRecords,
         worktreeScans: worktreeScans || {},
         orphanSessions,
       })
+      void get().refreshWorkspaceOpeners().catch(console.warn)
       const pending = get().pendingAgentUpdates
       set({ pendingAgentUpdates: {} })
       for (const event of Object.values(pending)) get().receiveAgent(event)
@@ -345,6 +453,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           worktreeRecords: state.worktreeRecords.filter((entry) => entry.id !== id),
           workspaces: state.workspaces.filter((entry) => !removed.has(entry.id)),
           tabs: state.tabs.filter((entry) => !removed.has(entry.workspaceId)),
+          terminalLayouts: removeTerminalPanes(
+            state.terminalLayouts,
+            new Set(state.tabs.filter((tab) => removed.has(tab.workspaceId)).map((tab) => tab.id)),
+          ),
           selectedWorkspaces: Object.fromEntries(
             Object.entries(state.selectedWorkspaces).filter(
               ([, workspaceId]) => !removed.has(workspaceId),
@@ -509,6 +621,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
               ? projects[0] || workspaces[0]?.projectPath
               : state.selectedProject,
           tabs: state.tabs.filter((tab) => tab.workspaceId !== id),
+          terminalLayouts: removeTerminalPanes(
+            state.terminalLayouts,
+            new Set(state.tabs.filter((tab) => tab.workspaceId === id).map((tab) => tab.id)),
+          ),
           activeTabs,
           workspaces,
           selectedWorkspaces,
@@ -550,6 +666,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
               : state.selectedProject,
           selectedWorkspaces,
           tabs: state.tabs.filter((tab) => tab.projectPath !== path),
+          terminalLayouts: removeTerminalPanes(
+            state.terminalLayouts,
+            new Set(state.tabs.filter((tab) => tab.projectPath === path).map((tab) => tab.id)),
+          ),
           activeTabs: Object.fromEntries(
             Object.entries(state.activeTabs).filter(([id]) => !removed.has(id)),
           ),
@@ -563,9 +683,26 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       set((state) => ({ removingWorkspace: undefined, focusVersion: state.focusVersion + 1 }))
     }
   },
-  newTerminal(provider, targetId) {
+  recentQuickCommands: {},
+  runQuickCommand(id, workspaceId) {
+    const workspace = get().workspaces.find((entry) => entry.id === workspaceId)
+    const command = get().preferences.quickCommands.find((entry) => entry.id === id)
+    if (
+      !workspace ||
+      !command ||
+      (command.scope.type === 'project' && command.scope.projectPath !== workspace.projectPath)
+    )
+      throw new Error('快捷命令不存在或不属于当前项目。')
+    if (get().tabs.length >= MAX_TERMINALS)
+      throw new Error('最多保留 10 个终端，请先关闭一个标签。')
+    if (!get().newTerminal(undefined, workspaceId, command))
+      throw new Error('当前工作区不可用或正在关闭，请稍后重试。')
+    set((state) => ({ recentQuickCommands: { ...state.recentQuickCommands, [workspaceId]: id } }))
+  },
+  newTerminal(provider, targetId, command) {
     const { tabs, removingWorkspace } = get()
-    if (removingWorkspace || (provider && !Object.hasOwn(AGENT_PROVIDERS, provider))) return
+    if (removingWorkspace || (provider && (!Object.hasOwn(AGENT_PROVIDERS, provider) || command)))
+      return
     const workspace = targetId
       ? get().workspaces.find((entry) => entry.id === targetId)
       : currentWorkspace(get())
@@ -604,7 +741,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           id,
           projectPath: selectedProject,
           workspaceId,
-          title: provider ? `${AGENT_PROVIDERS[provider].name} · ${number}` : `Terminal ${number}`,
+          title:
+            command?.name ||
+            (provider ? `${AGENT_PROVIDERS[provider].name} · ${number}` : `Terminal ${number}`),
+          ...(command ? { startupCommand: command.command } : {}),
           cwd: worktree?.record.path || selectedProject,
           ...(provider ? { kind: 'agent' as const, provider, launchId: crypto.randomUUID() } : {}),
           status: 'starting',
@@ -615,6 +755,130 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       activeTabs: { ...state.activeTabs, [workspaceId]: id },
       focusVersion: state.focusVersion + 1,
     }))
+    return id
+  },
+  splitTerminal(id, direction = 'horizontal') {
+    const tab = get().tabs.find((tab) => tab.id === id)
+    if (
+      !tab ||
+      tab.closingStatus ||
+      tab.status === 'starting' ||
+      get().closingTerminalTabs.includes(terminalTabId(get(), id))
+    )
+      return
+    const next = get().newTerminal(undefined, tab.workspaceId)
+    if (!next) return
+    const split: TerminalPane = {
+      type: 'split',
+      id: crypto.randomUUID(),
+      direction,
+      ratio: 0.5,
+      children: [
+        { type: 'terminal', id },
+        { type: 'terminal', id: next },
+      ],
+    }
+    set((state) => {
+      const group = state.terminalLayouts.find((group) => terminalPaneIds(group.root).includes(id))
+      return {
+        terminalLayouts: group
+          ? state.terminalLayouts.map((node) =>
+              node === group
+                ? { ...node, root: mapTerminalPane(node.root, id, () => split), activePaneId: next }
+                : node,
+            )
+          : [...state.terminalLayouts, { id, root: split, activePaneId: next }],
+      }
+    })
+  },
+  resizeTerminalSplit(id, ratio) {
+    if (!Number.isFinite(ratio) || ratio <= 0 || ratio >= 1 || get().removingWorkspace) return
+    set((state) => ({
+      terminalLayouts: state.terminalLayouts.map((group) => ({
+        ...group,
+        root: mapTerminalPane(group.root, id, (node) =>
+          node.type === 'split' ? { ...node, ratio } : node,
+        ),
+      })),
+    }))
+  },
+  reopenTab() {
+    const state = get()
+    if (state.removingWorkspace || state.creatingWorktree) return
+    const workspace =
+      currentWorkspace(state) ||
+      (!state.selectedProject
+        ? state.workspaces.find((entry) => entry.id === state.lastClosedWorkspaceId)
+        : undefined)
+    if (!workspace) return
+    const sourceControl = useSourceControl.getState()
+    const session = sourceControl.sessions[workspace.id]
+    const tab = session?.closedTabs.at(-1)
+    if (!tab) return
+    switch (tab.kind) {
+      case 'terminal': {
+        const id = get().newTerminal(tab.provider, workspace.id)
+        if (!id) return
+        get().updateTab(id, { title: tab.title })
+        break
+      }
+      case 'terminal-group': {
+        if (state.tabs.length + tab.panes.length > MAX_TERMINALS) {
+          console.error(`最多可同时打开 ${MAX_TERMINALS} 个终端，请先关闭其他标签。`)
+          return
+        }
+        const ids = new Map<string, string>()
+        for (const pane of tab.panes) {
+          const id = get().newTerminal(pane.provider, workspace.id)
+          if (!id) return
+          ids.set(pane.id, id)
+          get().updateTab(id, { title: pane.title })
+        }
+        const remap = (node: TerminalPane): TerminalPane =>
+          node.type === 'terminal'
+            ? { ...node, id: ids.get(node.id)! }
+            : {
+                ...node,
+                id: crypto.randomUUID(),
+                children: [remap(node.children[0]), remap(node.children[1])],
+              }
+        const activePaneId = ids.get(tab.layout.activePaneId)!
+        set((state) => ({
+          terminalLayouts: [
+            ...state.terminalLayouts,
+            {
+              id: ids.get(tab.panes[0].id)!,
+              root: remap(tab.layout.root),
+              activePaneId,
+            },
+          ],
+        }))
+        get().selectTab(activePaneId)
+        break
+      }
+      case 'changes':
+        sourceControl.openChanges(workspace.id)
+        break
+      case 'diff': {
+        const key = gitFileKey(tab.selection)
+        if (!session.pinnedDiffs.some((selection) => gitFileKey(selection) === key))
+          sourceControl.update(workspace.id, {
+            pinnedDiffs: [...session.pinnedDiffs, tab.selection],
+          })
+        sourceControl.selectPinnedDiff(workspace.id, key)
+        break
+      }
+      case 'preview':
+        if (tab.selection) sourceControl.openDiff(workspace.id, tab.selection)
+        else sourceControl.update(workspace.id, { file: tab.file, preview: true })
+        break
+    }
+    sourceControl.update(workspace.id, { closedTabs: session.closedTabs.slice(0, -1) })
+    set((state) => ({
+      selectedProject: workspace.projectPath,
+      selectedWorkspaces: { ...state.selectedWorkspaces, [workspace.projectPath]: workspace.id },
+      focusVersion: state.focusVersion + 1,
+    }))
   },
   selectTab(id) {
     const tab = get().tabs.find((item) => item.id === id)
@@ -622,26 +886,85 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       useSourceControl.getState().showTerminal(tab.workspaceId)
       set((state) => ({
         activeTabs: { ...state.activeTabs, [tab.workspaceId]: id },
+        terminalLayouts: state.terminalLayouts.map((group) =>
+          terminalPaneIds(group.root).includes(id) ? { ...group, activePaneId: id } : group,
+        ),
         focusVersion: state.focusVersion + 1,
       }))
     }
   },
+  selectWorkspaceTab(workspaceId, key) {
+    const sourceControl = useSourceControl.getState()
+    if (!sourceControl.sessions[workspaceId]?.tabOrder.includes(key)) return
+    if (key.startsWith('terminal:')) {
+      const id = key.slice('terminal:'.length)
+      const group = get().terminalLayouts.find((group) => group.id === id)
+      const panes = group
+        ? terminalPaneIds(group.root).filter((paneId) =>
+            get().tabs.some((tab) => tab.id === paneId),
+          )
+        : []
+      get().selectTab(
+        group && panes.includes(group.activePaneId) ? group.activePaneId : panes[0] || id,
+      )
+      return
+    }
+    if (key === 'changes') sourceControl.openChanges(workspaceId)
+    else if (key.startsWith('diff:'))
+      sourceControl.selectPinnedDiff(workspaceId, key.slice('diff:'.length))
+    else if (key === 'preview') sourceControl.update(workspaceId, { preview: true })
+    set((state) => ({ focusVersion: state.focusVersion + 1 }))
+  },
+  closeWorkspaceTab(workspaceId, key) {
+    if (get().removingWorkspace) return
+    const sourceControl = useSourceControl.getState()
+    if (!sourceControl.sessions[workspaceId]?.tabOrder.includes(key)) return
+    if (key.startsWith('terminal:')) {
+      void get().closeTab(key.slice('terminal:'.length))
+      return
+    }
+    const active = activeWorkspaceTab(workspaceId) === key
+    const next = adjacentWorkspaceTab(workspaceId, key)
+    if (key === 'changes') sourceControl.closeChanges(workspaceId)
+    else if (key.startsWith('diff:'))
+      sourceControl.closePinnedDiff(workspaceId, key.slice('diff:'.length))
+    else if (key === 'preview') sourceControl.closePreview(workspaceId)
+    if (!active) return
+    if (next) get().selectWorkspaceTab(workspaceId, next)
+    else if (currentWorkspace(get())?.id === workspaceId)
+      set((state) => ({
+        selectedProject: undefined,
+        lastClosedWorkspaceId: workspaceId,
+        focusVersion: state.focusVersion + 1,
+      }))
+  },
   reorderTab(workspaceId, id, toIndex) {
     const state = get()
     if (state.removingWorkspace || currentWorkspace(state)?.id !== workspaceId) return
-    const ordered = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
-    const fromIndex = ordered.findIndex((tab) => tab.id === id)
+    const sourceControl = useSourceControl.getState()
+    const order = [...(sourceControl.sessions[workspaceId]?.tabOrder || [])]
+    const fromIndex = order.indexOf(`terminal:${id}`)
+    const tab = terminalTabs(state).find((tab) => tab.workspaceId === workspaceId && tab.id === id)
     if (
+      !tab ||
       fromIndex < 0 ||
       fromIndex === toIndex ||
       !Number.isInteger(toIndex) ||
       toIndex < 0 ||
-      toIndex >= ordered.length ||
-      ordered[fromIndex].closingStatus
+      toIndex >= order.length ||
+      tab.closingStatus
     )
       return
-    const [tab] = ordered.splice(fromIndex, 1)
-    ordered.splice(toIndex, 0, tab)
+    const [key] = order.splice(fromIndex, 1)
+    order.splice(toIndex, 0, key)
+    sourceControl.update(workspaceId, { tabOrder: order })
+    const ordered = state.tabs
+      .filter((tab) => tab.workspaceId === workspaceId)
+      .sort(
+        (a, b) =>
+          order.indexOf(`terminal:${terminalTabId(state, a.id)}`) -
+          order.indexOf(`terminal:${terminalTabId(state, b.id)}`),
+      )
     let index = 0
     set({
       tabs: state.tabs.map((item) => (item.workspaceId === workspaceId ? ordered[index++] : item)),
@@ -759,14 +1082,58 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       window.desktop.closeWindow()
       return
     }
+    const group = get().terminalLayouts.find(
+      (group) => group.id === id || terminalPaneIds(group.root).includes(id),
+    )
+    if (!group) return get().closePane(id)
+    const panes = terminalPaneIds(group.root).map((paneId) =>
+      get().tabs.find((tab) => tab.id === paneId),
+    )
+    if (
+      get().closingTerminalTabs.includes(group.id) ||
+      panes.some((tab) => !tab || tab.status === 'starting' || tab.closingStatus)
+    )
+      return
+    const live = panes.filter((tab): tab is TerminalTab => !!tab)
+    if (live.length === 1) return get().closePane(live[0].id)
+    set((state) => ({ closingTerminalTabs: [...state.closingTerminalTabs, group.id] }))
+    try {
+      for (const tab of live) {
+        await get().closePane(tab.id, false)
+        if (get().tabs.some((pane) => pane.id === tab.id)) return
+      }
+      if (get().workspaces.some((workspace) => workspace.id === live[0].workspaceId))
+        useSourceControl.getState().rememberClosedTab(live[0].workspaceId, {
+          kind: 'terminal-group',
+          layout: group,
+          panes: live.map((tab) => ({
+            id: tab.id,
+            title: tab.title,
+            provider: tab.kind === 'agent' ? tab.provider : undefined,
+          })),
+        })
+    } finally {
+      set((state) => ({
+        closingTerminalTabs: state.closingTerminalTabs.filter((id) => id !== group.id),
+      }))
+    }
+  },
+  async closePane(id, remember = true) {
+    if (get().removingWorkspace) return
     const tab = get().tabs.find((item) => item.id === id)
     if (!tab || tab.status === 'starting' || tab.closingStatus) return
+    const group = get().terminalLayouts.find((group) => terminalPaneIds(group.root).includes(id))
+    if (remember && group && get().closingTerminalTabs.includes(group.id)) return
+    const tabKey = `terminal:${group?.id || id}`
     // Keep the pre-close presentation while exit events continue updating the actual status.
     get().updateTab(id, { closingStatus: tab.status })
     let removed = false
     let recovery = tab
     let position = 0
+    let tabPosition = 0
     let removedFocusVersion = 0
+    let wasActive = false
+    let nextTab: string | undefined
     const agentUpdates: AgentUpdate[] = []
     const remove = () => {
       if (removed) return
@@ -774,6 +1141,22 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       if (!current) return
       recovery = current
       position = get().tabs.indexOf(current)
+      tabPosition = useSourceControl.getState().sessions[tab.workspaceId].tabOrder.indexOf(tabKey)
+      wasActive =
+        activeWorkspaceTab(tab.workspaceId) === tabKey && get().activeTabs[tab.workspaceId] === id
+      const paneIds = group
+        ? terminalPaneIds(group.root).filter(
+            (paneId) =>
+              paneId === id || get().tabs.some((tab) => tab.id === paneId && !tab.closingStatus),
+          )
+        : []
+      const paneIndex = paneIds.indexOf(id)
+      const nextPane = paneIds[paneIndex + 1] || paneIds[paneIndex - 1]
+      nextTab = nextPane ? tabKey : adjacentWorkspaceTab(tab.workspaceId, tabKey)
+      const hasOtherTabs =
+        useSourceControl
+          .getState()
+          .sessions[tab.workspaceId].tabOrder.some((key) => key !== tabKey) || !!nextPane
       removed = true
       set((state) => {
         const tabs = state.tabs.filter((item) => item.id !== id)
@@ -787,16 +1170,27 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           tabs,
           activeTabs,
           selectedProject:
-            !remaining.length && currentWorkspace(state)?.id === tab.workspaceId
+            !hasOtherTabs && currentWorkspace(state)?.id === tab.workspaceId
               ? undefined
               : state.selectedProject,
+          lastClosedWorkspaceId:
+            !hasOtherTabs && currentWorkspace(state)?.id === tab.workspaceId
+              ? tab.workspaceId
+              : state.lastClosedWorkspaceId,
           focusVersion: state.focusVersion + 1,
         }
       })
+      if (wasActive && nextPane) get().selectTab(nextPane)
+      else if (wasActive && nextTab) get().selectWorkspaceTab(tab.workspaceId, nextTab)
       removedFocusVersion = get().focusVersion
     }
     const restore = () => {
       if (!removed) return
+      const restoreActive =
+        wasActive &&
+        get().focusVersion === removedFocusVersion &&
+        activeWorkspaceTab(tab.workspaceId) === nextTab
+      const hadTab = useSourceControl.getState().sessions[tab.workspaceId].tabOrder.includes(tabKey)
       removed = false
       set((state) => {
         if (
@@ -819,6 +1213,17 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           focusVersion: state.focusVersion + 1,
         }
       })
+      if (get().tabs.some((item) => item.id === id)) {
+        const sourceControl = useSourceControl.getState()
+        if (!hadTab) {
+          const tabOrder = sourceControl.sessions[tab.workspaceId].tabOrder.filter(
+            (key) => key !== tabKey,
+          )
+          tabOrder.splice(Math.max(0, tabPosition), 0, tabKey)
+          sourceControl.update(tab.workspaceId, { tabOrder })
+        }
+        if (restoreActive) get().selectTab(id)
+      }
       // Reuse the normal revision/launch checks for updates received during background teardown.
       for (const event of agentUpdates) get().receiveAgent(event)
     }
@@ -845,6 +1250,22 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         return
       }
       remove()
+      set((state) => ({
+        terminalLayouts: removeTerminalPanes(state.terminalLayouts, new Set([id])),
+      }))
+      if (
+        remember &&
+        get().workspaces.some((workspace) => workspace.id === tab.workspaceId) &&
+        (!group ||
+          !terminalPaneIds(group.root).some((paneId) =>
+            get().tabs.some((tab) => tab.id === paneId),
+          ))
+      )
+        useSourceControl.getState().rememberClosedTab(tab.workspaceId, {
+          kind: 'terminal',
+          title: tab.title,
+          provider: tab.kind === 'agent' ? tab.provider : undefined,
+        })
     } catch (error) {
       restore()
       get().updateTab(id, {
@@ -860,28 +1281,46 @@ export const useWorkspace = create<Workspace>((set, get) => ({
   },
   async savePreferences(value) {
     const saved = unwrap(await window.desktop.savePreferences(value))
+    const openersChanged =
+      JSON.stringify(saved.openWith) !== JSON.stringify(get().preferences.openWith)
     set({ preferences: saved })
+    if (openersChanged) void get().refreshWorkspaceOpeners().catch(console.warn)
   },
   shortcut(value) {
     if (get().removingWorkspace) return
     const workspaceId = currentWorkspace(get())?.id || ''
+    const sourceControl = useSourceControl.getState()
+    const session = sourceControl.sessions[workspaceId]
     switch (value) {
+      case 'toggle-right-panel':
+        useRightPanel.setState((state) => ({ open: !state.open }))
+        break
       case 'open-folder':
         void get().openProject()
         break
       case 'new-terminal':
         get().newTerminal()
         break
-      case 'close-terminal':
-        if (useSourceControl.getState().sessions[workspaceId]?.preview)
-          useSourceControl.getState().update(workspaceId, { selection: undefined, preview: false })
-        else void get().closeTab(get().activeTabs[workspaceId])
+      case 'split-terminal':
+      case 'split-terminal-down': {
+        const id = get().activeTabs[workspaceId]
+        if (id && activeWorkspaceTab(workspaceId)?.startsWith('terminal:'))
+          get().splitTerminal(id, value === 'split-terminal-down' ? 'vertical' : 'horizontal')
         break
+      }
+      case 'reopen-tab':
+        get().reopenTab()
+        break
+      case 'close-terminal': {
+        const key = activeWorkspaceTab(workspaceId)
+        if (key?.startsWith('terminal:')) void get().closePane(get().activeTabs[workspaceId])
+        else if (key) get().closeWorkspaceTab(workspaceId, key)
+        else void get().closeTab()
+        break
+      }
       default: {
-        const tab = get().tabs.filter((item) => item.workspaceId === workspaceId)[
-          Number(value.slice(4)) - 1
-        ]
-        if (tab) get().selectTab(tab.id)
+        const key = session?.tabOrder[Number(value.slice(4)) - 1]
+        if (key) get().selectWorkspaceTab(workspaceId, key)
       }
     }
   },
@@ -951,6 +1390,14 @@ function savedLayout(state: Workspace): WorkspaceLayout {
         title,
         ...(kind === 'agent' ? { kind, provider } : {}),
       })),
+    ...(state.terminalLayouts.length
+      ? {
+          terminalLayouts: pruneTerminalLayouts(
+            state.terminalLayouts,
+            new Set(state.tabs.map((tab) => tab.id)),
+          ),
+        }
+      : {}),
     selectedProject: state.selectedProject,
     selectedWorkspaces: state.selectedWorkspaces,
     activeTabs: state.activeTabs,
@@ -967,10 +1414,22 @@ const unsubscribeLayout = useWorkspace.subscribe((state, previous) => {
     .then(unwrap)
     .catch((error) => console.error(error))
 })
+const unsubscribeTabOrder = useWorkspace.subscribe((state, previous) => {
+  if (state.tabs === previous.tabs && state.terminalLayouts === previous.terminalLayouts) return
+  const workspaceIds = new Set([...state.tabs, ...previous.tabs].map((tab) => tab.workspaceId))
+  for (const id of workspaceIds)
+    useSourceControl.getState().syncTerminals(
+      id,
+      terminalTabs(state)
+        .filter((tab) => tab.workspaceId === id)
+        .map((tab) => tab.id),
+    )
+})
 const unsubscribeAgentRead = useWorkspace.subscribe(readVisibleAgent)
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
     unsubscribeLayout()
+    unsubscribeTabOrder()
     unsubscribeAgentRead()
     if (completionRead) clearTimeout(completionRead.timer)
   })

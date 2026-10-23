@@ -10,7 +10,6 @@ import {
 } from '@dnd-kit/dom'
 import { RestrictToHorizontalAxis } from '@dnd-kit/abstract/modifiers'
 import { useWorkspace, type TerminalTab as TerminalTabData } from '../store'
-import { TerminalTab } from './TerminalTab'
 import { ScrollArea, ScrollBar } from './ui/scroll-area'
 
 const accessibilityOptions: ConstructorParameters<typeof Accessibility>[1] = {
@@ -54,13 +53,13 @@ const dragOptions: DragDropManagerInput = {
 export function TerminalTabList({
   workspaceId,
   tabs,
-  activeId,
+  order,
   disabled,
   children,
 }: {
   workspaceId: string
   tabs: TerminalTabData[]
-  activeId?: string
+  order: string[]
   disabled: boolean
   children?: ReactNode
 }) {
@@ -92,7 +91,7 @@ export function TerminalTabList({
       window.removeEventListener('pointerup', checkDrop, true)
       cancel()
     }
-  }, [manager, tabIds, disabled])
+  }, [manager, tabIds, order, disabled])
 
   return (
     <DragDropProvider
@@ -139,17 +138,6 @@ export function TerminalTabList({
             next.focus()
           }}
         >
-          {tabs.map((tab, index) => (
-            <TerminalTab
-              key={tab.id}
-              tab={tab}
-              index={index}
-              active={tab.id === activeId}
-              closeDisabled={tab.status === 'starting' || !!tab.closingStatus || disabled}
-              onSelect={() => useWorkspace.getState().selectTab(tab.id)}
-              onClose={() => void useWorkspace.getState().closeTab(tab.id)}
-            />
-          ))}
           {children}
         </div>
         <ScrollBar orientation="horizontal" className="terminal-tab-scrollbar" />

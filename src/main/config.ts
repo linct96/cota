@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { pruneTerminalLayouts } from '../shared/terminal-layout'
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -58,17 +59,10 @@ export class ConfigStore {
       if (!config.recentProjects.includes(path))
         config.recentProjects = [...config.recentProjects, path].slice(-20)
       if (config.layout) {
-        config.layout.workspaces = config.layout.workspaces.filter((entry) =>
-          config.recentProjects.includes(entry.projectPath),
+        this.removeLayoutWorkspaces(
+          config,
+          (entry) => !config.recentProjects.includes(entry.projectPath),
         )
-        config.layout.tabs = config.layout.tabs.filter((entry) =>
-          config.recentProjects.includes(entry.projectPath),
-        )
-        if (
-          config.layout.selectedProject &&
-          !config.recentProjects.includes(config.layout.selectedProject)
-        )
-          config.layout.selectedProject = undefined
         config.layout = workspaceLayout(
           config.layout,
           config.recentProjects,
@@ -82,11 +76,7 @@ export class ConfigStore {
     return this.update((config) => {
       config.recentProjects = config.recentProjects.filter((entry) => entry !== path)
       if (config.layout) {
-        config.layout.workspaces = config.layout.workspaces.filter(
-          (entry) => entry.projectPath !== path,
-        )
-        config.layout.tabs = config.layout.tabs.filter((entry) => entry.projectPath !== path)
-        if (config.layout.selectedProject === path) config.layout.selectedProject = undefined
+        this.removeLayoutWorkspaces(config, (entry) => entry.projectPath === path)
         config.layout = workspaceLayout(
           config.layout,
           config.recentProjects,
@@ -190,6 +180,11 @@ export class ConfigStore {
     const removed = new Set(layout.workspaces.filter(remove).map((entry) => entry.id))
     layout.workspaces = layout.workspaces.filter((entry) => !removed.has(entry.id))
     layout.tabs = layout.tabs.filter((entry) => !removed.has(entry.workspaceId))
+    if (layout.terminalLayouts)
+      layout.terminalLayouts = pruneTerminalLayouts(
+        layout.terminalLayouts,
+        new Set(layout.tabs.map((tab) => tab.id)),
+      )
     layout.selectedWorkspaces = Object.fromEntries(
       Object.entries(layout.selectedWorkspaces).filter(([, id]) => !removed.has(id)),
     )

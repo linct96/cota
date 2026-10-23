@@ -96,8 +96,12 @@ export type Result<T> =
 export type Shortcut =
   | 'open-folder'
   | 'new-terminal'
+  | 'split-terminal'
+  | 'split-terminal-down'
+  | 'reopen-tab'
   | 'close-terminal'
   | 'settings'
+  | 'toggle-right-panel'
   | `tab-${number}`
 export type TerminalEvent =
   | ((
@@ -346,6 +350,7 @@ export interface SavedTerminal extends WorkspaceTarget {
 }
 
 export interface WorkspaceLayout {
+  terminalLayouts?: import('./terminal-layout').TerminalLayout[]
   workspaces: ProjectWorkspace[]
   tabs: SavedTerminal[]
   selectedProject?: string
@@ -395,6 +400,7 @@ export type CreateTerminal = WorkspaceTarget &
     id: string
     cols: number
     rows: number
+    startupCommand?: string
   }
 
 export interface ConfirmationRequest {

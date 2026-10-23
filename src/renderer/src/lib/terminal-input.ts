@@ -233,6 +233,7 @@ export function createTerminalInputHandler({
           [
             'o',
             't',
+            'd',
             'w',
             ',',
             '1',
@@ -253,8 +254,18 @@ export function createTerminalInputHandler({
             'h',
             'm',
           ].includes(key)) ||
-          (!event.altKey && event.shiftKey && key === 'z') ||
+          (!event.altKey && event.shiftKey && ['z', 't', 'd'].includes(key)) ||
           (event.altKey && !event.shiftKey && event.code === 'KeyH'))
+      )
+        return false
+      if (
+        !getShortcuts &&
+        platform !== 'darwin' &&
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        key === 't'
       )
         return false
       if (

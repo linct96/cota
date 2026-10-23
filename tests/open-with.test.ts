@@ -13,16 +13,26 @@ import {
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as shell from '../src/main/system/shell'
 import { promisify } from 'node:util'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
-import { parseArguments } from '../src/shared/open-with'
-import { workspaceOpeners } from '../src/main/validation'
+import { parseArguments, preferredWorkspaceOpener } from '../src/shared/open-with'
+import { savedQuickCommands, startupCommand, workspaceOpeners } from '../src/main/validation'
 
-const mocks = vi.hoisted(() => ({ login: vi.fn(), spawn: vi.fn(), adapter: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  login: vi.fn(),
+  spawn: vi.fn(),
+  adapter: vi.fn(),
+  applications: new Set<string>(),
+}))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...original,
+    stat: (path: string) =>
+      mocks.applications.has(path)
+        ? Promise.resolve({ isDirectory: () => true })
+        : original.stat(path),
     access: (path: string, mode?: number) =>
       /(?:pi-extension|agent-hook)\.js$/.test(path)
         ? mocks.adapter(path)
@@ -36,7 +46,7 @@ vi.mock('node:child_process', async () => {
     spawn: mocks.spawn,
   }
 })
-import { openWorkspaceWith } from '../src/main/system/open-with'
+import { listWorkspaceOpeners, openWorkspaceWith } from '../src/main/system/open-with'
 import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents/registry'
 import {
   hookFiles,
@@ -67,6 +77,8 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   vi.clearAllMocks()
+  vi.restoreAllMocks()
+  mocks.applications.clear()
   vi.useRealTimers()
   vi.unstubAllEnvs()
   await rm(root, { recursive: true, force: true })
@@ -103,6 +115,73 @@ describe('open-with arguments and validation', () => {
 })
 
 describe('workspace program launch', () => {
+  it('runs a quick command once after shell initialization without installing hooks', async () => {
+    const command = `printf '%s\\n' "$COTA_TEST_PROFILE" '中文 ; $(touch nope)' >> 'startup output'\nprintf '%s\\n' done >> 'startup output'`
+    const definition = {
+      id: 'dev',
+      name: ' 开发服务 ',
+      command,
+      scope: { type: 'project', projectPath: root },
+    }
+    expect(savedQuickCommands([])).toEqual([])
+    expect(savedQuickCommands([definition])[0].name).toBe('开发服务')
+    expect(startupCommand('echo one\r\necho two\r')).toBe('echo one\necho two\n')
+    for (const invalid of [
+      undefined,
+      [definition, definition],
+      [{ ...definition, id: '../bad' }],
+      [{ ...definition, command: '\u001b[31m' }],
+      [{ ...definition, command: ' ' }],
+      [{ ...definition, command: 'a'.repeat(8193) }],
+      [{ ...definition, scope: { type: 'project', projectPath: 'relative' } }],
+    ])
+      expect(() => savedQuickCommands(invalid)).toThrow()
+    const run = promisify(
+      (await vi.importActual<typeof import('node:child_process')>('node:child_process')).execFile,
+    )
+    await writeFile(join(root, '.bash_profile'), 'export COTA_TEST_PROFILE=ready\n')
+    await writeFile(join(root, '.zprofile'), 'export COTA_TEST_PROFILE=ready\n')
+    await mkdir(join(root, 'config', 'fish'), { recursive: true })
+    await writeFile(
+      join(root, 'config', 'fish', 'config.fish'),
+      'set -gx COTA_TEST_PROFILE ready\n',
+    )
+    for (const name of ['bash', 'zsh', 'fish']) {
+      const env: Record<string, string> = {
+        HOME: root,
+        PATH: '/usr/bin:/bin',
+        TERM: 'dumb',
+        XDG_CONFIG_HOME: join(root, 'config'),
+        XDG_DATA_HOME: join(root, 'data'),
+      }
+      const args = await prepareAgentShell(`/bin/${name}`, env, join(root, 'runtime'), command)
+      expect(args).toBeDefined()
+      expect((await inspectAgentHook('codex', env)).state).toBe('missing')
+      let shell: string | undefined
+      for (const candidate of name === 'fish'
+        ? ['/opt/homebrew/bin/fish', '/usr/local/bin/fish', '/usr/bin/fish']
+        : [`/bin/${name}`]) {
+        shell = await realpath(candidate).catch(() => undefined)
+        if (shell) break
+      }
+      if (!shell) continue
+      const { stdout } = await run(shell, [...args!, '-c', 'printf COTA_AFTER_STARTUP; env'], {
+        env,
+        cwd: root,
+        timeout: 5000,
+      })
+      expect(stdout).toContain('COTA_AFTER_STARTUP')
+      expect(stdout).not.toContain('COTA_STARTUP_COMMAND=')
+      expect(await readFile(join(root, 'startup output'), 'utf8')).toBe(
+        'ready\n中文 ; $(touch nope)\ndone\n',
+      )
+      expect(await readdir(root)).not.toContain('nope')
+      await rm(join(root, 'startup output'))
+    }
+    await expect(
+      prepareAgentShell('/bin/sh', { HOME: root }, join(root, 'runtime'), command),
+    ).rejects.toThrow('快捷命令需要')
+  })
   it('opens an explicitly configured Finder without shell evaluation', async () => {
     await openWorkspaceWith(root, {
       id: 'finder',
@@ -615,6 +694,89 @@ codex --no-daemon`)
     mocks.login.mockRejectedValueOnce(new Error('shell initialization timed out'))
     await openWorkspaceWith(root, { ...opener, command, arguments: '--new-window' })
     expect(mocks.spawn.mock.calls[0].slice(0, 2)).toEqual([command, ['--new-window', root]])
+
+    for (const name of ['code', 'zeditor'])
+      await writeFile(join(root, 'bin', name), '#!/bin/sh\n', { mode: 0o700 })
+    const configured = [
+      { id: 'finder', name: '访达', command: '/usr/bin/open', arguments: '-a Finder {path}' },
+      {
+        ...opener,
+        id: 'missing',
+        name: 'Custom editor',
+        command: 'missing-cota-editor',
+        arguments: '--custom {path}',
+      },
+      opener,
+    ]
+    const loginCalls = mocks.login.mock.calls.length
+    const available = listWorkspaceOpeners({
+      ...DEFAULT_CONFIG.preferences,
+      openWith: configured,
+    })
+    expect(available).toEqual(configured)
+    expect(available.filter((entry) => entry.name === '访达')).toHaveLength(1)
+    expect(mocks.login).toHaveBeenCalledTimes(loginCalls)
+    const empty = listWorkspaceOpeners(DEFAULT_CONFIG.preferences)
+    expect(empty).toEqual([])
+    expect(
+      preferredWorkspaceOpener({
+        preferences: DEFAULT_CONFIG.preferences,
+        workspaceOpeners: empty,
+      }),
+    ).toBeUndefined()
+    expect(
+      preferredWorkspaceOpener({
+        preferences: DEFAULT_CONFIG.preferences,
+        workspaceOpeners: available,
+      })?.id,
+    ).toBe('finder')
+    expect(
+      preferredWorkspaceOpener({
+        preferences: { ...DEFAULT_CONFIG.preferences, preferredOpenerId: 'editor' },
+        workspaceOpeners: available,
+      })?.id,
+    ).toBe('editor')
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+    expect(
+      (
+        await listWorkspaceOpeners({
+          ...DEFAULT_CONFIG.preferences,
+          openWith: [{ ...opener, command: join(root, 'bin', 'code') }],
+        })
+      ).map((entry) => entry.id),
+    ).toEqual(['editor'])
+
+    if (process.platform === 'darwin') {
+      vi.spyOn(shell, 'findExecutable').mockRejectedValue(new Error('not on PATH'))
+      mocks.applications.add('/Applications/Visual Studio Code.app')
+      const apps = listWorkspaceOpeners({
+        ...DEFAULT_CONFIG.preferences,
+        openWith: [{ id: 'vscode', name: 'VS Code', command: 'code', arguments: '{path}' }],
+      })
+      expect(apps).toContainEqual(expect.objectContaining({ id: 'vscode' }))
+      await openWorkspaceWith(
+        root,
+        apps.find((entry) => entry.id === 'vscode')!,
+      )
+      expect(mocks.spawn.mock.calls.at(-1)!.slice(0, 2)).toEqual([
+        '/usr/bin/open',
+        ['-a', '/Applications/Visual Studio Code.app', root, '--args', root],
+      ])
+      vi.mocked(shell.findExecutable).mockRestore()
+    }
+
+    vi.useFakeTimers()
+    child.unref.mockClear()
+    mocks.spawn.mockImplementationOnce(() => {
+      queueMicrotask(() => child.emit('spawn'))
+      return child
+    })
+    const pending = openWorkspaceWith(root, { ...opener, command })
+    await vi.waitFor(() => expect(child.unref).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(300)
+    await pending
+    child.emit('exit', 0)
+    expect(vi.getTimerCount()).toBe(0)
   })
   it('rejects missing or non-executable programs and inaccessible directories before spawning', async () => {
     await expect(

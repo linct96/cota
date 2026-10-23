@@ -27,6 +27,7 @@ import {
 } from '../shared/terminal-appearance'
 import { validateShortcutBindings } from '../shared/shortcuts'
 import { DEFAULT_INTERFACE_COLORS, interfaceColorsSchema } from '../shared/interface-colors'
+import { terminalPaneIds, type TerminalLayout, type TerminalPane } from '../shared/terminal-layout'
 
 export function absolutePath(value: unknown): string {
   if (
@@ -458,6 +459,63 @@ export function workspaceLayout(
     }
   })
   if (new Set(tabs.map((entry) => entry.id)).size !== tabs.length) throw new Error('终端标识重复。')
+  let terminalLayouts: TerminalLayout[] | undefined
+  if (layout.terminalLayouts !== undefined) {
+    if (!Array.isArray(layout.terminalLayouts) || layout.terminalLayouts.length > MAX_TERMINALS)
+      throw new Error('终端拆分布局大小无效。')
+    const seen = new Set<string>()
+    let count = 0
+    const parsePane = (value: unknown, depth: number): TerminalPane => {
+      if (
+        !value ||
+        typeof value !== 'object' ||
+        depth > MAX_TERMINALS ||
+        ++count > MAX_TERMINALS * 2
+      )
+        throw new Error('终端拆分布局大小无效。')
+      const node = value as TerminalPane
+      const id = terminalId(node.id)
+      if (seen.has(id)) throw new Error('终端拆分标识重复。')
+      seen.add(id)
+      if (node.type === 'terminal' && tabs.some((tab) => tab.id === id))
+        return { type: 'terminal', id }
+      if (
+        node.type !== 'split' ||
+        tabs.some((tab) => tab.id === id) ||
+        (node.direction !== 'horizontal' && node.direction !== 'vertical') ||
+        !Number.isFinite(node.ratio) ||
+        node.ratio <= 0 ||
+        node.ratio >= 1 ||
+        !Array.isArray(node.children) ||
+        node.children.length !== 2
+      )
+        throw new Error('终端拆分节点无效。')
+      return {
+        type: 'split',
+        id,
+        direction: node.direction,
+        ratio: node.ratio,
+        children: [parsePane(node.children[0], depth + 1), parsePane(node.children[1], depth + 1)],
+      }
+    }
+    const groupIds = new Set<string>()
+    terminalLayouts = layout.terminalLayouts.map((entry) => {
+      if (!entry || typeof entry !== 'object') throw new Error('终端拆分标签无效。')
+      const id = terminalId(entry.id)
+      if (groupIds.has(id)) throw new Error('终端拆分标签重复。')
+      groupIds.add(id)
+      const root = parsePane(entry.root, 0)
+      const ids = terminalPaneIds(root)
+      const owners = new Set(ids.map((id) => tabs.find((tab) => tab.id === id)!.workspaceId))
+      if (owners.size !== 1) throw new Error('终端拆分不能跨工作区。')
+      if (
+        !ids.includes(entry.activePaneId) ||
+        (tabs.some((tab) => tab.id === id) && !ids.includes(id))
+      )
+        throw new Error('终端拆分标签或焦点无效。')
+      return { id, root, activePaneId: entry.activePaneId }
+    })
+  }
   const selectedWorkspaces: Record<string, string> = {}
   const activeTabs: Record<string, string> = {}
   if (
@@ -482,6 +540,7 @@ export function workspaceLayout(
   return {
     workspaces,
     tabs,
+    ...(terminalLayouts !== undefined ? { terminalLayouts } : {}),
     selectedProject: layout.selectedProject,
     selectedWorkspaces,
     activeTabs,

@@ -1,7 +1,11 @@
 export const COTA_SHORTCUTS = [
   ['settings', '打开设置', 'CommandOrControl+,'],
+  ['toggle-right-panel', '展开 / 收起右侧面板', 'CommandOrControl+L'],
   ['open-folder', '打开项目', 'CommandOrControl+O'],
   ['new-terminal', '新建终端', 'CommandOrControl+T'],
+  ['split-terminal', '向右拆分终端', 'Super+D'],
+  ['split-terminal-down', '向下拆分终端', 'Super+Shift+D'],
+  ['reopen-tab', '重新打开关闭的标签', 'CommandOrControl+Shift+T'],
   ['close-terminal', '关闭终端', 'CommandOrControl+W'],
   ...Array.from({ length: 9 }, (_, index) => [
     `tab-${index + 1}`,
@@ -31,6 +35,7 @@ const keyPattern =
 
 export function shortcutBinding(bindings: ShortcutBindings, id: string, platform: string): string {
   if (Object.hasOwn(bindings, id)) return bindings[id]!
+  if (platform !== 'darwin' && ['split-terminal', 'split-terminal-down'].includes(id)) return ''
   if (platform === 'darwin' && ['copy', 'paste', 'select-all'].includes(id))
     return `CommandOrControl+${{ copy: 'C', paste: 'V', 'select-all': 'A' }[id]}`
   return SHORTCUT_DEFINITIONS.find(([key]) => key === id)?.[2] || ''

@@ -41,25 +41,52 @@ end
 set -e __cota_codex_type
 `
 
+const shellStartupCommand = `
+if [[ -n "\${COTA_STARTUP_COMMAND-}" ]]; then
+  __cota_startup_command="$COTA_STARTUP_COMMAND"
+  unset COTA_STARTUP_COMMAND
+  printf '%s\\n' "$__cota_startup_command"
+  eval "$__cota_startup_command"
+  unset __cota_startup_command
+fi
+`
+
+const fishStartupCommand = `
+if set -q COTA_STARTUP_COMMAND
+  set -l __cota_startup_command "$COTA_STARTUP_COMMAND"
+  set -e COTA_STARTUP_COMMAND
+  printf '%s\\n' "$__cota_startup_command"
+  eval "$__cota_startup_command"
+end
+`
+
+const powershellStartupCommand = `
+$cotaStartupCommand = $env:COTA_STARTUP_COMMAND
+Remove-Item Env:COTA_STARTUP_COMMAND
+Write-Host $cotaStartupCommand
+Invoke-Expression $cotaStartupCommand
+Remove-Variable cotaStartupCommand -ErrorAction SilentlyContinue
+`
+
 const preparations = new Map<string, Promise<void>>()
 // Only Cota's private runtime files are written here, never the user's shell or CLI configuration.
 export async function prepareAgentShell(
   shell: string,
   env: Record<string, string>,
   runtime: string,
+  startupCommand?: string,
 ): Promise<string[] | undefined> {
   const name = basename(shell)
+  const codex = (await inspectAgentHook('codex', env)).state === 'installed'
+  if (startupCommand !== undefined) env.COTA_STARTUP_COMMAND = startupCommand
   if (isWindows) {
-    if (
-      !/^(?:pwsh|powershell)\.exe$/i.test(name) ||
-      (await inspectAgentHook('codex', env)).state !== 'installed'
-    )
+    if (!/^(?:pwsh|powershell)\.exe$/i.test(name)) {
+      if (startupCommand !== undefined)
+        throw new Error('快捷命令需要使用 PowerShell、Bash、Zsh 或 Fish。')
       return
-    return [
-      '-NoLogo',
-      '-NoExit',
-      '-Command',
-      `
+    }
+    if (!codex && startupCommand === undefined) return
+    const codexFunction = `
 $cotaCommand = Get-Command codex -ErrorAction SilentlyContinue
 if ($cotaCommand -and $cotaCommand.CommandType -eq 'Application') {
   function global:codex {
@@ -73,18 +100,36 @@ if ($cotaCommand -and $cotaCommand.CommandType -eq 'Application') {
   }
 }
 Remove-Variable cotaCommand -ErrorAction SilentlyContinue
-`,
+`
+    const script =
+      (codex ? codexFunction : '') + (startupCommand === undefined ? '' : powershellStartupCommand)
+    return [
+      '-NoLogo',
+      '-NoExit',
+      '-EncodedCommand',
+      Buffer.from(script, 'utf16le').toString('base64'),
     ]
   }
-  if (
-    !['zsh', 'bash', 'fish'].includes(name) ||
-    (await inspectAgentHook('codex', env)).state !== 'installed'
-  )
+  if (!['zsh', 'bash', 'fish'].includes(name)) {
+    if (startupCommand !== undefined)
+      throw new Error('快捷命令需要使用 PowerShell、Bash、Zsh 或 Fish。')
     return
-  // fish -C runs after the user's config, so existing aliases/functions take precedence.
-  if (name === 'fish') return ['-il', '-C', fishCodexShellFunction]
+  }
+  if (!codex && startupCommand === undefined) return
+  // Native startup scripts run commands after user initialization, without racing PTY input.
+  const startup = startupCommand === undefined ? '' : shellStartupCommand
+  if (name === 'fish')
+    return [
+      '-il',
+      '-C',
+      (codex ? fishCodexShellFunction : '') +
+        (startupCommand === undefined ? '' : fishStartupCommand),
+    ]
 
-  const directory = join(runtime, `shell-${name}`)
+  const directory = join(
+    runtime,
+    `shell-${name}${startupCommand === undefined ? '' : codex ? '-command-codex' : '-command'}`,
+  )
   let preparation = preparations.get(directory)
   if (!preparation) {
     preparation = (async () => {
@@ -102,7 +147,8 @@ for __cota_profile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"
   fi
 done
 unset __cota_profile
-${codexShellFunction}`,
+${codex ? codexShellFunction : ''}
+${startup}`,
           { mode: 0o600 },
         )
         return
@@ -114,8 +160,8 @@ if [[ -r "$COTA_SHELL_SOURCE/${file}" ]]; then
 fi
 export COTA_SHELL_SOURCE="\${ZDOTDIR:-$HOME}"
 export ZDOTDIR="$COTA_SHELL_WRAPPER"
-${file === '.zshrc' || file === '.zlogin' ? codexShellFunction : ''}
-${file === '.zlogin' ? 'export ZDOTDIR="$COTA_SHELL_SOURCE"\n' : ''}`
+${codex && (file === '.zshrc' || file === '.zlogin') ? codexShellFunction : ''}
+${file === '.zlogin' ? 'export ZDOTDIR="$COTA_SHELL_SOURCE"\n' + startup : ''}`
         await writeFile(join(directory, file), source, { mode: 0o600 })
       }
     })().catch((error) => {

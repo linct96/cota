@@ -34,6 +34,7 @@ import { createSourceControlRefreshQueue } from '../lib/source-control-refresh'
 import { useSourceControlWatch } from '../lib/use-source-control-watch'
 import { useCommitMessageGeneration } from '../lib/use-commit-message-generation'
 import { commitMessageFormSchema } from '../lib/form-schemas'
+import { useLoadingIndicator } from '../lib/use-loading-indicator'
 import { buildGitChangeTree } from '../lib/source-control-tree'
 import { cn } from '../lib/utils'
 import {
@@ -100,10 +101,12 @@ export function SourceControlPanel({
 }) {
   const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
   const update = useSourceControl((state) => state.update)
+  const selectedDiff = session.activePinnedDiff || (session.preview ? session.selection : undefined)
   const [error, setError] = useState<string>()
   const [readError, setReadError] = useState<string>()
   const [pending, setPending] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const syncLoading = useLoadingIndicator(syncing)
   const [messageExpanded, setMessageExpanded] = useState(false)
   const [references, setReferences] = useState<GitReferences>()
   const [referencesError, setReferencesError] = useState<string>()
@@ -243,7 +246,6 @@ export function SourceControlPanel({
   async function mutate(input: GitMutation) {
     if (writing.current) return false
     writing.current = true
-    const started = performance.now()
     setPending(true)
     setSyncing(input.action === 'sync')
     setError(undefined)
@@ -264,7 +266,11 @@ export function SourceControlPanel({
       }
       if (!mounted.current) return false
       if (done && input.action === 'switch-branch')
-        update(workspace.id, { selection: undefined, preview: false, previewAll: false })
+        update(workspace.id, {
+          selection: undefined,
+          preview: false,
+          activePinnedDiff: undefined,
+        })
       return done
     } catch (error) {
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
@@ -285,11 +291,6 @@ export function SourceControlPanel({
           setReadError(error instanceof Error ? error.message : String(error))
         }
       } finally {
-        if (input.action === 'sync') {
-          await new Promise<void>((resolve) =>
-            setTimeout(resolve, Math.max(0, 500 - (performance.now() - started))),
-          )
-        }
         writing.current = false
         if (mounted.current) {
           setPending(false)
@@ -381,9 +382,7 @@ export function SourceControlPanel({
               size="sm"
               className="source-control-view-all"
               disabled={disabled || !status?.entries.length}
-              onClick={() =>
-                update(workspace.id, { selection: undefined, preview: true, previewAll: true })
-              }
+              onClick={() => useSourceControl.getState().openChanges(workspace.id)}
             >
               <FileDiff className="source-control-view-all-icon" data-icon="inline-start" />
               查看全部变更
@@ -469,11 +468,7 @@ export function SourceControlPanel({
                     <SourceFileExplorer
                       nodes={nodes}
                       label={`${label}文件树`}
-                      selectedPath={
-                        session.preview && session.selection?.area === area
-                          ? session.selection.path
-                          : undefined
-                      }
+                      selectedPath={selectedDiff?.area === area ? selectedDiff.path : undefined}
                       renderDirectoryActions={(directoryEntries, path) => {
                         const targets = directoryEntries.filter((entry) => !entry.submodule)
                         return (
@@ -523,11 +518,7 @@ export function SourceControlPanel({
                           <div
                             key={key}
                             className="source-control-file-row flex min-w-0 items-center gap-1 pr-1"
-                            data-selected={
-                              session.preview &&
-                              session.selection &&
-                              gitFileKey(session.selection) === key
-                            }
+                            data-selected={selectedDiff && gitFileKey(selectedDiff) === key}
                           >
                             <Button
                               {...itemProps}
@@ -535,9 +526,9 @@ export function SourceControlPanel({
                               className="source-file-explorer-item source-control-file-open min-w-0 flex-1 justify-start gap-1.5"
                               title={`${entry.oldPath ? `${entry.oldPath} → ` : ''}${entry.path}`}
                               onClick={() =>
-                                update(workspace.id, {
-                                  selection: { path: entry.path, area: entry.area },
-                                  preview: true,
+                                useSourceControl.getState().openDiff(workspace.id, {
+                                  path: entry.path,
+                                  area: entry.area,
                                 })
                               }
                             >
@@ -718,15 +709,15 @@ export function SourceControlPanel({
                       variant="outline"
                       size="sm"
                       className="source-control-sync"
-                      disabled={syncDisabled}
-                      aria-busy={syncing}
-                      aria-label={syncing ? '正在同步' : undefined}
+                      disabled={syncDisabled || syncLoading}
+                      aria-busy={syncing || syncLoading}
+                      aria-label={syncing || syncLoading ? '正在同步' : undefined}
                       onClick={() => void remoteAction('sync')}
                     >
                       <RefreshCw
                         className={cn(
                           'source-control-sync-icon',
-                          syncing && 'motion-safe:animate-spin',
+                          syncLoading && 'motion-safe:animate-spin',
                         )}
                         data-icon="inline-start"
                         aria-hidden="true"
@@ -870,7 +861,8 @@ export function SourceControlPanel({
                           <FieldDescription
                             id={`commit-description-${workspace.id}`}
                             className="source-control-commit-description"
-                            role="status"
+                            aria-live="polite"
+                            aria-atomic="true"
                           >
                             {generation.state === 'running'
                               ? '正在使用 Pi 生成提交信息…'

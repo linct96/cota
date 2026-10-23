@@ -11,7 +11,15 @@ import { shortenPath } from '../lib/utils'
 import { installTerminalAppearance, terminalAppearanceOptions } from '../lib/terminal-appearance'
 import { observeDocumentTheme } from '../lib/theme'
 
-export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolean }) {
+export function TerminalView({
+  tab,
+  active,
+  focused = active,
+}: {
+  tab: TerminalTab
+  active: boolean
+  focused?: boolean
+}) {
   const host = useRef<HTMLDivElement>(null)
   const readingOffset = useRef<number | undefined>(undefined)
   const instance = useRef<{
@@ -29,6 +37,11 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
   const provider = tab.provider
   const launchId = tab.launchId
   const status = tab.closingStatus ?? tab.status
+  const focusPane = () => {
+    const state = useWorkspace.getState()
+    if (active && !state.removingWorkspace && state.activeTabs[workspaceId] !== id)
+      state.selectTab(id)
+  }
 
   useEffect(() => {
     const container = host.current
@@ -42,7 +55,6 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       macOptionClickForcesSelection: true,
       allowProposedApi: false,
       vtExtensions: { kittyKeyboard: true },
-      allowTransparency: true,
       ...terminalAppearanceOptions(useWorkspace.getState().preferences.terminalAppearance),
     })
     const fit = new StableCellFitAddon()
@@ -188,6 +200,8 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
             id,
             projectPath,
             workspaceId,
+            startupCommand: useWorkspace.getState().tabs.find((item) => item.id === id)
+              ?.startupCommand,
             ...(kind === 'agent'
               ? { kind, provider: provider!, launchId: launchId! }
               : { kind: 'shell' as const }),
@@ -211,6 +225,7 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       terminal.options.disableStdin = attached.exited
       useWorkspace.getState().updateTab(id, {
         status: attached.exited ? 'exited' : 'running',
+        startupCommand: undefined,
         exitCode: attached.exitCode,
         agent: attached.agent,
         agentRevision: attached.agentRevision,
@@ -260,13 +275,13 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
     if (instance.current) instance.current.terminal.options.scrollback = scrollback
   }, [scrollback])
   useEffect(() => {
-    if (!active) return
+    if (!focused) return
     const frame = requestAnimationFrame(() => {
       const current = instance.current
       if (!current || !host.current?.clientWidth) return
       current.fit.fit()
-      // Keep focus on tab buttons for repeated arrow-key navigation.
-      if (document.activeElement?.getAttribute('role') !== 'tab') current.terminal.focus()
+      // Preserve keyboard tab navigation without blocking pointer selection.
+      if (!document.activeElement?.matches('[role="tab"]:focus-visible')) current.terminal.focus()
       if (
         !current.terminal.options.disableStdin &&
         useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
@@ -278,15 +293,13 @@ export function TerminalView({ tab, active }: { tab: TerminalTab; active: boolea
       }
     })
     return () => cancelAnimationFrame(frame)
-  }, [active, id, focusVersion])
+  }, [focused, id, focusVersion])
 
   return (
     <section
-      id={`terminal-panel-${tab.id}`}
-      role="tabpanel"
-      aria-labelledby={`terminal-tab-${tab.id}`}
       aria-label={shortenPath(tab.cwd || tab.projectPath)}
-      tabIndex={0}
+      onPointerDownCapture={focusPane}
+      onFocusCapture={focusPane}
       hidden={!active}
       style={{ display: active ? 'flex' : 'none' }}
       className="terminal-view col-start-1 row-start-1 size-full min-h-0 min-w-0 flex-col"

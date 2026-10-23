@@ -59,6 +59,7 @@ import {
   projectDirectory,
   terminalId,
   terminalLaunch,
+  startupCommand,
   workspaceRemoval,
   workspaceTarget,
 } from './validation'
@@ -722,6 +723,9 @@ function installIPC(): void {
     )
       throw new Error('正在删除此工作区，无法新建终端。')
     const launch = terminalLaunch(value)
+    const command = startupCommand(value.startupCommand)
+    if (command !== undefined && launch.kind === 'agent')
+      throw new Error('快捷命令只能在新建 Shell 中执行。')
     const snapshot = config.snapshot()
     if (exiting || exitPending) throw new Error('应用正在退出。')
     return worktrees.withTerminalTarget(value, (binding) => {
@@ -735,7 +739,14 @@ function installIPC(): void {
       )
         throw new Error('工作区正在关闭，无法新建终端。')
       return manager.request('create', [
-        { id: value.id, cols: value.cols, rows: value.rows, ...binding, ...launch },
+        {
+          id: value.id,
+          cols: value.cols,
+          rows: value.rows,
+          ...binding,
+          ...launch,
+          ...(command === undefined ? {} : { startupCommand: command }),
+        },
         snapshot.preferences,
       ])
     })
@@ -940,6 +951,21 @@ function installMenu(): void {
             click: () => sendShortcut('new-terminal'),
           },
           {
+            label: 'Split Terminal Right',
+            accelerator: accelerator('split-terminal'),
+            click: () => sendShortcut('split-terminal'),
+          },
+          {
+            label: 'Split Terminal Down',
+            accelerator: accelerator('split-terminal-down'),
+            click: () => sendShortcut('split-terminal-down'),
+          },
+          {
+            label: 'Reopen Closed Tab',
+            accelerator: accelerator('reopen-tab'),
+            click: () => sendShortcut('reopen-tab'),
+          },
+          {
             label: 'Close Terminal / Window',
             accelerator: accelerator('close-terminal'),
             click: () => sendShortcut('close-terminal'),
@@ -962,6 +988,16 @@ function installMenu(): void {
             accelerator: '',
           },
           { role: 'selectAll', accelerator: '' },
+        ],
+      },
+      {
+        label: 'View',
+        submenu: [
+          {
+            label: 'Toggle Right Panel',
+            accelerator: accelerator('toggle-right-panel'),
+            click: () => sendShortcut('toggle-right-panel'),
+          },
         ],
       },
       {

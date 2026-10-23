@@ -6,6 +6,7 @@ import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-st
 import { buildGitChangeTree } from '../lib/source-control-tree'
 import { FileTypeIcon } from './FileTypeIcon'
 import { SourceFileExplorer } from './SourceFileExplorer'
+import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './ui/empty'
@@ -29,6 +30,7 @@ export function SourceControlReview({
   references?: GitReferences
 }) {
   const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
+  const selectedDiff = session.activePinnedDiff || (session.preview ? session.selection : undefined)
   const [history, setHistory] = useState<GitHistory>()
   const [commit, setCommit] = useState('')
   const [result, setResult] = useState<{ key: string; comparison: GitComparison }>()
@@ -210,139 +212,141 @@ export function SourceControlReview({
             </AlertDescription>
           </Alert>
         )}
-        {mode === 'history' && !commit && (
-          <>
-            {history && !history.commits.length && (
-              <Empty className="source-control-history-empty">
-                <EmptyHeader className="source-control-history-empty-header">
-                  <EmptyTitle className="source-control-history-empty-title">暂无提交</EmptyTitle>
-                  <EmptyDescription className="source-control-history-empty-description">
-                    完成首次提交后，历史会显示在这里。
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            )}
-            {!!history?.commits.length && (
-              <div className="source-control-history-list flex min-w-0 flex-col gap-1">
-                {history?.commits.map((item) => (
-                  <Button
-                    key={item.oid}
-                    variant="ghost"
-                    className="source-control-history-commit h-auto w-full min-w-0 items-start justify-start py-1.5"
-                    title={item.subject}
-                    onClick={() => setCommit(item.oid)}
-                  >
-                    <span className="source-control-history-commit-icon-container flex h-lh shrink-0 items-center">
-                      <GitCommitHorizontal
-                        className="source-control-history-commit-icon"
-                        data-icon="inline-start"
-                      />
-                    </span>
-                    <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-                      <span className="source-control-history-subject truncate">
-                        {item.subject || '（无提交标题）'}
-                      </span>
-                      <span className="source-control-history-metadata truncate text-app-muted-foreground">
-                        {item.oid.slice(0, 8)} · {item.author} ·{' '}
-                        <time className="source-control-history-date" dateTime={item.date}>
-                          {new Date(item.date).toLocaleDateString()}
-                        </time>
-                      </span>
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            )}
-            {history?.more && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="source-control-history-more"
-                disabled={morePending}
-                onClick={() => void loadMore()}
-              >
-                加载更多
-              </Button>
-            )}
-            {!!history?.commits.length && (
-              <p className="source-control-history-limit px-2 text-xs text-app-muted-foreground">
-                当前 HEAD 的历史，每页 50 条，最多 10,000 条。
-              </p>
-            )}
-          </>
-        )}
-        {mode === 'compare' && !head && (
-          <p className="source-control-compare-unborn p-2 text-xs text-app-muted-foreground">
-            当前分支还没有提交，暂不能比较。
-          </p>
-        )}
-        {comparison && (
-          <>
-            {mode === 'compare' && (
-              <p className="source-control-comparison-summary px-2 text-xs text-app-muted-foreground select-text">
-                {comparison.label}
-                <br className="source-control-comparison-break" />
-                {comparison.base?.slice(0, 8) || '空树'} → {comparison.head.slice(0, 8)} ·{' '}
-                {comparison.entries.length} 个文件
-              </p>
-            )}
-            {!comparison.entries.length && (
-              <p className="source-control-comparison-empty px-2 text-xs text-app-muted-foreground">
-                没有文件差异。
-              </p>
-            )}
-            <div className="source-control-review-files flex min-w-0 flex-col gap-0.5">
-              <SourceFileExplorer
-                key={comparisonKey}
-                nodes={nodes}
-                label={`${mode === 'history' ? '提交审阅' : '分支比较'}文件树`}
-                selectedPath={
-                  session.preview &&
-                  session.selection?.area === 'review' &&
-                  session.selection.base === comparison.base &&
-                  session.selection.head === comparison.head
-                    ? session.selection.path
-                    : undefined
-                }
-                renderFile={(entry, name, itemProps) => {
-                  const selection = {
-                    ...entry,
-                    area: 'review' as const,
-                    base: comparison.base,
-                    head: comparison.head,
-                    label: comparison.label,
-                  }
-                  return (
+        <LoadingContent
+          pending={loading || (mode === 'history' && !commit && !history && !historyError)}
+          label={mode === 'history' ? '正在加载提交历史' : '正在加载比较'}
+        >
+          {mode === 'history' && !commit && (
+            <>
+              {history && !history.commits.length && (
+                <Empty className="source-control-history-empty">
+                  <EmptyHeader className="source-control-history-empty-header">
+                    <EmptyTitle className="source-control-history-empty-title">暂无提交</EmptyTitle>
+                    <EmptyDescription className="source-control-history-empty-description">
+                      完成首次提交后，历史会显示在这里。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+              {!!history?.commits.length && (
+                <div className="source-control-history-list flex min-w-0 flex-col gap-1">
+                  {history?.commits.map((item) => (
                     <Button
-                      {...itemProps}
-                      variant="project"
-                      className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
-                      title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
-                      onClick={() =>
-                        useSourceControl
-                          .getState()
-                          .update(workspace.id, { selection, preview: true })
-                      }
+                      key={item.oid}
+                      variant="ghost"
+                      className="source-control-history-commit h-auto w-full min-w-0 items-start justify-start py-1.5"
+                      title={item.subject}
+                      onClick={() => setCommit(item.oid)}
                     >
-                      <ChevronRight
-                        className="source-file-explorer-chevron"
-                        data-visible="false"
-                        aria-hidden="true"
-                      />
-                      <FileTypeIcon path={entry.path} submodule={entry.submodule} />
-                      <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
-                        {name}
+                      <span className="source-control-history-commit-icon-container flex h-lh shrink-0 items-center">
+                        <GitCommitHorizontal
+                          className="source-control-history-commit-icon"
+                          data-icon="inline-start"
+                        />
                       </span>
-                      <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
-                        {entry.status}
+                      <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                        <span className="source-control-history-subject truncate">
+                          {item.subject || '（无提交标题）'}
+                        </span>
+                        <span className="source-control-history-metadata truncate text-app-muted-foreground">
+                          {item.oid.slice(0, 8)} · {item.author} ·{' '}
+                          <time className="source-control-history-date" dateTime={item.date}>
+                            {new Date(item.date).toLocaleDateString()}
+                          </time>
+                        </span>
                       </span>
                     </Button>
-                  )
-                }}
-              />
-            </div>
-          </>
-        )}
+                  ))}
+                </div>
+              )}
+              {history?.more && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="source-control-history-more"
+                  disabled={morePending}
+                  onClick={() => void loadMore()}
+                >
+                  加载更多
+                </Button>
+              )}
+              {!!history?.commits.length && (
+                <p className="source-control-history-limit px-2 text-xs text-app-muted-foreground">
+                  当前 HEAD 的历史，每页 50 条，最多 10,000 条。
+                </p>
+              )}
+            </>
+          )}
+          {mode === 'compare' && !head && (
+            <p className="source-control-compare-unborn p-2 text-xs text-app-muted-foreground">
+              当前分支还没有提交，暂不能比较。
+            </p>
+          )}
+          {comparison && (
+            <>
+              {mode === 'compare' && (
+                <p className="source-control-comparison-summary px-2 text-xs text-app-muted-foreground select-text">
+                  {comparison.label}
+                  <br className="source-control-comparison-break" />
+                  {comparison.base?.slice(0, 8) || '空树'} → {comparison.head.slice(0, 8)} ·{' '}
+                  {comparison.entries.length} 个文件
+                </p>
+              )}
+              {!comparison.entries.length && (
+                <p className="source-control-comparison-empty px-2 text-xs text-app-muted-foreground">
+                  没有文件差异。
+                </p>
+              )}
+              <div className="source-control-review-files flex min-w-0 flex-col gap-0.5">
+                <SourceFileExplorer
+                  key={comparisonKey}
+                  nodes={nodes}
+                  label={`${mode === 'history' ? '提交审阅' : '分支比较'}文件树`}
+                  selectedPath={
+                    selectedDiff?.area === 'review' &&
+                    selectedDiff.base === comparison.base &&
+                    selectedDiff.head === comparison.head
+                      ? selectedDiff.path
+                      : undefined
+                  }
+                  renderFile={(entry, name, itemProps) => {
+                    const selection = {
+                      ...entry,
+                      area: 'review' as const,
+                      base: comparison.base,
+                      head: comparison.head,
+                      label: comparison.label,
+                    }
+                    return (
+                      <Button
+                        {...itemProps}
+                        variant="project"
+                        className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
+                        title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
+                        onClick={() =>
+                          useSourceControl.getState().openDiff(workspace.id, selection)
+                        }
+                      >
+                        <ChevronRight
+                          className="source-file-explorer-chevron"
+                          data-visible="false"
+                          aria-hidden="true"
+                        />
+                        <FileTypeIcon path={entry.path} submodule={entry.submodule} />
+                        <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
+                          {name}
+                        </span>
+                        <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
+                          {entry.status}
+                        </span>
+                      </Button>
+                    )
+                  }}
+                />
+              </div>
+            </>
+          )}
+        </LoadingContent>
       </div>
     </section>
   )

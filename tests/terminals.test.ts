@@ -138,6 +138,39 @@ afterEach(() => {
 })
 
 describe('single PTY owner', () => {
+  it('prepares quick command startup once and rejects unsafe or failed launches without spawning', async () => {
+    const manager = new TerminalManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+    const entry = { ...options(), startupCommand: 'printf hello\npwd' }
+    mocks.prepareShell.mockResolvedValueOnce(['--rcfile', '/tmp/cota-test/rcfile', '-i'])
+    await manager.create(entry, settings)
+    expect(mocks.prepareShell).toHaveBeenLastCalledWith(
+      '/bin/zsh',
+      expect.any(Object),
+      '/tmp/cota-test',
+      entry.startupCommand,
+    )
+    expect(mocks.spawn).toHaveBeenLastCalledWith(
+      '/bin/zsh',
+      ['--rcfile', '/tmp/cota-test/rcfile', '-i'],
+      expect.objectContaining({ cwd: entry.cwd }),
+    )
+    await manager.create(entry, settings)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+    expect(mocks.prepareShell).toHaveBeenCalledOnce()
+    expect(() => manager.create({ ...options(), startupCommand: '\u001b[31m' }, settings)).toThrow(
+      '控制字符',
+    )
+    await expect(
+      manager.create({ ...options(), ...agentLaunch(), startupCommand: 'echo nope' }, settings),
+    ).rejects.toThrow('只能在新建 Shell')
+    mocks.prepareShell.mockRejectedValueOnce(new Error('shell setup failed'))
+    await expect(
+      manager.create({ ...options(), startupCommand: 'echo nope' }, settings),
+    ).rejects.toThrow('shell setup failed')
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+    expect((await manager.list()).map((session) => session.id)).toEqual([entry.id])
+    await manager.shutdown()
+  })
   it('spawns an interactive login shell at the validated cwd', async () => {
     const hooks = new Map<
       string,

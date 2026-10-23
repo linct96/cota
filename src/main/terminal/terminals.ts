@@ -17,7 +17,14 @@ import {
   type AgentUpdate,
   type WorkspaceTarget,
 } from '../../shared/contracts'
-import { dimensions, preferences, terminalId, terminalLaunch, workspaceTarget } from '../validation'
+import {
+  dimensions,
+  preferences,
+  terminalId,
+  terminalLaunch,
+  workspaceTarget,
+  startupCommand,
+} from '../validation'
 import { resolveShell, shellArguments, shellEnvironment } from '../system/shell'
 import { isWindows } from '../system/platform'
 import { agentCapability, resolveAgent } from '../agents/registry'
@@ -90,6 +97,11 @@ export class TerminalManager {
     const id = terminalId(options?.id)
     const target = terminalBinding(options)
     const launch = terminalLaunch(options)
+    const startup = startupCommand(options.startupCommand)
+    if (startup !== undefined && launch.kind === 'agent')
+      return Promise.reject(new Error('快捷命令只能在新建 Shell 中执行。'))
+    if (startup !== undefined && !this.agentSocketPath)
+      return Promise.reject(new Error('终端 Host 缺少 Shell 初始化目录。'))
     const size = dimensions(options.cols, options.rows)
     settings = preferences(settings)
     const existing = this.sessions.get(id)
@@ -162,11 +174,15 @@ export class TerminalManager {
           })
           // Optional shell preparation must never prevent a usable terminal.
           if (launch.kind !== 'agent') {
-            const args = await prepareAgentShell(
+            const preparation = prepareAgentShell(
               command.executable,
               command.env,
               dirname(this.agentSocketPath),
-            ).catch(() => undefined)
+              startup,
+            )
+            // A requested command must fail visibly, never silently become an empty shell.
+            const args =
+              startup === undefined ? await preparation.catch(() => undefined) : await preparation
             if (args) command.args = args
           }
         }

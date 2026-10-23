@@ -8,7 +8,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  Files,
+  FileDiff,
   GitFork,
   ExternalLink,
   MoreHorizontal,
@@ -16,14 +16,24 @@ import {
   Plus,
   Terminal as TerminalIcon,
   Trash2,
-  X,
   CircleDot,
 } from 'lucide-react'
-import { currentWorkspace, nextWorkspaceName, useWorkspace } from './store'
+import {
+  currentWorkspace,
+  nextWorkspaceName,
+  terminalTabId,
+  terminalTabs,
+  useWorkspace,
+} from './store'
 import { unwrap } from '../../shared/contracts'
+import { gitFileKey } from '../../shared/source-control'
 import { TerminalTabList } from './components/TerminalTabList'
-import { TerminalView } from './components/TerminalView'
+import { TerminalTab } from './components/TerminalTab'
+import { WorkspaceTab } from './components/WorkspaceTab'
+import { TerminalWorkspace } from './components/TerminalWorkspace'
 import { TopStatusBar } from './components/TopStatusBar'
+import { OpenWorkspaceButton } from './components/OpenWorkspaceButton'
+import { QuickCommandsButton } from './components/QuickCommandsButton'
 import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
 import { FilePreview } from './components/FilePreview'
@@ -227,27 +237,43 @@ export function App() {
   const repository = activeWorkspace && state.worktreeScans[activeWorkspace.projectPath]?.repository
   const gitAvailable = !!repository && repository.status !== 'nonGit'
   const activeRightTab = rightTab === 'git' && !gitAvailable ? 'files' : rightTab
-  const currentTabs = state.tabs.filter((tab) => tab.workspaceId === workspaceId)
+  const currentTabs = terminalTabs(state).filter((tab) => tab.workspaceId === workspaceId)
   const activeId = state.activeTabs[workspaceId || '']
   const sourceControl = useSourceControl(
     (state) => state.sessions[workspaceId || ''] || EMPTY_SOURCE_CONTROL,
   )
   const previewSelection = sourceControl.selection
-  const hasPreview = !!sourceControl.file || !!previewSelection || sourceControl.previewAll
-  const previewTitle =
-    sourceControl.file || (sourceControl.previewAll ? '全部变更' : previewSelection?.path || '')
-  const showingDiff = hasPreview && sourceControl.preview
-  function closePreview() {
-    if (!workspaceId) return
-    useSourceControl
-      .getState()
-      .update(workspaceId, { selection: undefined, preview: false, previewAll: false })
+  const hasPreview = !!sourceControl.file || !!previewSelection
+  const previewPath = sourceControl.file || previewSelection?.path || ''
+  const previewTitle = `${folderName(previewPath)}${previewSelection ? '（Diff）' : ''}`
+  const activePinnedDiff = sourceControl.activePinnedDiff
+  const showingPreview = hasPreview && sourceControl.preview
+  const showingChanges = sourceControl.changesOpen && sourceControl.changesActive
+  const showingDiff = showingPreview || showingChanges || !!activePinnedDiff
+  function focusActiveTab() {
     requestAnimationFrame(() =>
       (
-        document.getElementById(`terminal-tab-${activeId}`) ||
-        document.getElementById('right-panel-toggle')
+        document.querySelector<HTMLElement>(
+          '.terminal-tab-list [role="tab"][aria-selected="true"]',
+        ) || document.getElementById('right-panel-toggle')
       )?.focus(),
     )
+  }
+  function pinPreview() {
+    if (!workspaceId || !previewSelection || state.removingWorkspace) return
+    useSourceControl.getState().pinDiff(workspaceId)
+    requestAnimationFrame(() =>
+      document
+        .getElementById(
+          `source-control-pinned-tab-${workspaceId}-${encodeURIComponent(gitFileKey(previewSelection))}`,
+        )
+        ?.focus(),
+    )
+  }
+  function closeWorkspaceTab(key: string, active: boolean) {
+    if (!workspaceId) return
+    state.closeWorkspaceTab(workspaceId, key)
+    if (active) focusActiveTab()
   }
   useEffect(() => {
     const current = useSourceControl.getState()
@@ -324,68 +350,144 @@ export function App() {
               />
               {state.selectedProject && (
                 <>
-                  {workspaceId && (currentTabs.length > 0 || hasPreview) && (
-                    <TerminalTabList
-                      key={workspaceId}
-                      workspaceId={workspaceId}
-                      tabs={currentTabs}
-                      activeId={showingDiff ? undefined : activeId}
-                      disabled={!!state.removingWorkspace}
-                    >
-                      {hasPreview && (
-                        <div
-                          role="tab"
-                          id={`source-control-tab-${workspaceId}`}
-                          aria-selected={showingDiff}
-                          aria-controls={`source-control-panel-${workspaceId}`}
-                          aria-label={`${previewTitle} 预览`}
-                          tabIndex={showingDiff ? 0 : -1}
-                          title={previewTitle}
-                          className="source-control-preview-tab inline-flex h-8 w-40 shrink-0 cursor-pointer items-center gap-1.5 px-2.5"
-                          onClick={() => {
-                            if (workspaceId)
-                              useSourceControl.getState().update(workspaceId, { preview: true })
-                          }}
-                          onAuxClick={(event) => {
-                            if (event.button !== 1) return
-                            event.preventDefault()
-                            closePreview()
-                          }}
-                          onKeyDown={(event) => {
-                            if (
-                              event.target !== event.currentTarget ||
-                              (event.key !== 'Enter' && event.key !== ' ')
+                  {workspaceId &&
+                    (currentTabs.length > 0 ||
+                      hasPreview ||
+                      sourceControl.changesOpen ||
+                      sourceControl.pinnedDiffs.length > 0) && (
+                      <TerminalTabList
+                        key={workspaceId}
+                        workspaceId={workspaceId}
+                        tabs={currentTabs}
+                        order={sourceControl.tabOrder}
+                        disabled={!!state.removingWorkspace}
+                      >
+                        {sourceControl.tabOrder.map((key, index) => {
+                          const tab = currentTabs.find((tab) => key === `terminal:${tab.id}`)
+                          if (tab)
+                            return (
+                              <TerminalTab
+                                key={key}
+                                tab={tab}
+                                indicatorTab={tab.indicatorTab}
+                                index={index}
+                                active={
+                                  !showingDiff && tab.id === terminalTabId(state, activeId || '')
+                                }
+                                closeDisabled={
+                                  tab.status === 'starting' ||
+                                  !!tab.closingStatus ||
+                                  !!state.removingWorkspace
+                                }
+                                onSelect={() =>
+                                  state.selectWorkspaceTab(tab.workspaceId, `terminal:${tab.id}`)
+                                }
+                                onClose={() => void state.closeTab(tab.id)}
+                              />
                             )
-                              return
-                            event.preventDefault()
-                            event.currentTarget.click()
-                          }}
-                        >
-                          {sourceControl.previewAll ? (
-                            <Files className="source-control-preview-all-icon size-3.5 shrink-0" />
-                          ) : (
-                            <FileTypeIcon path={previewTitle} />
-                          )}
-                          <span className="source-control-preview-tab-title min-w-0 flex-1 truncate">
-                            {sourceControl.previewAll ? previewTitle : folderName(previewTitle)}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            tabIndex={-1}
-                            className="source-control-preview-tab-close size-4 shrink-0"
-                            aria-label={`关闭 ${previewTitle} 预览`}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              closePreview()
-                            }}
-                          >
-                            <X className="source-control-preview-tab-close-icon" />
-                          </Button>
-                        </div>
-                      )}
-                    </TerminalTabList>
-                  )}
+                          if (key === 'changes')
+                            return (
+                              <WorkspaceTab
+                                key={key}
+                                id={`source-control-changes-tab-${workspaceId}`}
+                                aria-controls={`source-control-changes-panel-${workspaceId}`}
+                                title="全部变更"
+                                label="全部变更"
+                                active={showingChanges}
+                                width={112}
+                                className="source-control-changes-workspace-tab"
+                                onSelect={() =>
+                                  useSourceControl.getState().openChanges(workspaceId)
+                                }
+                                onClose={() => closeWorkspaceTab(key, showingChanges)}
+                                closeDisabled={!!state.removingWorkspace}
+                                icon={
+                                  <FileDiff
+                                    className="source-control-changes-tab-icon size-3.5 shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                }
+                              />
+                            )
+                          const selection = sourceControl.pinnedDiffs.find(
+                            (selection) => key === `diff:${gitFileKey(selection)}`,
+                          )
+                          if (selection) {
+                            const diffKey = gitFileKey(selection)
+                            const label = `${folderName(selection.path)}（Diff）`
+                            const active =
+                              !!activePinnedDiff && gitFileKey(activePinnedDiff) === diffKey
+                            return (
+                              <WorkspaceTab
+                                key={key}
+                                id={`source-control-pinned-tab-${workspaceId}-${encodeURIComponent(diffKey)}`}
+                                aria-controls={`source-control-pinned-panel-${workspaceId}-${encodeURIComponent(diffKey)}`}
+                                aria-label={`${selection.path}（Diff）`}
+                                title={`${selection.path}（Diff）`}
+                                label={label}
+                                active={active}
+                                className="source-control-pinned-tab"
+                                onSelect={() =>
+                                  useSourceControl.getState().selectPinnedDiff(workspaceId, diffKey)
+                                }
+                                onClose={() => closeWorkspaceTab(key, active)}
+                                closeDisabled={!!state.removingWorkspace}
+                                closeLabel={`关闭 ${selection.path}（Diff）`}
+                                icon={<FileTypeIcon path={selection.path} />}
+                              />
+                            )
+                          }
+                          if (key === 'preview' && hasPreview)
+                            return (
+                              <WorkspaceTab
+                                key={key}
+                                id={`source-control-tab-${workspaceId}`}
+                                aria-controls={`source-control-panel-${workspaceId}`}
+                                aria-label={`${previewPath}${previewSelection ? '（Diff）' : ''} 预览`}
+                                title={`${previewPath}${previewSelection ? '（Diff） · 双击或 Enter 固定' : ''}`}
+                                label={previewTitle}
+                                active={showingPreview}
+                                className="source-control-preview-tab"
+                                data-diff={!!previewSelection}
+                                onDoubleClick={(event) => {
+                                  if (
+                                    !state.removingWorkspace &&
+                                    event.target instanceof Element &&
+                                    !event.target.closest('button')
+                                  )
+                                    pinPreview()
+                                }}
+                                onKeyDownCapture={(event) => {
+                                  if (
+                                    showingPreview &&
+                                    previewSelection &&
+                                    event.target === event.currentTarget &&
+                                    event.key === 'Enter' &&
+                                    !event.metaKey &&
+                                    !event.ctrlKey &&
+                                    !event.altKey &&
+                                    !event.shiftKey
+                                  ) {
+                                    event.preventDefault()
+                                    pinPreview()
+                                  }
+                                }}
+                                onSelect={() => {
+                                  if (workspaceId)
+                                    useSourceControl
+                                      .getState()
+                                      .update(workspaceId, { preview: true })
+                                }}
+                                onClose={() => closeWorkspaceTab(key, showingPreview)}
+                                closeLabel={`关闭 ${previewPath}${previewSelection ? '（Diff）' : ''} 预览`}
+                                closeDisabled={!!state.removingWorkspace}
+                                icon={<FileTypeIcon path={previewPath} />}
+                              />
+                            )
+                          return null
+                        })}
+                      </TerminalTabList>
+                    )}
                   <Button
                     variant="navigation"
                     size="icon"
@@ -407,6 +509,15 @@ export function App() {
                 </>
               )}
               <div className="workspace-header-spacer min-w-0 flex-1" />
+              {activeWorkspace && (
+                <>
+                  <QuickCommandsButton
+                    key={`commands-${activeWorkspace.id}`}
+                    workspace={activeWorkspace}
+                  />
+                  <OpenWorkspaceButton key={activeWorkspace.id} workspace={activeWorkspace} />
+                </>
+              )}
             </div>
           )}
         </TopStatusBar>
@@ -860,9 +971,10 @@ export function App() {
                                           aria-label="打开于"
                                         >
                                           <ContextMenuGroup className="workspace-open-with-programs">
-                                            {state.preferences.openWith
+                                            {state.workspaceOpeners
                                               .filter(
                                                 (opener) =>
+                                                  opener.id !== 'system-file-manager' &&
                                                   !(
                                                     opener.id === 'finder' &&
                                                     opener.command === '/usr/bin/open' &&
@@ -996,7 +1108,7 @@ export function App() {
                   className="terminal-workspace flex min-h-0 min-w-0 flex-1 flex-col"
                   aria-label={
                     showingDiff
-                      ? sourceControl.file
+                      ? showingPreview && sourceControl.file
                         ? '文件预览工作区'
                         : '变更审阅工作区'
                       : '终端工作区'
@@ -1010,50 +1122,46 @@ export function App() {
                       {state.worktreeError}
                     </p>
                   )}
-                  {showingDiff &&
-                    activeWorkspace &&
-                    (sourceControl.file ? (
-                      <FilePreview
-                        key={`${activeWorkspace.id}:${sourceControl.file}`}
-                        workspace={activeWorkspace}
-                        path={sourceControl.file}
-                        active={!secondaryPageOpen}
-                      />
-                    ) : sourceControl.previewAll ? (
+                  {sourceControl.changesOpen && activeWorkspace && (
+                    <div
+                      className={cn(
+                        'source-control-changes-stage min-h-0 min-w-0 flex-1 flex-col',
+                        showingChanges ? 'flex' : 'hidden',
+                      )}
+                    >
                       <SourceControlChanges
                         key={activeWorkspace.id}
                         workspace={activeWorkspace}
-                        active={!secondaryPageOpen}
+                        active={!secondaryPageOpen && showingChanges}
                       />
-                    ) : (
+                    </div>
+                  )}
+                  {showingPreview && activeWorkspace && sourceControl.file && (
+                    <FilePreview
+                      key={`${activeWorkspace.id}:${sourceControl.file}`}
+                      workspace={activeWorkspace}
+                      path={sourceControl.file}
+                      active={!secondaryPageOpen}
+                    />
+                  )}
+                  {activeWorkspace &&
+                    (activePinnedDiff || (showingPreview && previewSelection)) && (
                       <SourceControlDiff
                         key={activeWorkspace.id}
                         workspace={activeWorkspace}
                         active={!secondaryPageOpen}
                       />
-                    ))}
+                    )}
                   <div
                     className={cn(
                       'terminal-stage-container grid grid-cols-1 grid-rows-1 min-h-0 flex-1 overflow-hidden',
                       showingDiff && 'hidden',
                     )}
                   >
-                    {state.tabs.map((tab) => {
-                      const isSelected =
-                        tab.projectPath === state.selectedProject && tab.id === activeId
-                      return (
-                        <TerminalView
-                          key={tab.id}
-                          tab={tab}
-                          active={
-                            isSelected &&
-                            !secondaryPageOpen &&
-                            !showingDiff &&
-                            activeNavigation === 'home'
-                          }
-                        />
-                      )
-                    })}
+                    <TerminalWorkspace
+                      activeId={activeId}
+                      visible={!secondaryPageOpen && !showingDiff && activeNavigation === 'home'}
+                    />
                     {!state.selectedProject && (
                       <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
                         <FolderOpen className="workspace-empty-icon size-6 text-app-muted-foreground" />

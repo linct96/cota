@@ -8,6 +8,8 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react'
+import { formatShortcut, shortcutBinding } from '../../../shared/shortcuts'
+import { useWorkspace } from '../store'
 import { isWindows } from '../lib/platform'
 import { useRightPanel } from '../lib/right-panel-store'
 import { cn } from '../lib/utils'
@@ -32,6 +34,12 @@ export function TopStatusBar({
   onBack,
   children,
 }: TopStatusBarProps) {
+  const shortcuts = useWorkspace((state) => state.preferences.shortcuts)
+  const rightPanelShortcut = shortcutBinding(
+    shortcuts,
+    'toggle-right-panel',
+    window.desktop.platform,
+  )
   const rightPanelOpen = useRightPanel((state) => state.open)
   const rightPanelWidth = useRightPanel((state) => state.width)
   const rightPanelLabel = rightPanelOpen ? '收起右侧面板' : '展开右侧面板'
@@ -160,7 +168,10 @@ export function TopStatusBar({
               >
                 <PanelRightClose className="right-panel-toggle-icon" aria-hidden="true" />
               </TooltipTrigger>
-              <TooltipContent side="bottom">{rightPanelLabel}</TooltipContent>
+              <TooltipContent side="bottom">
+                {rightPanelLabel}
+                {rightPanelShortcut && formatShortcut(rightPanelShortcut, window.desktop.platform)}
+              </TooltipContent>
             </Tooltip>
           </>
         ) : (
@@ -181,7 +192,10 @@ export function TopStatusBar({
             >
               <PanelRightOpen className="right-panel-toggle-icon" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent side="bottom">{rightPanelLabel}</TooltipContent>
+            <TooltipContent side="bottom">
+              {rightPanelLabel}
+              {rightPanelShortcut && formatShortcut(rightPanelShortcut, window.desktop.platform)}
+            </TooltipContent>
           </Tooltip>
         )}
       </div>
