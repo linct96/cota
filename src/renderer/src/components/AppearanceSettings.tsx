@@ -127,7 +127,7 @@ export function AppearanceSettings() {
               aria-describedby={errors.reset ? 'appearance-reset-error' : undefined}
               onClick={() => void resetAppearance()}
             >
-              重置为默认设置
+              恢复默认
             </Button>
           </div>
           <FieldError id="appearance-reset-error" className="appearance-reset-error">
