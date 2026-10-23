@@ -5,6 +5,22 @@ export const PRESET_OPENERS: WorkspaceOpener[] = [
   { id: 'zed', name: 'Zed', command: 'zed', arguments: '{path}' },
 ]
 
+export function withSystemFileManager(
+  openers: WorkspaceOpener[],
+  platform: string,
+): WorkspaceOpener[] {
+  return [
+    ...openers.filter((opener) => opener.id !== 'system-file-manager'),
+    {
+      id: 'system-file-manager',
+      name: platform === 'darwin' ? '访达' : platform === 'win32' ? '资源管理器' : '文件管理器',
+      command:
+        platform === 'darwin' ? '/usr/bin/open' : platform === 'win32' ? 'explorer' : 'xdg-open',
+      arguments: '{path}',
+    },
+  ]
+}
+
 export function preferredWorkspaceOpener(state: {
   preferences: Preferences
   workspaceOpeners: WorkspaceOpener[]

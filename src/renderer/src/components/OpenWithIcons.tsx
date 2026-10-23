@@ -21,12 +21,13 @@ export function OpenerIcon({
     : executable === 'code'
       ? siVisualstudiocode
       : undefined
-  const iconClass = cn('open-with-app-icon size-4 shrink-0', className)
+  const iconClass = cn('open-with-app-icon shrink-0', className)
   if (id === 'system-file-manager' || (id === 'finder' && executable === 'open'))
     return window.desktop.platform === 'darwin' ? (
       // Tabler Icons' brand-finder (MIT); see THIRD_PARTY_NOTICES.md.
       <svg
         className={iconClass}
+        data-icon="inline-start"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -47,13 +48,19 @@ export function OpenerIcon({
         <path className="finder-icon-smile" d="M7 15.5c3.667 2 6.333 2 10 0" />
       </svg>
     ) : (
-      <FolderOpen className={iconClass} aria-hidden="true" />
+      <FolderOpen className={iconClass} data-icon="inline-start" aria-hidden="true" />
     )
   return icon ? (
-    <svg className={iconClass} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      className={iconClass}
+      data-icon="inline-start"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <path className="open-with-app-icon-path" d={icon.path} />
     </svg>
   ) : (
-    <AppWindow className={iconClass} aria-hidden="true" />
+    <AppWindow className={iconClass} data-icon="inline-start" aria-hidden="true" />
   )
 }

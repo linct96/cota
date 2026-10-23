@@ -1,21 +1,14 @@
-import { useRef, useState } from 'react'
-import { revalidateLogic, useForm } from '@tanstack/react-form'
+import { Fragment, useRef, useState } from 'react'
+import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { openerFormSchema } from '../lib/form-schemas'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { WorkspaceOpener } from '../../../shared/contracts'
-import { preferredWorkspaceOpener } from '../../../shared/open-with'
+import { preferredWorkspaceOpener, withSystemFileManager } from '../../../shared/open-with'
 import { useWorkspace } from '../store'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,12 +19,17 @@ import {
 } from './ui/dropdown-menu'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
+import { Separator } from './ui/separator'
 import { OpenerIcon, PRESET_OPENERS, type PresetOpener } from './OpenWithIcons'
 
 export function OpenWithSettings() {
   const preferences = useWorkspace((state) => state.preferences)
   const openers = preferences.openWith
-  const defaultOpener = preferredWorkspaceOpener({ preferences, workspaceOpeners: openers })
+  const availableOpeners = withSystemFileManager(openers, window.desktop.platform)
+  const defaultOpener = preferredWorkspaceOpener({
+    preferences,
+    workspaceOpeners: availableOpeners,
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -42,22 +40,25 @@ export function OpenWithSettings() {
   const persisting = useRef(false)
   const form = useForm({
     defaultValues: { name: '', command: '', arguments: '{path}' },
-    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validationLogic: revalidateLogic({ mode: 'change' }),
     validators: { onDynamic: openerFormSchema },
     onSubmit: async ({ value }) => {
+      if (persisting.current) return
       const opener = {
         name: value.name.trim(),
         command: value.command.trim(),
         arguments: value.arguments,
       }
-      const current = useWorkspace.getState().preferences.openWith
+      const currentState = useWorkspace.getState()
+      const current = currentState.preferences.openWith
       const next =
         dialogMode === 'edit' && editingId
           ? current.map((item) => (item.id === editingId ? { ...item, ...opener } : item))
-          : [...current, { id: crypto.randomUUID(), ...opener }]
-      if (await persist(next)) setDialogOpen(false)
+          : [{ id: crypto.randomUUID(), ...opener }, ...current]
+      if (await persist(next, preferredWorkspaceOpener(currentState)?.id)) setDialogOpen(false)
     },
   })
+  const dialogPending = useStore(form.store, (state) => state.isSubmitting) || saving
 
   async function persist(
     nextOpeners: WorkspaceOpener[],
@@ -105,7 +106,10 @@ export function OpenWithSettings() {
   function handleOpenEditDialog(opener: WorkspaceOpener) {
     setDialogMode('edit')
     setEditingId(opener.id)
-    form.reset({ name: opener.name, command: opener.command, arguments: opener.arguments })
+    form.reset(
+      { name: opener.name, command: opener.command, arguments: opener.arguments },
+      { keepDefaultValues: true },
+    )
     setError(undefined)
     setDialogOpen(true)
   }
@@ -116,182 +120,194 @@ export function OpenWithSettings() {
   }
 
   return (
-    <div className="open-with-settings flex flex-col gap-5">
-      {/* 顶部标题与操作栏 */}
-      <div className="open-with-settings-header flex items-start justify-between gap-4">
-        <div className="open-with-settings-titles flex flex-col">
-          <h3 className="open-with-settings-title text-base font-semibold text-foreground">
-            在应用程序中打开
-          </h3>
-          <p className="open-with-settings-description mt-1 text-xs text-app-muted-foreground">
-            顶部按钮使用默认应用打开工作区；下拉菜单仅使用所选应用打开，不修改默认应用。系统文件管理器始终可用。
-          </p>
-        </div>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="open-with-add-trigger h-8 gap-1.5 rounded-lg px-3 text-xs font-medium"
-              />
-            }
-            disabled={saving || openers.length >= 50}
-          >
-            <span className="open-with-add-trigger-text">添加应用程序</span>
-            <ChevronDown className="open-with-add-trigger-icon size-3.5 opacity-70" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="open-with-add-menu w-48">
-            <DropdownMenuGroup className="open-with-presets-group">
-              {PRESET_OPENERS.map((preset) => {
-                const isAdded = openers.some(
-                  (item) => item.id === preset.id || item.command === preset.command,
-                )
-                return (
-                  <DropdownMenuItem
-                    key={preset.id}
-                    disabled={isAdded || saving}
-                    className="open-with-preset-item flex items-center justify-between"
-                    onClick={() => void handleAddPreset(preset)}
-                  >
-                    <span className="open-with-preset-name-wrap flex items-center gap-2">
-                      <OpenerIcon
-                        name={preset.name}
-                        command={preset.command}
-                        id={preset.id}
-                        className="open-with-preset-icon size-3.5 text-app-muted-foreground"
-                      />
-                      <span className="open-with-preset-name">{preset.name}</span>
-                    </span>
-                    {isAdded && (
-                      <Badge
-                        variant="secondary"
-                        className="open-with-preset-status h-4 px-1.5 text-[10px] font-normal"
-                      >
-                        已添加
-                      </Badge>
-                    )}
-                  </DropdownMenuItem>
-                )
-              })}
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator className="open-with-menu-separator" />
-            <DropdownMenuItem
-              className="open-with-custom-item flex items-center gap-2"
-              onClick={handleOpenAddDialog}
-            >
-              <Plus className="open-with-custom-icon size-3.5" />
-              <span className="open-with-custom-label">自定义应用程序…</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <section
+      className="open-with-settings flex flex-col gap-6"
+      aria-labelledby="open-with-settings-title"
+    >
+      <div className="open-with-settings-heading typeset">
+        <h1 id="open-with-settings-title" className="open-with-settings-title">
+          打开方式
+        </h1>
       </div>
-
-      {/* 列表区域 */}
-      <div className="open-with-list flex flex-col gap-1.5 pt-1">
-        {!openers.length && (
-          <Card className="open-with-empty-state rounded-xl border-dashed py-8 text-center text-xs text-app-muted-foreground shadow-none ring-0">
-            暂无打开方式，请点击右上角「添加应用程序」进行添加。
-          </Card>
-        )}
-
-        {openers.map((opener) => (
-          <div
-            key={opener.id}
-            className="open-with-item group flex items-center justify-between gap-4 rounded-xl px-2.5 py-2 transition-colors hover:bg-muted/40"
+      <section
+        className="open-with-settings-group flex flex-col gap-3"
+        aria-labelledby="open-with-settings-group-title"
+      >
+        <div className="open-with-settings-group-header flex flex-wrap items-start justify-between gap-3">
+          <h4
+            id="open-with-settings-group-title"
+            className="open-with-settings-group-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
           >
-            <div className="open-with-item-main flex min-w-0 items-center gap-3">
-              <div className="open-with-item-icon-box flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted text-foreground shadow-xs">
-                <OpenerIcon
-                  name={opener.name}
-                  command={opener.command}
-                  id={opener.id}
-                  className="open-with-item-icon size-5"
+            应用程序
+          </h4>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className="open-with-add-trigger"
                 />
+              }
+              disabled={saving || openers.length >= 50}
+            >
+              <span className="open-with-add-trigger-text">添加应用程序</span>
+              <ChevronDown className="open-with-add-trigger-icon" data-icon="inline-end" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="open-with-add-menu w-48">
+              <DropdownMenuGroup className="open-with-presets-group">
+                {PRESET_OPENERS.map((preset) => {
+                  const isAdded = openers.some(
+                    (item) => item.id === preset.id || item.command === preset.command,
+                  )
+                  return (
+                    <DropdownMenuItem
+                      key={preset.id}
+                      disabled={isAdded || saving}
+                      className="open-with-preset-item flex items-center justify-between"
+                      onClick={() => void handleAddPreset(preset)}
+                    >
+                      <span className="open-with-preset-name-wrap flex items-center gap-2">
+                        <OpenerIcon
+                          name={preset.name}
+                          command={preset.command}
+                          id={preset.id}
+                          className="open-with-preset-icon"
+                        />
+                        <span className="open-with-preset-name">{preset.name}</span>
+                      </span>
+                      {isAdded && (
+                        <Badge variant="secondary" className="open-with-preset-status">
+                          已添加
+                        </Badge>
+                      )}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator className="open-with-menu-separator" />
+              <DropdownMenuItem
+                className="open-with-custom-item flex items-center gap-2"
+                onClick={handleOpenAddDialog}
+              >
+                <Plus className="open-with-custom-icon" />
+                <span className="open-with-custom-label">自定义应用程序</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        {error && !dialogOpen && (
+          <FieldError className="open-with-settings-error">{error}</FieldError>
+        )}
+        <Card className="open-with-list" aria-busy={saving}>
+          {availableOpeners.map((opener, index) => (
+            <Fragment key={opener.id}>
+              {index > 0 && <Separator className="open-with-item-separator" />}
+              <div className="open-with-item flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+                <div className="open-with-item-main flex min-w-0 flex-1 basis-64 items-center gap-3">
+                  <OpenerIcon
+                    name={opener.name}
+                    command={opener.command}
+                    id={opener.id}
+                    className="open-with-item-icon size-6"
+                  />
+                  <div className="open-with-item-meta flex min-w-0 flex-1 flex-col gap-1">
+                    <span
+                      className="open-with-item-name truncate text-sm font-medium"
+                      title={opener.name}
+                    >
+                      {opener.name}
+                    </span>
+                    {opener.id !== 'system-file-manager' && (
+                      <p
+                        className="open-with-item-command truncate font-mono text-xs text-muted-foreground"
+                        title={opener.command}
+                      >
+                        {opener.command}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="open-with-item-actions ml-auto flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="lg"
+                    className="open-with-item-set-default"
+                    aria-label={`将 ${opener.name} 设为默认打开方式`}
+                    disabled={saving || defaultOpener?.id === opener.id}
+                    onClick={() =>
+                      void persist(useWorkspace.getState().preferences.openWith, opener.id)
+                    }
+                  >
+                    {defaultOpener?.id === opener.id ? '默认' : '设为默认'}
+                  </Button>
+                  {opener.id !== 'system-file-manager' && (
+                    <>
+                      {!PRESET_OPENERS.some((preset) => preset.id === opener.id) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-lg"
+                          className="open-with-item-edit"
+                          aria-label={`编辑 ${opener.name}`}
+                          title={`编辑 ${opener.name}`}
+                          disabled={saving}
+                          onClick={() => handleOpenEditDialog(opener)}
+                        >
+                          <Pencil className="open-with-action-icon" />
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="icon-lg"
+                        className="open-with-item-delete"
+                        aria-label={`删除 ${opener.name}`}
+                        title={`删除 ${opener.name}`}
+                        disabled={saving}
+                        onClick={() => void handleDelete(opener.id)}
+                      >
+                        <Trash2 className="open-with-action-icon" />
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="open-with-item-meta flex min-w-0 flex-col">
-                <span className="open-with-item-name truncate text-xs font-semibold text-foreground">
-                  {opener.name}
-                </span>
-                <span className="open-with-item-command truncate font-mono text-[11px] text-app-muted-foreground">
-                  {opener.command}
-                </span>
-              </div>
-            </div>
-
-            <div className="open-with-item-actions flex shrink-0 items-center gap-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="open-with-item-set-default"
-                aria-label={`将 ${opener.name} 设为默认打开方式`}
-                disabled={saving || defaultOpener?.id === opener.id}
-                onClick={() =>
-                  void persist(useWorkspace.getState().preferences.openWith, opener.id)
-                }
-              >
-                {defaultOpener?.id === opener.id ? '默认' : '设为默认'}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="open-with-item-edit text-app-muted-foreground hover:text-foreground"
-                aria-label={`编辑 ${opener.name}`}
-                title={`编辑 ${opener.name}`}
-                disabled={saving}
-                onClick={() => handleOpenEditDialog(opener)}
-              >
-                <Pencil className="open-with-action-icon size-3.5" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="open-with-item-delete text-app-muted-foreground hover:text-destructive"
-                aria-label={`删除 ${opener.name}`}
-                title={`删除 ${opener.name}`}
-                disabled={saving}
-                onClick={() => void handleDelete(opener.id)}
-              >
-                <Trash2 className="open-with-action-icon size-3.5" />
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {error && !dialogOpen && (
-        <p role="alert" className="open-with-settings-error text-xs text-destructive">
-          {error}
-        </p>
-      )}
+            </Fragment>
+          ))}
+        </Card>
+      </section>
 
       {/* 编辑 / 添加 对话框 */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(open, details) => {
-          if (persisting.current) details.cancel()
-          else setDialogOpen(open)
+          if (persisting.current || form.state.isSubmitting) details.cancel()
+          else {
+            setError(undefined)
+            setDialogOpen(open)
+          }
         }}
       >
-        <DialogContent className="open-with-dialog max-w-sm">
+        <DialogContent
+          className="open-with-dialog max-h-[calc(100%-2rem)] overflow-y-auto"
+          showCloseButton={false}
+          initialFocus={false}
+        >
           <DialogHeader className="open-with-dialog-header">
             <DialogTitle className="open-with-dialog-title">
               {dialogMode === 'add' ? '添加自定义应用程序' : '编辑应用程序'}
             </DialogTitle>
-            <DialogDescription className="open-with-dialog-description">
-              配置在工作区右键「打开于」菜单中执行的外部应用程序命令。
-            </DialogDescription>
           </DialogHeader>
 
           <form
             noValidate
             onSubmit={(event) => {
               event.preventDefault()
+              event.stopPropagation()
+              if (persisting.current || form.state.isSubmitting) return
               void form.handleSubmit()
             }}
             className="open-with-dialog-form flex flex-col gap-4"
@@ -304,7 +320,7 @@ export function OpenWithSettings() {
                     <Field
                       className="open-with-dialog-name-field"
                       data-invalid={invalid}
-                      data-disabled={saving}
+                      data-disabled={dialogPending}
                     >
                       <FieldLabel
                         htmlFor="dialog-opener-name"
@@ -319,8 +335,8 @@ export function OpenWithSettings() {
                         required
                         maxLength={80}
                         value={field.state.value}
-                        placeholder="例如 Zed 或 VS Code"
-                        disabled={saving}
+                        placeholder="例如：Zed 或 VS Code"
+                        disabled={dialogPending}
                         onBlur={field.handleBlur}
                         onChange={(event) => field.handleChange(event.target.value)}
                         aria-invalid={invalid}
@@ -328,6 +344,7 @@ export function OpenWithSettings() {
                       />
                       {invalid && (
                         <FieldError
+                          className="open-with-dialog-name-error"
                           id="dialog-opener-name-error"
                           errors={field.state.meta.errors}
                         />
@@ -343,7 +360,7 @@ export function OpenWithSettings() {
                     <Field
                       className="open-with-dialog-command-field"
                       data-invalid={invalid}
-                      data-disabled={saving}
+                      data-disabled={dialogPending}
                     >
                       <FieldLabel
                         htmlFor="dialog-opener-command"
@@ -359,7 +376,7 @@ export function OpenWithSettings() {
                         maxLength={4096}
                         value={field.state.value}
                         placeholder="zed 或 /usr/local/bin/zed"
-                        disabled={saving}
+                        disabled={dialogPending}
                         onBlur={field.handleBlur}
                         onChange={(event) => field.handleChange(event.target.value)}
                         aria-invalid={invalid}
@@ -367,6 +384,7 @@ export function OpenWithSettings() {
                       />
                       {invalid && (
                         <FieldError
+                          className="open-with-dialog-command-error"
                           id="dialog-opener-command-error"
                           errors={field.state.meta.errors}
                         />
@@ -382,7 +400,7 @@ export function OpenWithSettings() {
                     <Field
                       className="open-with-dialog-arguments-field"
                       data-invalid={invalid}
-                      data-disabled={saving}
+                      data-disabled={dialogPending}
                     >
                       <FieldLabel
                         htmlFor="dialog-opener-arguments"
@@ -397,7 +415,7 @@ export function OpenWithSettings() {
                         maxLength={4096}
                         value={field.state.value}
                         placeholder="{path}"
-                        disabled={saving}
+                        disabled={dialogPending}
                         onBlur={field.handleBlur}
                         onChange={(event) => field.handleChange(event.target.value)}
                         aria-invalid={invalid}
@@ -411,10 +429,11 @@ export function OpenWithSettings() {
                         id="dialog-opener-arguments-hint"
                         className="open-with-dialog-arguments-hint"
                       >
-                        参数中的 {'{path}'} 会替换为工作区目录路径；未填写时自动追加目录。
+                        {'{path}'} 代表工作区目录；留空时自动追加目录。
                       </FieldDescription>
                       {invalid && (
                         <FieldError
+                          className="open-with-dialog-arguments-error"
                           id="dialog-opener-arguments-error"
                           errors={field.state.meta.errors}
                         />
@@ -431,22 +450,34 @@ export function OpenWithSettings() {
               </p>
             )}
 
-            <DialogFooter className="open-with-dialog-footer mt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={() => setDialogOpen(false)}
-              >
-                取消
-              </Button>
-              <Button type="submit" disabled={saving}>
-                {dialogMode === 'add' ? '添加' : '保存'}
-              </Button>
-            </DialogFooter>
+            <form.Subscribe selector={(state) => state.canSubmit}>
+              {(canSubmit) => (
+                <DialogFooter className="open-with-dialog-footer">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="open-with-dialog-cancel"
+                    disabled={dialogPending}
+                    onClick={() => {
+                      setError(undefined)
+                      setDialogOpen(false)
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="open-with-dialog-save"
+                    disabled={!canSubmit || dialogPending}
+                  >
+                    {dialogPending ? '保存中…' : dialogMode === 'add' ? '添加' : '保存'}
+                  </Button>
+                </DialogFooter>
+              )}
+            </form.Subscribe>
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   )
 }

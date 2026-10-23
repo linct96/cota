@@ -16,7 +16,11 @@ import { join } from 'node:path'
 import * as shell from '../src/main/system/shell'
 import { promisify } from 'node:util'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
-import { parseArguments, preferredWorkspaceOpener } from '../src/shared/open-with'
+import {
+  parseArguments,
+  preferredWorkspaceOpener,
+  withSystemFileManager,
+} from '../src/shared/open-with'
 import { savedQuickCommands, startupCommand, workspaceOpeners } from '../src/main/validation'
 
 const mocks = vi.hoisted(() => ({
@@ -713,17 +717,30 @@ codex --no-daemon`)
       ...DEFAULT_CONFIG.preferences,
       openWith: configured,
     })
-    expect(available).toEqual(configured)
-    expect(available.filter((entry) => entry.name === '访达')).toHaveLength(1)
+    expect(available.slice(0, -1)).toEqual(configured)
+    expect(available.at(-1)?.id).toBe('system-file-manager')
+    expect(configured).toHaveLength(3)
+    for (const [platform, name] of [
+      ['darwin', '访达'],
+      ['win32', '资源管理器'],
+      ['linux', '文件管理器'],
+    ]) {
+      const builtIn = withSystemFileManager([], platform)
+      expect(builtIn).toEqual([expect.objectContaining({ id: 'system-file-manager', name })])
+      expect(withSystemFileManager([{ ...opener, id: 'system-file-manager' }], platform)).toEqual(
+        builtIn,
+      )
+    }
     expect(mocks.login).toHaveBeenCalledTimes(loginCalls)
     const empty = listWorkspaceOpeners(DEFAULT_CONFIG.preferences)
-    expect(empty).toEqual([])
+    expect(empty).toEqual([expect.objectContaining({ id: 'system-file-manager' })])
+    expect(DEFAULT_CONFIG.preferences.openWith).toEqual([])
     expect(
       preferredWorkspaceOpener({
         preferences: DEFAULT_CONFIG.preferences,
         workspaceOpeners: empty,
-      }),
-    ).toBeUndefined()
+      })?.id,
+    ).toBe('system-file-manager')
     expect(
       preferredWorkspaceOpener({
         preferences: DEFAULT_CONFIG.preferences,
@@ -736,6 +753,12 @@ codex --no-daemon`)
         workspaceOpeners: available,
       })?.id,
     ).toBe('editor')
+    expect(
+      preferredWorkspaceOpener({
+        preferences: { ...DEFAULT_CONFIG.preferences, preferredOpenerId: 'system-file-manager' },
+        workspaceOpeners: available,
+      })?.id,
+    ).toBe('system-file-manager')
     expect(mocks.spawn).toHaveBeenCalledOnce()
     expect(
       (
@@ -744,7 +767,7 @@ codex --no-daemon`)
           openWith: [{ ...opener, command: join(root, 'bin', 'code') }],
         })
       ).map((entry) => entry.id),
-    ).toEqual(['editor'])
+    ).toEqual(['editor', 'system-file-manager'])
 
     if (process.platform === 'darwin') {
       vi.spyOn(shell, 'findExecutable').mockRejectedValue(new Error('not on PATH'))

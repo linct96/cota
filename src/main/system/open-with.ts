@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Preferences, WorkspaceOpener } from '../../shared/contracts'
-import { parseArguments } from '../../shared/open-with'
+import { parseArguments, withSystemFileManager } from '../../shared/open-with'
 import { findExecutable, loginShellEnvironment, resolveCommand } from './shell'
 import { projectDirectory, workspaceOpeners } from '../validation'
 
@@ -42,7 +42,7 @@ async function resolveOpener(opener: WorkspaceOpener, env: Record<string, string
 }
 
 export function listWorkspaceOpeners(settings: Preferences): WorkspaceOpener[] {
-  return settings.openWith
+  return withSystemFileManager(settings.openWith, process.platform)
 }
 
 export async function openWorkspaceWith(path: unknown, value: WorkspaceOpener): Promise<void> {
