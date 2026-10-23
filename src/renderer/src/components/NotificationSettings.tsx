@@ -3,6 +3,16 @@ import { unwrap, type Preferences } from '../../../shared/contracts'
 import { NOTIFICATION_SOUND_OPTIONS } from '../../../shared/notification-sounds'
 import { useWorkspace } from '../store'
 import { Alert, AlertDescription } from './ui/alert'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from './ui/alert-dialog'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from './ui/field'
@@ -30,6 +40,10 @@ export function NotificationSettings() {
   const ready = useWorkspace((state) => state.ready)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [openingSettings, setOpeningSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string>()
+  const [testErrorOpen, setTestErrorOpen] = useState(false)
+  const isMac = window.desktop.platform === 'darwin'
   const [error, setError] = useState<string>()
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string }>()
   const pending = useRef(false)
@@ -75,6 +89,24 @@ export function NotificationSettings() {
     }
   }
 
+  async function openNotificationSettings() {
+    if (openingSettings) return
+    setOpeningSettings(true)
+    setSettingsError(undefined)
+    try {
+      unwrap(await window.desktop.openNotificationSettings())
+      setTestErrorOpen(false)
+    } catch (cause) {
+      setSettingsError(
+        cause instanceof Error
+          ? cause.message
+          : '无法打开系统通知设置，请手动前往系统设置 → 通知。',
+      )
+    } finally {
+      setOpeningSettings(false)
+    }
+  }
+
   async function sendTestNotification() {
     const state = useWorkspace.getState()
     if (pending.current || !state.ready || !state.preferences.notificationsEnabled) return
@@ -92,6 +124,8 @@ export function NotificationSettings() {
         ok: false,
         message: cause instanceof Error ? cause.message : '通知发送失败，请重试。',
       })
+      setSettingsError(undefined)
+      setTestErrorOpen(true)
     } finally {
       pending.current = false
       setTesting(false)
@@ -126,22 +160,83 @@ export function NotificationSettings() {
               size="lg"
               disabled={!ready || !enabled || saving || testing}
               aria-busy={testing}
+              aria-describedby={isMac ? 'notification-settings-permission-description' : undefined}
               onClick={() => void sendTestNotification()}
             >
               {testing ? '发送中…' : '发送测试通知'}
             </Button>
           </div>
-          {testResult && (
-            <Alert
-              className="notification-settings-test-result"
-              variant={testResult.ok ? 'default' : 'destructive'}
-              role={testResult.ok ? 'status' : 'alert'}
+          {isMac && (
+            <FieldDescription
+              id="notification-settings-permission-description"
+              className="notification-settings-permission-description"
             >
+              首次发送时，请在系统提示中允许通知。
+            </FieldDescription>
+          )}
+          {testResult?.ok && (
+            <Alert className="notification-settings-test-result" role="status">
               <AlertDescription className="notification-settings-test-message">
                 {testResult.message}
               </AlertDescription>
             </Alert>
           )}
+          <AlertDialog
+            open={testErrorOpen}
+            onOpenChange={(open, details) => {
+              if (openingSettings) details.cancel()
+              else setTestErrorOpen(open)
+            }}
+          >
+            <AlertDialogContent className="notification-settings-test-error-dialog">
+              <AlertDialogHeader className="notification-settings-test-error-header min-w-0">
+                <AlertDialogTitle className="notification-settings-test-error-title">
+                  测试通知未发送成功
+                </AlertDialogTitle>
+                <AlertDialogDescription className="notification-settings-test-error-description flex max-h-[50vh] flex-col gap-2 overflow-auto whitespace-pre-wrap break-words select-text">
+                  <span className="notification-settings-test-error-detail">
+                    {testResult?.message}
+                  </span>
+                  {isMac && (
+                    <>
+                      <span className="notification-settings-permission-guidance">
+                        请前往系统设置 → 通知，选择 Cota 并开启「允许通知」，然后返回重新测试。
+                        若已允许，请检查勿扰模式。
+                      </span>
+                      <span className="notification-settings-development-hint">
+                        开发环境中应用可能显示为 Electron；未签名应用也可能无法发送通知。
+                      </span>
+                    </>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              {settingsError && (
+                <Alert className="notification-settings-system-error" variant="destructive">
+                  <AlertDescription className="notification-settings-system-error-message">
+                    {settingsError}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <AlertDialogFooter className="notification-settings-test-error-footer">
+                <AlertDialogCancel
+                  className="notification-settings-test-error-dismiss"
+                  disabled={openingSettings}
+                >
+                  关闭
+                </AlertDialogCancel>
+                {isMac && (
+                  <AlertDialogAction
+                    className="notification-settings-system-button"
+                    disabled={!ready || openingSettings}
+                    aria-busy={openingSettings}
+                    onClick={() => void openNotificationSettings()}
+                  >
+                    {openingSettings ? '打开中…' : '打开系统通知设置'}
+                  </AlertDialogAction>
+                )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           {error && (
             <Alert
               id="notification-settings-save-error"

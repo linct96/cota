@@ -119,6 +119,7 @@ beforeEach(() => {
     getDefaultShell: vi.fn().mockResolvedValue({ ok: true, value: '/bin/zsh' }),
     savePreferences: vi.fn(async (value) => ({ ok: true as const, value })),
     sendTestNotification: vi.fn().mockResolvedValue({ ok: true }),
+    openNotificationSettings: vi.fn().mockResolvedValue({ ok: true }),
     chooseNotificationSound: vi.fn(),
     onNotificationSound: vi.fn(() => vi.fn()),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),

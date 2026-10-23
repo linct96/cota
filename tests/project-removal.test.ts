@@ -54,6 +54,7 @@ const mocks = vi.hoisted(() => {
     notificationSupported: true,
     notificationFails: false,
     notificationFailedEvent: false,
+    notificationError: '',
     spawn: vi.fn(),
     startBlocker: vi.fn().mockReturnValue(17),
     stopBlocker: vi.fn(),
@@ -73,6 +74,7 @@ const mocks = vi.hoisted(() => {
     openWorkspaceWith: vi.fn(),
     listWorkspaceOpeners: vi.fn(),
     openPath: vi.fn(),
+    openExternal: vi.fn(),
     remember: vi.fn(),
     setScrollback: vi.fn(),
     readAgent: vi.fn(),
@@ -148,7 +150,7 @@ vi.mock('electron', () => ({
     }
     show() {
       if (mocks.notificationFails) throw new Error('unavailable')
-      this.emit(mocks.notificationFailedEvent ? 'failed' : 'show')
+      this.emit(mocks.notificationFailedEvent ? 'failed' : 'show', {}, mocks.notificationError)
     }
     close = vi.fn()
   },
@@ -171,7 +173,7 @@ vi.mock('electron', () => ({
     stop: mocks.stopBlocker,
     isStarted: mocks.isBlockerStarted,
   },
-  shell: { openPath: mocks.openPath },
+  shell: { openPath: mocks.openPath, openExternal: mocks.openExternal },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
 }))
 vi.mock('../src/main/git/worktree-manager', () => ({
@@ -316,6 +318,7 @@ beforeEach(() => {
   mocks.connectFailure = undefined
   mocks.openWorkspaceWith.mockResolvedValue(undefined)
   mocks.openPath.mockResolvedValue('')
+  mocks.openExternal.mockReset().mockResolvedValue(undefined)
   mocks.detectAgents.mockResolvedValue([
     { provider: 'codex', version: '0.159.0', executable: '/tmp/codex-fixture' },
   ])
@@ -778,6 +781,49 @@ describe('Git Worktree IPC boundaries', () => {
     mocks.config.preferences.turnCompleteNotification = 'never'
     expect(await testNotification(event)).toMatchObject({ ok: true })
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cota · 测试通知' }))
+    const openSettings = mocks.handlers.get('notifications:open-settings')!
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const show = vi.spyOn((await import('electron')).Notification.prototype, 'show')
+    try {
+      Object.defineProperty(process, 'platform', { value: 'darwin' })
+      expect(await openSettings({ ...event, senderFrame: {} })).toMatchObject({ ok: false })
+      expect(mocks.openExternal).not.toHaveBeenCalled()
+      expect(await openSettings(event)).toMatchObject({ ok: true })
+      expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
+        'x-apple.systempreferences:com.apple.preference.notifications',
+      )
+      mocks.openExternal.mockRejectedValueOnce(new Error('无法打开系统设置'))
+      expect(await openSettings(event)).toMatchObject({ ok: false, error: '无法打开系统设置' })
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      expect(await openSettings(event)).toMatchObject({ ok: false })
+      expect(mocks.openExternal).toHaveBeenCalledTimes(2)
+      Object.defineProperty(process, 'platform', { value: 'darwin' })
+      vi.useFakeTimers()
+      show.mockImplementation(function (this: EventEmitter) {
+        setTimeout(() => this.emit('show'), 6000)
+      })
+      let settled = false
+      const delayed = testNotification(event).then((result) => {
+        settled = true
+        return result
+      })
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await delayed).toMatchObject({ ok: true })
+      show.mockImplementation(() => {})
+      const timedOut = testNotification(event)
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(await timedOut).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('若系统正在询问通知权限，请完成授权后重试'),
+      })
+    } finally {
+      show.mockRestore()
+      vi.clearAllTimers()
+      vi.useRealTimers()
+      Object.defineProperty(process, 'platform', platform)
+    }
     const chooseSound = mocks.handlers.get('notifications:choose-sound')!
     mocks.chooseFile.mockResolvedValueOnce({ canceled: true, filePaths: [] })
     expect(await chooseSound(event)).toEqual({ ok: true, value: null })
@@ -819,8 +865,14 @@ describe('Git Worktree IPC boundaries', () => {
     mocks.notificationFailedEvent = true
     expect(await testNotification(event)).toMatchObject({
       ok: false,
-      error: '通知发送失败，请检查系统通知权限。',
+      error: '通知发送失败，请检查系统通知设置。',
     })
+    mocks.notificationError = 'Notifications are not allowed for this application'
+    expect(await testNotification(event)).toMatchObject({
+      ok: false,
+      error: '通知发送失败：Notifications are not allowed for this application',
+    })
+    mocks.notificationError = ''
     expect(
       mocks.contents.send.mock.calls.some(([channel]) => channel === 'notifications:sound'),
     ).toBe(false)

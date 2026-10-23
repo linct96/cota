@@ -480,6 +480,7 @@ export interface DesktopAPI {
   getDefaultShell(): Promise<Result<string>>
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>
   sendTestNotification(): Promise<Result<void>>
+  openNotificationSettings(): Promise<Result<void>>
   chooseNotificationSound(): Promise<Result<{ path: string } | null>>
   onNotificationSound(listener: (source: string) => void): () => void
   detectAgents(): Promise<Result<AgentAvailability[]>>

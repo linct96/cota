@@ -597,6 +597,10 @@ function installIPC(): void {
     await readNotificationSound(sound)
     return sound
   })
+  handle('notifications:open-settings', async () => {
+    if (process.platform !== 'darwin') throw new Error('当前系统不支持打开 macOS 通知设置。')
+    await shell.openExternal('x-apple.systempreferences:com.apple.preference.notifications')
+  })
   handle('notifications:test', async () => {
     if (!config.snapshot().preferences.notificationsEnabled) throw new Error('请先启用通知。')
     if (!Notification.isSupported()) throw new Error('当前系统不支持通知。')
@@ -606,17 +610,24 @@ function installIPC(): void {
       body: '这是一条测试通知，用于确认 Cota 的系统通知是否正常显示。',
     })
     await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        notification.close()
-        reject(new Error('未能确认通知已显示，请检查系统通知权限或勿扰模式。'))
-      }, 5000)
+      const timer = setTimeout(
+        () => {
+          notification.close()
+          reject(
+            new Error(
+              '未能确认通知已显示。若系统正在询问通知权限，请完成授权后重试；否则请检查系统通知设置或勿扰模式。',
+            ),
+          )
+        },
+        process.platform === 'darwin' ? 30000 : 5000,
+      )
       notification.on('show', () => {
         clearTimeout(timer)
         resolve()
       })
-      notification.on('failed', () => {
+      notification.on('failed', (_event, error) => {
         clearTimeout(timer)
-        reject(new Error('通知发送失败，请检查系统通知权限。'))
+        reject(new Error(error ? `通知发送失败：${error}` : '通知发送失败，请检查系统通知设置。'))
       })
       try {
         notification.show()

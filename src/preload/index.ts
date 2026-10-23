@@ -151,6 +151,7 @@ const api: DesktopAPI = {
   getDefaultShell: () => ipcRenderer.invoke('shell:default'),
   savePreferences: (preferences) => ipcRenderer.invoke('preferences:save', preferences),
   sendTestNotification: () => ipcRenderer.invoke('notifications:test'),
+  openNotificationSettings: () => ipcRenderer.invoke('notifications:open-settings'),
   chooseNotificationSound: () => ipcRenderer.invoke('notifications:choose-sound'),
   onNotificationSound: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, source: string) => listener(source)
