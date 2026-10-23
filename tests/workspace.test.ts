@@ -1529,7 +1529,11 @@ describe('workspace state', () => {
   it('does not overwrite the saved layout when bootstrap fails', async () => {
     vi.mocked(api.bootstrap).mockResolvedValueOnce({ ok: false, error: 'Host 不可用' })
     await useWorkspace.getState().bootstrap()
-    expect(useWorkspace.getState()).toMatchObject({ ready: true, layoutLoaded: false })
+    expect(useWorkspace.getState()).toMatchObject({
+      ready: true,
+      layoutLoaded: false,
+      bootstrapError: 'Host 不可用',
+    })
     expect(console.error).toHaveBeenCalledWith(new Error('Host 不可用'))
     expect(api.saveLayout).not.toHaveBeenCalled()
   })

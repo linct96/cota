@@ -41,10 +41,11 @@ export function AppError({ error }: ErrorComponentProps) {
               <TriangleAlert className="app-error-icon" aria-hidden="true" />
             </EmptyMedia>
             <EmptyTitle className="app-error-title">
-              <h1 className="app-error-heading">界面暂时无法显示</h1>
+              <h1 className="app-error-heading">应用暂时无法使用</h1>
             </EmptyTitle>
             <EmptyDescription className="app-error-description">
-              强制关闭会结束当前应用的所有终端及后台任务，清理完成后关闭应用。未保存的内容可能丢失。
+              强制关闭会结束当前应用的所有终端、后台任务及旧 Terminal
+              Host，清理完成后关闭应用。请随后重新启动 Cota。未保存的内容可能丢失。
             </EmptyDescription>
           </EmptyHeader>
           <Button

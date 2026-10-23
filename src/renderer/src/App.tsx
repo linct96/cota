@@ -326,6 +326,8 @@ export function App() {
     ]),
   ]
 
+  if (state.bootstrapError) throw new Error(state.bootstrapError)
+
   return (
     <TooltipProvider delay={300}>
       <Tabs

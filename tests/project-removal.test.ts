@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     appEvents: new Map<string, (event: { preventDefault(): void }) => void>(),
     ipcEvents: new Map<string, (event: unknown) => void>(),
     exit: vi.fn(),
+    loadRenderer: vi.fn(),
     rendererEvents: new Map<
       string,
       (details?: { isMainFrame: boolean; isSameDocument: boolean }) => void
@@ -128,7 +129,7 @@ vi.mock('electron', () => ({
     webContents = mocks.contents
     on = vi.fn()
     once = vi.fn()
-    loadURL = vi.fn()
+    loadURL = mocks.loadRenderer
     isDestroyed = () => false
     isMinimized = () => false
     show = vi.fn()
@@ -1533,22 +1534,67 @@ describe('error recovery force exit', () => {
     mocks.handlers.clear()
     mocks.connectFailure = new Error('Terminal Host 协议版本不兼容，请先结束旧会话。')
     mocks.confirm.mockResolvedValue({ response: 0 })
-    let finish!: () => void
-    mocks.forceStopHost.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve
-        }),
-    )
     vi.stubEnv('ELECTRON_RENDERER_URL', mocks.contents.mainFrame.url)
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       await import('../src/main/index')
-      await vi.waitFor(() => expect(mocks.forceStopHost).toHaveBeenCalledOnce())
-      expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ buttons: ['强制关闭'] }))
+      await vi.waitFor(() => expect(mocks.loadRenderer).toHaveBeenCalledOnce())
+      expect(mocks.loadRenderer).toHaveBeenCalledWith(mocks.contents.mainFrame.url)
+      expect(mocks.confirm).not.toHaveBeenCalled()
+      expect(mocks.forceStopHost).not.toHaveBeenCalled()
+      const failure = { ok: false, error: mocks.connectFailure.message }
+      expect(await mocks.handlers.get('app:bootstrap')!(event)).toEqual(failure)
+      expect(await remove()).toEqual(failure)
+      expect(await mocks.handlers.get('terminal:create')!(event, {})).toEqual(failure)
+      expect(mocks.list).not.toHaveBeenCalled()
+      expect(mocks.create).not.toHaveBeenCalled()
+      expect(mocks.saveWorkspaceClosure).not.toHaveBeenCalled()
+      expect(() =>
+        mocks.rendererEvents.get('did-start-navigation')!({
+          isMainFrame: true,
+          isSameDocument: false,
+        }),
+      ).not.toThrow()
+      const forceExit = (sender = event) => mocks.handlers.get('app:force-exit')!(sender)
+      expect(await forceExit({ ...event, sender: {} } as typeof event)).toMatchObject({ ok: false })
+      expect(mocks.confirm).not.toHaveBeenCalled()
+
+      const preventDefault = vi.fn()
+      mocks.appEvents.get('before-quit')!({ preventDefault })
+      await new Promise(setImmediate)
+      expect(preventDefault).toHaveBeenCalledOnce()
+      expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ buttons: ['取消', '强制关闭'] }),
+      )
+      expect(mocks.forceStopHost).not.toHaveBeenCalled()
+      expect(mocks.exit).not.toHaveBeenCalled()
+      expect(mocks.quit).not.toHaveBeenCalled()
+
+      mocks.confirm.mockResolvedValue({ response: 1 })
+      mocks.forceStopHost.mockRejectedValueOnce(new Error('cleanup failed'))
+      expect(await forceExit()).toEqual({ ok: false, error: 'cleanup failed' })
+      expect(mocks.exit).not.toHaveBeenCalled()
+
+      let finish!: () => void
+      mocks.forceStopHost.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      )
+      const closing = forceExit()
+      await new Promise(setImmediate)
+      expect(mocks.forceStopHost).toHaveBeenCalledTimes(2)
+      mocks.appEvents.get('before-quit')!({ preventDefault })
+      await forceExit()
+      expect(mocks.confirm).toHaveBeenCalledTimes(3)
       expect(mocks.exit).not.toHaveBeenCalled()
       finish()
-      await vi.waitFor(() => expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(0))
+      expect(await closing).toEqual({ ok: true, value: undefined })
+      expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(0)
+      expect(mocks.forceStopHost).toHaveBeenLastCalledWith('/tmp/cota-removal-test')
+      expect(mocks.shutdown).not.toHaveBeenCalled()
+      expect(mocks.disconnect).not.toHaveBeenCalled()
     } finally {
       log.mockRestore()
       mocks.connectFailure = undefined

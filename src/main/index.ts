@@ -101,6 +101,7 @@ const fileWatches = new FileExplorerWatches(
   () => config.snapshot().preferences.fileExplorer,
 )
 let warning: string | undefined
+let startupError: Error | undefined
 let exiting = false
 let exitPending = false
 let rendererReady = false
@@ -161,6 +162,8 @@ function handle<Args extends unknown[], T>(
     async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<Result<T>> => {
       try {
         trusted(event)
+        if (startupError && channel !== 'app:force-exit' && channel !== 'window:is-maximized')
+          throw startupError
         return { ok: true, value: await action(...(args as Args)) }
       } catch (error) {
         return {
@@ -860,8 +863,12 @@ async function requestForceExit(confirmed = false): Promise<void> {
 
 async function requestExit(): Promise<void> {
   if (exitPending || exiting || closingTabs.size || removingWorkspace || worktrees?.removing) return
-  exitPending = true
   try {
+    if (startupError) {
+      await requestForceExit()
+      return
+    }
+    exitPending = true
     if (await manager.request('hasLive', [])) {
       const title = '退出 Cota？'
       const description = '退出将结束所有终端及运行中的程序，项目设置将会保留。'
@@ -1030,7 +1037,7 @@ if (!app.requestSingleInstanceLock()) {
     window?.focus()
   })
   app.on('before-quit', (event) => {
-    if (!exiting && (manager || exitPending)) {
+    if (!exiting && (manager || startupError || exitPending)) {
       event.preventDefault()
       void requestExit()
     }
@@ -1060,23 +1067,30 @@ if (!app.requestSingleInstanceLock()) {
         config,
         join(homedir(), app.isPackaged ? '.cota' : '.cota-dev', 'worktrees'),
       )
-      manager = await connectTerminalHost(
-        app.getPath('userData'),
-        (event) => {
-          if (window && !window.webContents.isDestroyed())
-            window.webContents.send('terminal:event', event)
-        },
-        (event) => {
-          agentSleep.receive(event)
-          notifications.receive(event)
-          if (window && !window.webContents.isDestroyed())
-            window.webContents.send('agent:event', event)
-        },
-      )
-      for (const session of await manager.request('list', [])) {
-        if (!session.agent) continue
-        agentSleep.receive({ type: 'state', session: session.agent })
-        notifications.receive({ type: 'state', session: session.agent })
+      try {
+        manager = await connectTerminalHost(
+          app.getPath('userData'),
+          (event) => {
+            if (window && !window.webContents.isDestroyed())
+              window.webContents.send('terminal:event', event)
+          },
+          (event) => {
+            agentSleep.receive(event)
+            notifications.receive(event)
+            if (window && !window.webContents.isDestroyed())
+              window.webContents.send('agent:event', event)
+          },
+        )
+        for (const session of await manager.request('list', [])) {
+          if (!session.agent) continue
+          agentSleep.receive({ type: 'state', session: session.agent })
+          notifications.receive({ type: 'state', session: session.agent })
+        }
+      } catch (error) {
+        // Keep the recovery window available without reusing or stopping an incompatible Host.
+        startupError = error instanceof Error ? error : new Error(String(error))
+        agentSleep.dispose()
+        console.error(`${appName} Terminal Host 启动失败：`, error)
       }
       window = new BrowserWindow({
         width: 1180,
@@ -1146,7 +1160,7 @@ if (!app.requestSingleInstanceLock()) {
         rendererReady = false
         visibleTerminal = undefined
         settleConfirmation(false)
-        void manager.detachAll().catch(() => {})
+        void manager?.detachAll().catch(() => {})
       }
       window.webContents.on('did-start-navigation', (details) => {
         // Hash routes keep the same renderer and its confirmation listener alive.

@@ -52,6 +52,7 @@ export interface TerminalTab {
 }
 
 interface Workspace {
+  bootstrapError?: string
   ready: boolean
   layoutLoaded: boolean
   projects: string[]
@@ -362,6 +363,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       })
       set({
         ready: true,
+        bootstrapError: undefined,
         layoutLoaded: true,
         projects: config.recentProjects,
         workspaces,
@@ -387,7 +389,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       if (get().agentConnectionLost) get().receiveAgent({ type: 'disconnected' })
     } catch (error) {
       console.error(error)
-      set({ ready: true })
+      set({ ready: true, bootstrapError: error instanceof Error ? error.message : String(error) })
     }
   },
   async createGitWorktree(input) {
