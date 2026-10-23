@@ -129,7 +129,7 @@ export function OpenWorkspaceButton({ workspace }: { workspace: ProjectWorkspace
               }
             >
               <Settings2 className="workspace-open-manage-icon" />
-              管理打开方式…
+              管理打开方式
             </DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>

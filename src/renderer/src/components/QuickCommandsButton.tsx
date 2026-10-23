@@ -258,7 +258,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                 }}
               >
                 <Plus className="quick-commands-add-icon" />
-                新增命令…
+                新增命令
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="quick-commands-manage"
@@ -268,7 +268,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                 }}
               >
                 <Settings2 className="quick-commands-manage-icon" />
-                管理命令…
+                管理命令
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>

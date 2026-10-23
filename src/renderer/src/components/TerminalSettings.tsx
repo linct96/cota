@@ -378,7 +378,7 @@ export function TerminalSettings() {
                       <SelectSeparator className="terminal-settings-scrollback-separator" />
                       <SelectGroup className="terminal-settings-custom-scrollback-group">
                         <SelectItem value="__custom__" className="terminal-settings-menu-item">
-                          自定义行数…
+                          自定义行数
                         </SelectItem>
                       </SelectGroup>
                     </SelectContent>

@@ -943,7 +943,7 @@ function installMenu(): void {
           { role: 'about' },
           { type: 'separator' },
           {
-            label: 'Settings…',
+            label: 'Settings',
             accelerator: accelerator('settings'),
             click: () => sendShortcut('settings'),
           },
@@ -959,7 +959,7 @@ function installMenu(): void {
         label: 'File',
         submenu: [
           {
-            label: 'Open Folder…',
+            label: 'Open Folder',
             accelerator: accelerator('open-folder'),
             click: () => sendShortcut('open-folder'),
           },
