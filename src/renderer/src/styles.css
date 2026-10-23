@@ -16,6 +16,8 @@
 }
 
 @theme inline {
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
   --color-background: var(--background);
   --color-background-hover: var(--background-hover);
   --color-app-muted-foreground: var(--app-muted-foreground);
@@ -414,53 +416,6 @@ body:has(
 }
 button:not(:disabled) {
   cursor: pointer;
-}
-.workspace-open-control {
-  border-radius: var(--radius-md);
-}
-.workspace-open-control .ui-button {
-  background-color: transparent;
-}
-.workspace-open-control .ui-button:enabled:hover,
-.workspace-open-control .ui-button[aria-expanded='true'] {
-  background-color: var(--accent);
-}
-.workspace-open-button .open-with-app-icon {
-  width: 0.75rem;
-  height: 0.75rem;
-}
-.quick-commands-group-label {
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 500;
-}
-.quick-commands-option-name {
-  font-weight: 500;
-}
-.quick-commands-option-command {
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-}
-.quick-commands-option-icon,
-.quick-commands-add-icon,
-.quick-commands-manage-icon {
-  color: var(--muted-foreground);
-}
-.quick-commands-menu [data-highlighted] .quick-commands-option-command,
-.quick-commands-menu [data-highlighted] .quick-commands-option-icon,
-.quick-commands-menu [data-highlighted] .quick-commands-add-icon,
-.quick-commands-menu [data-highlighted] .quick-commands-manage-icon {
-  color: inherit;
-}
-.quick-commands-option-action {
-  color: var(--muted-foreground);
-}
-.quick-commands-option-action:hover {
-  color: var(--foreground);
-}
-.quick-commands-option-action.quick-commands-option-delete:hover {
-  color: var(--destructive);
 }
 .title-bar [role='tablist'],
 button,

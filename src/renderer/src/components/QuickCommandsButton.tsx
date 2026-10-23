@@ -148,7 +148,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="quick-commands-menu flex w-84 max-w-[calc(100vw-2rem)] flex-col overflow-hidden p-1.5"
+            className="quick-commands-menu flex min-w-44 max-w-72 flex-col overflow-hidden"
           >
             <div className="quick-commands-list max-h-80 min-h-0 overflow-y-auto overscroll-contain">
               {(
@@ -161,27 +161,27 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                   entries.length > 0 && (
                     <DropdownMenuGroup
                       key={label}
-                      className="quick-commands-options pb-1"
+                      className="quick-commands-options"
                       aria-label={label}
                     >
-                      <div className="quick-commands-group-label px-2.5 pt-2 pb-1">{label}</div>
+                      <div className="quick-commands-group-label px-2 py-1.5 text-xs text-muted-foreground">
+                        {label}
+                      </div>
                       {entries.map((entry) => (
                         <DropdownMenuItem
                           key={entry.id}
-                          className="quick-commands-option group/option relative flex items-center justify-between gap-2 px-2.5 py-1.5"
+                          className="quick-commands-option group/option justify-between"
                           disabled={unavailable}
                           onClick={() => run(entry)}
                         >
-                          <div className="quick-commands-option-main flex min-w-0 flex-1 items-start gap-2.5">
-                            <Play className="quick-commands-option-icon mt-0.5 shrink-0" />
-                            <div className="quick-commands-option-content flex min-w-0 flex-1 flex-col gap-0.5">
-                              <span className="quick-commands-option-name truncate leading-5 font-medium">
-                                {entry.name}
-                              </span>
-                              <span className="quick-commands-option-command truncate font-mono text-[11px] leading-4 text-muted-foreground">
-                                {entry.command}
-                              </span>
-                            </div>
+                          <div className="quick-commands-option-main grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2">
+                            <Play className="quick-commands-option-icon" />
+                            <span className="quick-commands-option-name truncate font-sans font-medium">
+                              {entry.name}
+                            </span>
+                            <span className="quick-commands-option-command col-start-2 truncate font-mono text-2xs text-muted-foreground">
+                              {entry.command}
+                            </span>
                           </div>
                           <div
                             className="quick-commands-option-actions flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/option:opacity-100 group-focus-within/option:opacity-100 group-data-[highlighted]/option:opacity-100"
@@ -191,7 +191,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                               type="button"
                               variant="ghost"
                               size="icon-xs"
-                              className="quick-commands-option-action quick-commands-option-copy h-6 w-6 rounded p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="quick-commands-option-action quick-commands-option-copy"
                               aria-label={
                                 copiedId === entry.id ? '已复制命令' : `复制 ${entry.name} 命令`
                               }
@@ -202,16 +202,16 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                               }}
                             >
                               {copiedId === entry.id ? (
-                                <Check className="quick-commands-item-copied-icon size-3 text-emerald-500" />
+                                <Check className="quick-commands-item-copied-icon" />
                               ) : (
-                                <Copy className="quick-commands-item-copy-icon size-3" />
+                                <Copy className="quick-commands-item-copy-icon" />
                               )}
                             </Button>
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon-xs"
-                              className="quick-commands-option-action quick-commands-option-edit h-6 w-6 rounded p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="quick-commands-option-action quick-commands-option-edit"
                               aria-label={`编辑 ${entry.name}`}
                               onClick={(event) => {
                                 event.stopPropagation()
@@ -220,13 +220,13 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                                 setEditor({ command: entry })
                               }}
                             >
-                              <Pencil className="quick-commands-item-edit-icon size-3" />
+                              <Pencil className="quick-commands-item-edit-icon" />
                             </Button>
                             <Button
                               type="button"
-                              variant="ghost"
+                              variant="destructive"
                               size="icon-xs"
-                              className="quick-commands-option-action quick-commands-option-delete h-6 w-6 rounded p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              className="quick-commands-option-action quick-commands-option-delete"
                               aria-label={`删除 ${entry.name}`}
                               onClick={(event) => {
                                 event.stopPropagation()
@@ -236,7 +236,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                                 setDeleting(entry)
                               }}
                             >
-                              <Trash2 className="quick-commands-item-delete-icon size-3" />
+                              <Trash2 className="quick-commands-item-delete-icon" />
                             </Button>
                           </div>
                         </DropdownMenuItem>
@@ -246,11 +246,11 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
               )}
             </div>
             {visible.length > 0 && (
-              <DropdownMenuSeparator className="quick-commands-separator mx-0 my-1 shrink-0" />
+              <DropdownMenuSeparator className="quick-commands-separator shrink-0" />
             )}
             <DropdownMenuGroup className="quick-commands-management shrink-0">
               <DropdownMenuItem
-                className="quick-commands-add gap-3 px-2.5 py-2"
+                className="quick-commands-add"
                 disabled={commands.length >= 50}
                 onClick={() => {
                   setMenuOpen(false)
@@ -261,7 +261,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                 新增命令…
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="quick-commands-manage gap-3 px-2.5 py-2"
+                className="quick-commands-manage"
                 onClick={() => {
                   setMenuOpen(false)
                   void router.navigate({ to: '/settings', search: { section: 'quick-commands' } })
