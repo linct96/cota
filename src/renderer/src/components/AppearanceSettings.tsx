@@ -14,7 +14,7 @@ import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { ColorInput } from './ui/color-input'
 import { Separator } from './ui/separator'
-import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldError, FieldGroup } from './ui/field'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 const colorFields: { role: InterfaceColorRole; label: string }[] = [
@@ -135,18 +135,16 @@ export function AppearanceSettings() {
           </FieldError>
           <Card className="appearance-settings-card">
             <Field
-              className="appearance-theme-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              className="appearance-theme-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               disabled={!ready || saving}
               data-invalid={!!errors.theme}
             >
-              <div className="appearance-theme-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                <FieldLabel
-                  id="appearance-theme-label"
-                  className="appearance-theme-label min-h-8 text-sm leading-5"
-                >
-                  模式
-                </FieldLabel>
-              </div>
+              <p
+                id="appearance-theme-label"
+                className="appearance-theme-label min-w-0 flex-1 basis-64 text-sm leading-5 font-medium"
+              >
+                模式
+              </p>
               <div className="appearance-theme-control flex min-w-0 flex-col gap-2">
                 <ToggleGroup
                   className="appearance-theme-options"
@@ -175,9 +173,15 @@ export function AppearanceSettings() {
                     深色
                   </ToggleGroupItem>
                 </ToggleGroup>
-                <FieldError id="appearance-theme-error" className="appearance-theme-error max-w-60">
-                  {errors.theme}
-                </FieldError>
+                {errors.theme && (
+                  <p
+                    id="appearance-theme-error"
+                    className="appearance-theme-error max-w-60 text-xs text-destructive"
+                    role="alert"
+                  >
+                    {errors.theme}
+                  </p>
+                )}
               </div>
             </Field>
             {colorFields.map(({ role, label }) => (
@@ -189,18 +193,26 @@ export function AppearanceSettings() {
                     const saveError = errors[`${mode}.${role}`]
                     const errorId = `appearance-${role}-error`
                     const resolvedColor = resolveDocumentColor(role)
+
+                    const errorMessage =
+                      (invalid ? undefined : saveError) ||
+                      [
+                        ...new Set(
+                          field.state.meta.errors.map((error) => error?.message).filter(Boolean),
+                        ),
+                      ].join(' ')
                     return (
                       <Field
-                        className="appearance-color-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+                        className="appearance-color-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
                         disabled={!ready}
                         data-invalid={invalid || !!saveError}
                       >
-                        <FieldLabel
+                        <label
                           htmlFor={`appearance-${role}`}
-                          className="appearance-color-label min-h-8 text-sm leading-5"
+                          className="appearance-color-label text-sm leading-5 font-medium"
                         >
                           {label}
-                        </FieldLabel>
+                        </label>
                         <div className="appearance-color-control flex min-w-0 flex-col gap-2">
                           <ColorInput
                             id={`appearance-${role}`}
@@ -223,13 +235,15 @@ export function AppearanceSettings() {
                               changeColor(role, value)
                             }}
                           />
-                          <FieldError
-                            id={errorId}
-                            className="appearance-color-error max-w-60"
-                            errors={field.state.meta.errors}
-                          >
-                            {invalid ? undefined : saveError}
-                          </FieldError>
+                          {errorMessage && (
+                            <p
+                              id={errorId}
+                              className="appearance-color-error max-w-60 text-xs text-destructive"
+                              role="alert"
+                            >
+                              {errorMessage}
+                            </p>
+                          )}
                         </div>
                       </Field>
                     )

@@ -14,7 +14,7 @@ import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Separator } from './ui/separator'
 import { Input } from './ui/input'
-import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldError, FieldGroup } from './ui/field'
 
 export function ShortcutSettings() {
   const [recording, setRecording] = useState<string>()
@@ -115,19 +115,26 @@ export function ShortcutSettings() {
                         <Fragment key={id}>
                           {index > 0 && <Separator className="shortcut-settings-separator" />}
                           <form.Field name={`bindings.${id!}`}>
-                            {(field) => (
-                              <Field
-                                className="shortcut-setting-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
-                                data-invalid={!field.state.meta.isValid}
-                              >
-                                <FieldLabel
-                                  className="shortcut-setting-label min-h-8 items-center text-sm leading-5"
-                                  htmlFor={`shortcut-${id}`}
+                            {(field) => {
+                              const errorMessage = [
+                                ...new Set(
+                                  field.state.meta.errors
+                                    .map((error) => error?.message)
+                                    .filter(Boolean),
+                                ),
+                              ].join(' ')
+                              return (
+                                <Field
+                                  className="shortcut-setting-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
+                                  data-invalid={!field.state.meta.isValid}
                                 >
-                                  {label}
-                                </FieldLabel>
-                                <div className="shortcut-setting-control flex min-w-0 flex-col gap-2">
-                                  <div className="shortcut-setting-actions flex shrink-0 items-center gap-2">
+                                  <label
+                                    className="shortcut-setting-label text-sm leading-5 font-medium"
+                                    htmlFor={`shortcut-${id}`}
+                                  >
+                                    {label}
+                                  </label>
+                                  <div className="shortcut-setting-control grid min-w-0 grid-cols-[auto_auto] items-center gap-2">
                                     <Input
                                       id={`shortcut-${id}`}
                                       name={field.name}
@@ -209,15 +216,19 @@ export function ShortcutSettings() {
                                     >
                                       清除
                                     </Button>
+                                    {errorMessage && (
+                                      <p
+                                        id={`shortcut-${id}-error`}
+                                        className="shortcut-setting-error col-span-2 max-w-60 text-xs text-destructive"
+                                        role="alert"
+                                      >
+                                        {errorMessage}
+                                      </p>
+                                    )}
                                   </div>
-                                  <FieldError
-                                    id={`shortcut-${id}-error`}
-                                    className="shortcut-setting-error max-w-60"
-                                    errors={field.state.meta.errors}
-                                  />
-                                </div>
-                              </Field>
-                            )}
+                                </Field>
+                              )
+                            }}
                           </form.Field>
                         </Fragment>
                       ))}

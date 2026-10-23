@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useWorkspace } from '../store'
 import { Card } from './ui/card'
-import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldGroup } from './ui/field'
 import { Switch } from './ui/switch'
 
 export function GeneralSettings() {
@@ -53,36 +53,36 @@ export function GeneralSettings() {
           </div>
           <Card className="general-settings-card">
             <Field
-              className="general-settings-sleep-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              className="general-settings-sleep-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               data-invalid={!!error}
             >
               <div className="general-settings-sleep-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                <FieldLabel
-                  htmlFor="general-settings-prevent-sleep"
-                  className="general-settings-sleep-label min-h-8 text-sm leading-5"
+                <span
+                  id="general-settings-prevent-sleep-label"
+                  className="general-settings-sleep-label text-sm leading-5 font-medium"
                 >
                   Agent 工作时防止系统休眠
-                </FieldLabel>
+                </span>
                 {error && (
-                  <FieldError
+                  <p
                     id="general-settings-sleep-error"
-                    className="general-settings-sleep-error"
+                    className="general-settings-sleep-error text-xs text-destructive"
+                    role="alert"
                   >
                     {error}
-                  </FieldError>
+                  </p>
                 )}
               </div>
-              <div className="general-settings-sleep-control flex min-h-8 items-center">
-                <Switch
-                  id="general-settings-prevent-sleep"
-                  className="general-settings-sleep-switch"
-                  checked={preventSleep}
-                  onCheckedChange={(value) => void setPreventSleep(value)}
-                  aria-busy={saving}
-                  aria-invalid={!!error}
-                  aria-describedby={error ? 'general-settings-sleep-error' : undefined}
-                />
-              </div>
+              <Switch
+                id="general-settings-prevent-sleep"
+                aria-labelledby="general-settings-prevent-sleep-label"
+                className="general-settings-sleep-switch my-2"
+                checked={preventSleep}
+                onCheckedChange={(value) => void setPreventSleep(value)}
+                aria-busy={saving}
+                aria-invalid={!!error}
+                aria-describedby={error ? 'general-settings-sleep-error' : undefined}
+              />
             </Field>
           </Card>
         </section>

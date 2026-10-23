@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { NOTIFICATION_SOUND_OPTIONS } from '../../../shared/notification-sounds'
 import { useWorkspace } from '../store'
@@ -15,12 +15,13 @@ import {
 } from './ui/alert-dialog'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldGroup } from './ui/field'
 import {
   Select,
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from './ui/select'
@@ -45,7 +46,6 @@ export function NotificationSettings() {
   const [testErrorOpen, setTestErrorOpen] = useState(false)
   const isMac = window.desktop.platform === 'darwin'
   const [error, setError] = useState<string>()
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string }>()
   const pending = useRef(false)
 
   async function savePreferences(
@@ -112,18 +112,9 @@ export function NotificationSettings() {
     if (pending.current || !state.ready || !state.preferences.notificationsEnabled) return
     pending.current = true
     setTesting(true)
-    setTestResult(undefined)
     try {
       unwrap(await window.desktop.sendTestNotification())
-      setTestResult({
-        ok: true,
-        message: '测试通知已发送；若未看到，请检查系统通知权限或勿扰模式。',
-      })
-    } catch (cause) {
-      setTestResult({
-        ok: false,
-        message: cause instanceof Error ? cause.message : '通知发送失败，请重试。',
-      })
+    } catch {
       setSettingsError(undefined)
       setTestErrorOpen(true)
     } finally {
@@ -160,27 +151,11 @@ export function NotificationSettings() {
               size="lg"
               disabled={!ready || !enabled || saving || testing}
               aria-busy={testing}
-              aria-describedby={isMac ? 'notification-settings-permission-description' : undefined}
               onClick={() => void sendTestNotification()}
             >
               {testing ? '发送中…' : '发送测试通知'}
             </Button>
           </div>
-          {isMac && (
-            <FieldDescription
-              id="notification-settings-permission-description"
-              className="notification-settings-permission-description"
-            >
-              首次发送时，请在系统提示中允许通知。
-            </FieldDescription>
-          )}
-          {testResult?.ok && (
-            <Alert className="notification-settings-test-result" role="status">
-              <AlertDescription className="notification-settings-test-message">
-                {testResult.message}
-              </AlertDescription>
-            </Alert>
-          )}
           <AlertDialog
             open={testErrorOpen}
             onOpenChange={(open, details) => {
@@ -191,23 +166,17 @@ export function NotificationSettings() {
             <AlertDialogContent className="notification-settings-test-error-dialog">
               <AlertDialogHeader className="notification-settings-test-error-header min-w-0">
                 <AlertDialogTitle className="notification-settings-test-error-title">
-                  测试通知未发送成功
+                  通知测试未完成
                 </AlertDialogTitle>
                 <AlertDialogDescription className="notification-settings-test-error-description flex max-h-[50vh] flex-col gap-2 overflow-auto whitespace-pre-wrap break-words select-text">
-                  <span className="notification-settings-test-error-detail">
-                    {testResult?.message}
+                  <span className="notification-settings-permission-guidance">
+                    {isMac
+                      ? '请在「系统设置 → 通知」中选择 Cota，开启「允许通知」，然后返回重新测试。'
+                      : '请在系统通知设置中允许 Cota 发送通知，然后重新测试。'}
                   </span>
-                  {isMac && (
-                    <>
-                      <span className="notification-settings-permission-guidance">
-                        请前往系统设置 → 通知，选择 Cota 并开启「允许通知」，然后返回重新测试。
-                        若已允许，请检查勿扰模式。
-                      </span>
-                      <span className="notification-settings-development-hint">
-                        开发环境中应用可能显示为 Electron；未签名应用也可能无法发送通知。
-                      </span>
-                    </>
-                  )}
+                  <span className="notification-settings-focus-guidance">
+                    如果已允许通知，请检查勿扰或专注模式是否限制了通知显示。
+                  </span>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               {settingsError && (
@@ -250,112 +219,110 @@ export function NotificationSettings() {
           )}
           <Card className="notification-settings-card">
             <Field
-              className="notification-settings-enabled-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              className="notification-settings-enabled-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               disabled={!ready || testing}
               data-disabled={!ready || testing}
               aria-busy={saving}
             >
               <div className="notification-settings-enabled-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                <FieldLabel
-                  htmlFor="notification-settings-enabled"
-                  className="notification-settings-enabled-label min-h-8 text-sm leading-5"
+                <span
+                  id="notification-settings-enabled-label"
+                  className="notification-settings-enabled-label text-sm leading-5 font-medium"
                 >
                   启用通知
-                </FieldLabel>
-                <FieldDescription
+                </span>
+                <p
                   id="notification-settings-enabled-description"
-                  className="notification-settings-enabled-description"
+                  className="notification-settings-enabled-description text-xs text-muted-foreground"
                 >
                   允许 Cota 发送系统通知。关闭后，终端状态与未读提醒不受影响。
-                </FieldDescription>
+                </p>
               </div>
-              <div className="notification-settings-enabled-control flex min-h-8 items-center">
-                <Switch
-                  id="notification-settings-enabled"
-                  className="notification-settings-enabled-switch"
-                  checked={enabled}
-                  disabled={!ready || testing}
-                  onCheckedChange={(checked) =>
-                    void savePreferences({ notificationsEnabled: checked })
-                  }
-                  aria-describedby={
-                    error
-                      ? 'notification-settings-enabled-description notification-settings-save-error'
-                      : 'notification-settings-enabled-description'
-                  }
-                />
-              </div>
+              <Switch
+                id="notification-settings-enabled"
+                aria-labelledby="notification-settings-enabled-label"
+                className="notification-settings-enabled-switch my-2"
+                checked={enabled}
+                disabled={!ready || testing}
+                onCheckedChange={(checked) =>
+                  void savePreferences({ notificationsEnabled: checked })
+                }
+                aria-describedby={
+                  error
+                    ? 'notification-settings-enabled-description notification-settings-save-error'
+                    : 'notification-settings-enabled-description'
+                }
+              />
             </Field>
             <Separator className="notification-settings-separator" />
             <Field
-              className="notification-settings-completion-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              className="notification-settings-completion-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               disabled={!ready || !enabled || testing}
               data-disabled={!ready || !enabled || testing}
               aria-busy={saving}
             >
               <div className="notification-settings-completion-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                <FieldLabel
-                  htmlFor="notification-settings-completion"
-                  className="notification-settings-completion-label min-h-8 text-sm leading-5"
+                <span
+                  id="notification-settings-completion-label"
+                  className="notification-settings-completion-label text-sm leading-5 font-medium"
                 >
                   轮次完成通知
-                </FieldLabel>
-                <FieldDescription
+                </span>
+                <p
                   id="notification-settings-completion-description"
-                  className="notification-settings-completion-description"
+                  className="notification-settings-completion-description text-xs text-muted-foreground"
                 >
                   Agent 轮次结束时发送系统通知。「仅在未聚焦」表示对应终端未聚焦时通知。
-                </FieldDescription>
+                </p>
               </div>
-              <div className="notification-settings-completion-control flex min-h-8 items-center">
-                <Select
-                  items={COMPLETION_OPTIONS}
-                  value={completionMode}
-                  disabled={!ready || !enabled || testing}
-                  onValueChange={(value) => {
-                    if (value !== null) void savePreferences({ turnCompleteNotification: value })
-                  }}
+              <Select
+                items={COMPLETION_OPTIONS}
+                value={completionMode}
+                disabled={!ready || !enabled || testing}
+                onValueChange={(value) => {
+                  if (value !== null) void savePreferences({ turnCompleteNotification: value })
+                }}
+              >
+                <SelectTrigger
+                  id="notification-settings-completion"
+                  aria-labelledby="notification-settings-completion-label"
+                  className="notification-settings-completion-trigger"
+                  aria-describedby={`notification-settings-completion-description${error ? ' notification-settings-save-error' : ''}`}
                 >
-                  <SelectTrigger
-                    id="notification-settings-completion"
-                    className="notification-settings-completion-trigger"
-                    aria-describedby={`notification-settings-completion-description${error ? ' notification-settings-save-error' : ''}`}
-                  >
-                    <SelectValue className="notification-settings-completion-value" />
-                  </SelectTrigger>
-                  <SelectContent className="notification-settings-completion-menu" align="end">
-                    <SelectGroup className="notification-settings-completion-options">
-                      {COMPLETION_OPTIONS.map((option) => (
-                        <SelectItem
-                          className="notification-settings-completion-option"
-                          key={option.value}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </div>
+                  <SelectValue className="notification-settings-completion-value" />
+                </SelectTrigger>
+                <SelectContent className="notification-settings-completion-menu" align="end">
+                  <SelectGroup className="notification-settings-completion-options">
+                    {COMPLETION_OPTIONS.map((option) => (
+                      <SelectItem
+                        className="notification-settings-completion-option"
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </Field>
             <Separator className="notification-settings-sound-separator" />
             <Field
-              className="notification-settings-sound-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              className="notification-settings-sound-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               disabled={!ready || !enabled || testing}
               data-disabled={!ready || !enabled || testing}
               aria-busy={saving}
             >
               <div className="notification-settings-sound-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                <FieldLabel
-                  htmlFor="notification-settings-sound"
-                  className="notification-settings-sound-label min-h-8 text-sm leading-5"
+                <span
+                  id="notification-settings-sound-label"
+                  className="notification-settings-sound-label text-sm leading-5 font-medium"
                 >
                   提示音
-                </FieldLabel>
-                <FieldDescription
+                </span>
+                <p
                   id="notification-settings-sound-description"
-                  className="notification-settings-sound-description"
+                  className="notification-settings-sound-description text-xs text-muted-foreground"
                 >
                   支持 MP3、WAV、OGG、M4A，最大 5 MB。可发送测试通知试听，静音不影响通知显示。
                   {typeof sound !== 'string' && (
@@ -363,7 +330,7 @@ export function NotificationSettings() {
                       当前文件：{sound.path}
                     </span>
                   )}
-                </FieldDescription>
+                </p>
               </div>
               <div className="notification-settings-sound-control flex min-h-8 flex-wrap items-center gap-2">
                 <Select
@@ -378,6 +345,7 @@ export function NotificationSettings() {
                 >
                   <SelectTrigger
                     id="notification-settings-sound"
+                    aria-labelledby="notification-settings-sound-label"
                     className="notification-settings-sound-trigger"
                     aria-describedby={`notification-settings-sound-description${error ? ' notification-settings-save-error' : ''}`}
                   >
@@ -386,13 +354,17 @@ export function NotificationSettings() {
                   <SelectContent className="notification-settings-sound-menu" align="end">
                     <SelectGroup className="notification-settings-sound-options">
                       {NOTIFICATION_SOUND_OPTIONS.map((option) => (
-                        <SelectItem
-                          className="notification-settings-sound-option"
-                          key={option.value}
-                          value={option.value}
-                        >
-                          {option.label}
-                        </SelectItem>
+                        <Fragment key={option.value}>
+                          {option.value === 'custom' && (
+                            <SelectSeparator className="notification-settings-sound-option-separator" />
+                          )}
+                          <SelectItem
+                            className="notification-settings-sound-option"
+                            value={option.value}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        </Fragment>
                       ))}
                     </SelectGroup>
                   </SelectContent>

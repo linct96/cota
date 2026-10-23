@@ -10,7 +10,7 @@ import { AgentIcon } from './AgentIcon'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Field, FieldDescription, FieldError, FieldLabel } from './ui/field'
+import { Field, FieldDescription, FieldError } from './ui/field'
 import { Separator } from './ui/separator'
 
 const labels: Record<AgentHookStatus['state'], string> = {
@@ -145,18 +145,18 @@ export function AgentHookSettings() {
             <Fragment key={provider}>
               {index > 0 && <Separator className="agent-hook-separator" />}
               <Field
-                className="agent-hook-row flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+                className="agent-hook-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
                 aria-labelledby={`agent-hook-${provider}-label`}
               >
                 <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                  <div className="agent-hook-heading flex min-h-8 flex-wrap items-center gap-2">
+                  <div className="agent-hook-heading flex flex-wrap items-center gap-2">
                     <AgentIcon provider={provider} size={18} className="agent-hook-icon" />
-                    <FieldLabel
+                    <h5
                       id={`agent-hook-${provider}-label`}
-                      className="agent-hook-name text-sm leading-5"
+                      className="agent-hook-name text-sm leading-5 font-medium"
                     >
                       {AGENT_PROVIDERS[provider].name}
-                    </FieldLabel>
+                    </h5>
                     <Badge
                       className="agent-hook-status"
                       variant={invalidStatus ? 'destructive' : 'secondary'}
@@ -164,19 +164,19 @@ export function AgentHookSettings() {
                       {status ? labels[status.state] : '未检测'}
                     </Badge>
                   </div>
-                  {(status?.state === 'installed' || status?.state === 'outdated') && (
-                    <FieldDescription className="agent-hook-status-detail">
+                  {status?.state === 'outdated' && (
+                    <p className="agent-hook-status-detail text-xs text-muted-foreground">
                       {status.detail}
-                    </FieldDescription>
+                    </p>
                   )}
                   {status?.state !== 'missing' &&
                     status?.paths.map((path) => (
-                      <FieldDescription
+                      <p
                         key={path}
-                        className="agent-hook-path break-all font-mono select-text"
+                        className="agent-hook-path break-all font-mono select-text text-xs text-muted-foreground"
                       >
                         {path}
-                      </FieldDescription>
+                      </p>
                     ))}
                 </div>
                 <div className="agent-hook-control flex min-w-0 flex-col gap-2" aria-live="polite">
@@ -208,15 +208,24 @@ export function AgentHookSettings() {
                       </Button>
                     )}
                   </div>
-                  <FieldError className="agent-hook-status-error max-w-60">
-                    {invalidStatus ? status?.detail : undefined}
-                  </FieldError>
+                  {invalidStatus && status?.detail && (
+                    <p
+                      className="agent-hook-status-error max-w-60 text-xs text-destructive"
+                      role="alert"
+                    >
+                      {status?.detail}
+                    </p>
+                  )}
                   {feedbackProvider === provider && (notice || error) && (
                     <div className="agent-hook-feedback max-w-60">
                       {notice && (
-                        <FieldDescription className="agent-hook-notice">{notice}</FieldDescription>
+                        <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>
                       )}
-                      <FieldError className="agent-hook-error">{error}</FieldError>
+                      {error && (
+                        <p className="agent-hook-error text-xs text-destructive" role="alert">
+                          {error}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

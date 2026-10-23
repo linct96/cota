@@ -26,7 +26,6 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
-  --color-secondary-hover: var(--secondary-hover);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-hover: var(--muted-hover);
@@ -97,7 +96,6 @@
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.97 0 0);
-  --secondary-hover: color-mix(in oklch, var(--secondary), var(--foreground) 5%);
   --muted-hover: color-mix(in oklch, var(--muted), var(--foreground) 5%);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
