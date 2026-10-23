@@ -8,6 +8,9 @@ overrides:
   app-builder-lib>@electron/get: 3.1.0
   shadcn>zod: 3.25.76
 
+patchedDependencies:
+  '@xterm/xterm@6.1.0-beta.315': 91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7
+
 importers:
 
   .:
@@ -41,22 +44,22 @@ importers:
         version: 1.170.45(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@xterm/addon-fit':
         specifier: 0.12.0-beta.311
-        version: 0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315)
+        version: 0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))
       '@xterm/addon-ligatures':
         specifier: 0.11.0-beta.310
-        version: 0.11.0-beta.310(@xterm/xterm@6.1.0-beta.315)
+        version: 0.11.0-beta.310(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))
       '@xterm/addon-serialize':
         specifier: 0.15.0-beta.310
-        version: 0.15.0-beta.310(@xterm/xterm@6.1.0-beta.315)
+        version: 0.15.0-beta.310(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))
       '@xterm/addon-webgl':
         specifier: 0.20.0-beta.309
-        version: 0.20.0-beta.309(@xterm/xterm@6.1.0-beta.315)
+        version: 0.20.0-beta.309(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))
       '@xterm/headless':
         specifier: 6.1.0-beta.313
         version: 6.1.0-beta.313
       '@xterm/xterm':
         specifier: 6.1.0-beta.315
-        version: 6.1.0-beta.315
+        version: 6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -6834,27 +6837,27 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xterm/addon-fit@0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315)':
+  '@xterm/addon-fit@0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.315
+      '@xterm/xterm': 6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)
 
-  '@xterm/addon-ligatures@0.11.0-beta.310(@xterm/xterm@6.1.0-beta.315)':
+  '@xterm/addon-ligatures@0.11.0-beta.310(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.315
+      '@xterm/xterm': 6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)
       lru-cache: 11.5.3
       opentype.js: 2.0.0
 
-  '@xterm/addon-serialize@0.15.0-beta.310(@xterm/xterm@6.1.0-beta.315)':
+  '@xterm/addon-serialize@0.15.0-beta.310(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.315
+      '@xterm/xterm': 6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)
 
-  '@xterm/addon-webgl@0.20.0-beta.309(@xterm/xterm@6.1.0-beta.315)':
+  '@xterm/addon-webgl@0.20.0-beta.309(@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.315
+      '@xterm/xterm': 6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)
 
   '@xterm/headless@6.1.0-beta.313': {}
 
-  '@xterm/xterm@6.1.0-beta.315': {}
+  '@xterm/xterm@6.1.0-beta.315(patch_hash=91e0c5b63ece40bdb4a2032585e75edb1ab420240d816c07097a5c9a599e5ac7)': {}
 
   abbrev@4.0.0: {}
 
