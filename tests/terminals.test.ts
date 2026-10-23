@@ -268,7 +268,7 @@ describe('single PTY owner', () => {
       typeof import('../src/main/agents/process-observation')
     >('../src/main/agents/process-observation')
     const nodeSnapshot =
-      '98765 1 98765 60000 S Mon Oct 19 10:00:00 2026 /bin/fish\n60000 98765 60000 60000 S Mon Oct 19 10:01:00 2026 /usr/bin/node\n70000 1 70000 70000 S Mon Oct 19 10:01:00 2026 /usr/bin/node'
+      '98765 1 98765 60000 S Mon Oct 19 10:00:00 2026 /bin/fish\n60000 98765 60000 60000 S Mon Oct 19 10:01:00 2026 /usr/bin/node\n60001 60000 60000 60000 S Mon Oct 19 10:01:01 2026 Electron\n60002 60001 60000 60000 S Mon Oct 19 10:01:02 2026 /usr/bin/node\n70000 1 70000 70000 S Mon Oct 19 10:01:00 2026 /usr/bin/node'
     const nodeArgs =
       '60000 98765 60000 60000 S Mon Oct 19 10:01:00 2026 node /opt/node_modules/@earendil-works/pi-coding-agent/dist/cli.js --prompt secret'
     mocks.exec
@@ -282,6 +282,7 @@ describe('single PTY owner', () => {
     expect(JSON.stringify(identified)).not.toContain('secret')
     expect(mocks.exec.mock.calls.at(-1)![1]).toContain('60000')
     expect(mocks.exec.mock.calls.at(-1)![1]).not.toContain('70000')
+    expect(mocks.exec.mock.calls.at(-1)![1]).not.toContain('60002')
     mocks.realpath.mockResolvedValueOnce(
       '/opt/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
     )
@@ -323,11 +324,23 @@ describe('single PTY owner', () => {
         [...codexRows, { ...codexRows[1], pid: 60002, parent: 60000, command: 'claude' }],
         98765,
       ),
-    ).toBeUndefined()
+    ).toMatchObject({ provider: 'codex', process: { pid: 60000 } })
     expect(
       foregroundAgent([{ ...codexRows[0], foreground: 98765, command: 'codex' }], 98765)?.owner.pid,
     ).toBe(98765)
-    mocks.processes.mockResolvedValue(rows)
+    const backgroundRows = [
+      ...codexRows.map((row) => (row.pid === 60000 ? { ...row, command: '/usr/bin/node' } : row)),
+      { ...codexRows[1], pid: 60002, parent: 60001, command: '/bin/claude' },
+      {
+        ...codexRows[1],
+        pid: 60003,
+        parent: 60001,
+        command: '/usr/bin/node',
+        provider: 'pi' as const,
+      },
+    ]
+    expect(foregroundAgent(backgroundRows, 98765)).toBeUndefined()
+    mocks.processes.mockResolvedValue(backgroundRows)
     const manual = {
       managed: true,
       terminalId: shell.id,
@@ -349,6 +362,15 @@ describe('single PTY owner', () => {
       false,
     )
     expect((await dynamic.list())[0].agent).toBeUndefined()
+    expect(
+      await dynamic.receiveAgentEvent({ ...manual, provider: 'claude', processId: 60002 }, {}),
+    ).toBe(false)
+    expect(await dynamic.receiveAgentEvent({ ...manual, processId: 60003 }, {})).toBe(false)
+    expect((await dynamic.list())[0].agent).toBeUndefined()
+    const manualRows = rows.map((row) =>
+      row.pid === 60000 ? { ...row, command: '/usr/bin/node', provider: 'pi' as const } : row,
+    )
+    mocks.processes.mockResolvedValue(manualRows)
     expect(await dynamic.receiveAgentEvent(manual, manualChannel)).toBe(true)
     const firstRun = (await dynamic.list())[0].agent!
     expect(firstRun).toMatchObject({ provider: 'pi', activityState: 'idle', observability: 'full' })
@@ -371,7 +393,7 @@ describe('single PTY owner', () => {
     expect(managedUpdates).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'removed', launchId: firstRun.launchId }),
     )
-    const secondRows = rows.map((row) => ({ ...row, started: `${row.started}-new` }))
+    const secondRows = manualRows.map((row) => ({ ...row, started: `${row.started}-new` }))
     mocks.processes.mockResolvedValue(secondRows)
     const secondChannel = {}
     expect(
@@ -407,8 +429,12 @@ describe('single PTY owner', () => {
     const startupEntry = options()
     await startup.create(startupEntry, settings)
     const startupEnv = mocks.spawn.mock.calls.at(-1)![2].env
-    mocks.processes.mockResolvedValue(codexRows)
+    mocks.processes.mockResolvedValue(backgroundRows)
     await vi.advanceTimersByTimeAsync(500)
+    expect((await startup.list())[0].agent).toBeUndefined()
+    mocks.processes.mockResolvedValue(codexRows)
+    startup.write(startupEntry.id, 'codex\r')
+    await vi.advanceTimersByTimeAsync(350)
     const detected = (await startup.list())[0].agent!
     expect(detected).toMatchObject({
       provider: 'codex',
@@ -885,7 +911,10 @@ describe('single PTY owner', () => {
       {},
     )
     engine.receive(hookEvent('turn-started', 'prompt-background'), {})
-    vi.advanceTimersByTime(4 * 60_000)
+    vi.advanceTimersByTime(5 * 60_000)
+    engine.expire()
+    expect(hookState).toMatchObject({ activityState: 'working', observability: 'partial' })
+    vi.advanceTimersByTime(24 * 60_000)
     engine.receive(hookEvent('turn-active', 'prompt-background'), {})
     engine.receive(hookEvent('turn-ended', 'prompt-background'), {})
     expect(hookState).toMatchObject({ activityState: 'working', workingChildren: 1 })
@@ -940,7 +969,10 @@ describe('single PTY owner', () => {
     })
     engine.receive(hookEvent('turn-started', 'prompt-3'), {})
     engine.receive(childEvent('turn-started', 'child-stale'), {})
-    vi.advanceTimersByTime(5 * 60_000)
+    vi.advanceTimersByTime(30 * 60_000 - 1)
+    engine.expire()
+    expect(hookState).toMatchObject({ activityState: 'working', observability: 'partial' })
+    vi.advanceTimersByTime(1)
     engine.expire()
     engine.receive(hookEvent('turn-ended', 'prompt-3'), {})
     expect(hookState).toMatchObject({ activityState: 'unknown', observability: 'unavailable' })
@@ -1087,6 +1119,86 @@ describe('single PTY owner', () => {
         tool_use_id: 'request',
       }),
     ).toEqual({ type: 'turn-active', turnId: 'p', requestId: 'request', requestDone: true })
+  })
+  it('limits Windows discovery to terminal jobs and CLI shims, clearing exited CLI processes', async () => {
+    const row = (pid: number, parent: number, command: string) => ({
+      pid,
+      parent,
+      command,
+      group: pid,
+      foreground: pid,
+      stat: 'S',
+      started: '2026-10-19T10:00:00.0000000Z',
+    })
+    const root = row(98765, 1, 'powershell.exe')
+    const shim = row(60000, root.pid, 'cmd.exe')
+    const cli = row(60001, shim.pid, 'node.exe')
+    const background = [
+      root,
+      shim,
+      cli,
+      row(60002, cli.pid, 'Electron.exe'),
+      row(60003, 60002, 'claude.exe'),
+      row(60004, 60002, 'node.exe'),
+    ]
+    vi.resetModules()
+    vi.doMock('../src/main/system/platform', async (original) => ({
+      ...(await original<object>()),
+      isWindows: true,
+    }))
+    vi.doMock('../src/main/system/windows-processes', async (original) => ({
+      ...(await original<object>()),
+      windowsProcesses: async () => background,
+    }))
+    let manager: TerminalManager | undefined
+    try {
+      const observation = await vi.importActual<
+        typeof import('../src/main/agents/process-observation')
+      >('../src/main/agents/process-observation')
+      expect(observation.foregroundAgent(background, root.pid)).toBeUndefined()
+      mocks.exec.mockResolvedValueOnce({
+        stdout: JSON.stringify([
+          {
+            ...cli,
+            command: 'node.exe C:/node_modules/@earendil-works/pi-coding-agent/dist/cli.js',
+          },
+        ]),
+      })
+      const identified = await observation.agentProcesses(true, [root.pid])
+      expect(mocks.exec.mock.calls.at(-1)![2].env.COTA_PROCESS_FILTER).toBe('ProcessId = 60001')
+      expect(observation.foregroundAgent(identified, root.pid)).toMatchObject({
+        provider: 'pi',
+        owner: { pid: shim.pid },
+        process: { pid: cli.pid },
+      })
+      vi.doMock('../src/main/agents/process-observation', () => ({
+        ...observation,
+        agentProcesses: mocks.processes,
+      }))
+      const { TerminalManager: WindowsManager } = await import('../src/main/terminal/terminals')
+      manager = new WindowsManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+      const entry = options()
+      mocks.processes.mockResolvedValue(background)
+      await manager.create(entry, settings)
+      await vi.advanceTimersByTimeAsync(350)
+      expect((await manager.list())[0].agent).toBeUndefined()
+      mocks.processes.mockResolvedValue(identified)
+      manager.write(entry.id, 'pi\r')
+      await vi.advanceTimersByTimeAsync(350)
+      expect((await manager.list())[0].agent).toMatchObject({ provider: 'pi' })
+      mocks.processes.mockResolvedValue([root, shim])
+      await vi.advanceTimersByTimeAsync(750)
+      expect((await manager.list())[0].agent).toBeUndefined()
+    } finally {
+      await manager?.shutdown()
+      vi.doUnmock('../src/main/system/platform')
+      vi.doUnmock('../src/main/system/windows-processes')
+      vi.doMock('../src/main/agents/process-observation', async (original) => ({
+        ...(await original<object>()),
+        agentProcesses: mocks.processes,
+      }))
+      vi.resetModules()
+    }
   })
   it('skips confirmation only for idle shells and falls back to confirmation when inspection fails', async () => {
     const manager = new TerminalManager(vi.fn())

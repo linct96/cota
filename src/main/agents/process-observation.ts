@@ -119,7 +119,7 @@ function nativeProvider(command = ''): AgentProvider | undefined {
 }
 
 function nodeEntrypoint(command: string): string | undefined {
-  // shortcut: ambiguous unquoted paths/Node flags stay unknown; use Hooks for custom launchers.
+  // shortcut: ambiguous paths/Node flags stay unknown; use explicit menu launches for custom launchers.
   const match = /^\s*(?:"([^"]+)"|'([^']+)'|(\S+))\s+(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(command)
   const executable = match?.[1] ?? match?.[2] ?? match?.[3]
   if (executable && ['node', 'nodejs'].includes(basename(executable).replace(/\.exe$/i, '')))
@@ -143,6 +143,16 @@ export function recognizeNodeAgent(command: string): AgentProvider | undefined {
   return entrypoint ? entrypointProvider(entrypoint) : undefined
 }
 
+function terminalProcesses(rows: AgentProcessRow[], rootPids: readonly number[]) {
+  const roots = new Set(rootPids)
+  // Windows npm .cmd shims insert cmd.exe between the PTY shell and the CLI runtime.
+  if (isWindows)
+    for (const row of rows)
+      if (rootPids.includes(row.parent) && /^cmd\.exe$/i.test(row.command || '')) roots.add(row.pid)
+  // Only explicit terminal jobs are eligible, never arbitrary descendants of an app or scheduler.
+  return rows.filter((row) => roots.has(row.pid) || roots.has(row.parent))
+}
+
 export async function agentProcesses(
   fresh = false,
   rootPids: readonly number[] = [],
@@ -155,11 +165,8 @@ export async function agentProcesses(
       foreground: row.pid,
       stat: 'S',
     }))
-    const owned = new Set(
-      rootPids.flatMap((pid) => windowsDescendants(snapshot, pid).map((row) => row.pid)),
-    )
-    const wrappers = rows
-      .filter((row) => owned.has(row.pid) && /^node(?:js)?\.exe$/i.test(row.command || ''))
+    const wrappers = terminalProcesses(rows, rootPids)
+      .filter((row) => /^node(?:js)?\.exe$/i.test(row.command || ''))
       .slice(0, 64)
     if (wrappers.length) {
       try {
@@ -201,7 +208,7 @@ export async function agentProcesses(
     return rows
   }
   const rows = await processSnapshot(fresh)
-  const wrappers = rows
+  const wrappers = terminalProcesses(rows, rootPids)
     .filter(
       (row) =>
         ['node', 'nodejs'].includes(basename(row.command || '')) &&
@@ -261,39 +268,17 @@ export async function agentProcesses(
 export function foregroundAgent(
   rows: AgentProcessRow[],
   rootPid: number,
-): { owner: AgentProcessRow; provider: AgentProvider } | undefined {
+): { owner: AgentProcessRow; process: AgentProcessRow; provider: AgentProvider } | undefined {
   const root = rows.find((row) => row.pid === rootPid)
   if (!root) return
-  if (isWindows) {
-    const owned = windowsDescendants(
-      rows.map((row) => ({ ...row, command: row.command || '' })),
-      rootPid,
-    )
-    const candidates = owned.flatMap((row) => {
-      const original = rows.find((entry) => entry.pid === row.pid)!
-      const provider = original.provider ?? nativeProvider(row.command)
-      const owner = provider ? agentOwner(rows, rootPid, row.pid) : undefined
-      return owner && provider ? [{ owner, provider }] : []
-    })
-    if (
-      new Set(candidates.map(({ owner }) => owner.pid)).size === 1 &&
-      new Set(candidates.map(({ provider }) => provider)).size === 1
-    )
-      return candidates[0]
-    return
-  }
-  const owners = new Map<number, { owner: AgentProcessRow; provider: AgentProvider }>()
-  const providers = new Set<AgentProvider>()
-  for (const row of rows) {
-    if (row.group !== root.foreground || /[TZ]/.test(row.stat)) continue
+  const candidates = []
+  for (const row of terminalProcesses(rows, [rootPid])) {
+    if ((!isWindows && row.group !== root.foreground) || /[TZ]/.test(row.stat)) continue
     const provider = row.provider ?? nativeProvider(row.command)
     if (!provider) continue
     const owner = agentOwner(rows, rootPid, row.pid)
-    if (owner) {
-      owners.set(owner.pid, { owner, provider })
-      providers.add(provider)
-    }
+    if (owner) candidates.push({ owner, process: row, provider })
   }
   // Process identity never authorizes Hooks; mixed or sibling agents remain ambiguous.
-  if (owners.size === 1 && providers.size === 1) return owners.values().next().value
+  if (candidates.length === 1) return candidates[0]
 }

@@ -42,6 +42,7 @@ interface Session extends TerminalSession {
     settings: Preferences
     run?: {
       owner: AgentProcessRow
+      process?: AgentProcessRow
       provider: ManagedAgentEvent['provider']
       token?: string
       ready?: Promise<void>
@@ -516,6 +517,16 @@ export class TerminalManager {
           )
         : descendant
     if (!owner || session.managed !== context || session.exited || session.closing) return false
+    const foreground =
+      session.launch.kind === 'agent' ? undefined : foregroundAgent(rows, session.child.pid)
+    if (
+      session.launch.kind !== 'agent' &&
+      (!foreground ||
+        foreground.owner.pid !== owner.pid ||
+        foreground.owner.started !== owner.started ||
+        foreground.provider !== event.provider)
+    )
+      return false
     let run = context.run
     if (
       run?.ended &&
@@ -542,17 +553,20 @@ export class TerminalManager {
       run &&
       (run.owner.pid !== owner.pid ||
         run.owner.started !== owner.started ||
-        run.provider !== event.provider)
+        run.provider !== event.provider ||
+        (run.process &&
+          foreground &&
+          (run.process.pid !== foreground.process.pid ||
+            run.process.started !== foreground.process.started)))
     ) {
       // Menu launches keep their immutable identity until the PTY actually exits.
       if (session.launch.kind === 'agent') return false
-      // A second nested agent must not replace the still-live owner of this terminal.
+      // A second nested agent must not replace the still-live Agent of this terminal.
+      const identity = run.process ?? run.owner
       if (
         rows.some(
           (row) =>
-            row.pid === run!.owner.pid &&
-            row.started === run!.owner.started &&
-            !row.stat.includes('Z'),
+            row.pid === identity.pid && row.started === identity.started && !row.stat.includes('Z'),
         )
       )
         return false
@@ -562,7 +576,12 @@ export class TerminalManager {
     }
     if (!run) {
       if (event.agentId || !['session-started', 'turn-started'].includes(event.type)) return false
-      context.run = run = { owner, provider: event.provider, eventStartedAt: event.timestamp }
+      context.run = run = {
+        owner,
+        process: foreground?.process,
+        provider: event.provider,
+        eventStartedAt: event.timestamp,
+      }
       if (!session.agent) {
         session.agent = this.agents.create(
           session.id,
@@ -667,10 +686,14 @@ export class TerminalManager {
               }
             }
             if (!run) continue
+            const identity = run.process ?? run.owner
             const row = rows.find(
+              (row) => row.pid === identity.pid && row.started === identity.started,
+            )
+            const owner = rows.find(
               (row) => row.pid === run.owner.pid && row.started === run.owner.started,
             )
-            if (!row || row.stat.includes('Z')) {
+            if (!row || !owner || row.stat.includes('Z') || owner.stat.includes('Z')) {
               if (session.launch.kind === 'agent') this.agents.uncertain(session.id)
               else {
                 session.agentRevision = this.agents.remove(session.id)
@@ -679,6 +702,7 @@ export class TerminalManager {
               }
             } else if (
               row.stat.includes('T') ||
+              owner.stat.includes('T') ||
               (!isWindows &&
                 rows.find((row) => row.pid === session.child!.pid)?.foreground !== row.group)
             )

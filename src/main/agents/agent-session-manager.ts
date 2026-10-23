@@ -436,7 +436,7 @@ export class AgentSessionManager {
         if (
           !actor.stale &&
           (actor.waits.size || actor.activity === 'working') &&
-          Date.now() - actor.timestamp >= 5 * 60_000
+          Date.now() - actor.timestamp >= 30 * 60_000
         ) {
           actor.stale = true
           changed = true
@@ -445,7 +445,7 @@ export class AgentSessionManager {
       if (
         entry.background?.otherCount &&
         !entry.background.stale &&
-        Date.now() - entry.background.timestamp >= 5 * 60_000
+        Date.now() - entry.background.timestamp >= 30 * 60_000
       ) {
         entry.background.stale = true
         changed = true
@@ -485,7 +485,7 @@ export class AgentSessionManager {
     state.eventSource = entry.source!
     state.observability = stale ? 'unavailable' : entry.capability!
     state.observabilityReason = stale
-      ? '部分任务五分钟未收到原生事件；无法确认当前任务状态。'
+      ? '部分任务三十分钟未收到原生事件；无法确认当前任务状态。'
       : entry.capability === 'partial'
         ? '本轮结束不代表任务成功；后续原生活动可纠正状态。仅归并已观察到的子任务与后台任务，不读取会话日志。'
         : undefined
