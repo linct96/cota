@@ -68,7 +68,7 @@ export function TerminalSettings() {
   const pendingPreferences = useRef(Promise.resolve())
   const shellForm = useForm({
     defaultValues: { name: '', path: '' },
-    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validationLogic: revalidateLogic({ mode: 'change' }),
     validators: { onDynamic: shellFormSchema },
     onSubmit: async ({ value }) => {
       setShellError(undefined)
@@ -448,14 +448,13 @@ export function TerminalSettings() {
       <Dialog
         open={shellDialogOpen}
         onOpenChange={(open, details) => {
-          if (persisting.current) details.cancel()
+          if (persisting.current || shellForm.state.isSubmitting) details.cancel()
           else setShellDialogOpen(open)
         }}
       >
         <DialogContent className="terminal-settings-dialog max-w-sm">
           <DialogHeader>
             <DialogTitle>自定义 Shell</DialogTitle>
-            <DialogDescription>名称仅用于显示，终端将使用指定路径启动。</DialogDescription>
           </DialogHeader>
 
           <form
@@ -546,19 +545,30 @@ export function TerminalSettings() {
 
             <FieldError className="terminal-settings-shell-error">{shellError}</FieldError>
 
-            <DialogFooter className="terminal-settings-dialog-footer mt-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving}
-                onClick={() => setShellDialogOpen(false)}
-              >
-                取消
-              </Button>
-              <Button className="terminal-settings-shell-submit" type="submit" disabled={saving}>
-                保存
-              </Button>
-            </DialogFooter>
+            <shellForm.Subscribe
+              selector={(state) => [state.canSubmit, state.isSubmitting] as const}
+            >
+              {([canSubmit, submitting]) => (
+                <DialogFooter className="terminal-settings-dialog-footer mt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="terminal-settings-shell-cancel"
+                    disabled={saving || submitting}
+                    onClick={() => setShellDialogOpen(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    className="terminal-settings-shell-submit"
+                    type="submit"
+                    disabled={!canSubmit || saving || submitting}
+                  >
+                    {submitting ? '保存中…' : '保存'}
+                  </Button>
+                </DialogFooter>
+              )}
+            </shellForm.Subscribe>
           </form>
         </DialogContent>
       </Dialog>
