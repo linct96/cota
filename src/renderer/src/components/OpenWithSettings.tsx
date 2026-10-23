@@ -212,7 +212,7 @@ export function OpenWithSettings() {
                     id={opener.id}
                     className="open-with-item-icon size-6"
                   />
-                  <div className="open-with-item-meta flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="open-with-item-meta flex min-w-0 flex-1 flex-col gap-0.5">
                     <span
                       className="open-with-item-name truncate text-sm font-medium"
                       title={opener.name}

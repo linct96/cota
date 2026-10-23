@@ -251,7 +251,7 @@ export function TerminalAppearanceSettings({
               <form.Field name="contrastMode">
                 {(field) => (
                   <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                    <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                       <p
                         id="terminal-contrastMode-label"
                         className="terminal-contrast-mode-label text-sm leading-5 font-medium"
@@ -416,7 +416,7 @@ export function TerminalAppearanceSettings({
                                     field.state.meta.isTouched && !field.state.meta.isValid
                                   }
                                 >
-                                  <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                                  <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                                     <span
                                       id="terminal-font-family-label"
                                       className="terminal-font-family-label text-sm leading-5 font-medium"

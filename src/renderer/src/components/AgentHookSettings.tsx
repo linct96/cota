@@ -148,7 +148,7 @@ export function AgentHookSettings() {
                 className="agent-hook-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
                 aria-labelledby={`agent-hook-${provider}-label`}
               >
-                <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                   <div className="agent-hook-heading flex flex-wrap items-center gap-2">
                     <AgentIcon provider={provider} size={18} className="agent-hook-icon" />
                     <h5

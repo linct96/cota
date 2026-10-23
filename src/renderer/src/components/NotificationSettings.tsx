@@ -224,7 +224,7 @@ export function NotificationSettings() {
               data-disabled={!ready || testing}
               aria-busy={saving}
             >
-              <div className="notification-settings-enabled-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="notification-settings-enabled-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="notification-settings-enabled-label"
                   className="notification-settings-enabled-label text-sm leading-5 font-medium"
@@ -261,7 +261,7 @@ export function NotificationSettings() {
               data-disabled={!ready || !enabled || testing}
               aria-busy={saving}
             >
-              <div className="notification-settings-completion-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="notification-settings-completion-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="notification-settings-completion-label"
                   className="notification-settings-completion-label text-sm leading-5 font-medium"
@@ -313,7 +313,7 @@ export function NotificationSettings() {
               data-disabled={!ready || !enabled || testing}
               aria-busy={saving}
             >
-              <div className="notification-settings-sound-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="notification-settings-sound-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="notification-settings-sound-label"
                   className="notification-settings-sound-label text-sm leading-5 font-medium"

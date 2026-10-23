@@ -56,7 +56,7 @@ export function GeneralSettings() {
               className="general-settings-sleep-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
               data-invalid={!!error}
             >
-              <div className="general-settings-sleep-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="general-settings-sleep-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="general-settings-prevent-sleep-label"
                   className="general-settings-sleep-label text-sm leading-5 font-medium"

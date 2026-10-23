@@ -1,5 +1,5 @@
 export const NOTIFICATION_SOUND_OPTIONS = [
-  { value: 'system', label: '系统默认' },
+  { value: 'system', label: '系统' },
   { value: 'none', label: '静音' },
   { value: 'custom', label: '自定义文件' },
 ] as const

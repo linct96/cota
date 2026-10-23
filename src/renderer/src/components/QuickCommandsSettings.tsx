@@ -123,7 +123,7 @@ export function QuickCommandsSettings() {
                 <li key={entry.id} className="quick-commands-list-item flex flex-col gap-4">
                   {index > 0 && <Separator className="quick-commands-list-separator" />}
                   <div className="quick-commands-list-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
-                    <div className="quick-commands-list-content flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <div className="quick-commands-list-content flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                       <div className="quick-commands-list-heading flex min-w-0 flex-wrap items-center gap-2">
                         <span
                           className="quick-commands-list-name min-w-0 truncate text-sm leading-5 font-medium"

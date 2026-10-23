@@ -173,7 +173,7 @@ export function AgentSettings() {
                   <Fragment key={provider}>
                     {index > 0 && <Separator className="agent-settings-skeleton-separator" />}
                     <div className="agent-settings-skeleton-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
-                      <div className="agent-settings-skeleton-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                      <div className="agent-settings-skeleton-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                         <div className="agent-settings-skeleton-identity flex items-center gap-2">
                           <Skeleton className="agent-settings-skeleton-icon size-4.5" />
                           <Skeleton className="agent-settings-skeleton-name h-5 w-24" />
@@ -209,7 +209,7 @@ export function AgentSettings() {
                     aria-labelledby={`agent-cli-${provider}-label`}
                     aria-busy={isBusy || checkingProviders.includes(provider) || agent.installing}
                   >
-                    <div className="agent-settings-item-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <div className="agent-settings-item-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                       <div className="agent-settings-item-identity flex flex-wrap items-center gap-2">
                         <AgentIcon
                           provider={provider}

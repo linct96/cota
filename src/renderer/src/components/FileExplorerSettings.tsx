@@ -60,7 +60,7 @@ export function FileExplorerSettings() {
               data-disabled={!ready}
               aria-busy={saving}
             >
-              <div className="file-explorer-ignored-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="file-explorer-ignored-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="file-explorer-show-ignored-label"
                   className="file-explorer-ignored-label text-sm leading-5 font-medium"
@@ -91,7 +91,7 @@ export function FileExplorerSettings() {
               data-disabled={!ready}
               aria-busy={saving}
             >
-              <div className="file-explorer-symlink-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+              <div className="file-explorer-symlink-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="file-explorer-follow-symlinks-label"
                   className="file-explorer-symlink-label text-sm leading-5 font-medium"

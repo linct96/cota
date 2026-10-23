@@ -212,7 +212,7 @@ export function TerminalSettings() {
               </h4>
               <Card className="terminal-settings-card" aria-busy={saving}>
                 <Field className="terminal-settings-shell-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                  <div className="terminal-settings-shell-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                  <div className="terminal-settings-shell-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                     <span
                       id="terminal-settings-shell-label"
                       className="terminal-settings-shell-label text-sm leading-5 font-medium"
@@ -307,7 +307,7 @@ export function TerminalSettings() {
                 <Separator className="terminal-settings-separator" />
 
                 <Field className="terminal-settings-scrollback-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                  <div className="terminal-settings-scrollback-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                  <div className="terminal-settings-scrollback-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                     <span
                       id="terminal-settings-scrollback-label"
                       className="terminal-settings-scrollback-label text-sm leading-5 font-medium"
@@ -388,7 +388,7 @@ export function TerminalSettings() {
                 <Separator className="terminal-settings-separator" />
 
                 <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                  <div className="terminal-gpu-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                  <div className="terminal-gpu-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                     <p
                       id="terminal-gpu-label"
                       className="terminal-gpu-label text-sm leading-5 font-medium"
