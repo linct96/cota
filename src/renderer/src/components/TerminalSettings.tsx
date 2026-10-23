@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 import { Input } from './ui/input'
 import {
@@ -65,6 +65,7 @@ export function TerminalSettings() {
   const [scrollbackDialogOpen, setScrollbackDialogOpen] = useState(false)
   const [scrollbackError, setScrollbackError] = useState<string>()
   const persisting = useRef(false)
+  const pendingPreferences = useRef(Promise.resolve())
   const shellForm = useForm({
     defaultValues: { name: '', path: '' },
     validationLogic: revalidateLogic({ mode: 'blur' }),
@@ -116,15 +117,22 @@ export function TerminalSettings() {
     }, 2000)
   }
 
+  function savePreferences(patch: Partial<Preferences>) {
+    // 串行合并最新配置，避免常规设置与外观自动保存互相覆盖。
+    const operation = pendingPreferences.current.then(() => {
+      const state = useWorkspace.getState()
+      return state.savePreferences({ ...state.preferences, ...patch })
+    })
+    pendingPreferences.current = operation.catch(() => {})
+    return operation
+  }
+
   async function persist(patch: Partial<Preferences>) {
     if (persisting.current) return false
     persisting.current = true
     setSaving(true)
     try {
-      await useWorkspace.getState().savePreferences({
-        ...useWorkspace.getState().preferences,
-        ...patch,
-      })
+      await savePreferences(patch)
       markSaved()
       return true
     } catch (cause) {
@@ -145,7 +153,10 @@ export function TerminalSettings() {
   }
 
   function handleOpenCustomShellDialog() {
-    shellForm.reset({ name: preferences.shellName ?? '', path: preferences.shellPath || '' })
+    shellForm.reset(
+      { name: preferences.shellName ?? '', path: preferences.shellPath || '' },
+      { keepDefaultValues: true },
+    )
     setShellError(undefined)
     setShellDialogOpen(true)
   }
@@ -161,220 +172,276 @@ export function TerminalSettings() {
   }
 
   return (
-    <div className="terminal-settings flex flex-col gap-3">
-      <div className="terminal-settings-header flex items-center justify-between pb-1">
-        <h3 className="terminal-settings-title text-base font-semibold text-foreground">终端</h3>
+    <section
+      className="terminal-settings flex flex-col gap-6"
+      aria-labelledby="terminal-settings-title"
+    >
+      <div className="terminal-settings-header flex flex-wrap items-center justify-between gap-3">
+        <div className="terminal-settings-heading typeset">
+          <h1 id="terminal-settings-title" className="terminal-settings-title">
+            终端
+          </h1>
+        </div>
 
         <div
           className="terminal-settings-status flex shrink-0 items-center gap-1.5 text-xs select-none"
           aria-live="polite"
         >
           {!saving && savedRecently ? (
-            <Badge
-              variant="outline"
-              className="terminal-settings-saved gap-1 border-transparent font-medium text-emerald-600 dark:text-emerald-400"
-            >
-              <Check className="terminal-settings-saved-icon size-3" />
+            <Badge variant="outline" className="terminal-settings-saved">
+              <Check className="terminal-settings-saved-icon" />
               <span className="terminal-settings-saved-label">已保存</span>
             </Badge>
           ) : null}
         </div>
       </div>
 
-      <Card className="terminal-settings-card">
-        <div className="terminal-settings-row flex items-center justify-between gap-4 px-5">
-          <div className="terminal-settings-row-text flex min-w-0 flex-col gap-0.5 pr-2">
-            <span className="terminal-settings-row-title text-sm font-medium text-foreground">
-              默认终端 Shell
-            </span>
-            <span className="terminal-settings-row-desc text-xs text-app-muted-foreground">
-              新建终端的默认shell
-            </span>
-          </div>
-
-          <div className="terminal-settings-row-control flex shrink-0 items-center gap-2">
-            <Select
-              value={preferences.shellPath === null ? 'default' : 'custom'}
-              disabled={saving}
-              onValueChange={(val) => {
-                if (val === 'custom') {
-                  handleOpenCustomShellDialog()
-                } else if (val === 'default') {
-                  setShellError(undefined)
-                  void persist({ shellName: null, shellPath: null })
-                }
-              }}
+      <FieldGroup className="terminal-settings-groups gap-8">
+        <TerminalAppearanceSettings
+          savePreferences={savePreferences}
+          renderGeneralSettings={(contrastSettings) => (
+            <section
+              className="terminal-settings-general flex flex-col gap-3"
+              aria-labelledby="terminal-settings-general-title"
             >
-              <SelectTrigger
-                aria-label="默认终端 Shell"
-                className="terminal-settings-select-trigger h-8 max-w-64 gap-2 rounded-lg px-3 text-xs font-normal"
+              <h4
+                id="terminal-settings-general-title"
+                className="terminal-settings-general-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
               >
-                <SquareTerminal className="terminal-settings-shell-icon size-3.5 text-app-muted-foreground" />
-                <SelectValue className="terminal-settings-shell-value truncate">
-                  <span
-                    className="terminal-settings-shell-label truncate"
-                    title={preferences.shellPath ?? defaultShellPath}
+                常规
+              </h4>
+              <Card className="terminal-settings-card" aria-busy={saving}>
+                <Field className="terminal-settings-shell-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                  <div className="terminal-settings-shell-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <label
+                      htmlFor="terminal-settings-shell"
+                      className="terminal-settings-shell-label text-sm leading-5 font-medium"
+                    >
+                      默认终端 Shell
+                    </label>
+                    <p
+                      id="terminal-settings-shell-description"
+                      className="terminal-settings-shell-description text-xs text-muted-foreground"
+                    >
+                      新建终端时使用的 Shell。
+                    </p>
+                    {defaultShellError && (
+                      <p
+                        id="terminal-settings-default-shell-error"
+                        className="terminal-settings-default-shell-error text-xs text-destructive"
+                        role="alert"
+                      >
+                        无法读取系统默认 Shell：{defaultShellError}
+                      </p>
+                    )}
+                    {shellError && !shellDialogOpen && (
+                      <p
+                        id="terminal-settings-shell-error"
+                        className="terminal-settings-shell-error text-xs text-destructive"
+                        role="alert"
+                      >
+                        {shellError}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="terminal-settings-shell-control flex min-h-8 max-w-full flex-wrap items-center gap-2">
+                    <Select
+                      value={preferences.shellPath === null ? 'default' : 'custom'}
+                      disabled={saving}
+                      onValueChange={(val) => {
+                        if (val === 'custom') {
+                          handleOpenCustomShellDialog()
+                        } else if (val === 'default') {
+                          setShellError(undefined)
+                          void persist({ shellName: null, shellPath: null })
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        id="terminal-settings-shell"
+                        aria-describedby="terminal-settings-shell-description terminal-settings-default-shell-error terminal-settings-shell-error"
+                        className="terminal-settings-select-trigger min-w-0 max-w-64"
+                      >
+                        <SquareTerminal className="terminal-settings-shell-icon" />
+                        <SelectValue className="terminal-settings-shell-value min-w-0">
+                          <span
+                            className="terminal-settings-shell-label truncate"
+                            title={preferences.shellPath ?? defaultShellPath}
+                          >
+                            {preferences.shellPath === null
+                              ? defaultShellLabel
+                              : (preferences.shellName ?? '自定义')}
+                          </span>
+                        </SelectValue>
+                      </SelectTrigger>
+
+                      <SelectContent align="end" className="terminal-settings-menu max-w-sm">
+                        <SelectGroup className="terminal-settings-shell-group">
+                          <SelectItem value="default" className="terminal-settings-menu-item">
+                            <span className="terminal-settings-default-shell-label break-all">
+                              {defaultShellLabel}
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="custom" className="terminal-settings-menu-item">
+                            自定义
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    {preferences.shellPath !== null && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="terminal-settings-edit-shell"
+                        disabled={saving}
+                        onClick={handleOpenCustomShellDialog}
+                      >
+                        编辑
+                      </Button>
+                    )}
+                  </div>
+                </Field>
+
+                <Separator className="terminal-settings-separator" />
+
+                <Field className="terminal-settings-scrollback-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                  <div className="terminal-settings-scrollback-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <label
+                      htmlFor="terminal-settings-scrollback"
+                      className="terminal-settings-scrollback-label text-sm leading-5 font-medium"
+                    >
+                      滚动缓冲行数
+                    </label>
+                    <p
+                      id="terminal-settings-scrollback-description"
+                      className="terminal-settings-scrollback-description text-xs text-muted-foreground"
+                    >
+                      终端保留的最大历史输出行数（范围 1,000–20,000，减小会丢弃旧输出）
+                    </p>
+                    {!scrollbackDialogOpen && scrollbackError && (
+                      <p
+                        id="terminal-settings-scrollback-save-error"
+                        className="terminal-settings-scrollback-save-error text-xs text-destructive"
+                        role="alert"
+                      >
+                        {scrollbackError}
+                      </p>
+                    )}
+                  </div>
+
+                  <Select
+                    value={String(preferences.scrollback)}
+                    disabled={saving}
+                    onValueChange={(val) => {
+                      if (val === '__custom__') {
+                        handleOpenCustomScrollbackDialog()
+                      } else {
+                        void handleSelectScrollback(Number(val))
+                      }
+                    }}
                   >
-                    {preferences.shellPath === null
-                      ? defaultShellLabel
-                      : (preferences.shellName ?? '自定义')}
-                  </span>
-                </SelectValue>
-              </SelectTrigger>
-
-              <SelectContent align="end" className="terminal-settings-menu max-w-sm">
-                <SelectGroup className="terminal-settings-shell-group">
-                  <SelectItem value="default" className="terminal-settings-menu-item">
-                    <span className="terminal-settings-default-shell-label break-all">
-                      {defaultShellLabel}
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="custom" className="terminal-settings-menu-item">
-                    自定义
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            {preferences.shellPath !== null && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="terminal-settings-edit-shell"
-                disabled={saving}
-                onClick={handleOpenCustomShellDialog}
-              >
-                编辑
-              </Button>
-            )}
-          </div>
-        </div>
-
-        <Separator className="terminal-settings-separator" />
-
-        <div className="terminal-settings-row flex items-center justify-between gap-4 px-5">
-          <div className="terminal-settings-row-text flex min-w-0 flex-col gap-0.5 pr-2">
-            <span className="terminal-settings-row-title text-sm font-medium text-foreground">
-              滚动缓冲行数
-            </span>
-            <span className="terminal-settings-row-desc text-xs text-app-muted-foreground">
-              终端保留的最大历史输出行数（范围 1,000–20,000，减小会丢弃旧输出）
-            </span>
-          </div>
-
-          <div className="terminal-settings-row-control flex shrink-0 items-center">
-            <Select
-              value={String(preferences.scrollback)}
-              disabled={saving}
-              onValueChange={(val) => {
-                if (val === '__custom__') {
-                  handleOpenCustomScrollbackDialog()
-                } else {
-                  void handleSelectScrollback(Number(val))
-                }
-              }}
-            >
-              <SelectTrigger className="terminal-settings-select-trigger h-8 gap-2 rounded-lg px-3 text-xs font-normal">
-                <SelectValue>{currentScrollbackLabel()}</SelectValue>
-              </SelectTrigger>
-
-              <SelectContent align="end" className="terminal-settings-menu w-48">
-                <SelectGroup className="terminal-settings-scrollback-group">
-                  {PRESET_SCROLLBACKS.map((item) => (
-                    <SelectItem
-                      key={item.value}
-                      value={String(item.value)}
-                      className="terminal-settings-menu-item"
+                    <SelectTrigger
+                      id="terminal-settings-scrollback"
+                      aria-describedby="terminal-settings-scrollback-description terminal-settings-scrollback-save-error"
+                      className="terminal-settings-select-trigger"
                     >
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                  {!PRESET_SCROLLBACKS.some((item) => item.value === preferences.scrollback) && (
-                    <SelectItem
-                      value={String(preferences.scrollback)}
-                      className="terminal-settings-menu-item"
+                      <SelectValue className="terminal-settings-scrollback-value">
+                        {currentScrollbackLabel()}
+                      </SelectValue>
+                    </SelectTrigger>
+
+                    <SelectContent align="end" className="terminal-settings-menu w-48">
+                      <SelectGroup className="terminal-settings-scrollback-group">
+                        {PRESET_SCROLLBACKS.map((item) => (
+                          <SelectItem
+                            key={item.value}
+                            value={String(item.value)}
+                            className="terminal-settings-menu-item"
+                          >
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                        {!PRESET_SCROLLBACKS.some(
+                          (item) => item.value === preferences.scrollback,
+                        ) && (
+                          <SelectItem
+                            value={String(preferences.scrollback)}
+                            className="terminal-settings-menu-item"
+                          >
+                            {`${preferences.scrollback.toLocaleString()} 行`}
+                          </SelectItem>
+                        )}
+                      </SelectGroup>
+                      <SelectSeparator className="terminal-settings-scrollback-separator" />
+                      <SelectGroup className="terminal-settings-custom-scrollback-group">
+                        <SelectItem value="__custom__" className="terminal-settings-menu-item">
+                          自定义行数…
+                        </SelectItem>
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </Field>
+
+                <Separator className="terminal-settings-separator" />
+
+                <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                  <div className="terminal-gpu-description flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                    <p
+                      id="terminal-gpu-label"
+                      className="terminal-gpu-label text-sm leading-5 font-medium"
                     >
-                      {`${preferences.scrollback.toLocaleString()} 行`}
-                    </SelectItem>
-                  )}
-                </SelectGroup>
-                <SelectSeparator />
-                <SelectGroup className="terminal-settings-custom-scrollback-group">
-                  <SelectItem value="__custom__" className="terminal-settings-menu-item">
-                    自定义行数…
-                  </SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </Card>
-
-      <section
-        aria-labelledby="terminal-rendering-title"
-        className="terminal-rendering-settings mt-3 flex flex-col gap-3"
-      >
-        <h4
-          id="terminal-rendering-title"
-          className="terminal-rendering-title text-sm font-semibold"
-        >
-          渲染
-        </h4>
-        <Card className="terminal-rendering-card overflow-hidden rounded-2xl border border-border/80 bg-background py-0 shadow-xs ring-0">
-          <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-4 px-5 py-1">
-            <div className="terminal-gpu-description flex min-w-0 flex-1 flex-col gap-0.5">
-              <FieldLabel id="terminal-gpu-label" className="terminal-gpu-label">
-                GPU 加速
-              </FieldLabel>
-              <FieldDescription id="terminal-gpu-description" className="terminal-gpu-help text-xs">
-                WebGL不可用时回退到兼容渲染。切换即时生效。
-              </FieldDescription>
-            </div>
-            <ToggleGroup
-              aria-labelledby="terminal-gpu-label"
-              aria-describedby="terminal-gpu-description"
-              className="terminal-gpu-options shrink-0"
-              variant="outline"
-              size="lg"
-              spacing={0}
-              disabled={saving}
-              value={[preferences.terminalGpuAcceleration]}
-              onValueChange={([value]) => {
-                if (value !== 'auto' && value !== 'on' && value !== 'off') return
-                setRenderError(undefined)
-                void persist({ terminalGpuAcceleration: value })
-              }}
-            >
-              <ToggleGroupItem value="auto" className="terminal-gpu-option">
-                自动
-              </ToggleGroupItem>
-              <ToggleGroupItem value="on" className="terminal-gpu-option">
-                开启
-              </ToggleGroupItem>
-              <ToggleGroupItem value="off" className="terminal-gpu-option">
-                关闭
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </Field>
-        </Card>
-        {renderError && (
-          <p role="alert" className="terminal-rendering-error text-xs text-destructive">
-            {renderError}
-          </p>
-        )}
-      </section>
-
-      <TerminalAppearanceSettings />
-      {defaultShellError && (
-        <p role="alert" className="terminal-settings-default-shell-error text-xs text-destructive">
-          无法读取系统默认 Shell：{defaultShellError}
-        </p>
-      )}
-      {shellError && !shellDialogOpen && (
-        <p role="alert" className="terminal-settings-shell-error text-xs text-destructive">
-          {shellError}
-        </p>
-      )}
+                      GPU 加速
+                    </p>
+                    <p
+                      id="terminal-gpu-description"
+                      className="terminal-gpu-help text-xs text-muted-foreground"
+                    >
+                      WebGL 不可用时回退到兼容渲染。切换即时生效。
+                    </p>
+                    {renderError && (
+                      <p
+                        id="terminal-rendering-error"
+                        className="terminal-rendering-error text-xs text-destructive"
+                        role="alert"
+                      >
+                        {renderError}
+                      </p>
+                    )}
+                  </div>
+                  <ToggleGroup
+                    aria-labelledby="terminal-gpu-label"
+                    aria-describedby="terminal-gpu-description terminal-rendering-error"
+                    className="terminal-gpu-options shrink-0"
+                    variant="outline"
+                    size="lg"
+                    spacing={0}
+                    disabled={saving}
+                    value={[preferences.terminalGpuAcceleration]}
+                    onValueChange={([value]) => {
+                      if (value !== 'auto' && value !== 'on' && value !== 'off') return
+                      setRenderError(undefined)
+                      void persist({ terminalGpuAcceleration: value })
+                    }}
+                  >
+                    <ToggleGroupItem value="auto" className="terminal-gpu-option">
+                      自动
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="on" className="terminal-gpu-option">
+                      开启
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="off" className="terminal-gpu-option">
+                      关闭
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </Field>
+                <Separator className="terminal-settings-separator" />
+                {contrastSettings}
+              </Card>
+            </section>
+          )}
+        />
+      </FieldGroup>
 
       <Dialog
         open={shellDialogOpen}
@@ -475,11 +542,7 @@ export function TerminalSettings() {
               </shellForm.Field>
             </FieldGroup>
 
-            {shellError && (
-              <p role="alert" className="terminal-settings-shell-error text-xs text-destructive">
-                {shellError}
-              </p>
-            )}
+            <FieldError className="terminal-settings-shell-error">{shellError}</FieldError>
 
             <DialogFooter className="terminal-settings-dialog-footer mt-2">
               <Button
@@ -563,14 +626,9 @@ export function TerminalSettings() {
               </scrollbackForm.Field>
             </FieldGroup>
 
-            {scrollbackError && (
-              <p
-                role="alert"
-                className="terminal-settings-scrollback-error text-xs text-destructive"
-              >
-                {scrollbackError}
-              </p>
-            )}
+            <FieldError className="terminal-settings-scrollback-error">
+              {scrollbackError}
+            </FieldError>
 
             <DialogFooter className="terminal-settings-dialog-footer mt-2">
               <Button
@@ -592,6 +650,6 @@ export function TerminalSettings() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   )
 }

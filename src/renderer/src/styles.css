@@ -104,7 +104,7 @@
   --accent-hover: color-mix(in oklch, var(--accent), var(--foreground) 5%);
   --terminal-tab-hover: color-mix(in oklab, var(--foreground) 6%, transparent);
   --terminal-pane-inactive-overlay: color-mix(in oklab, var(--muted-foreground) 3%, transparent);
-  --terminal-pane-inactive-content-opacity: 0.6;
+  --terminal-pane-inactive-content-opacity: 0.8;
   --workspace-tab-transition-short: 320ms;
   --workspace-tab-transition-medium: 210ms;
   --workspace-tab-transition-wide: 120ms;
@@ -776,6 +776,17 @@ button:not([data-slot='button']):focus-visible {
 }
 .terminal-screen {
   box-sizing: border-box;
+}
+/* 预览不获取焦点，单独展示光标闪烁。 */
+@media (prefers-reduced-motion: no-preference) {
+  .terminal-appearance-preview-screen[data-cursor-blink='true'] .xterm-cursor {
+    animation: terminal-preview-cursor-blink 1s step-end infinite;
+  }
+}
+@keyframes terminal-preview-cursor-blink {
+  50% {
+    opacity: 0;
+  }
 }
 .terminal-screen.terminal-mouse-hidden,
 .terminal-screen.terminal-mouse-hidden * {

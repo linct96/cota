@@ -67,10 +67,25 @@ export function resolveTerminalTheme(
   return theme
 }
 
+function automaticContrastRatio(background: string | undefined, dark: boolean): number {
+  // resolveTerminalTheme normalizes backgrounds to RGBA hex; blend alpha like Orca before judging lightness.
+  if (!background || !/^#[\da-f]{8}$/i.test(background)) return dark ? 3 : 4.5
+  const alpha = parseInt(background.slice(7, 9), 16) / 255
+  const surface = dark ? 10 : 255
+  const channels = [1, 3, 5].map((offset) => {
+    const channel = parseInt(background.slice(offset, offset + 2), 16)
+    const value = Math.round(channel * alpha + surface * (1 - alpha)) / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+  return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? 4.5 : 3
+}
+
 export function terminalAppearanceOptions(
   settings: TerminalAppearance,
-  dark?: boolean,
+  dark = document.documentElement.classList.contains('dark'),
 ): ITerminalOptions {
+  const theme = resolveTerminalTheme(settings, dark)
   return {
     allowTransparency: settings.backgroundOpacity < 1,
     fontFamily: settings.fontFamily,
@@ -86,8 +101,8 @@ export function terminalAppearanceOptions(
         ? 1
         : settings.contrastMode === 'custom'
           ? settings.minimumContrastRatio
-          : 4.5,
-    theme: resolveTerminalTheme(settings, dark),
+          : automaticContrastRatio(theme.background, dark),
+    theme,
   }
 }
 
