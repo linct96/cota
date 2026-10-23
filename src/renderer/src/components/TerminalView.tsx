@@ -64,14 +64,14 @@ export function TerminalView({
     const wheel = installTerminalWheel(terminal)
     const viewportFit = { fit: () => scrolling.preserve(() => fit.fit()) }
     const renderer = createTerminalRenderer(terminal, viewportFit)
-    const appearance = installTerminalAppearance(terminal, container!)
-    const updateAppearance = () => {
+    const appearance = installTerminalAppearance(terminal, container!, () => {
       const settings = useWorkspace.getState().preferences
-      const ligaturesChanged = appearance.update(settings.terminalAppearance)
-      if (ligaturesChanged) {
-        renderer.update('off', false)
-        renderer.update(settings.terminalGpuAcceleration, !!container?.clientWidth)
-      }
+      renderer.update('off', false)
+      renderer.update(settings.terminalGpuAcceleration, !!container?.clientWidth)
+      fitAndResize()
+    })
+    const updateAppearance = () => {
+      appearance.update(useWorkspace.getState().preferences.terminalAppearance)
       fitAndResize()
     }
     const stopAppearance = useWorkspace.subscribe((state, previous) => {

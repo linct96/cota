@@ -150,7 +150,7 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
     const fit = new StableCellFitAddon()
     terminal.loadAddon(fit)
     terminal.open(container)
-    const appearance = installTerminalAppearance(terminal, container)
+    const appearance = installTerminalAppearance(terminal, container, () => fit.fit())
     const update = (value = currentSettings()) => {
       if (!terminalAppearanceSchema.safeParse(value).success) return
       appearance.update(value)

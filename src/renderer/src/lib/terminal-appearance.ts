@@ -1,5 +1,5 @@
 import type { ITheme, ITerminalOptions } from '@xterm/xterm'
-import { LigaturesAddon } from '@xterm/addon-ligatures'
+import type { LigaturesAddon } from '@xterm/addon-ligatures'
 import type { Terminal } from '@xterm/xterm'
 import type { TerminalAppearance } from '../../../shared/terminal-appearance'
 import { TERMINAL_THEME_CATALOG } from '../../../shared/terminal-themes'
@@ -106,11 +106,18 @@ export function terminalAppearanceOptions(
   }
 }
 
-export function installTerminalAppearance(terminal: Terminal, container: HTMLElement) {
+export function installTerminalAppearance(
+  terminal: Terminal,
+  container: HTMLElement,
+  onLigaturesChange: () => void,
+) {
   let ligatures: LigaturesAddon | undefined
   let enabled = false
+  let loading = false
+  let disposed = false
   return {
     update(settings: TerminalAppearance, dark?: boolean) {
+      if (disposed) return
       Object.assign(terminal.options, terminalAppearanceOptions(settings, dark))
       container.style.padding = `${settings.paddingY}px ${settings.paddingX}px`
       container.style.setProperty('--surface-canvas', terminal.options.theme?.background || '')
@@ -121,17 +128,38 @@ export function installTerminalAppearance(terminal: Terminal, container: HTMLEle
           /fira code|jetbrains mono|cascadia code|iosevka|hasklig|monaspace/i.test(
             settings.fontFamily,
           ))
-      if (enabled !== next) {
-        ligatures?.dispose()
-        ligatures = next ? new LigaturesAddon() : undefined
-        if (ligatures) terminal.loadAddon(ligatures)
-        enabled = next
-        return true
+      if (enabled === next) return
+      enabled = next
+      if (!next) {
+        if (ligatures) {
+          ligatures.dispose()
+          ligatures = undefined
+          onLigaturesChange()
+        }
+        return
       }
-      return false
+      if (loading) return
+      loading = true
+      void import('@xterm/addon-ligatures')
+        .then(({ LigaturesAddon }) => {
+          if (disposed || !enabled) return
+          ligatures = new LigaturesAddon()
+          terminal.loadAddon(ligatures)
+          onLigaturesChange()
+        })
+        .catch((cause: unknown) => {
+          ligatures?.dispose()
+          ligatures = undefined
+          console.warn('终端字体连字不可用，已保留普通字符渲染。', cause)
+        })
+        .finally(() => {
+          loading = false
+        })
     },
     dispose() {
+      disposed = true
       ligatures?.dispose()
+      ligatures = undefined
     },
   }
 }
