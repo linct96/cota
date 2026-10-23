@@ -5,7 +5,16 @@ export const AGENT_CLI_PACKAGES: Record<AgentProvider, string> = {
   codex: '@openai/codex',
   claude: '@anthropic-ai/claude-code',
 }
+export const AGENT_CLI_INSTALL_METHOD_LABELS = {
+  brew: 'Homebrew',
+  npm: 'npm',
+  scoop: 'Scoop',
+  native: '原生安装',
+  unknown: '未知来源',
+} as const
+
 export interface AgentCliStatus extends AgentAvailability {
+  installMethod?: keyof typeof AGENT_CLI_INSTALL_METHOD_LABELS
   latestVersion?: string
   updateAvailable?: boolean
   updateError?: string

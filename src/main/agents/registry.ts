@@ -76,10 +76,15 @@ export async function agentCapability(
   return provider === 'pi' ? 'full' : 'partial'
 }
 
-export async function detectAgents(settings: Preferences): Promise<AgentAvailability[]> {
+export async function detectAgents(
+  settings: Preferences,
+  provider?: AgentProvider,
+): Promise<AgentAvailability[]> {
   const env = await loginShellEnvironment(settings)
+  const providers =
+    provider === undefined ? (Object.keys(AGENT_PROVIDERS) as AgentProvider[]) : [provider]
   return Promise.all(
-    (Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map(async (provider) => {
+    providers.map(async (provider) => {
       try {
         const executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
         const version = await agentVersion(executable, env)

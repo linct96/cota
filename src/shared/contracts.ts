@@ -394,7 +394,10 @@ export interface DesktopAPI {
   readClipboard(): Promise<Result<string>>
   writeClipboard(text: string): Promise<Result<void>>
   setShortcutRecording(recording: boolean): void
-  inspectAgentClis(checkUpdates?: boolean): Promise<Result<import('./agent-cli').AgentCliStatus[]>>
+  inspectAgentClis(
+    checkUpdates?: boolean,
+    provider?: AgentProvider,
+  ): Promise<Result<import('./agent-cli').AgentCliStatus[]>>
   installAgentCli(
     provider: AgentProvider,
   ): Promise<Result<import('./agent-cli').AgentCliInstallResult>>

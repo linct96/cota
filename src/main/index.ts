@@ -553,9 +553,10 @@ function installIPC(): void {
     if (typeof recording === 'boolean') event.sender.setIgnoreMenuShortcuts(recording)
   })
   handle('agent:detect', () => detectAgents(config.snapshot().preferences))
-  handle('agent:cli-inspect', (checkUpdates: unknown = false) => {
+  handle('agent:cli-inspect', (checkUpdates: unknown = false, value?: unknown) => {
     if (typeof checkUpdates !== 'boolean') throw new Error('版本检查选项无效。')
-    return agentClis.inspect(config.snapshot().preferences, checkUpdates)
+    const provider = value === undefined ? undefined : agentProvider(value)
+    return agentClis.inspect(config.snapshot().preferences, checkUpdates, provider)
   })
   handle('agent:cli-install', async (value: unknown) => {
     assertLifecycle()
