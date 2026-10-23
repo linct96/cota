@@ -10,7 +10,12 @@ import { playNotificationSound } from './lib/notification-sound'
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const updateTheme = () => {
   const state = useWorkspace.getState()
-  applyDocumentTheme(state.ready ? state.preferences.theme : window.desktop.initialAppearance.theme)
+  applyDocumentTheme(
+    state.ready ? state.preferences.theme : window.desktop.initialAppearance.theme,
+    state.ready
+      ? state.preferences.interfaceColors
+      : window.desktop.initialAppearance.interfaceColors,
+  )
   document.documentElement.classList.toggle(
     'window-blur',
     window.desktop.initialAppearance.windowBlur,
@@ -19,7 +24,11 @@ const updateTheme = () => {
 updateTheme()
 systemTheme.addEventListener('change', updateTheme)
 const stopTheme = useWorkspace.subscribe((state, previous) => {
-  if (state.ready !== previous.ready || state.preferences.theme !== previous.preferences.theme)
+  if (
+    state.ready !== previous.ready ||
+    state.preferences.theme !== previous.preferences.theme ||
+    state.preferences.interfaceColors !== previous.preferences.interfaceColors
+  )
     updateTheme()
 })
 const stopNotificationSound = window.desktop.onNotificationSound(playNotificationSound)

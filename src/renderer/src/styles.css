@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './typeset.css';
 @import 'tw-animate-css';
 @import '@xterm/xterm/css/xterm.css';
 @import 'shadcn/tailwind.css';
@@ -47,6 +48,7 @@
   --color-scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
   --color-scrollbar-thumb-active: var(--scrollbar-thumb-active);
   --color-destructive: var(--destructive);
+  --color-warning: var(--dot-status-attention);
   --color-border: var(--border);
   --color-titlebar-separator: var(--titlebar-separator);
   --color-window-control-hover: var(--window-control-hover);
@@ -101,6 +103,11 @@
   --accent: oklch(0.97 0 0);
   --accent-hover: color-mix(in oklch, var(--accent), var(--foreground) 5%);
   --terminal-tab-hover: color-mix(in oklab, var(--foreground) 6%, transparent);
+  --terminal-pane-inactive-overlay: color-mix(in oklab, var(--muted-foreground) 3%, transparent);
+  --terminal-pane-inactive-content-opacity: 0.6;
+  --workspace-tab-transition-short: 320ms;
+  --workspace-tab-transition-medium: 210ms;
+  --workspace-tab-transition-wide: 120ms;
   --project-hover: #f2f2f2;
   --project-active: #eeeeee;
   --project-active-hover: #e6e6e6;
@@ -133,8 +140,8 @@
   --scrollbar-thumb-active: rgba(121, 121, 121, 0.9);
   --border: oklch(0.922 0 0);
   --titlebar-separator: #e3e3e3;
-  --panel-separator-hover: color-mix(in oklab, var(--text-normal) 22%, var(--background));
-  --panel-separator-active: color-mix(in oklab, var(--text-normal) 35%, var(--background));
+  --panel-separator-hover: var(--accent-hover);
+  --panel-separator-active: var(--ring);
   --app-titlebar-height: 44px;
   --app-navigation-width: 48px;
   --titlebar-leading-inset: 12px;
@@ -205,6 +212,14 @@ body,
   -webkit-app-region: drag;
   user-select: none;
 }
+/* Electron 拖动区域不接收指针事件，菜单展开时需让空白处参与外部点击检测。 */
+body:has(
+    [data-slot='dropdown-menu-content'][data-open],
+    [data-slot='context-menu-content'][data-open]
+  )
+  .title-bar {
+  -webkit-app-region: no-drag;
+}
 .terminal-tab-scroll-area {
   -webkit-app-region: no-drag;
 }
@@ -220,38 +235,39 @@ body,
   border: 0;
 }
 .workspace-tab {
+  --terminal-tab-background: var(--background);
   background-color: transparent;
   color: var(--accent-foreground);
+  transition-duration: var(--workspace-tab-transition-wide);
+}
+.workspace-tab[data-width-range='short'] {
+  transition-duration: var(--workspace-tab-transition-short);
+}
+.workspace-tab[data-width-range='medium'] {
+  transition-duration: var(--workspace-tab-transition-medium);
 }
 .workspace-tab:hover {
+  --terminal-tab-background: color-mix(in oklab, var(--foreground) 6%, var(--background));
   background-color: var(--terminal-tab-hover);
 }
 .workspace-tab[aria-selected='true'] {
+  --terminal-tab-background: var(--background);
   background-color: var(--background);
   color: var(--foreground);
 }
 .terminal-tab {
-  --terminal-tab-background: var(--muted);
   touch-action: pan-y;
-}
-.terminal-tab:hover {
-  --terminal-tab-background: var(--muted-hover);
 }
 .terminal-tab:active {
   translate: none;
 }
-.terminal-tab[aria-selected='true'] {
-  --terminal-tab-background: var(--background);
-  background-color: var(--terminal-tab-background);
-  color: var(--foreground);
-}
 .terminal-tab-agent-status,
-.terminal-tab-actions::before {
+.workspace-tab-actions-overlay::before {
   background-color: var(--terminal-tab-background);
   transition: background-color var(--default-transition-duration, 150ms)
     var(--default-transition-timing-function, ease);
 }
-.terminal-tab-actions::before {
+.workspace-tab-actions-overlay::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -290,44 +306,91 @@ body,
 .right-panel-header[data-open='true'] {
   padding-right: calc(var(--window-controls-width) + var(--titlebar-trailing-inset));
 }
-.workspace-resize-handle {
+.ui-resizable-handle {
+  --resizable-indicator-size: 1px;
   z-index: 1;
   cursor: col-resize;
 }
-.workspace-resize-handle::after {
-  width: 10px;
+.ui-resizable-handle::after {
+  width: 8px;
 }
-.workspace-resize-handle::before {
+.ui-resizable-handle::before {
   content: '';
   position: absolute;
-  inset-block: 0;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
+  inset: 0;
+  margin: auto;
+  width: var(--resizable-indicator-size);
   pointer-events: none;
   background-color: transparent;
   transition: background-color 120ms ease-out;
 }
-.workspace-resize-handle[data-separator='hover']::before {
-  width: 2px;
+.ui-resizable-handle[data-separator='hover'] {
+  --resizable-indicator-size: 2px;
+}
+.ui-resizable-handle[data-separator='hover']::before {
   background-color: var(--panel-separator-hover);
 }
-.workspace-resize-handle[data-separator='active']::before,
-.workspace-resize-handle:focus-visible::before {
-  width: 3px;
+.ui-resizable-handle[data-separator='active'],
+.ui-resizable-handle:focus-visible {
+  --resizable-indicator-size: 2px;
+}
+.ui-resizable-handle[data-separator='active']::before,
+.ui-resizable-handle:focus-visible::before {
   background-color: var(--panel-separator-active);
 }
-.workspace-resize-handle:focus-visible {
+.ui-resizable-handle:focus-visible {
   outline: 2px solid var(--text-normal);
   outline-offset: 2px;
   box-shadow: none;
 }
+.ui-resizable-handle[aria-orientation='horizontal'] {
+  cursor: row-resize;
+}
+.ui-resizable-handle[aria-orientation='horizontal']::after {
+  top: 50%;
+  bottom: auto;
+  width: 100%;
+  height: 8px;
+}
+.ui-resizable-handle[aria-orientation='horizontal']::before {
+  width: auto;
+  height: var(--resizable-indicator-size);
+}
 @media (prefers-reduced-motion: reduce) {
   .terminal-tab-agent-status,
   .terminal-tab-actions::before,
-  .workspace-resize-handle::before {
+  .ui-resizable-handle::before {
     transition: none;
   }
+}
+.terminal-pane {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--surface-canvas);
+}
+.terminal-pane-header {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+.terminal-pane-slot {
+  isolation: isolate;
+}
+.terminal-pane[data-focused='false'] > .terminal-pane-header {
+  color: var(--muted-foreground);
+}
+.terminal-pane[data-focused='false'] > .terminal-pane-slot {
+  opacity: var(--terminal-pane-inactive-content-opacity);
+}
+.terminal-pane[data-focused='false']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-color: var(--terminal-pane-inactive-overlay);
+}
+.source-control-preview-tab[data-diff='true'] .workspace-tab-title {
+  font-style: italic;
 }
 .top-status-bar-history {
   padding-left: var(--titlebar-leading-inset);
@@ -353,6 +416,53 @@ body,
 }
 button:not(:disabled) {
   cursor: pointer;
+}
+.workspace-open-control {
+  border-radius: var(--radius-md);
+}
+.workspace-open-control .ui-button {
+  background-color: transparent;
+}
+.workspace-open-control .ui-button:enabled:hover,
+.workspace-open-control .ui-button[aria-expanded='true'] {
+  background-color: var(--accent);
+}
+.workspace-open-button .open-with-app-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.quick-commands-group-label {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+.quick-commands-option-name {
+  font-weight: 500;
+}
+.quick-commands-option-command {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}
+.quick-commands-option-icon,
+.quick-commands-add-icon,
+.quick-commands-manage-icon {
+  color: var(--muted-foreground);
+}
+.quick-commands-menu [data-highlighted] .quick-commands-option-command,
+.quick-commands-menu [data-highlighted] .quick-commands-option-icon,
+.quick-commands-menu [data-highlighted] .quick-commands-add-icon,
+.quick-commands-menu [data-highlighted] .quick-commands-manage-icon {
+  color: inherit;
+}
+.quick-commands-option-action {
+  color: var(--muted-foreground);
+}
+.quick-commands-option-action:hover {
+  color: var(--foreground);
+}
+.quick-commands-option-action.quick-commands-option-delete:hover {
+  color: var(--destructive);
 }
 .title-bar [role='tablist'],
 button,
@@ -431,7 +541,7 @@ button:not([data-slot='button']):focus-visible {
   display: inline-block;
   vertical-align: middle;
 }
-.dot-status-success {
+.dot-status-dot {
   border-radius: 50%;
   background: currentColor;
 }
@@ -461,11 +571,11 @@ button:not([data-slot='button']):focus-visible {
       0 0 3px color-mix(in srgb, var(--dot-status-working) 45%, transparent);
   }
   50% {
-    transform: scale(1.08);
+    transform: scale(1.05);
     box-shadow:
       0 0 0 2px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
       0 0 8px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
-      0 0 13px color-mix(in srgb, var(--dot-status-working) 8%, transparent);
+      0 0 10px color-mix(in srgb, var(--dot-status-working) 8%, transparent);
   }
 }
 .source-control-commit-buttons [data-slot='button']:disabled {
@@ -478,37 +588,6 @@ button:not([data-slot='button']):focus-visible {
   min-width: 0;
   flex: 0 0 auto;
   padding: 0.375rem 0.5rem;
-}
-.source-control-preview-tab {
-  border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--foreground) 5%, transparent);
-  color: var(--app-muted-foreground);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  transition:
-    color 150ms,
-    background-color 150ms;
-  outline: none;
-}
-.source-control-preview-tab:hover {
-  background: color-mix(in oklab, var(--foreground) 10%, transparent);
-  color: var(--foreground);
-}
-.source-control-preview-tab[aria-selected='true'] {
-  background: var(--background);
-  color: var(--foreground);
-  box-shadow: var(--shadow-xs);
-}
-.source-control-preview-tab:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-.source-control-preview-tab-close {
-  opacity: 0;
-}
-.source-control-preview-tab:is(:hover, :focus-within, [aria-selected='true'])
-  .source-control-preview-tab-close {
-  opacity: 1;
 }
 .source-control-section-tabs {
   width: 100%;
@@ -706,8 +785,25 @@ button:not([data-slot='button']):focus-visible {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 .source-control-file-path,
-.source-control-diff-path {
+.source-control-diff-path,
+.source-control-all-file-path {
   unicode-bidi: plaintext;
+}
+.source-control-all-loading {
+  background: var(--background);
+}
+.source-control-all-loading-icon,
+.source-control-diff-loading-icon {
+  color: var(--muted-foreground);
+}
+.source-control-all-file-trigger {
+  height: 28px;
+  border-radius: 0;
+  background: var(--card);
+  translate: none;
+}
+.source-control-all-file-trigger:hover {
+  background: var(--accent);
 }
 .source-control-diff-mode [data-slot='button'] {
   color: var(--app-muted-foreground);
@@ -717,71 +813,10 @@ button:not([data-slot='button']):focus-visible {
   background: var(--muted);
   color: var(--foreground);
 }
-.project-title,
-.settings-title {
+.project-title {
   color: var(--sidebar-foreground);
   font-size: var(--text-sm);
   font-weight: 600;
-}
-/* 设置导航沿用 shadcn Sidebar 的菜单规格，保留 Tabs 的键盘与面板关联。 */
-.settings-search-input {
-  height: 2rem;
-  background: color-mix(in oklab, var(--muted) 20%, transparent);
-}
-.settings-search-input::-webkit-search-cancel-button {
-  display: none;
-}
-.settings-search-clear {
-  border-radius: var(--radius-sm);
-}
-.settings-nav-list {
-  width: 100%;
-  height: auto;
-  align-items: stretch;
-  padding-top: 0;
-  border-radius: 0;
-  background: transparent;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-.settings-group-title {
-  color: var(--app-muted-foreground);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-.settings-sidebar .settings-nav-item {
-  flex: none;
-  height: 2rem;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border: 0;
-  border-radius: calc(var(--radius-sm) + 2px);
-  background: transparent;
-  color: var(--sidebar-foreground);
-  font-size: var(--text-xs);
-  font-weight: 400;
-  transition: none;
-}
-.settings-sidebar .settings-nav-item::after {
-  display: none;
-}
-.settings-sidebar .settings-nav-item:is(:hover, :active, [data-active]) {
-  background: var(--sidebar-accent);
-  color: var(--sidebar-accent-foreground);
-}
-.settings-sidebar .settings-nav-item[data-active] {
-  font-weight: 500;
-}
-.settings-sidebar .settings-nav-item:focus-visible {
-  outline: 2px solid var(--sidebar-ring);
-  outline-offset: -2px;
-  box-shadow: none;
-}
-.settings-sidebar .settings-nav-item-icon {
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-  color: inherit;
 }
 .xterm {
   height: 100%;

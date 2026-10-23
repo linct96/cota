@@ -127,9 +127,7 @@ export function SourceControlSettings() {
               </Button>
             )}
           </form.Subscribe>
-          <span className="source-control-settings-save-status" role="status">
-            {saved ? '已保存' : ''}
-          </span>
+          <output className="source-control-settings-save-status">{saved ? '已保存' : ''}</output>
         </div>
       </form>
     </section>

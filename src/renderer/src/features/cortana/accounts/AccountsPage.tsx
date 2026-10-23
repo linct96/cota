@@ -81,9 +81,8 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
     return () => setAgentSwitchBlocked(false)
   }, [busy, addOpen, editing, confirmation, setAgentSwitchBlocked])
 
-  const reload = useCallback(async () => {
+  const loadStatus = useCallback(async () => {
     const version = ++request.current
-    setLoading(true)
     try {
       const next = unwrap(await window.desktop.accounts.list(product))
       if (version === request.current) {
@@ -97,13 +96,19 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
     }
   }, [product])
 
+  const reload = useCallback(() => {
+    setLoading(true)
+    return loadStatus()
+  }, [loadStatus])
+
   useEffect(() => {
-    setStatus(undefined)
-    void reload()
+    const pendingRequest = request
+    // oxlint-disable-next-line react/set-state-in-effect -- Mount fetch reads external IPC data; loading is already initialized.
+    void loadStatus()
     return () => {
-      request.current++
+      pendingRequest.current++
     }
-  }, [reload])
+  }, [loadStatus])
 
   const perform = useCallback(
     async (label: string, action: () => Promise<unknown>, notice?: string) => {

@@ -1,82 +1,244 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState, useSyncExternalStore } from 'react'
+import { useForm } from '@tanstack/react-form'
+import { z } from 'zod'
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useWorkspace } from '../store'
-import type { ThemePreference } from '../../../shared/contracts'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import type { Preferences, ThemePreference } from '../../../shared/contracts'
+import {
+  DEFAULT_INTERFACE_COLORS,
+  interfaceColorSchema,
+  type InterfaceColorRole,
+} from '../../../shared/interface-colors'
+import { observeDocumentTheme, resolveDocumentColor } from '../lib/theme'
+import { Button } from './ui/button'
+import { Card } from './ui/card'
+import { ColorInput } from './ui/color-input'
+import { Separator } from './ui/separator'
+import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
+
+const colorFields: { role: InterfaceColorRole; label: string }[] = [
+  { role: 'primary', label: '主题色' },
+  { role: 'background', label: '背景色' },
+  { role: 'foreground', label: '前景色' },
+]
+const colorInputSchema = z
+  .string()
+  .trim()
+  .pipe(interfaceColorSchema.or(z.literal('')))
+  .optional()
 
 export function AppearanceSettings() {
   const theme = useWorkspace((state) => state.preferences.theme)
+  const colors = useWorkspace((state) => state.preferences.interfaceColors)
   const ready = useWorkspace((state) => state.ready)
+  const dark = useSyncExternalStore(observeDocumentTheme, () =>
+    document.documentElement.classList.contains('dark'),
+  )
+  const mode = dark ? 'dark' : 'light'
+  const form = useForm({ defaultValues: colors })
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  const pending = useRef(false)
-  async function changeTheme(value: ThemePreference) {
-    if (pending.current || value === theme) return
-    pending.current = true
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({})
+  const pending = useRef<Promise<unknown>>(Promise.resolve())
+
+  async function changeAppearance(field: string, update: (value: Preferences) => Preferences) {
+    if (!useWorkspace.getState().ready) return
     setSaving(true)
-    setError(undefined)
-    try {
-      await useWorkspace
-        .getState()
-        .savePreferences({ ...useWorkspace.getState().preferences, theme: value })
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存失败，请重试。')
-    } finally {
-      pending.current = false
-      setSaving(false)
+    const operation = pending.current.then(async () => {
+      setErrors((previous) => ({ ...previous, [field]: undefined }))
+      try {
+        const state = useWorkspace.getState()
+        const next = update(state.preferences)
+        if (next !== state.preferences) await state.savePreferences(next)
+        return next
+      } catch (cause) {
+        setErrors((previous) => ({
+          ...previous,
+          [field]: cause instanceof Error ? cause.message : '保存失败，请重试。',
+        }))
+      }
+    })
+    pending.current = operation
+    const saved = await operation
+    if (pending.current === operation) setSaving(false)
+    return saved
+  }
+
+  async function resetAppearance() {
+    const saved = await changeAppearance('reset', (preferences) => ({
+      ...preferences,
+      theme: 'system',
+      interfaceColors: structuredClone(DEFAULT_INTERFACE_COLORS),
+    }))
+    if (saved) {
+      form.reset(saved.interfaceColors)
+      setErrors({})
     }
+  }
+
+  function changeTheme(value: ThemePreference) {
+    if (value !== theme)
+      void changeAppearance('theme', (preferences) => ({ ...preferences, theme: value }))
+  }
+
+  function changeColor(role: InterfaceColorRole, value: string | undefined) {
+    const parsed = colorInputSchema.safeParse(value)
+    if (!parsed.success) return
+    const color = parsed.data || undefined
+    void changeAppearance(`${mode}.${role}`, (preferences) => {
+      if (preferences.interfaceColors[mode][role] === color) return preferences
+      const overrides = { ...preferences.interfaceColors[mode] }
+      if (color) overrides[role] = color
+      else delete overrides[role]
+      return {
+        ...preferences,
+        interfaceColors: { ...preferences.interfaceColors, [mode]: overrides },
+      }
+    })
   }
   return (
     <section
       className="appearance-settings flex flex-col gap-6"
       aria-labelledby="appearance-settings-title"
     >
-      <h3
-        id="appearance-settings-title"
-        className="appearance-settings-title text-base font-semibold"
-      >
-        外观
-      </h3>
-      <FieldGroup className="appearance-settings-fields">
-        <Field className="appearance-theme-field" disabled={!ready || saving}>
-          <FieldLabel id="appearance-theme-label" className="appearance-theme-label">
-            主题
-          </FieldLabel>
-          <FieldDescription
-            id="appearance-theme-description"
-            className="appearance-theme-description"
-          >
-            选择应用主题；自动模式跟随系统的浅色或深色外观。
-          </FieldDescription>
-          <ToggleGroup
-            className="appearance-theme-options"
-            variant="outline"
-            spacing={0}
-            size="lg"
-            value={[theme]}
-            aria-labelledby="appearance-theme-label"
-            aria-describedby="appearance-theme-description"
-            onValueChange={([value]) => {
-              if (value === 'system' || value === 'light' || value === 'dark')
-                void changeTheme(value)
-            }}
-          >
-            <ToggleGroupItem className="appearance-theme-option" value="system">
-              <Monitor className="appearance-theme-icon" aria-hidden="true" />
-              自动
-            </ToggleGroupItem>
-            <ToggleGroupItem className="appearance-theme-option" value="light">
-              <Sun className="appearance-theme-icon" aria-hidden="true" />
-              浅色
-            </ToggleGroupItem>
-            <ToggleGroupItem className="appearance-theme-option" value="dark">
-              <Moon className="appearance-theme-icon" aria-hidden="true" />
-              深色
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <FieldError className="appearance-theme-error">{error}</FieldError>
-        </Field>
+      <div className="appearance-settings-heading typeset">
+        <h1 id="appearance-settings-title" className="appearance-settings-title">
+          外观
+        </h1>
+      </div>
+      <FieldGroup className="appearance-settings-groups gap-8">
+        <section
+          className="appearance-settings-group flex flex-col gap-3"
+          aria-labelledby="appearance-interface-title"
+        >
+          <div className="appearance-settings-group-header flex flex-wrap items-start justify-between gap-3">
+            <h4
+              id="appearance-interface-title"
+              className="appearance-settings-group-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
+            >
+              视觉风格
+            </h4>
+            <Button
+              type="button"
+              className="appearance-settings-reset"
+              variant="ghost"
+              size="lg"
+              disabled={!ready || saving}
+              aria-describedby={errors.reset ? 'appearance-reset-error' : undefined}
+              onClick={() => void resetAppearance()}
+            >
+              重置为默认设置
+            </Button>
+          </div>
+          <FieldError id="appearance-reset-error" className="appearance-reset-error">
+            {errors.reset}
+          </FieldError>
+          <Card className="appearance-settings-card">
+            <Field
+              className="appearance-theme-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+              disabled={!ready || saving}
+              data-invalid={!!errors.theme}
+            >
+              <div className="appearance-theme-text flex min-w-0 flex-1 basis-64 flex-col gap-1">
+                <FieldLabel
+                  id="appearance-theme-label"
+                  className="appearance-theme-label min-h-8 text-sm leading-5"
+                >
+                  模式
+                </FieldLabel>
+              </div>
+              <div className="appearance-theme-control flex min-w-0 flex-col gap-2">
+                <ToggleGroup
+                  className="appearance-theme-options"
+                  variant="outline"
+                  spacing={0}
+                  size="lg"
+                  value={[theme]}
+                  aria-labelledby="appearance-theme-label"
+                  aria-describedby={errors.theme ? 'appearance-theme-error' : undefined}
+                  aria-invalid={!!errors.theme}
+                  onValueChange={([value]) => {
+                    if (value === 'system' || value === 'light' || value === 'dark')
+                      void changeTheme(value)
+                  }}
+                >
+                  <ToggleGroupItem className="appearance-theme-option" value="system">
+                    <Monitor className="appearance-theme-icon" aria-hidden="true" />
+                    自动
+                  </ToggleGroupItem>
+                  <ToggleGroupItem className="appearance-theme-option" value="light">
+                    <Sun className="appearance-theme-icon" aria-hidden="true" />
+                    浅色
+                  </ToggleGroupItem>
+                  <ToggleGroupItem className="appearance-theme-option" value="dark">
+                    <Moon className="appearance-theme-icon" aria-hidden="true" />
+                    深色
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <FieldError id="appearance-theme-error" className="appearance-theme-error max-w-60">
+                  {errors.theme}
+                </FieldError>
+              </div>
+            </Field>
+            {colorFields.map(({ role, label }) => (
+              <Fragment key={`${mode}.${role}`}>
+                <Separator className="appearance-color-separator" />
+                <form.Field name={`${mode}.${role}`} validators={{ onChange: colorInputSchema }}>
+                  {(field) => {
+                    const invalid = field.state.meta.errors.length > 0
+                    const saveError = errors[`${mode}.${role}`]
+                    const errorId = `appearance-${role}-error`
+                    const resolvedColor = resolveDocumentColor(role)
+                    return (
+                      <Field
+                        className="appearance-color-field flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 px-5"
+                        disabled={!ready}
+                        data-invalid={invalid || !!saveError}
+                      >
+                        <FieldLabel
+                          htmlFor={`appearance-${role}`}
+                          className="appearance-color-label min-h-8 text-sm leading-5"
+                        >
+                          {label}
+                        </FieldLabel>
+                        <div className="appearance-color-control flex min-w-0 flex-col gap-2">
+                          <ColorInput
+                            id={`appearance-${role}`}
+                            className="appearance-color-input"
+                            value={field.state.value ?? resolvedColor}
+                            fallbackColor={resolvedColor}
+                            pickerLabel={`选择${label}`}
+                            placeholder="默认"
+                            disabled={!ready}
+                            aria-invalid={invalid || !!saveError}
+                            aria-describedby={invalid || saveError ? errorId : undefined}
+                            onBlur={() => {
+                              const value = field.state.value
+                              field.handleBlur()
+                              if (value === '') field.handleChange(undefined)
+                              if (saveError) changeColor(role, value)
+                            }}
+                            onValueChange={(value) => {
+                              field.handleChange(value)
+                              changeColor(role, value)
+                            }}
+                          />
+                          <FieldError
+                            id={errorId}
+                            className="appearance-color-error max-w-60"
+                            errors={field.state.meta.errors}
+                          >
+                            {invalid ? undefined : saveError}
+                          </FieldError>
+                        </div>
+                      </Field>
+                    )
+                  }}
+                </form.Field>
+              </Fragment>
+            ))}
+          </Card>
+        </section>
       </FieldGroup>
     </section>
   )

@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { parseArguments } from '../../../shared/open-with'
+import {
+  SHORTCUT_DEFINITIONS,
+  shortcutConflicts,
+  validateShortcutBinding,
+} from '../../../shared/shortcuts'
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 
 const absolutePathPattern = /^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i
@@ -70,6 +75,50 @@ export const openerFormSchema = z.object({
       }
     }),
 })
+
+export const quickCommandFormSchema = z.object({
+  name: z
+    .string()
+    .max(80, '名称最多 80 字符。')
+    .refine((value) => !!value.trim(), '请输入命令名称。')
+    .regex(/^[^\0\r\n]*$/, '名称不能包含换行或空字符。'),
+  command: z
+    .string()
+    .max(8192, '命令最多 8192 字符。')
+    .refine((value) => !!value.trim(), '请输入 Shell 命令。')
+    // oxlint-disable-next-line no-control-regex -- Allow line breaks and tabs, not terminal escape sequences.
+    .regex(/^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]*$/, '命令不能包含控制字符。'),
+})
+
+export function shortcutSettingsFormSchema(platform: string) {
+  return z
+    .object({ bindings: z.record(z.string(), z.string()) })
+    .superRefine(({ bindings }, context) => {
+      for (const [id, binding] of Object.entries(bindings)) {
+        try {
+          validateShortcutBinding(binding, platform)
+        } catch (cause) {
+          context.addIssue({
+            code: 'custom',
+            path: ['bindings', id],
+            message: cause instanceof Error ? cause.message : '快捷键无效。',
+          })
+        }
+      }
+      for (const group of shortcutConflicts(bindings, platform)) {
+        for (const id of group) {
+          const labels = group
+            .filter((key) => key !== id)
+            .map((key) => `“${SHORTCUT_DEFINITIONS.find(([id]) => id === key)![1]}”`)
+          context.addIssue({
+            code: 'custom',
+            path: ['bindings', id],
+            message: `与${labels.join('、')}的快捷键冲突。`,
+          })
+        }
+      }
+    })
+}
 
 export const workspaceFormSchema = z.object({
   name: z

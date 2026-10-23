@@ -9,6 +9,7 @@ import { TerminalAppearanceSettings } from './TerminalAppearanceSettings'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
+import { Separator } from './ui/separator'
 import {
   Dialog,
   DialogContent,
@@ -180,14 +181,14 @@ export function TerminalSettings() {
         </div>
       </div>
 
-      <Card className="terminal-settings-card divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/80 bg-background py-0 shadow-xs ring-0">
-        <div className="terminal-settings-row flex min-h-[4.25rem] items-center justify-between gap-4 px-5 py-4">
+      <Card className="terminal-settings-card">
+        <div className="terminal-settings-row flex items-center justify-between gap-4 px-5">
           <div className="terminal-settings-row-text flex min-w-0 flex-col gap-0.5 pr-2">
             <span className="terminal-settings-row-title text-sm font-medium text-foreground">
               默认终端 Shell
             </span>
             <span className="terminal-settings-row-desc text-xs text-app-muted-foreground">
-              新建终端时启动的命令行解释器，以交互式登录模式启动（-il）
+              新建终端的默认shell
             </span>
           </div>
 
@@ -249,7 +250,9 @@ export function TerminalSettings() {
           </div>
         </div>
 
-        <div className="terminal-settings-row flex min-h-[4.25rem] items-center justify-between gap-4 px-5 py-4">
+        <Separator className="terminal-settings-separator" />
+
+        <div className="terminal-settings-row flex items-center justify-between gap-4 px-5">
           <div className="terminal-settings-row-text flex min-w-0 flex-col gap-0.5 pr-2">
             <span className="terminal-settings-row-title text-sm font-medium text-foreground">
               滚动缓冲行数
@@ -318,7 +321,7 @@ export function TerminalSettings() {
           渲染
         </h4>
         <Card className="terminal-rendering-card overflow-hidden rounded-2xl border border-border/80 bg-background py-0 shadow-xs ring-0">
-          <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-4 px-5 py-1">
             <div className="terminal-gpu-description flex min-w-0 flex-1 flex-col gap-0.5">
               <FieldLabel id="terminal-gpu-label" className="terminal-gpu-label">
                 GPU 加速

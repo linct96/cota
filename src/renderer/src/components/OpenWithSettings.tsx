@@ -3,6 +3,7 @@ import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { openerFormSchema } from '../lib/form-schemas'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { WorkspaceOpener } from '../../../shared/contracts'
+import { preferredWorkspaceOpener } from '../../../shared/open-with'
 import { useWorkspace } from '../store'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -30,6 +31,7 @@ import { OpenerIcon, PRESET_OPENERS, type PresetOpener } from './OpenWithIcons'
 export function OpenWithSettings() {
   const preferences = useWorkspace((state) => state.preferences)
   const openers = preferences.openWith
+  const defaultOpener = preferredWorkspaceOpener({ preferences, workspaceOpeners: openers })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
 
@@ -57,7 +59,10 @@ export function OpenWithSettings() {
     },
   })
 
-  async function persist(nextOpeners: WorkspaceOpener[]) {
+  async function persist(
+    nextOpeners: WorkspaceOpener[],
+    preferredOpenerId = useWorkspace.getState().preferences.preferredOpenerId,
+  ) {
     if (persisting.current) return false
     persisting.current = true
     setSaving(true)
@@ -66,6 +71,7 @@ export function OpenWithSettings() {
       await useWorkspace.getState().savePreferences({
         ...useWorkspace.getState().preferences,
         openWith: nextOpeners,
+        preferredOpenerId,
       })
       return true
     } catch (cause) {
@@ -118,7 +124,7 @@ export function OpenWithSettings() {
             在应用程序中打开
           </h3>
           <p className="open-with-settings-description mt-1 text-xs text-app-muted-foreground">
-            从工作区的“打开于”菜单中选择应用程序；系统文件管理器始终可用。
+            顶部按钮使用默认应用打开工作区；下拉菜单仅使用所选应用打开，不修改默认应用。系统文件管理器始终可用。
           </p>
         </div>
 
@@ -216,6 +222,19 @@ export function OpenWithSettings() {
             </div>
 
             <div className="open-with-item-actions flex shrink-0 items-center gap-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="open-with-item-set-default"
+                aria-label={`将 ${opener.name} 设为默认打开方式`}
+                disabled={saving || defaultOpener?.id === opener.id}
+                onClick={() =>
+                  void persist(useWorkspace.getState().preferences.openWith, opener.id)
+                }
+              >
+                {defaultOpener?.id === opener.id ? '默认' : '设为默认'}
+              </Button>
               <Button
                 type="button"
                 variant="ghost"

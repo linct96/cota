@@ -1016,7 +1016,7 @@ describe('open-with IPC', () => {
       await mocks.handlers.get('workspace:open-with')!(event, directory, 'system-file-manager'),
     ).toEqual({ ok: true })
   })
-  it('uses only a saved program for a known project without touching terminal sessions', async () => {
+  it('uses only settings programs for known workspaces without touching terminal sessions', async () => {
     mocks.config.recentProjects = [path]
     expect(await mocks.handlers.get('workspace:open-with')!(event, path, 'zed')).toEqual({
       ok: true,
@@ -1025,6 +1025,33 @@ describe('open-with IPC', () => {
       path,
       mocks.config.preferences.openWith[0],
     )
+    const target = { projectPath: path, workspaceId: randomUUID() }
+    mocks.withTerminalTarget.mockImplementationOnce(async (_target, action) =>
+      action({ cwd: '/tmp/managed-worktree' }),
+    )
+    expect(await mocks.handlers.get('workspace:open-with')!(event, target, 'zed')).toEqual({
+      ok: true,
+    })
+    expect(mocks.withTerminalTarget).toHaveBeenCalledWith(target, expect.any(Function))
+    expect(mocks.openWorkspaceWith).toHaveBeenLastCalledWith(
+      '/tmp/managed-worktree',
+      mocks.config.preferences.openWith[0],
+    )
+    expect(await mocks.handlers.get('workspace:open-with')!(event, path, 'vscode')).toMatchObject({
+      ok: false,
+      error: '打开方式不存在，请检查设置。',
+    })
+    expect(mocks.openWorkspaceWith).toHaveBeenCalledTimes(2)
+    mocks.listWorkspaceOpeners.mockReturnValueOnce(mocks.config.preferences.openWith)
+    expect(await mocks.handlers.get('workspace:openers')!(event)).toEqual({
+      ok: true,
+      value: mocks.config.preferences.openWith,
+    })
+    expect(mocks.listWorkspaceOpeners).toHaveBeenCalledExactlyOnceWith(mocks.config.preferences)
+    expect(
+      await mocks.handlers.get('workspace:openers')!({ ...event, senderFrame: {} }),
+    ).toMatchObject({ ok: false })
+    expect(mocks.listWorkspaceOpeners).toHaveBeenCalledOnce()
     expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.close).not.toHaveBeenCalled()
   })

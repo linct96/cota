@@ -32,7 +32,7 @@ afterEach(async () => {
 })
 
 describe('file explorer', () => {
-  it('browses ordinary folders without following links or reading outside the workspace', async () => {
+  it('browses folders and internal symlinks without reading outside the workspace', async () => {
     const files = new FileExplorerService()
     expect(await files.list(root, '')).toEqual([])
     await mkdir(join(root, 'src'))
@@ -59,6 +59,12 @@ describe('file explorer', () => {
     for (const name of ['binary', 'invalid-utf8', 'large', 'src']) {
       expect(await files.read(root, name)).toMatchObject({ kind: 'unavailable' })
     }
+    await symlink('src', join(root, 'linked-src'))
+    expect(await files.list(root, 'linked-src')).toEqual([
+      { name: '中文 空格.txt', path: 'linked-src/中文 空格.txt', kind: 'file' },
+    ])
+    const noLinks = new FileExplorerService(() => ({ showIgnored: true, followSymlinks: false }))
+    await expect(noLinks.list(root, 'linked-src')).rejects.toThrow('不跟随符号链接')
     await mkdir(join(directory, 'outside'))
     await writeFile(join(directory, 'outside', 'secret'), 'must not read')
     await symlink(join(directory, 'outside'), join(root, 'linked-dir'))
@@ -70,8 +76,8 @@ describe('file explorer', () => {
       target: join(directory, 'outside', 'secret'),
     })
     expect(await files.read(root, 'dangling')).toEqual({ kind: 'link', target: 'missing' })
-    await expect(files.list(root, 'linked-dir')).rejects.toThrow('符号链接')
-    await expect(files.read(root, 'linked-dir/secret')).rejects.toThrow('符号链接')
+    await expect(files.list(root, 'linked-dir')).rejects.toThrow('工作区外')
+    await expect(files.read(root, 'linked-dir/secret')).rejects.toThrow('工作区外')
     expect(await files.location(root, 'linked-file')).toBe(join(root, 'linked-file'))
     for (const path of [
       '../outside/secret',

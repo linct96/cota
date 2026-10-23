@@ -8,6 +8,7 @@ import {
   type TerminalLaunch,
   type Preferences,
   type WorkspaceOpener,
+  type QuickCommand,
   type RemoveWorkspace,
   type WorkspaceTarget,
   type WorkspaceLayout,
@@ -25,6 +26,7 @@ import {
   terminalAppearanceSchema,
 } from '../shared/terminal-appearance'
 import { validateShortcutBindings } from '../shared/shortcuts'
+import { DEFAULT_INTERFACE_COLORS, interfaceColorsSchema } from '../shared/interface-colors'
 
 export function absolutePath(value: unknown): string {
   if (
@@ -88,13 +90,16 @@ export function preferences(value: unknown): Preferences {
     notificationsEnabled = true,
     notificationSound = 'system',
     turnCompleteNotification = 'unfocused',
+    interfaceColors = DEFAULT_INTERFACE_COLORS,
     terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
-    fileExplorer = { showIgnored: true, followSymlinks: false },
+    fileExplorer = { showIgnored: true, followSymlinks: true },
     shortcuts = {},
     shellName,
     shellPath,
     scrollback,
     openWith,
+    quickCommands = [],
+    preferredOpenerId,
     terminalGpuAcceleration = 'auto',
     preventSleep = true,
     commitMessagePrompt = '',
@@ -138,17 +143,24 @@ export function preferences(value: unknown): Preferences {
   if (!Number.isInteger(scrollback) || scrollback! < 1000 || scrollback! > 20000) {
     throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
   }
+  if (
+    preferredOpenerId !== undefined &&
+    (typeof preferredOpenerId !== 'string' || !/^[\w-]{1,64}$/.test(preferredOpenerId))
+  )
+    throw new Error('默认打开方式标识无效。')
   return {
     theme,
     notificationsEnabled,
     notificationSound: sound,
     turnCompleteNotification,
+    interfaceColors: interfaceColorsSchema.parse(interfaceColors),
     terminalAppearance: terminalAppearanceSchema.parse(terminalAppearance),
     fileExplorer: {
       showIgnored: fileExplorer.showIgnored,
       followSymlinks: fileExplorer.followSymlinks,
     },
     shortcuts: validateShortcutBindings(shortcuts, process.platform),
+    ...(preferredOpenerId === undefined ? {} : { preferredOpenerId }),
     terminalGpuAcceleration,
     preventSleep,
     commitMessagePrompt: commitMessagePrompt.trim(),
@@ -156,6 +168,7 @@ export function preferences(value: unknown): Preferences {
     shellPath: shellPath as string | null,
     scrollback: scrollback!,
     openWith: workspaceOpeners(openWith),
+    quickCommands: savedQuickCommands(quickCommands),
   }
 }
 
@@ -183,6 +196,46 @@ export function workspaceOpeners(value: unknown): WorkspaceOpener[] {
   if (new Set(openers.map((entry) => entry.id)).size !== openers.length)
     throw new Error('打开方式标识重复。')
   return openers
+}
+
+export function startupCommand(value: unknown): string | undefined {
+  if (value === undefined) return
+  if (
+    typeof value !== 'string' ||
+    !value.trim() ||
+    value.length > 8192 ||
+    // oxlint-disable-next-line no-control-regex -- Allow line breaks and tabs, not terminal escape sequences.
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)
+  )
+    throw new Error('请输入 Shell 命令（上限 8192 字符，不能包含控制字符）。')
+  return value.replace(/\r\n?/g, '\n')
+}
+
+export function savedQuickCommands(value: unknown): QuickCommand[] {
+  if (!Array.isArray(value) || value.length > 50) throw new Error('快捷命令最多配置 50 项。')
+  const commands = value.map((entry: unknown): QuickCommand => {
+    if (!entry || typeof entry !== 'object') throw new Error('快捷命令格式无效。')
+    const { id, name, command, scope } = entry as Partial<QuickCommand>
+    if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id)) throw new Error('快捷命令标识无效。')
+    if (typeof name !== 'string' || !name.trim() || name.length > 80 || /[\0\r\n]/.test(name))
+      throw new Error('请输入命令名称（上限 80 字符，不能包含换行）。')
+    const text = startupCommand(command)
+    if (text === undefined) throw new Error('请输入 Shell 命令。')
+    if (!scope || (scope.type !== 'global' && scope.type !== 'project'))
+      throw new Error('快捷命令作用域无效。')
+    return {
+      id,
+      name: name.trim(),
+      command: text,
+      scope:
+        scope.type === 'global'
+          ? { type: 'global' }
+          : { type: 'project', projectPath: absolutePath(scope.projectPath) },
+    }
+  })
+  if (new Set(commands.map((entry) => entry.id)).size !== commands.length)
+    throw new Error('快捷命令标识重复。')
+  return commands
 }
 
 export function terminalId(value: unknown): string {

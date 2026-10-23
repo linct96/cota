@@ -35,7 +35,7 @@ import type {
 } from '../shared/source-control'
 import { WorktreeManager } from './git/worktree-manager'
 import { WorktreeError } from './git/git-worktrees'
-import { openWorkspaceWith } from './system/open-with'
+import { listWorkspaceOpeners, openWorkspaceWith } from './system/open-with'
 import { detectAgents } from './agents/registry'
 import { AgentCliManagement } from './agents/cli-management'
 import { CommitMessageService } from './agents/commit-message-service'
@@ -532,6 +532,7 @@ function installIPC(): void {
   handle('workspace:path', (target: WorkspaceTarget) =>
     worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
   )
+  handle('workspace:openers', () => listWorkspaceOpeners(config.snapshot().preferences))
   handle('workspace:open-with', async (path: unknown, openerId: unknown) => {
     const directory =
       typeof path === 'string'
@@ -1062,6 +1063,7 @@ if (!app.requestSingleInstanceLock()) {
           ? { backgroundMaterial: 'acrylic' as const }
           : {}),
         show: false,
+        acceptFirstMouse: true,
         title: appName,
         titleBarStyle:
           process.platform === 'darwin' || process.platform === 'win32' ? 'hidden' : 'default',
@@ -1070,6 +1072,7 @@ if (!app.requestSingleInstanceLock()) {
         webPreferences: {
           additionalArguments: [
             `--cota-theme=${config.snapshot().preferences.theme}`,
+            `--cota-interface-colors=${JSON.stringify(config.snapshot().preferences.interfaceColors)}`,
             ...(windowBlurEnabled ? ['--cota-window-blur'] : []),
           ],
           preload: join(__dirname, '../preload/index.js'),

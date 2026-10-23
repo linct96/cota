@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { Terminal } from '@xterm/xterm'
 import { StableCellFitAddon } from '../lib/terminal-stable-cell-fit-addon'
-import { installTerminalAppearance } from '../lib/terminal-appearance'
+import { installTerminalAppearance, terminalAppearanceOptions } from '../lib/terminal-appearance'
 import { observeDocumentTheme } from '../lib/theme'
 import { useWorkspace } from '../store'
 import {
@@ -42,7 +42,7 @@ const NUMBER_FIELDS = [
   { name: 'cursorOpacity', label: '光标不透明度', min: 0, max: 1, step: 0.05, group: 'cursor' },
   {
     name: 'backgroundOpacity',
-    label: '背景不透明度',
+    label: '背景透明度',
     min: 0,
     max: 1,
     step: 0.05,
@@ -126,11 +126,10 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
   useEffect(() => {
     const container = host.current!
     const terminal = new Terminal({
-      allowTransparency: true,
+      ...terminalAppearanceOptions(currentSettings()),
       disableStdin: true,
       scrollback: 0,
       cursorInactiveStyle: 'block',
-      fontSize: 14,
     })
     const fit = new StableCellFitAddon()
     terminal.loadAddon(fit)
@@ -305,9 +304,21 @@ export function TerminalAppearanceSettings() {
                                 min={min}
                                 max={max}
                                 step={step}
-                                value={Number.isNaN(field.state.value) ? '' : field.state.value}
+                                value={
+                                  Number.isNaN(field.state.value)
+                                    ? ''
+                                    : name === 'backgroundOpacity'
+                                      ? Number((1 - field.state.value).toFixed(2))
+                                      : field.state.value
+                                }
                                 onBlur={field.handleBlur}
-                                onChange={(event) => field.handleChange(event.target.valueAsNumber)}
+                                onChange={(event) =>
+                                  field.handleChange(
+                                    name === 'backgroundOpacity'
+                                      ? 1 - event.target.valueAsNumber
+                                      : event.target.valueAsNumber,
+                                  )
+                                }
                                 aria-invalid={invalid}
                                 aria-describedby={`terminal-${name}-help terminal-${name}-error`}
                               />
@@ -315,7 +326,9 @@ export function TerminalAppearanceSettings() {
                                 id={`terminal-${name}-help`}
                                 className="terminal-appearance-number-description"
                               >
-                                {min}–{max}
+                                {name === 'backgroundOpacity'
+                                  ? '0 为不透明，1 为完全透明'
+                                  : `${min}–${max}`}
                               </FieldDescription>
                               <FieldError
                                 id={`terminal-${name}-error`}
@@ -501,7 +514,7 @@ export function TerminalAppearanceSettings() {
               </details>
               {values.windowBlur !== window.desktop.initialAppearance.windowBlur && (
                 <FieldDescription className="terminal-blur-restart-help">
-                  保存后重启 Cota，以应用窗口背景模糊设置。降低背景不透明度可显现模糊效果。
+                  保存后重启 Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
                 </FieldDescription>
               )}
               <FieldError className="terminal-appearance-save-error">{error}</FieldError>

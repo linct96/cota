@@ -1,32 +1,33 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import {
   AppWindow,
-  Archive,
-  Blocks,
+  Bell,
   Bot,
-  Download,
-  Folder,
   FolderTree,
   GitBranch,
   Keyboard,
-  Mic,
-  Navigation as NavigationIcon,
-  Palette,
-  Scan,
   Search,
   Settings as SettingsIcon,
-  Sliders,
-  Sparkles,
   Sun,
   SquareTerminal,
-  X,
 } from 'lucide-react'
-import { Button } from './ui/button'
-import { Card } from './ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
-import { Input } from './ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInput,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from './ui/sidebar'
 import { GeneralSettings } from './GeneralSettings'
+import { NotificationSettings } from './NotificationSettings'
 import { SourceControlSettings } from './SourceControlSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
@@ -34,6 +35,7 @@ import { AppearanceSettings } from './AppearanceSettings'
 import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { AgentSettings } from './AgentSettings'
+import { QuickCommandsSettings } from './QuickCommandsSettings'
 
 interface SettingItem {
   id: string
@@ -54,6 +56,18 @@ const SETTING_GROUPS: SettingGroup[] = [
     label: '个人',
     items: [
       { id: 'general', label: '常规', icon: SettingsIcon },
+      {
+        id: 'notifications',
+        label: '通知',
+        icon: Bell,
+        keywords: '启用 开关 系统 提醒 notification',
+      },
+      {
+        id: 'appearance',
+        label: '外观',
+        icon: Sun,
+        keywords: '模式 主题 自动 浅色 深色 主题色 背景色 前景色 颜色',
+      },
       { id: 'terminal', label: '终端', icon: SquareTerminal },
       {
         id: 'agents',
@@ -63,32 +77,33 @@ const SETTING_GROUPS: SettingGroup[] = [
       },
       { id: 'file-explorer', label: '文件浏览器', icon: FolderTree, keywords: 'git 忽略 符号链接' },
       { id: 'source-control', label: '源代码管理', icon: GitBranch },
-      { id: 'import', label: '导入', icon: Download },
-      { id: 'appearance', label: '外观', icon: Sun, keywords: '主题 自动 浅色 深色' },
-      { id: 'archived-chats', label: 'Archived chats', icon: Archive },
-      { id: 'voice', label: '语音', icon: Mic },
-      { id: 'storage', label: '存储', icon: Folder },
-      { id: 'profile', label: '配置', icon: Sliders },
-      { id: 'personalization', label: '个性化', icon: Palette },
-      { id: 'pet', label: 'Mini 与虚拟宠物', icon: Sparkles },
+      { id: 'quick-commands', label: '快捷命令', icon: SquareTerminal },
       { id: 'shortcuts', label: '键盘快捷键', icon: Keyboard },
     ],
   },
   {
     id: 'integration',
     label: '集成',
-    items: [
-      { id: 'open-with', label: '打开方式', icon: AppWindow },
-      { id: 'plugins', label: '插件', icon: Blocks },
-      { id: 'computer-control', label: '电脑操控', icon: NavigationIcon },
-      { id: 'snapshots', label: '应用快照', icon: Scan },
-      { id: 'browser', label: '浏览器', icon: AppWindow },
-    ],
+    items: [{ id: 'open-with', label: '打开方式', icon: AppWindow }],
   },
 ]
 
+const SETTING_COMPONENTS: Record<string, React.ComponentType> = {
+  general: GeneralSettings,
+  notifications: NotificationSettings,
+  terminal: TerminalSettings,
+  'quick-commands': QuickCommandsSettings,
+  'open-with': OpenWithSettings,
+  'source-control': SourceControlSettings,
+  appearance: AppearanceSettings,
+  'file-explorer': FileExplorerSettings,
+  shortcuts: ShortcutSettings,
+  agents: AgentSettings,
+}
+
 export function Settings() {
-  const [activeCategory, setActiveCategory] = useState('general')
+  const { section } = useSearch({ from: '/settings' })
+  const [activeCategory, setActiveCategory] = useState<string>(section || 'general')
   const [search, setSearch] = useState('')
   const titleId = useId()
   const detailPane = useRef<HTMLElement>(null)
@@ -111,34 +126,33 @@ export function Settings() {
     })).filter((group) => group.items.length > 0)
   }, [search])
 
+  const activeItem = SETTING_GROUPS.flatMap((group) => group.items).find(
+    (item) => item.id === activeCategory,
+  )
+  const SettingContent = SETTING_COMPONENTS[activeCategory]
+
   return (
-    <Tabs
-      orientation="vertical"
-      value={activeCategory}
-      onValueChange={(val) => {
-        if (typeof val === 'string') setActiveCategory(val)
-      }}
+    <SidebarProvider
       aria-labelledby={titleId}
-      className="settings-layout flex min-h-0 flex-1 gap-0 overflow-hidden rounded-tl-2xl border-t border-l bg-background text-foreground"
+      className="settings-layout min-h-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l"
     >
-      {/* 左侧：设置导航栏 */}
-      <aside
-        className="settings-sidebar flex min-h-0 w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground select-none"
+      <Sidebar
+        collapsible="none"
+        className="settings-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none"
         aria-label="设置导航"
       >
-        <div className="settings-header flex h-12 shrink-0 items-center px-4">
-          <h2 id={titleId} className="settings-title">
-            设置
-          </h2>
-        </div>
-
-        <div className="settings-search shrink-0 px-2 pb-2">
+        <SidebarHeader className="settings-header">
+          <div className="settings-heading typeset px-2">
+            <h3 id={titleId} className="settings-title">
+              设置
+            </h3>
+          </div>
           <div className="settings-search-wrapper relative flex items-center">
             <Search
-              className="settings-search-icon pointer-events-none absolute left-2.5 size-3.5 text-app-muted-foreground"
+              className="settings-search-icon pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground"
               aria-hidden="true"
             />
-            <Input
+            <SidebarInput
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -147,128 +161,71 @@ export function Settings() {
               }}
               placeholder="搜索设置"
               aria-label="搜索设置"
-              className="settings-search-input w-full pl-8 pr-7"
+              className="settings-search-input pl-8"
             />
-            {search && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="settings-search-clear absolute right-1 size-5 text-app-muted-foreground hover:text-foreground"
-                onClick={() => setSearch('')}
-                aria-label="清空搜索"
-              >
-                <X className="size-3" aria-hidden="true" />
-              </Button>
-            )}
           </div>
-        </div>
+        </SidebarHeader>
 
-        <TabsList
-          className="settings-nav-list flex min-h-0 flex-1 flex-col justify-start gap-2 overflow-y-auto px-2 pb-3"
-          aria-label="设置列表"
-        >
-          {filteredGroups.map((group) => (
-            <div key={group.id} className="settings-group flex w-full shrink-0 flex-col">
-              <h3 className="settings-group-title flex h-8 shrink-0 items-center px-2">
-                {group.label}
-              </h3>
-              <div className="settings-group-items flex w-full min-w-0 flex-col gap-px">
-                {group.items.map((item) => {
-                  const Icon = item.icon
+        <SidebarContent className="settings-nav-list">
+          <nav className="settings-nav" aria-label="设置列表">
+            {filteredGroups.map((group) => (
+              <SidebarGroup key={group.id} className="settings-group shrink-0">
+                <SidebarGroupLabel className="settings-group-title">
+                  {group.label}
+                </SidebarGroupLabel>
+                <SidebarGroupContent className="settings-group-content">
+                  <SidebarMenu className="settings-group-items">
+                    {group.items.map((item) => {
+                      const Icon = item.icon
 
-                  return (
-                    <TabsTrigger
-                      key={item.id}
-                      value={item.id}
-                      className="settings-nav-item w-full min-w-0 justify-start overflow-hidden text-left"
-                    >
-                      <Icon className="settings-nav-item-icon" aria-hidden="true" />
-                      <span className="settings-nav-item-label truncate">{item.label}</span>
-                    </TabsTrigger>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
+                      return (
+                        <SidebarMenuItem key={item.id} className="settings-nav-item">
+                          <SidebarMenuButton
+                            type="button"
+                            isActive={activeCategory === item.id}
+                            aria-current={activeCategory === item.id ? 'page' : undefined}
+                            aria-controls={`${titleId}-detail`}
+                            onClick={() => setActiveCategory(item.id)}
+                            className="settings-nav-button"
+                          >
+                            <Icon className="settings-nav-item-icon" aria-hidden="true" />
+                            <span className="settings-nav-item-label">{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            ))}
 
-          {!filteredGroups.length && (
-            <Empty className="settings-search-empty py-8 text-app-muted-foreground">
-              <EmptyHeader className="settings-search-empty-header">
-                <EmptyTitle className="settings-search-empty-title text-xs font-medium">
-                  未找到相关设置
-                </EmptyTitle>
-                <EmptyDescription className="settings-search-empty-description text-xs text-app-muted-foreground">
-                  没有与 &ldquo;{search}&rdquo; 匹配的设置项
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          )}
-        </TabsList>
-      </aside>
+            {!filteredGroups.length && (
+              <Empty className="settings-search-empty py-8 text-app-muted-foreground">
+                <EmptyHeader className="settings-search-empty-header">
+                  <EmptyTitle className="settings-search-empty-title text-xs font-medium">
+                    未找到相关设置
+                  </EmptyTitle>
+                  <EmptyDescription className="settings-search-empty-description text-xs text-app-muted-foreground">
+                    没有与 &ldquo;{search}&rdquo; 匹配的设置项
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </nav>
+        </SidebarContent>
+      </Sidebar>
 
       {/* 右侧：设置详情内容区 */}
       <main
+        id={`${titleId}-detail`}
         ref={detailPane}
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
-        aria-label="设置详情"
+        aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
-        <div className="settings-detail-container mx-auto w-full max-w-2xl p-8">
-          <TabsContent value="general" className="mt-0">
-            <GeneralSettings />
-          </TabsContent>
-          <TabsContent value="terminal" className="settings-terminal-content mt-0">
-            <TerminalSettings />
-          </TabsContent>
-          <TabsContent value="open-with" className="mt-0">
-            <OpenWithSettings />
-          </TabsContent>
-          <TabsContent value="source-control" className="settings-source-control-content mt-0">
-            <SourceControlSettings />
-          </TabsContent>
-          <TabsContent value="appearance" className="settings-appearance-content mt-0">
-            <AppearanceSettings />
-          </TabsContent>
-          <TabsContent value="file-explorer" className="settings-file-explorer-content mt-0">
-            <FileExplorerSettings />
-          </TabsContent>
-          <TabsContent value="shortcuts" className="settings-shortcuts-content mt-0">
-            <ShortcutSettings />
-          </TabsContent>
-          <TabsContent value="agents" className="settings-agents-content mt-0">
-            <AgentSettings />
-          </TabsContent>
-          {SETTING_GROUPS.flatMap((g) => g.items)
-            .filter(
-              (item) =>
-                ![
-                  'general',
-                  'terminal',
-                  'open-with',
-                  'source-control',
-                  'appearance',
-                  'file-explorer',
-                  'shortcuts',
-                  'agents',
-                ].includes(item.id),
-            )
-            .map((item) => (
-              <TabsContent key={item.id} value={item.id} className="mt-0">
-                <div className="settings-section-header mb-6">
-                  <h3 className="settings-section-title text-base font-semibold text-foreground">
-                    {item.label}
-                  </h3>
-                  <p className="settings-description mt-1 text-xs text-app-muted-foreground">
-                    该功能暂未开放配置。
-                  </p>
-                </div>
-                <Card className="settings-empty-placeholder rounded-lg border border-dashed border-border p-6 text-center text-xs text-app-muted-foreground shadow-none ring-0">
-                  此项设置暂未开放，请前往「终端」查看终端配置。
-                </Card>
-              </TabsContent>
-            ))}
+        <div className="settings-detail-container mx-auto w-full max-w-4xl p-8 text-sm/relaxed">
+          {SettingContent && <SettingContent />}
         </div>
       </main>
-    </Tabs>
+    </SidebarProvider>
   )
 }

@@ -1,13 +1,11 @@
-import { PauseCircleIcon } from '@phosphor-icons/react/dist/csr/PauseCircle'
-import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
-import { XCircleIcon } from '@phosphor-icons/react/dist/csr/XCircle'
 import type { AgentDisplayState } from '../lib/agent-status'
 
-const ICONS = {
-  error: XCircleIcon,
-  'needs-input': WarningCircleIcon,
-  failed: XCircleIcon,
-  interrupted: PauseCircleIcon,
+function synchronizeBreathing(element: HTMLSpanElement | null) {
+  if (!element) return
+  // Join the document timeline instead of restarting the pulse on mount or CSS animation restart.
+  for (const animation of element.getAnimations()) {
+    if (animation.startTime !== 0) animation.startTime = 0
+  }
 }
 
 export function DotStatus({ state }: { state: AgentDisplayState }) {
@@ -19,28 +17,21 @@ export function DotStatus({ state }: { state: AgentDisplayState }) {
         data-state={state}
         aria-hidden="true"
       >
-        <span className="dot-status-breath size-1.5" />
+        <span
+          ref={synchronizeBreathing}
+          onAnimationStart={(event) => synchronizeBreathing(event.currentTarget)}
+          className="dot-status-breath size-1.5"
+        />
       </span>
     )
   }
-  if (state === 'completed' || state === 'succeeded') {
-    return (
-      <span
-        className="dot-status inline-flex size-3.5 shrink-0 items-center justify-center"
-        data-state={state}
-        aria-hidden="true"
-      >
-        <span className="dot-status-success size-1.5" />
-      </span>
-    )
-  }
-  const Icon = ICONS[state]
   return (
-    <Icon
-      weight="fill"
-      className="dot-status dot-status-icon size-3.5 shrink-0"
+    <span
+      className="dot-status inline-flex size-3.5 shrink-0 items-center justify-center"
       data-state={state}
       aria-hidden="true"
-    />
+    >
+      <span className="dot-status-dot size-1.5" />
+    </span>
   )
 }

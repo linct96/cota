@@ -74,6 +74,20 @@ describe('trust boundary validation', () => {
         preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: mode }),
       ).toThrow('GPU 加速选项无效')
     }
+    expect(preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: true }).preventSleep).toBe(
+      true,
+    )
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: undefined }).preventSleep,
+    ).toBe(true)
+    expect(preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: false }).preventSleep).toBe(
+      false,
+    )
+    for (const preventSleep of [null, 'true', 1, [], {}]) {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, preventSleep })).toThrow(
+        '防休眠选项无效',
+      )
+    }
     const custom = { ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash' }
     expect(preferences({ ...custom, shellName: ' 我的 Bash ' })).toMatchObject({
       shellName: '我的 Bash',

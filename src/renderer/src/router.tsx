@@ -28,6 +28,12 @@ const workspaceRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { section?: 'open-with' | 'quick-commands' } =>
+    search.section === 'open-with' || search.section === 'quick-commands'
+      ? { section: search.section }
+      : {},
   component: Settings,
 })
 

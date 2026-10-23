@@ -3,6 +3,7 @@ import type { CommitMessageRequest, CommitMessageResult } from './commit-message
 import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
 import type { ShortcutBindings } from './shortcuts'
 import type { NotificationSound } from './notification-sounds'
+import { DEFAULT_INTERFACE_COLORS, type InterfaceColors } from './interface-colors'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -22,6 +23,13 @@ export interface WorkspaceOpener {
   arguments: string
 }
 
+export interface QuickCommand {
+  id: string
+  name: string
+  command: string
+  scope: { type: 'global' } | { type: 'project'; projectPath: string }
+}
+
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TurnCompleteNotification = 'never' | 'unfocused' | 'always'
@@ -36,6 +44,7 @@ export interface Preferences {
   notificationsEnabled: boolean
   notificationSound: NotificationSound
   turnCompleteNotification: TurnCompleteNotification
+  interfaceColors: InterfaceColors
   terminalAppearance: TerminalAppearance
   fileExplorer: FileExplorerPreferences
   shortcuts: ShortcutBindings
@@ -46,6 +55,8 @@ export interface Preferences {
   shellPath: string | null
   scrollback: number
   openWith: WorkspaceOpener[]
+  quickCommands: QuickCommand[]
+  preferredOpenerId?: string
 }
 
 export interface AppConfig {
@@ -396,7 +407,11 @@ export interface ConfirmationRequest {
 export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
 
 export interface DesktopAPI {
-  readonly initialAppearance: { theme: ThemePreference; windowBlur: boolean }
+  readonly initialAppearance: {
+    theme: ThemePreference
+    windowBlur: boolean
+    interfaceColors?: InterfaceColors
+  }
   readClipboard(): Promise<Result<string>>
   writeClipboard(text: string): Promise<Result<void>>
   setShortcutRecording(recording: boolean): void
@@ -452,6 +467,7 @@ export interface DesktopAPI {
   removeGitWorktree(id: string, deleteBranch: boolean): Promise<Result<RemoveWorktreeResult>>
   unlinkGitWorktree(id: string): Promise<Result<boolean>>
   workspacePath(target: WorkspaceTarget): Promise<Result<string>>
+  listWorkspaceOpeners(): Promise<Result<WorkspaceOpener[]>>
   openWorkspaceWith(path: string | WorkspaceTarget, openerId: string): Promise<Result<void>>
   removeWorkspace(target: RemoveWorkspace): Promise<Result<boolean>>
   removeProject(path: string): Promise<Result<boolean>>
@@ -499,8 +515,9 @@ export const DEFAULT_CONFIG: AppConfig = {
     notificationsEnabled: true,
     notificationSound: 'system',
     turnCompleteNotification: 'unfocused',
+    interfaceColors: DEFAULT_INTERFACE_COLORS,
     terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
-    fileExplorer: { showIgnored: true, followSymlinks: false },
+    fileExplorer: { showIgnored: true, followSymlinks: true },
     shortcuts: {},
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
@@ -510,6 +527,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     scrollback: 5000,
     // The system file manager is a built-in action on every platform.
     openWith: [],
+    quickCommands: [],
   },
 }
 

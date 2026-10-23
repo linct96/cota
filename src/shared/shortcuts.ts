@@ -44,6 +44,48 @@ export function shortcutIdentity(value: string, platform: string): string {
     .join('+')
 }
 
+export function shortcutConflicts(bindings: ShortcutBindings, platform: string): string[][] {
+  const groups = new Map<string, string[]>()
+  for (const [id] of SHORTCUT_DEFINITIONS) {
+    const binding = shortcutBinding(bindings, id!, platform)
+    if (!binding) continue
+    const identity = shortcutIdentity(binding, platform)
+    const group = groups.get(identity) || []
+    group.push(id!)
+    groups.set(identity, group)
+  }
+  return [...groups.values()].filter((group) => group.length > 1)
+}
+
+export function validateShortcutBinding(binding: string, platform: string): void {
+  const parts = binding.split('+')
+  const key = parts.pop()!
+  if (
+    binding &&
+    (!keyPattern.test(key) ||
+      !parts.length ||
+      parts.some((part) => !modifiers.includes(part)) ||
+      new Set(parts).size !== parts.length)
+  )
+    throw new Error('快捷键需包含修饰键和一个有效按键。')
+  const resolvedModifiers = parts.map((part) =>
+    part === 'CommandOrControl' ? (platform === 'darwin' ? 'Super' : 'Control') : part,
+  )
+  if (new Set(resolvedModifiers).size !== resolvedModifiers.length)
+    throw new Error('快捷键包含重复的修饰键。')
+  const reserved =
+    platform === 'darwin'
+      ? ['Super+Q', 'Super+H', 'Super+M', 'Super+Alt+H', 'Super+X', 'Super+Z', 'Super+Shift+Z']
+      : ['Alt+F4', 'Control+Alt+Delete', 'Control+Shift+Escape', 'Alt+Space']
+  if (
+    binding &&
+    reserved.some(
+      (value) => shortcutIdentity(value, platform) === shortcutIdentity(binding, platform),
+    )
+  )
+    throw new Error('该组合键已被系统使用。')
+}
+
 export function validateShortcutBindings(value: unknown, platform: string): ShortcutBindings {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('快捷键配置无效。')
@@ -51,41 +93,15 @@ export function validateShortcutBindings(value: unknown, platform: string): Shor
   for (const [id, binding] of Object.entries(value)) {
     if (!SHORTCUT_DEFINITIONS.some(([key]) => key === id) || typeof binding !== 'string')
       throw new Error('快捷键配置无效。')
-    const parts = binding.split('+')
-    const key = parts.pop()!
-    if (
-      binding &&
-      (!keyPattern.test(key) ||
-        !parts.length ||
-        parts.some((part) => !modifiers.includes(part)) ||
-        new Set(parts).size !== parts.length)
-    )
-      throw new Error('快捷键需包含修饰键和一个有效按键。')
-    const resolvedModifiers = parts.map((part) =>
-      part === 'CommandOrControl' ? (platform === 'darwin' ? 'Super' : 'Control') : part,
-    )
-    if (new Set(resolvedModifiers).size !== resolvedModifiers.length)
-      throw new Error('快捷键包含重复的修饰键。')
-    const reserved =
-      platform === 'darwin'
-        ? ['Super+Q', 'Super+H', 'Super+M', 'Super+Alt+H', 'Super+X', 'Super+Z', 'Super+Shift+Z']
-        : ['Alt+F4', 'Control+Alt+Delete', 'Control+Shift+Escape', 'Alt+Space']
-    if (
-      binding &&
-      reserved.some(
-        (value) => shortcutIdentity(value, platform) === shortcutIdentity(binding, platform),
-      )
-    )
-      throw new Error('该组合键已由系统或标准编辑菜单使用，请选择其他快捷键。')
+    validateShortcutBinding(binding, platform)
     result[id] = binding
   }
-  const seen = new Map<string, string>()
-  for (const [id, label] of SHORTCUT_DEFINITIONS) {
-    const binding = shortcutBinding(result, id!, platform)
-    if (!binding) continue
-    const identity = shortcutIdentity(binding, platform)
-    if (seen.has(identity)) throw new Error(`“${label}”与“${seen.get(identity)}”的快捷键冲突。`)
-    seen.set(identity, label!)
+  const [conflict] = shortcutConflicts(result, platform)
+  if (conflict) {
+    const [first, second] = conflict.map(
+      (id) => SHORTCUT_DEFINITIONS.find(([key]) => key === id)![1],
+    )
+    throw new Error(`“${second}”与“${first}”的快捷键冲突。`)
   }
   return result
 }

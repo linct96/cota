@@ -1,3 +1,20 @@
+import type { Preferences, WorkspaceOpener } from './contracts'
+
+export const PRESET_OPENERS: WorkspaceOpener[] = [
+  { id: 'vscode', name: 'VS Code', command: 'code', arguments: '{path}' },
+  { id: 'zed', name: 'Zed', command: 'zed', arguments: '{path}' },
+]
+
+export function preferredWorkspaceOpener(state: {
+  preferences: Preferences
+  workspaceOpeners: WorkspaceOpener[]
+}): WorkspaceOpener | undefined {
+  return (
+    state.workspaceOpeners.find((entry) => entry.id === state.preferences.preferredOpenerId) ||
+    state.workspaceOpeners[0]
+  )
+}
+
 // Parse arguments without evaluating shell expansions, substitutions, or operators.
 export function parseArguments(value: string): string[] {
   const args: string[] = []

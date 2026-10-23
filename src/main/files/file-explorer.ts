@@ -29,7 +29,7 @@ export class FileExplorerService {
   constructor(
     private readonly options: () => FileExplorerPreferences = () => ({
       showIgnored: true,
-      followSymlinks: false,
+      followSymlinks: true,
     }),
   ) {}
 

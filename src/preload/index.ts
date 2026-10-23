@@ -11,6 +11,16 @@ import type {
   TerminalEvent,
 } from '../shared/contracts'
 
+function initialInterfaceColors(): DesktopAPI['initialAppearance']['interfaceColors'] {
+  const argument = process.argv.find((value) => value.startsWith('--cota-interface-colors='))
+  if (!argument) return undefined
+  try {
+    return JSON.parse(argument.slice('--cota-interface-colors='.length))
+  } catch {
+    return undefined
+  }
+}
+
 const api: DesktopAPI = {
   initialAppearance: {
     theme: process.argv.includes('--cota-theme=dark')
@@ -19,6 +29,7 @@ const api: DesktopAPI = {
         ? 'light'
         : 'system',
     windowBlur: process.argv.includes('--cota-window-blur'),
+    interfaceColors: initialInterfaceColors(),
   },
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
   writeClipboard: (text) => ipcRenderer.invoke('clipboard:write', text),
@@ -133,6 +144,7 @@ const api: DesktopAPI = {
     ipcRenderer.invoke('git:remove-worktree', id, deleteBranch),
   unlinkGitWorktree: (id) => ipcRenderer.invoke('git:unlink-worktree', id),
   workspacePath: (target) => ipcRenderer.invoke('workspace:path', target),
+  listWorkspaceOpeners: () => ipcRenderer.invoke('workspace:openers'),
   openWorkspaceWith: (path, openerId) => ipcRenderer.invoke('workspace:open-with', path, openerId),
   removeWorkspace: (target) => ipcRenderer.invoke('workspace:remove', target),
   removeProject: (path) => ipcRenderer.invoke('project:remove', path),

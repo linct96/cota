@@ -72,6 +72,7 @@ export function terminalAppearanceOptions(
   dark?: boolean,
 ): ITerminalOptions {
   return {
+    allowTransparency: settings.backgroundOpacity < 1,
     fontFamily: settings.fontFamily,
     fontSize: settings.fontSize,
     fontWeight: settings.fontWeight,
