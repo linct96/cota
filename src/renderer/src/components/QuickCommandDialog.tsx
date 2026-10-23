@@ -32,8 +32,8 @@ export function QuickCommandDialog({
   const [error, setError] = useState<string>()
   const form = useForm({
     defaultValues: {
-      name: '',
-      command: '',
+      name: command?.name || '',
+      command: command?.command || '',
     },
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: quickCommandFormSchema },
