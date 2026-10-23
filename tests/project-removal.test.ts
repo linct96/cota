@@ -1,14 +1,25 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+import { AgentSleepPrevention } from '../src/main/agents/agent-sleep-prevention'
+import type { NotificationSound } from '../src/shared/notification-sounds'
 import { WorktreeError } from '../src/main/git/git-worktrees'
-import type { AgentSession, AgentUpdate } from '../src/shared/contracts'
+import { hookFiles } from '../src/main/agents/managed-hooks'
+import {
+  DEFAULT_CONFIG,
+  type AgentSession,
+  type AgentUpdate,
+  type TurnCompleteNotification,
+} from '../src/shared/contracts'
 
 const mocks = vi.hoisted(() => {
   const frame = { url: 'http://localhost:5173/' }
   return {
     handlers: new Map<string, (event: unknown, ...args: unknown[]) => Promise<unknown>>(),
     appEvents: new Map<string, (event: { preventDefault(): void }) => void>(),
+    ipcEvents: new Map<string, (event: unknown) => void>(),
+    exit: vi.fn(),
     rendererEvents: new Map<
       string,
       (details?: { isMainFrame: boolean; isSameDocument: boolean }) => void
@@ -28,6 +39,8 @@ const mocks = vi.hoisted(() => {
       },
     },
     confirm: vi.fn(),
+    chooseFile: vi.fn(),
+    readSound: vi.fn(),
     detectAgents: vi.fn(),
     inspectHook: vi.fn(),
     installHook: vi.fn(),
@@ -39,8 +52,16 @@ const mocks = vi.hoisted(() => {
     notificationClick: undefined as (() => void) | undefined,
     notificationSupported: true,
     notificationFails: false,
+    notificationFailedEvent: false,
+    spawn: vi.fn(),
+    startBlocker: vi.fn().mockReturnValue(17),
+    stopBlocker: vi.fn(),
+    isBlockerStarted: vi.fn().mockReturnValue(true),
     config: {
       preferences: {
+        notificationsEnabled: true,
+        notificationSound: 'system' as NotificationSound,
+        turnCompleteNotification: 'unfocused' as TurnCompleteNotification,
         scrollback: 5000,
         openWith: [{ id: 'zed', name: 'Zed', command: 'zed', arguments: '{path}' }],
       },
@@ -49,6 +70,7 @@ const mocks = vi.hoisted(() => {
     },
     resolveShell: vi.fn().mockResolvedValue('/bin/bash'),
     openWorkspaceWith: vi.fn(),
+    listWorkspaceOpeners: vi.fn(),
     openPath: vi.fn(),
     remember: vi.fn(),
     setScrollback: vi.fn(),
@@ -58,6 +80,8 @@ const mocks = vi.hoisted(() => {
     close: vi.fn(),
     flush: vi.fn(),
     shutdown: vi.fn(),
+    forceStopHost: vi.fn(),
+    connectFailure: undefined as Error | undefined,
     disconnect: vi.fn(),
     quit: vi.fn(),
     closeWorkspace: vi.fn(),
@@ -78,9 +102,14 @@ const mocks = vi.hoisted(() => {
     gitCompare: vi.fn(),
   }
 })
+vi.mock('../src/main/notification-sound', () => ({ readNotificationSound: mocks.readSound }))
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs')>()),
   mkdirSync: vi.fn(),
+}))
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  spawn: mocks.spawn,
 }))
 vi.mock('electron', () => ({
   app: {
@@ -93,40 +122,54 @@ vi.mock('electron', () => ({
     setName: vi.fn(),
     setPath: vi.fn(),
     getPath: () => '/tmp/cota-removal-test',
-    exit: vi.fn(),
+    exit: mocks.exit,
   },
   BrowserWindow: class {
     webContents = mocks.contents
     on = vi.fn()
     once = vi.fn()
     loadURL = vi.fn()
+    isDestroyed = () => false
     isMinimized = () => false
     show = vi.fn()
     focus = vi.fn()
     isFocused = () => mocks.windowFocused
   },
-  Notification: class {
+  Notification: class extends EventEmitter {
     static isSupported = () => mocks.notificationSupported
     constructor(options: unknown) {
+      super()
       mocks.notify(options)
     }
-    on(name: string, callback: () => void) {
+    override on(name: string, callback: () => void) {
       if (name === 'click') mocks.notificationClick = callback
-      return this
+      return super.on(name, callback)
     }
     show() {
       if (mocks.notificationFails) throw new Error('unavailable')
+      this.emit(mocks.notificationFailedEvent ? 'failed' : 'show')
     }
     close = vi.fn()
   },
-  dialog: { showMessageBox: mocks.confirm, showErrorBox: vi.fn() },
+  dialog: {
+    showMessageBox: mocks.confirm,
+    showOpenDialog: mocks.chooseFile,
+    showErrorBox: vi.fn(),
+  },
   ipcMain: {
     handle: (channel: string, action: (event: unknown, ...args: unknown[]) => Promise<unknown>) => {
       mocks.handlers.set(channel, action)
     },
-    on: vi.fn(),
+    on: (channel: string, listener: (event: unknown) => void) =>
+      mocks.ipcEvents.set(channel, listener),
   },
-  nativeTheme: {},
+  nativeTheme: { on: vi.fn() },
+  powerMonitor: { on: vi.fn() },
+  powerSaveBlocker: {
+    start: mocks.startBlocker,
+    stop: mocks.stopBlocker,
+    isStarted: mocks.isBlockerStarted,
+  },
   shell: { openPath: mocks.openPath },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
 }))
@@ -150,9 +193,13 @@ vi.mock('../src/main/git/source-control', () => ({
     compare = mocks.gitCompare
   },
 }))
-vi.mock('../src/main/system/open-with', () => ({ openWorkspaceWith: mocks.openWorkspaceWith }))
+vi.mock('../src/main/system/open-with', () => ({
+  openWorkspaceWith: mocks.openWorkspaceWith,
+  listWorkspaceOpeners: mocks.listWorkspaceOpeners,
+}))
 vi.mock('../src/main/agents/registry', () => ({ detectAgents: mocks.detectAgents }))
-vi.mock('../src/main/agents/managed-hooks', () => ({
+vi.mock('../src/main/agents/managed-hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/agents/managed-hooks')>()),
   inspectAgentHook: mocks.inspectHook,
   installAgentHook: mocks.installHook,
   uninstallAgentHook: mocks.uninstallHook,
@@ -161,6 +208,11 @@ vi.mock('../src/main/system/shell', () => ({
   resolveShell: mocks.resolveShell,
   loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
   shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
+}))
+vi.mock('../src/main/accounts/service', () => ({
+  AccountService: class {
+    close = vi.fn().mockResolvedValue(undefined)
+  },
 }))
 vi.mock('../src/main/config', () => ({
   ConfigStore: class {
@@ -173,11 +225,13 @@ vi.mock('../src/main/config', () => ({
   },
 }))
 vi.mock('../src/main/host/host-client', () => ({
+  forceStopTerminalHost: mocks.forceStopHost,
   connectTerminalHost: async (
     _path: string,
     _send: unknown,
     sendAgent: (event: AgentUpdate) => void,
   ) => {
+    if (mocks.connectFailure) throw mocks.connectFailure
     mocks.sendAgent = sendAgent
     return {
       disconnect: mocks.disconnect,
@@ -214,6 +268,7 @@ const extra = {
 const remove = (value: unknown = target) => mocks.handlers.get('workspace:remove')!(event, value)
 
 beforeAll(async () => {
+  mocks.config.preferences = { ...DEFAULT_CONFIG.preferences, ...mocks.config.preferences }
   vi.stubEnv('ELECTRON_RENDERER_URL', mocks.contents.mainFrame.url)
   try {
     await import('../src/main/index')
@@ -225,6 +280,9 @@ beforeAll(async () => {
 beforeEach(() => {
   mocks.contents.mainFrame.url = 'http://localhost:5173/'
   vi.clearAllMocks()
+  mocks.readSound.mockImplementation(async (sound: NotificationSound) =>
+    typeof sound === 'string' ? undefined : 'data:audio/mpeg;base64,SUQz',
+  )
   mocks.closeWorkspace.mockResolvedValue(undefined)
   mocks.closeProject.mockResolvedValue(undefined)
   mocks.forget.mockResolvedValue(undefined)
@@ -253,17 +311,22 @@ beforeEach(() => {
   mocks.close.mockResolvedValue(undefined)
   mocks.flush.mockResolvedValue(undefined)
   mocks.shutdown.mockResolvedValue(undefined)
+  mocks.forceStopHost.mockReset().mockResolvedValue(undefined)
+  mocks.connectFailure = undefined
   mocks.openWorkspaceWith.mockResolvedValue(undefined)
   mocks.openPath.mockResolvedValue('')
   mocks.detectAgents.mockResolvedValue([
     { provider: 'codex', version: '0.159.0', executable: '/tmp/codex-fixture' },
   ])
-  mocks.inspectHook.mockImplementation(async (provider) => ({
-    provider,
-    state: 'missing',
-    paths: ['/tmp/cota-hook-fixture/hooks.json'],
-    detail: 'missing',
-  }))
+  mocks.inspectHook.mockImplementation(async (provider, env) => {
+    const { config, loader } = hookFiles(provider, env)
+    return {
+      provider,
+      state: 'missing',
+      paths: provider === 'codex' ? [loader, config] : [config],
+      detail: 'missing',
+    }
+  })
   mocks.uninstallHook.mockImplementation(async (provider) => ({
     provider,
     state: 'missing',
@@ -279,6 +342,137 @@ beforeEach(() => {
 })
 
 describe('Git Worktree IPC boundaries', () => {
+  it('prevents sleep only for observed working agents and releases all platform resources', () => {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let sleep = new AgentSleepPrevention()
+    let revision = 0
+    const state: AgentSession = {
+      terminalId: randomUUID(),
+      launchId: randomUUID(),
+      provider: 'claude',
+      projectPath: path,
+      workspaceId: randomUUID(),
+      cwd: path,
+      runtimeState: 'running',
+      activityState: 'working',
+      outcome: 'unknown',
+      startedAt: new Date().toISOString(),
+      lastEventAt: new Date().toISOString(),
+      eventSource: 'claude-hooks',
+      observability: 'partial',
+      revision: 0,
+      unread: false,
+    }
+    const publish = (change: Partial<AgentSession> = {}) => {
+      sleep.receive({ type: 'state', session: { ...state, ...change, revision: ++revision } })
+    }
+    try {
+      for (const value of ['win32', 'linux']) {
+        Object.defineProperty(process, 'platform', { value })
+        mocks.startBlocker.mockClear()
+        mocks.stopBlocker.mockClear()
+        sleep = new AgentSleepPrevention()
+        publish()
+        expect(mocks.startBlocker).not.toHaveBeenCalled()
+        sleep.setEnabled(true)
+        expect(mocks.startBlocker).toHaveBeenCalledExactlyOnceWith('prevent-app-suspension')
+        publish({ terminalId: 'second' })
+        publish({ activityState: 'completed' })
+        expect(mocks.stopBlocker).not.toHaveBeenCalled()
+        sleep.receive({
+          type: 'removed',
+          terminalId: 'second',
+          launchId: state.launchId,
+          revision: ++revision,
+        })
+        expect(mocks.stopBlocker).toHaveBeenLastCalledWith(17)
+        const starts = mocks.startBlocker.mock.calls.length
+        for (const activityState of [
+          'needs-input',
+          'completed',
+          'failed',
+          'interrupted',
+          'unknown',
+        ] as const)
+          publish({ activityState })
+        publish({ runtimeState: 'exited' })
+        publish({ observability: 'unavailable' })
+        publish({ eventSource: 'process' })
+        expect(mocks.startBlocker).toHaveBeenCalledTimes(starts)
+        publish({ activityState: 'needs-input', workingChildren: 1 })
+        expect(mocks.startBlocker).toHaveBeenCalledTimes(starts + 1)
+        publish({ activityState: 'needs-input', workingChildren: 0 })
+        publish()
+        sleep.setEnabled(false)
+        expect(mocks.stopBlocker).toHaveBeenCalledTimes(3)
+        sleep.setEnabled(true)
+        sleep.receive({
+          type: 'state',
+          session: { ...state, activityState: 'completed', revision: 0 },
+        })
+        expect(mocks.stopBlocker).toHaveBeenCalledTimes(3)
+        mocks.isBlockerStarted.mockReturnValueOnce(false)
+        sleep.refresh()
+        expect(mocks.startBlocker).toHaveBeenCalledTimes(starts + 4)
+        sleep.receive({ type: 'disconnected' })
+        publish()
+        expect(mocks.startBlocker).toHaveBeenCalledTimes(starts + 4)
+        sleep.dispose()
+      }
+      Object.defineProperty(process, 'platform', { value: 'darwin' })
+      const child = () =>
+        Object.assign(new EventEmitter(), {
+          pid: 12345,
+          exitCode: null as number | null,
+          signalCode: null,
+          kill: vi.fn().mockReturnValue(true),
+        })
+      const first = child()
+      mocks.spawn.mockReturnValueOnce(first)
+      mocks.startBlocker.mockClear()
+      sleep = new AgentSleepPrevention()
+      sleep.setEnabled(true)
+      publish()
+      first.emit('spawn')
+      expect(mocks.spawn).toHaveBeenLastCalledWith(
+        '/usr/bin/caffeinate',
+        ['-i', '-s', '-w', String(process.pid)],
+        {
+          stdio: 'ignore',
+          windowsHide: true,
+          shell: false,
+        },
+      )
+      publish()
+      expect(mocks.startBlocker).not.toHaveBeenCalled()
+      first.exitCode = 1
+      first.emit('exit', 1)
+      expect(mocks.startBlocker).toHaveBeenCalledExactlyOnceWith('prevent-app-suspension')
+      sleep.dispose()
+      const failed = child()
+      Object.assign(failed, { pid: undefined })
+      mocks.spawn.mockReturnValueOnce(failed)
+      sleep = new AgentSleepPrevention()
+      sleep.setEnabled(true)
+      publish()
+      failed.emit('error', new Error('ENOENT'))
+      expect(mocks.startBlocker).toHaveBeenCalledTimes(2)
+      sleep.setEnabled(false)
+      const next = child()
+      mocks.spawn.mockReturnValueOnce(next)
+      sleep.setEnabled(true)
+      expect(mocks.spawn).toHaveBeenCalledTimes(3)
+      sleep.dispose()
+      expect(next.kill).toHaveBeenCalledOnce()
+      next.emit('exit', 0)
+      expect(mocks.startBlocker).toHaveBeenCalledTimes(2)
+    } finally {
+      sleep.dispose()
+      Object.defineProperty(process, 'platform', platform)
+      warning.mockRestore()
+    }
+  })
   it.each([
     'git:inspect-repository',
     'git:list-worktrees',
@@ -517,6 +711,121 @@ describe('Git Worktree IPC boundaries', () => {
     expect(warning).toHaveBeenCalledOnce()
     warning.mockRestore()
     mocks.notificationFails = false
+    mocks.notify.mockClear()
+    mocks.config.preferences.notificationsEnabled = false
+    publish({ activityState: 'working', lastTurnId: 'turn-6' })
+    publish({ activityState: 'completed', outcome: 'success' })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    mocks.config.preferences.notificationsEnabled = true
+    publish({ unread: false })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    publish({ activityState: 'working', lastTurnId: 'turn-7' })
+    publish({ activityState: 'completed', outcome: 'success' })
+    expect(mocks.notify).toHaveBeenCalledOnce()
+    mocks.notify.mockClear()
+    for (const mode of ['never', 'unfocused', 'always'] as const) {
+      mocks.config.preferences.turnCompleteNotification = mode
+      for (const focused of [false, true]) {
+        mocks.windowFocused = focused
+        publish({ activityState: 'working', lastTurnId: `${mode}-${focused}` })
+        publish({ activityState: 'completed', outcome: 'success' })
+        const expected = mode === 'always' || (mode === 'unfocused' && !focused)
+        expect(mocks.notify).toHaveBeenCalledTimes(expected ? 1 : 0)
+        mocks.notify.mockClear()
+        // Preference/focus changes must not replay a consumed completion.
+        mocks.config.preferences.turnCompleteNotification = 'always'
+        mocks.windowFocused = false
+        publish({ unread: false })
+        expect(mocks.notify).not.toHaveBeenCalled()
+        mocks.config.preferences.turnCompleteNotification = mode
+      }
+    }
+    mocks.config.preferences.turnCompleteNotification = 'always'
+    const customSound = { path: '/tmp/提示音 sound.mp3' }
+    const source = 'data:audio/mpeg;base64,SUQz'
+    mocks.config.preferences.notificationSound = customSound
+    mocks.contents.send.mockClear()
+    publish({ activityState: 'working', lastTurnId: 'custom-sound' })
+    publish({ activityState: 'completed' })
+    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ silent: true }))
+    await vi.waitFor(() =>
+      expect(
+        mocks.contents.send.mock.calls.filter(([channel]) => channel === 'notifications:sound'),
+      ).toEqual([['notifications:sound', source]]),
+    )
+    mocks.notify.mockClear()
+    mocks.contents.send.mockClear()
+    mocks.config.preferences.notificationsEnabled = false
+    publish({ activityState: 'working', lastTurnId: 'always-disabled' })
+    publish({ activityState: 'completed' })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    expect(
+      mocks.contents.send.mock.calls.some(([channel]) => channel === 'notifications:sound'),
+    ).toBe(false)
+    const testNotification = mocks.handlers.get('notifications:test')!
+    expect(await testNotification(event)).toMatchObject({ ok: false, error: '请先启用通知。' })
+    mocks.config.preferences.notificationsEnabled = true
+    expect(await testNotification({ ...event, senderFrame: {} })).toMatchObject({ ok: false })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    mocks.notificationSupported = false
+    expect(await testNotification(event)).toMatchObject({
+      ok: false,
+      error: '当前系统不支持通知。',
+    })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    mocks.notificationSupported = true
+    mocks.config.preferences.turnCompleteNotification = 'never'
+    expect(await testNotification(event)).toMatchObject({ ok: true })
+    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cota · 测试通知' }))
+    const chooseSound = mocks.handlers.get('notifications:choose-sound')!
+    mocks.chooseFile.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await chooseSound(event)).toEqual({ ok: true, value: null })
+    expect(await chooseSound({ ...event, senderFrame: {} })).toMatchObject({ ok: false })
+    expect(mocks.chooseFile).toHaveBeenCalledOnce()
+    mocks.chooseFile.mockResolvedValue({ canceled: false, filePaths: [customSound.path] })
+    expect(await chooseSound(event)).toEqual({ ok: true, value: customSound })
+    mocks.readSound.mockRejectedValueOnce(new Error('无法读取提示音文件，请重新选择。'))
+    expect(await chooseSound(event)).toMatchObject({
+      ok: false,
+      error: '无法读取提示音文件，请重新选择。',
+    })
+    mocks.notify.mockClear()
+    mocks.readSound.mockRejectedValueOnce(new Error('无法读取提示音文件，请重新选择。'))
+    expect(await testNotification(event)).toMatchObject({
+      ok: false,
+      error: '无法读取提示音文件，请重新选择。',
+    })
+    expect(mocks.notify).not.toHaveBeenCalled()
+    for (const sound of ['system', 'none', customSound] satisfies NotificationSound[]) {
+      mocks.config.preferences.notificationSound = sound
+      mocks.notify.mockClear()
+      mocks.contents.send.mockClear()
+      expect(await testNotification(event)).toMatchObject({ ok: true })
+      expect(mocks.notify).toHaveBeenCalledWith(
+        expect.objectContaining({ silent: sound !== 'system' }),
+      )
+      const custom = typeof sound !== 'string'
+      await vi.waitFor(() =>
+        expect(
+          mocks.contents.send.mock.calls.filter(([channel]) => channel === 'notifications:sound'),
+        ).toEqual(custom ? [['notifications:sound', source]] : []),
+      )
+    }
+    mocks.contents.send.mockClear()
+    mocks.notificationFails = true
+    expect(await testNotification(event)).toMatchObject({ ok: false, error: 'unavailable' })
+    mocks.notificationFails = false
+    mocks.notificationFailedEvent = true
+    expect(await testNotification(event)).toMatchObject({
+      ok: false,
+      error: '通知发送失败，请检查系统通知权限。',
+    })
+    expect(
+      mocks.contents.send.mock.calls.some(([channel]) => channel === 'notifications:sound'),
+    ).toBe(false)
+    mocks.notificationFailedEvent = false
+    mocks.config.preferences.notificationSound = 'system'
+    mocks.config.preferences.turnCompleteNotification = 'unfocused'
     mocks.sendAgent!({
       type: 'removed',
       terminalId: value.id,
@@ -547,7 +856,7 @@ describe('Git Worktree IPC boundaries', () => {
       const request = mocks.contents.send.mock.calls.find(
         ([channel]) => channel === 'app:confirm',
       )![1]
-      expect(request.description).toContain('/tmp/cota-hook-fixture/hooks.json')
+      expect(request.description).toContain('/tmp/cota-hook-fixture/.codex/hooks.json')
       expect(request.title).toContain('安装并信任 Codex')
       expect(request.confirmLabel).toBe('安装并信任 Hooks')
       expect(request.description).toContain('不信任其他 Hooks')
@@ -602,7 +911,7 @@ describe('Git Worktree IPC boundaries', () => {
     expect(await mocks.handlers.get('agent:hooks-uninstall')!(event, '__proto__')).toMatchObject({
       ok: false,
     })
-    for (const provider of ['codex', 'pi', 'claude']) {
+    for (const provider of ['codex', 'pi', 'claude'] as const) {
       for (const confirmed of [false, true]) {
         mocks.contents.send.mockClear()
         mocks.uninstallHook.mockClear()
@@ -622,7 +931,11 @@ describe('Git Worktree IPC boundaries', () => {
         const request = mocks.contents.send.mock.calls.find(
           ([channel]) => channel === 'app:confirm',
         )![1]
-        expect(request.description).toContain('/tmp/cota-hook-fixture/hooks.json')
+        const files = hookFiles(provider, {
+          HOME: '/tmp/cota-hook-fixture',
+        })
+        expect(request.description).toContain(files.config)
+        expect(request.description).not.toContain(files.loader)
         expect(request.description).toContain('共享加载脚本不删除')
         expect(request.description).toContain('卸载不创建备份')
         await mocks.handlers.get('app:confirm-response')!(event, request.id, confirmed)
@@ -973,16 +1286,36 @@ describe('renderer confirmation IPC', () => {
     expect(mocks.quit).not.toHaveBeenCalled()
   })
 
-  it.each(['error-boundary', 'did-start-navigation', 'render-process-gone', 'destroyed'])(
+  it('uses renderer quit confirmation, guards duplicate exits and cancels safely if the renderer disappears', async () => {
+    quit()
+    const request = await prompt()
+    expect(request).toMatchObject({ title: '退出 Cota？', confirmLabel: '结束终端并退出' })
+    quit()
+    expect(mocks.contents.send).toHaveBeenCalledOnce()
+    expect(mocks.confirm).not.toHaveBeenCalled()
+    expect(mocks.shutdown).not.toHaveBeenCalled()
+    expect(await mocks.handlers.get('terminal:create')!(event, target)).toMatchObject({ ok: false })
+    expect(await remove()).toEqual({ ok: true, value: false })
+    await reply(request.id, false)
+    await new Promise(setImmediate)
+    expect(mocks.flush).not.toHaveBeenCalled()
+    mocks.contents.send.mockClear()
+    quit()
+    const retry = await prompt()
+    expect(retry.id).not.toBe(request.id)
+    mocks.rendererEvents.get('render-process-gone')!()
+    await new Promise(setImmediate)
+    expect(await reply(retry.id, true)).toMatchObject({ ok: false })
+    expect(mocks.shutdown).not.toHaveBeenCalled()
+    expect(mocks.quit).not.toHaveBeenCalled()
+  })
+
+  it.each(['did-start-navigation', 'render-process-gone', 'destroyed'])(
     'uses native quit confirmation after %s, prevents duplicate exits and permits retry after cancellation',
     async (name) => {
-      // A React error boundary leaves the renderer alive without its confirmation listener.
-      if (name !== 'error-boundary')
-        mocks.rendererEvents.get(name)!(
-          name === 'did-start-navigation'
-            ? { isMainFrame: true, isSameDocument: false }
-            : undefined,
-        )
+      mocks.rendererEvents.get(name)!(
+        name === 'did-start-navigation' ? { isMainFrame: true, isSameDocument: false } : undefined,
+      )
       let cancel!: (result: { response: number }) => void
       mocks.confirm.mockImplementationOnce(
         () =>
@@ -1057,21 +1390,24 @@ describe('renderer confirmation IPC', () => {
 
   it('preserves the application after failed cleanup, then flushes and shuts down only after confirmation', async () => {
     mocks.shutdown.mockRejectedValueOnce(new Error('cleanup failed'))
-    mocks.confirm.mockResolvedValueOnce({ response: 1 }).mockResolvedValueOnce({ response: 0 })
     quit()
-    await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2))
-    expect(mocks.confirm).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        type: 'error',
-        message: '终端清理失败，应用暂未退出。',
-        detail: 'Error: cleanup failed',
-      }),
-    )
+    const request = await prompt()
+    mocks.contents.send.mockClear()
+    await reply(request.id, true)
+    const failure = await prompt()
+    expect(failure).toMatchObject({
+      title: '退出失败',
+      description: '终端清理失败，应用暂未退出。\nError: cleanup failed',
+    })
+    expect(failure.confirmLabel).toBeUndefined()
+    expect(mocks.confirm).not.toHaveBeenCalled()
     expect(mocks.quit).not.toHaveBeenCalled()
     expect(mocks.disconnect).not.toHaveBeenCalled()
+    await reply(failure.id, false)
     await new Promise(setImmediate)
-    mocks.confirm.mockResolvedValueOnce({ response: 1 })
+    mocks.contents.send.mockClear()
     quit()
+    await reply((await prompt()).id, true)
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
     expect(mocks.flush.mock.invocationCallOrder.at(-1)).toBeLessThan(
       mocks.shutdown.mock.invocationCallOrder.at(-1)!,
@@ -1079,5 +1415,117 @@ describe('renderer confirmation IPC', () => {
     expect(mocks.shutdown.mock.invocationCallOrder.at(-1)).toBeLessThan(
       mocks.disconnect.mock.invocationCallOrder[0],
     )
+  })
+})
+
+describe('error recovery force exit', () => {
+  it.each(['failure', 'pending'])(
+    'requires trusted native confirmation and waits for verified cleanup: %s',
+    async (outcome) => {
+      vi.resetModules()
+      mocks.handlers.clear()
+      vi.stubEnv('ELECTRON_RENDERER_URL', mocks.contents.mainFrame.url)
+      try {
+        await import('../src/main/index')
+        await vi.waitFor(() => expect(mocks.handlers.has('workspace:remove')).toBe(true))
+      } finally {
+        vi.unstubAllEnvs()
+      }
+      const forceExit = (sender = event) => mocks.handlers.get('app:force-exit')!(sender)
+      expect(await forceExit({ ...event, sender: {} } as typeof event)).toMatchObject({ ok: false })
+      expect(mocks.confirm).not.toHaveBeenCalled()
+      let cancel!: (result: { response: number }) => void
+      mocks.confirm.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            cancel = resolve
+          }),
+      )
+      const cancelled = forceExit()
+      await forceExit()
+      expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          buttons: ['取消', '强制关闭'],
+          defaultId: 0,
+          cancelId: 0,
+        }),
+      )
+      cancel({ response: 0 })
+      expect(await cancelled).toEqual({ ok: true, value: undefined })
+      expect(mocks.flush).not.toHaveBeenCalled()
+      expect(mocks.forceStopHost).not.toHaveBeenCalled()
+      expect(mocks.exit).not.toHaveBeenCalled()
+
+      mocks.confirm.mockResolvedValue({ response: 1 })
+      if (outcome === 'failure') {
+        mocks.flush.mockRejectedValueOnce(new Error('save failed'))
+        expect(await forceExit()).toMatchObject({ ok: false, error: 'save failed' })
+        expect(mocks.forceStopHost).not.toHaveBeenCalled()
+        mocks.forceStopHost.mockRejectedValueOnce(new Error('cleanup failed'))
+        expect(await forceExit()).toMatchObject({ ok: false, error: 'cleanup failed' })
+        expect(mocks.exit).not.toHaveBeenCalled()
+        expect(mocks.disconnect).not.toHaveBeenCalled()
+        await forceExit()
+      } else {
+        vi.useFakeTimers()
+        try {
+          let finish!: () => void
+          mocks.forceStopHost.mockImplementationOnce(
+            () =>
+              new Promise<void>((resolve) => {
+                finish = resolve
+              }),
+          )
+          const closing = forceExit()
+          await vi.advanceTimersByTimeAsync(5001)
+          expect(mocks.exit).not.toHaveBeenCalled()
+          expect(mocks.disconnect).not.toHaveBeenCalled()
+          await forceExit()
+          expect(mocks.forceStopHost).toHaveBeenCalledOnce()
+          finish()
+          expect(await closing).toEqual({ ok: true, value: undefined })
+        } finally {
+          vi.useRealTimers()
+        }
+      }
+      expect(mocks.forceStopHost).toHaveBeenCalledWith('/tmp/cota-removal-test')
+      expect(mocks.shutdown).not.toHaveBeenCalled()
+      expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(0)
+      expect(mocks.forceStopHost.mock.invocationCallOrder.at(-1)).toBeLessThan(
+        mocks.disconnect.mock.invocationCallOrder[0],
+      )
+      expect(mocks.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.exit.mock.invocationCallOrder[0],
+      )
+      expect(mocks.contents.send).not.toHaveBeenCalledWith('app:confirm', expect.anything())
+    },
+  )
+
+  it('cleans an incompatible Host before closing after startup failure', async () => {
+    vi.resetModules()
+    mocks.handlers.clear()
+    mocks.connectFailure = new Error('Terminal Host 协议版本不兼容，请先结束旧会话。')
+    mocks.confirm.mockResolvedValue({ response: 0 })
+    let finish!: () => void
+    mocks.forceStopHost.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    vi.stubEnv('ELECTRON_RENDERER_URL', mocks.contents.mainFrame.url)
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await import('../src/main/index')
+      await vi.waitFor(() => expect(mocks.forceStopHost).toHaveBeenCalledOnce())
+      expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ buttons: ['强制关闭'] }))
+      expect(mocks.exit).not.toHaveBeenCalled()
+      finish()
+      await vi.waitFor(() => expect(mocks.exit).toHaveBeenCalledExactlyOnceWith(0))
+    } finally {
+      log.mockRestore()
+      mocks.connectFailure = undefined
+      vi.unstubAllEnvs()
+    }
   })
 })

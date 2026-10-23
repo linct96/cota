@@ -6,6 +6,8 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  Notification,
+  powerMonitor,
   shell,
   type IpcMainInvokeEvent,
 } from 'electron'
@@ -15,6 +17,8 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
+import { readNotificationSound } from './notification-sound'
+import { NOTIFICATION_SOUND_EXTENSIONS } from '../shared/notification-sounds'
 import { shortcutBinding } from '../shared/shortcuts'
 import { AccountService } from './accounts/service'
 import { projectBranch } from './git/project-branch'
@@ -36,11 +40,17 @@ import { detectAgents } from './agents/registry'
 import { AgentCliManagement } from './agents/cli-management'
 import { CommitMessageService } from './agents/commit-message-service'
 import type { CommitMessageRequest } from '../shared/commit-message'
-import { inspectAgentHook, installAgentHook, uninstallAgentHook } from './agents/managed-hooks'
+import {
+  hookFiles,
+  inspectAgentHook,
+  installAgentHook,
+  uninstallAgentHook,
+} from './agents/managed-hooks'
 import { loginShellEnvironment, resolveShell, shellEnvironment } from './system/shell'
 import { AGENT_PROVIDERS, type AgentProvider } from '../shared/contracts'
-import { connectTerminalHost, type HostClient } from './host/host-client'
+import { connectTerminalHost, forceStopTerminalHost, type HostClient } from './host/host-client'
 import { AgentNotifications } from './agents/agent-notifications'
+import { AgentSleepPrevention } from './agents/agent-sleep-prevention'
 import {
   absolutePath,
   agentProvider,
@@ -82,6 +92,7 @@ let worktrees: WorktreeManager
 const sourceControl = new SourceControlService()
 const commitMessages = new CommitMessageService()
 const agentClis = new AgentCliManagement()
+const agentSleep = new AgentSleepPrevention()
 const sourceControlWatches = new SourceControlWatches()
 const files = new FileExplorerService(() => config.snapshot().preferences.fileExplorer)
 const fileWatches = new FileExplorerWatches(
@@ -95,6 +106,9 @@ let rendererReady = false
 let visibleTerminal: string | undefined
 let pendingAgentFocus: { terminalId: string; launchId: string } | undefined
 const notifications = new AgentNotifications({
+  createNotification: createDesktopNotification,
+  isEnabled: () => config.snapshot().preferences.notificationsEnabled,
+  turnCompleteMode: () => config.snapshot().preferences.turnCompleteNotification,
   isVisible: (id) => !!window?.isFocused() && !window.isMinimized() && visibleTerminal === id,
   describe: (session) => {
     const workspace = config
@@ -156,6 +170,30 @@ function handle<Args extends unknown[], T>(
       }
     },
   )
+}
+
+function createDesktopNotification(options: Electron.NotificationConstructorOptions): Notification {
+  const sound = config.snapshot().preferences.notificationSound
+  const notification = new Notification({ ...options, silent: sound !== 'system' })
+  if (typeof sound !== 'string') {
+    notification.once('show', () => {
+      void readNotificationSound(sound)
+        .then((source) => {
+          const current = config.snapshot().preferences
+          if (
+            current.notificationsEnabled &&
+            typeof current.notificationSound !== 'string' &&
+            current.notificationSound.path === sound.path &&
+            rendererReady &&
+            window &&
+            !window.webContents.isDestroyed()
+          )
+            window.webContents.send('notifications:sound', source)
+        })
+        .catch(() => console.warn('无法读取自定义提示音，请在通知设置中重新选择文件。'))
+    })
+  }
+  return notification
 }
 
 function sendShortcut(shortcut: Shortcut): void {
@@ -533,6 +571,7 @@ function installIPC(): void {
     const next = preferences(value)
     if (next.shellPath) await executable(next.shellPath)
     await config.savePreferences(next)
+    agentSleep.setEnabled(next.preventSleep)
     nativeTheme.themeSource = next.theme
     updateWindowBackground()
     installMenu()
@@ -541,6 +580,46 @@ function installIPC(): void {
     if (next.scrollback !== previous.scrollback)
       await manager.request('setScrollback', [next.scrollback])
     return next
+  })
+  handle('notifications:choose-sound', async () => {
+    const selected = await dialog.showOpenDialog(window!, {
+      title: '选择通知提示音',
+      properties: ['openFile'],
+      filters: [{ name: '音频文件', extensions: [...NOTIFICATION_SOUND_EXTENSIONS] }],
+    })
+    if (selected.canceled || !selected.filePaths[0]) return null
+    const sound = { path: absolutePath(selected.filePaths[0]) }
+    await readNotificationSound(sound)
+    return sound
+  })
+  handle('notifications:test', async () => {
+    if (!config.snapshot().preferences.notificationsEnabled) throw new Error('请先启用通知。')
+    if (!Notification.isSupported()) throw new Error('当前系统不支持通知。')
+    await readNotificationSound(config.snapshot().preferences.notificationSound)
+    const notification = createDesktopNotification({
+      title: 'Cota · 测试通知',
+      body: '这是一条测试通知，用于确认 Cota 的系统通知是否正常显示。',
+    })
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        notification.close()
+        reject(new Error('未能确认通知已显示，请检查系统通知权限或勿扰模式。'))
+      }, 5000)
+      notification.on('show', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+      notification.on('failed', () => {
+        clearTimeout(timer)
+        reject(new Error('通知发送失败，请检查系统通知权限。'))
+      })
+      try {
+        notification.show()
+      } catch (error) {
+        clearTimeout(timer)
+        reject(error)
+      }
+    })
   })
   handle('clipboard:read', () => clipboard.readText())
   handle('clipboard:write', (text: unknown) => {
@@ -610,7 +689,7 @@ function installIPC(): void {
         !(await requestConfirmation({
           title: `${trust ? '安装并信任' : label} ${AGENT_PROVIDERS[provider].name} 的 Cota 状态集成？`,
           description: uninstall
-            ? `仅在本次确认后移除以下文件中的 Cota 集成：\n${status.paths[0]}\n\n保留其他 Hooks 和配置，卸载不创建备份；共享加载脚本不删除。Dev / 正式版共用此配置，均受影响。不会结束正在运行的 Agent，已加载的集成需重启对应 CLI 后停止生效。`
+            ? `仅在本次确认后移除以下文件中的 Cota 集成：\n${hookFiles(provider, env).config}\n\n保留其他 Hooks 和配置，卸载不创建备份；共享加载脚本不删除。Dev / 正式版共用此配置，均受影响。不会结束正在运行的 Agent，已加载的集成需重启对应 CLI 后停止生效。`
             : `仅在本次确认后写入以下文件：\n${status.paths.join('\n')}\n\n保留原有 Hooks，修改已有文件前创建备份。${trust ? '同时授权信任本次安装的 Cota Hooks，使用 Codex 原生定义哈希；不信任其他 Hooks，不修改 Hooks 功能开关，不绕过企业策略。' : ''}不改变 CLI 权限。安装后请新建终端。`,
           confirmLabel: `${trust ? '安装并信任' : label} ${provider === 'pi' ? 'Extension' : 'Hooks'}`,
         }))
@@ -701,6 +780,7 @@ function installIPC(): void {
       closingTabs.delete(id)
     }
   })
+  handle('app:force-exit', () => requestForceExit())
   ipcMain.on('terminal:ack', (event, id: string, attachmentId: string, length: number) => {
     try {
       trusted(event)
@@ -720,7 +800,6 @@ function installIPC(): void {
     ],
     // Enter the existing exit guard directly; Windows IPC-triggered close events can be unreliable.
     ['app:close-window', () => void requestExit()],
-    ['app:restart', () => void requestRestart()],
   ] as const) {
     ipcMain.on(channel, (event) => {
       try {
@@ -733,18 +812,37 @@ function installIPC(): void {
   }
 }
 
-async function requestRestart(): Promise<void> {
-  if (exiting) return
-  exiting = true
+async function requestForceExit(confirmed = false): Promise<void> {
+  if (exitPending || exiting) return
+  exitPending = true
   try {
-    await config.flush()
-    // Restart Main and the renderer without shutting down the detached terminal Host.
+    if (!confirmed) {
+      const { response } = await dialog.showMessageBox({
+        type: 'warning',
+        title: '强制关闭 Cota？',
+        message: '强制关闭 Cota？',
+        detail:
+          '将结束当前应用的所有终端、后台任务及 Terminal Host，清理完成后关闭应用。未保存的内容可能丢失。',
+        buttons: ['取消', '强制关闭'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (response !== 1) return
+    }
+    settleConfirmation(false)
+    await config?.flush()
+    sourceControlWatches.close()
+    fileWatches.close()
     await commitMessages.close()
-    app.relaunch()
+    await forceStopTerminalHost(app.getPath('userData'))
+    manager?.disconnect()
+    await accounts?.close()
+    agentSleep.dispose()
+    exiting = true
     app.exit(0)
-  } catch (error) {
-    exiting = false
-    dialog.showErrorBox('重新启动失败', String(error))
+  } finally {
+    exitPending = false
   }
 }
 
@@ -753,18 +851,25 @@ async function requestExit(): Promise<void> {
   exitPending = true
   try {
     if (await manager.request('hasLive', [])) {
-      // Exit must remain available when the renderer's error boundary replaces the application.
-      const { response } = await dialog.showMessageBox({
-        type: 'warning',
-        title: '退出 Cota？',
-        message: '退出 Cota？',
-        detail: '退出将结束所有终端及运行中的程序，项目设置将会保留。',
-        buttons: ['取消', '结束终端并退出'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      })
-      if (response !== 1) return
+      const title = '退出 Cota？'
+      const description = '退出将结束所有终端及运行中的程序，项目设置将会保留。'
+      const confirmLabel = '结束终端并退出'
+      if (rendererReady && window && !window.webContents.isDestroyed()) {
+        if (!(await requestConfirmation({ title, description, confirmLabel }))) return
+      } else {
+        // Keep exit available when the renderer cannot display the shadcn dialog.
+        const { response } = await dialog.showMessageBox({
+          type: 'warning',
+          title,
+          message: title,
+          detail: description,
+          buttons: ['取消', confirmLabel],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        })
+        if (response !== 1) return
+      }
     }
     await config.flush()
     await manager.request('shutdown', [])
@@ -773,17 +878,25 @@ async function requestExit(): Promise<void> {
     sourceControlWatches.close()
     fileWatches.close()
     await accounts.close()
+    agentSleep.dispose()
     exiting = true
     app.quit()
   } catch (error) {
-    await dialog.showMessageBox({
-      type: 'error',
-      title: '退出失败',
-      message: '终端清理失败，应用暂未退出。',
-      detail: String(error),
-      buttons: ['知道了'],
-      noLink: true,
-    })
+    if (rendererReady && window && !window.webContents.isDestroyed()) {
+      await requestConfirmation({
+        title: '退出失败',
+        description: `终端清理失败，应用暂未退出。\n${String(error)}`,
+      })
+    } else {
+      await dialog.showMessageBox({
+        type: 'error',
+        title: '退出失败',
+        message: '终端清理失败，应用暂未退出。',
+        detail: String(error),
+        buttons: ['知道了'],
+        noLink: true,
+      })
+    }
   } finally {
     exitPending = false
   }
@@ -880,11 +993,12 @@ if (!app.requestSingleInstanceLock()) {
     window?.focus()
   })
   app.on('before-quit', (event) => {
-    if (!exiting && manager) {
+    if (!exiting && (manager || exitPending)) {
       event.preventDefault()
       void requestExit()
     }
   })
+  app.on('will-quit', () => agentSleep.dispose())
   app
     .whenReady()
     .then(async () => {
@@ -898,6 +1012,8 @@ if (!app.requestSingleInstanceLock()) {
         },
       )
       warning = (await config.load()).warning
+      agentSleep.setEnabled(config.snapshot().preferences.preventSleep)
+      powerMonitor.on('resume', () => agentSleep.refresh())
       nativeTheme.themeSource = config.snapshot().preferences.theme
       windowBlurEnabled =
         config.snapshot().preferences.terminalAppearance.windowBlur &&
@@ -914,13 +1030,17 @@ if (!app.requestSingleInstanceLock()) {
             window.webContents.send('terminal:event', event)
         },
         (event) => {
+          agentSleep.receive(event)
           notifications.receive(event)
           if (window && !window.webContents.isDestroyed())
             window.webContents.send('agent:event', event)
         },
       )
-      for (const session of await manager.request('list', []))
-        if (session.agent) notifications.receive({ type: 'state', session: session.agent })
+      for (const session of await manager.request('list', [])) {
+        if (!session.agent) continue
+        agentSleep.receive({ type: 'state', session: session.agent })
+        notifications.receive({ type: 'state', session: session.agent })
+      }
       window = new BrowserWindow({
         width: 1180,
         height: 780,
@@ -959,6 +1079,7 @@ if (!app.requestSingleInstanceLock()) {
           webSecurity: true,
           spellcheck: false,
           backgroundThrottling: false,
+          autoplayPolicy: 'no-user-gesture-required',
         },
       })
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -1000,9 +1121,24 @@ if (!app.requestSingleInstanceLock()) {
       if (devURL) await window.loadURL(devURL)
       else await window.loadFile(rendererFile)
     })
-    .catch((error) => {
+    .catch(async (error) => {
+      agentSleep.dispose()
       console.error(`${appName} 启动失败：`, error)
-      dialog.showErrorBox(`${appName} 启动失败`, String(error))
-      app.exit(1)
+      let detail = String(error)
+      while (!exiting) {
+        await dialog.showMessageBox({
+          type: 'error',
+          title: `${appName} 启动失败`,
+          message: '应用无法启动',
+          detail: `${detail}\n\n强制关闭将结束当前应用的终端、后台任务及 Terminal Host，未保存的内容可能丢失。`,
+          buttons: ['强制关闭'],
+          noLink: true,
+        })
+        try {
+          await requestForceExit(true)
+        } catch (cleanupError) {
+          detail = `${String(error)}\n\n后台清理失败，应用暂未关闭，请重试。\n${String(cleanupError)}`
+        }
+      }
     })
 }

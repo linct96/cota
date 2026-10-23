@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connect } from 'node:net'
 import { execFile } from 'node:child_process'
+import * as childProcess from 'node:child_process'
 import { promisify } from 'node:util'
 import { GitService, gitEnvironment } from '../src/main/git/git-worktrees'
 import { once } from 'node:events'
@@ -19,7 +20,12 @@ import {
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { HostClient, connectTerminalHost, hostDirectory } from '../src/main/host/host-client'
+import {
+  HostClient,
+  connectTerminalHost,
+  forceStopTerminalHost,
+  hostDirectory,
+} from '../src/main/host/host-client'
 import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
 import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
@@ -485,11 +491,64 @@ describe('local terminal Host', () => {
     try {
       await writeFile(file, content, { mode: 0o600 })
       await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('协议')
+      await expect(forceStopTerminalHost(userData)).rejects.toThrow('进程标识无效')
+      expect(mocks.stop).not.toHaveBeenCalled()
       expect(await readFile(file, 'utf8')).toBe(content)
     } finally {
       await rm(runtime, { recursive: true, force: true })
     }
   })
+  it.each([1, HOST_PROTOCOL])(
+    'force-cleans only a verified Host and waits for its process tree: protocol %s',
+    async (version) => {
+      const userData = join(directory, 'force-profile')
+      const runtime = hostDirectory(userData)
+      await mkdir(runtime, { mode: 0o700 })
+      const file = join(runtime, 'runtime.json')
+      const content = JSON.stringify({ pid: 12345, token, version })
+      let stopped = false
+      const probe = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
+        expect(pid).toBe(12345)
+        expect(signal).toBe(0)
+        if (stopped) throw Object.assign(new Error('gone'), { code: 'ESRCH' })
+        return true
+      })
+      const query = vi.fn().mockResolvedValue({ stdout: '/unrelated/program' })
+      const command = vi.spyOn(childProcess, 'execFile')
+      Object.defineProperty(command, promisify.custom, { value: query })
+      try {
+        await writeFile(file, content, { mode: 0o600 })
+        await writeFile(join(runtime, 'host.sock'), '')
+        await writeFile(join(runtime, 'agent.sock'), '')
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('进程身份不匹配')
+        expect(mocks.stop).not.toHaveBeenCalled()
+        expect(await readFile(file, 'utf8')).toBe(content)
+        query.mockResolvedValue({
+          stdout: `${process.execPath} ${join(import.meta.dirname, '../src/main/host/host.js')}`,
+        })
+        mocks.stop.mockRejectedValueOnce(new Error('child still running'))
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('child still running')
+        expect(await readFile(file, 'utf8')).toBe(content)
+        stopped = true
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('无法确认残留进程')
+        expect(await readFile(file, 'utf8')).toBe(content)
+        stopped = false
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('尚未结束')
+        expect(await readFile(file, 'utf8')).toBe(content)
+        mocks.stop.mockImplementationOnce(async () => {
+          stopped = true
+        })
+        await forceStopTerminalHost(userData)
+        for (const name of ['runtime.json', 'host.sock', 'agent.sock'])
+          await expect(stat(join(runtime, name))).rejects.toMatchObject({ code: 'ENOENT' })
+        expect(mocks.hostSpawn).not.toHaveBeenCalled()
+      } finally {
+        command.mockRestore()
+        probe.mockRestore()
+        await rm(runtime, { recursive: true, force: true })
+      }
+    },
+  )
   it.each([1, HOST_PROTOCOL])(
     'cleans dead Host metadata for protocol %s before spawning a replacement',
     async (version) => {
@@ -575,12 +634,16 @@ describe('local terminal Host', () => {
       )
       await chmod(runtime, 0o755)
       await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('目录权限不安全')
+      await expect(forceStopTerminalHost(userData)).rejects.toThrow('目录权限不安全')
       await chmod(runtime, 0o700)
       await chmod(metadata, 0o644)
       await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
+      await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
       await unlink(metadata)
       await symlink(join(directory, 'other-credentials'), metadata)
       await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
+      await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
+      expect(mocks.stop).not.toHaveBeenCalled()
     } finally {
       await rm(runtime, { recursive: true, force: true })
     }

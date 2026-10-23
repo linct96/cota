@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { access, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, normalize } from 'node:path'
+import { extname, isAbsolute, normalize } from 'node:path'
 import {
   MAX_TERMINALS,
   AGENT_PROVIDERS,
@@ -16,6 +16,10 @@ import {
   type CreateWorktreeInput,
 } from '../shared/contracts'
 import { parseArguments } from '../shared/open-with'
+import {
+  NOTIFICATION_SOUND_EXTENSIONS,
+  type NotificationSound,
+} from '../shared/notification-sounds'
 import {
   DEFAULT_TERMINAL_APPEARANCE,
   terminalAppearanceSchema,
@@ -57,10 +61,33 @@ export async function executable(value: unknown): Promise<string> {
   }
 }
 
+function notificationSoundPreference(value: unknown): NotificationSound {
+  if (value === 'system' || value === 'none') return value
+  // Removed bundled sounds fall back without invalidating the rest of an existing config.
+  if (
+    typeof value === 'string' &&
+    ['two-tone', 'bong', 'thump', 'blip', 'sonar', 'blop', 'ding', 'clack', 'beep'].includes(value)
+  )
+    return 'system'
+  if (value && typeof value === 'object' && 'path' in value) {
+    const path = absolutePath(value.path)
+    if (
+      NOTIFICATION_SOUND_EXTENSIONS.some(
+        (extension) => `.${extension}` === extname(path).toLowerCase(),
+      )
+    )
+      return { path }
+  }
+  throw new Error('通知提示音选项无效。')
+}
+
 export function preferences(value: unknown): Preferences {
   if (!value || typeof value !== 'object') throw new Error('设置格式无效。')
   const {
     theme = 'system',
+    notificationsEnabled = true,
+    notificationSound = 'system',
+    turnCompleteNotification = 'unfocused',
     terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer = { showIgnored: true, followSymlinks: false },
     shortcuts = {},
@@ -69,9 +96,19 @@ export function preferences(value: unknown): Preferences {
     scrollback,
     openWith,
     terminalGpuAcceleration = 'auto',
+    preventSleep = true,
     commitMessagePrompt = '',
   } = value as Partial<Preferences>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
+  if (typeof preventSleep !== 'boolean') throw new Error('防休眠选项无效。')
+  if (typeof notificationsEnabled !== 'boolean') throw new Error('通知开关选项无效。')
+  const sound = notificationSoundPreference(notificationSound)
+  if (
+    turnCompleteNotification !== 'never' &&
+    turnCompleteNotification !== 'unfocused' &&
+    turnCompleteNotification !== 'always'
+  )
+    throw new Error('轮次完成通知选项无效。')
   if (
     !fileExplorer ||
     typeof fileExplorer.showIgnored !== 'boolean' ||
@@ -103,6 +140,9 @@ export function preferences(value: unknown): Preferences {
   }
   return {
     theme,
+    notificationsEnabled,
+    notificationSound: sound,
+    turnCompleteNotification,
     terminalAppearance: terminalAppearanceSchema.parse(terminalAppearance),
     fileExplorer: {
       showIgnored: fileExplorer.showIgnored,
@@ -110,6 +150,7 @@ export function preferences(value: unknown): Preferences {
     },
     shortcuts: validateShortcutBindings(shortcuts, process.platform),
     terminalGpuAcceleration,
+    preventSleep,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: shellPath as string | null,

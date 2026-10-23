@@ -1,9 +1,11 @@
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
 import { createAppRouter } from './router'
+import { ConfirmationDialog } from './components/ConfirmationDialog'
 import './styles.css'
 import { useWorkspace } from './store'
 import { applyDocumentTheme } from './lib/theme'
+import { playNotificationSound } from './lib/notification-sound'
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
 const updateTheme = () => {
@@ -20,7 +22,9 @@ const stopTheme = useWorkspace.subscribe((state, previous) => {
   if (state.ready !== previous.ready || state.preferences.theme !== previous.preferences.theme)
     updateTheme()
 })
+const stopNotificationSound = window.desktop.onNotificationSound(playNotificationSound)
 import.meta.hot?.dispose(() => {
+  stopNotificationSound()
   stopTheme()
   systemTheme.removeEventListener('change', updateTheme)
 })
@@ -31,4 +35,10 @@ if (import.meta.env.DEV) {
 
 // Terminal views own external PTY resources; do not double-mount them in development.
 const router = createAppRouter()
-createRoot(document.getElementById('root')!).render(<RouterProvider router={router} />)
+createRoot(document.getElementById('root')!).render(
+  <>
+    {/* Confirmation stays available when a route error replaces the application. */}
+    <ConfirmationDialog />
+    <RouterProvider router={router} />
+  </>,
+)

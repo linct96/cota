@@ -7,7 +7,8 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { HOST_PROTOCOL, readMessages, sendMessage, type HostMethods } from './host-protocol'
 import type { AgentUpdate, TerminalEvent } from '../../shared/contracts'
-import { hostEndpoint, isWindows, powershell } from '../system/platform'
+import { hostEndpoint, isWindows, powershell, removeEndpoint } from '../system/platform'
+import { stopProcessTree } from '../system/process-tree'
 
 export class HostClient {
   private nextId = 0
@@ -172,11 +173,7 @@ async function openClient(
   }
 }
 
-export async function connectTerminalHost(
-  userData: string,
-  send: (event: TerminalEvent) => void,
-  sendAgent: (event: AgentUpdate) => void = () => {},
-): Promise<HostClient> {
+async function privateHostDirectory(userData: string): Promise<string> {
   const directory = hostDirectory(userData)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   const directoryStat = await lstat(directory)
@@ -204,8 +201,11 @@ export async function connectTerminalHost(
       },
     )
   }
+  return directory
+}
+
+async function readHostInfo(directory: string): Promise<HostInfo | undefined> {
   const file = join(directory, 'runtime.json')
-  let info: HostInfo | undefined
   try {
     const fileStat = await lstat(file)
     if (
@@ -222,10 +222,102 @@ export async function connectTerminalHost(
       !/^[a-f0-9]{64}$/.test(value.token)
     )
       throw new Error('Terminal Host 元数据无效。')
-    info = value
+    return value
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
+}
+
+// A failed tree cleanup may have orphaned children; a dead root alone cannot prove success.
+const incompleteHostCleanup = new Set<string>()
+
+export async function forceStopTerminalHost(userData: string): Promise<void> {
+  const directory = await privateHostDirectory(userData)
+  const info = await readHostInfo(directory)
+  if (!info) {
+    if (incompleteHostCleanup.has(directory))
+      throw new Error('后台任务曾清理失败，无法确认残留进程已结束；应用暂未关闭。')
+    if (!isWindows)
+      for (const name of ['host', 'agent'] as const) {
+        try {
+          await lstat(hostEndpoint(directory, name))
+          throw new Error('Terminal Host 缺少元数据，无法安全确认后台进程；应用暂未关闭。')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+      }
+    return
+  }
+  if (info.pid <= 1 || info.pid === process.pid) throw new Error('Terminal Host 进程标识无效。')
+  let running = true
+  try {
+    process.kill(info.pid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    running = false
+  }
+  if (!running && incompleteHostCleanup.has(directory))
+    throw new Error('后台任务曾清理失败，无法确认残留进程已结束；应用暂未关闭。')
+  if (running) {
+    // Verify the exact executable and Host entrypoint before trusting a possibly reused PID.
+    const { stdout } = isWindows
+      ? await promisify(execFile)(
+          powershell,
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $env:COTA_HOST_PID)).CommandLine",
+          ],
+          {
+            windowsHide: true,
+            timeout: 5000,
+            env: { ...process.env, COTA_HOST_PID: String(info.pid) },
+          },
+        )
+      : await promisify(execFile)('/bin/ps', ['-p', String(info.pid), '-o', 'command='], {
+          timeout: 2000,
+        })
+    const script = join(__dirname, 'host.js')
+    const commands = isWindows
+      ? [
+          `${process.execPath} ${script}`,
+          `"${process.execPath}" ${script}`,
+          `${process.execPath} "${script}"`,
+          `"${process.execPath}" "${script}"`,
+        ].map((command) => command.toLowerCase())
+      : [`${process.execPath} ${script}`]
+    if (!commands.includes(isWindows ? stdout.trim().toLowerCase() : stdout.trim()))
+      throw new Error('Terminal Host 进程身份不匹配，未终止未知进程；应用暂未关闭。')
+    incompleteHostCleanup.add(directory)
+    await stopProcessTree(info.pid)
+    try {
+      process.kill(info.pid, 0)
+      throw new Error('Terminal Host 尚未结束；应用暂未关闭，请重试。')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    }
+    incompleteHostCleanup.delete(directory)
+  }
+  const current = await readHostInfo(directory)
+  if (current && (current.pid !== info.pid || current.token !== info.token))
+    throw new Error('Terminal Host 已变化，应用暂未关闭，请重试。')
+  await removeEndpoint(hostEndpoint(directory, 'host'))
+  await removeEndpoint(hostEndpoint(directory, 'agent'))
+  await unlink(join(directory, 'runtime.json')).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error
+  })
+}
+
+export async function connectTerminalHost(
+  userData: string,
+  send: (event: TerminalEvent) => void,
+  sendAgent: (event: AgentUpdate) => void = () => {},
+): Promise<HostClient> {
+  const directory = await privateHostDirectory(userData)
+  const file = join(directory, 'runtime.json')
+  let info = await readHostInfo(directory)
   if (info) {
     if (info.version === HOST_PROTOCOL) {
       try {

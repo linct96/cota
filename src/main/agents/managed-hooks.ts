@@ -154,7 +154,7 @@ export async function inspectAgentHook(
     status.paths = provider === 'pi' ? [config] : [config, loader]
     if (provider === 'codex') {
       const trustConfig = join(dirname(config), 'config.toml')
-      status.paths.push(trustConfig)
+      status.paths = [loader, config, trustConfig]
       await contents(trustConfig)
     }
     const raw = await contents(config)

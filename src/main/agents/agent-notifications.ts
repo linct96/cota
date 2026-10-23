@@ -1,5 +1,10 @@
 import { Notification } from 'electron'
-import { AGENT_PROVIDERS, type AgentSession, type AgentUpdate } from '../../shared/contracts'
+import {
+  AGENT_PROVIDERS,
+  type AgentSession,
+  type AgentUpdate,
+  type TurnCompleteNotification,
+} from '../../shared/contracts'
 
 export class AgentNotifications {
   private entries = new Map<
@@ -9,6 +14,9 @@ export class AgentNotifications {
 
   constructor(
     private readonly options: {
+      createNotification(options: Electron.NotificationConstructorOptions): Notification
+      isEnabled(): boolean
+      turnCompleteMode(): TurnCompleteNotification
       isVisible(id: string): boolean
       describe(session: AgentSession): string
       activate(session: AgentSession): Promise<void>
@@ -70,9 +78,18 @@ export class AgentNotifications {
     if (entry.sent.has(noticeKey)) return
     // Consume visible transitions too: later read acknowledgements must not notify again.
     entry.sent.add(noticeKey)
-    if (!sameLaunch || this.options.isVisible(id) || !Notification.isSupported()) return
+    const mode =
+      session.activityState === 'completed' ? this.options.turnCompleteMode() : 'unfocused'
+    if (
+      !this.options.isEnabled() ||
+      !sameLaunch ||
+      mode === 'never' ||
+      (mode !== 'always' && this.options.isVisible(id)) ||
+      !Notification.isSupported()
+    )
+      return
     try {
-      const notification = new Notification({
+      const notification = this.options.createNotification({
         title: `${AGENT_PROVIDERS[session.provider].name} · ${label}`,
         body: `${this.options.describe(session)}\n${session.activityState === 'needs-input' ? '请在原生终端中处理授权或问题。' : '点击返回对应终端查看。'}`,
       })

@@ -138,6 +138,13 @@ const api: DesktopAPI = {
   removeProject: (path) => ipcRenderer.invoke('project:remove', path),
   getDefaultShell: () => ipcRenderer.invoke('shell:default'),
   savePreferences: (preferences) => ipcRenderer.invoke('preferences:save', preferences),
+  sendTestNotification: () => ipcRenderer.invoke('notifications:test'),
+  chooseNotificationSound: () => ipcRenderer.invoke('notifications:choose-sound'),
+  onNotificationSound: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, source: string) => listener(source)
+    ipcRenderer.on('notifications:sound', wrapped)
+    return () => ipcRenderer.removeListener('notifications:sound', wrapped)
+  },
   detectAgents: () => ipcRenderer.invoke('agent:detect'),
   detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
@@ -175,7 +182,7 @@ const api: DesktopAPI = {
     return () => ipcRenderer.removeListener('window:maximized-changed', wrapped)
   },
   closeWindow: () => ipcRenderer.send('app:close-window'),
-  restartApp: () => ipcRenderer.send('app:restart'),
+  forceExitApp: () => ipcRenderer.invoke('app:force-exit'),
   respondToConfirmation: (id, confirmed) =>
     ipcRenderer.invoke('app:confirm-response', id, confirmed),
   onConfirmation: (listener) => {

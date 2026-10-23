@@ -2,6 +2,7 @@ import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
 import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
 import type { ShortcutBindings } from './shortcuts'
+import type { NotificationSound } from './notification-sounds'
 import type {
   GitDiff,
   GitDiffSelection,
@@ -23,6 +24,7 @@ export interface WorkspaceOpener {
 
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
 export type ThemePreference = 'system' | 'light' | 'dark'
+export type TurnCompleteNotification = 'never' | 'unfocused' | 'always'
 
 export interface FileExplorerPreferences {
   showIgnored: boolean
@@ -31,11 +33,15 @@ export interface FileExplorerPreferences {
 
 export interface Preferences {
   theme: ThemePreference
+  notificationsEnabled: boolean
+  notificationSound: NotificationSound
+  turnCompleteNotification: TurnCompleteNotification
   terminalAppearance: TerminalAppearance
   fileExplorer: FileExplorerPreferences
   shortcuts: ShortcutBindings
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
+  preventSleep: boolean
   shellName: string | null
   shellPath: string | null
   scrollback: number
@@ -451,6 +457,9 @@ export interface DesktopAPI {
   removeProject(path: string): Promise<Result<boolean>>
   getDefaultShell(): Promise<Result<string>>
   savePreferences(preferences: Preferences): Promise<Result<Preferences>>
+  sendTestNotification(): Promise<Result<void>>
+  chooseNotificationSound(): Promise<Result<{ path: string } | null>>
+  onNotificationSound(listener: (source: string) => void): () => void
   detectAgents(): Promise<Result<AgentAvailability[]>>
   detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
   installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
@@ -473,7 +482,7 @@ export interface DesktopAPI {
   isWindowMaximized(): Promise<Result<boolean>>
   onWindowMaximized(listener: (maximized: boolean) => void): () => void
   closeWindow(): void
-  restartApp(): void
+  forceExitApp(): Promise<Result<void>>
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
   onTerminal(listener: (event: TerminalEvent) => void): () => void
@@ -487,11 +496,15 @@ export const DEFAULT_CONFIG: AppConfig = {
   worktreeRecords: [],
   preferences: {
     theme: 'system',
+    notificationsEnabled: true,
+    notificationSound: 'system',
+    turnCompleteNotification: 'unfocused',
     terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer: { showIgnored: true, followSymlinks: false },
     shortcuts: {},
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
+    preventSleep: true,
     shellName: null,
     shellPath: null,
     scrollback: 5000,

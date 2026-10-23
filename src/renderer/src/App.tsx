@@ -42,7 +42,6 @@ import {
   workspaceAgentSummary,
 } from './lib/agent-status'
 import { OpenerIcon } from './components/OpenWithIcons'
-import { ConfirmationDialog } from './components/ConfirmationDialog'
 import { WorktreeDialog } from './components/WorktreeDialog'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
@@ -1123,7 +1122,6 @@ export function App() {
             close={() => setWorktreeProject(undefined)}
           />
         )}
-        <ConfirmationDialog />
         <Toaster
           closeButton
           containerAriaLabel="操作结果提示"
