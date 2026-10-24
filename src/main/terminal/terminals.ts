@@ -43,6 +43,7 @@ import { claimServicePort } from './service-port'
 
 interface Session extends TerminalSession {
   launch: TerminalLaunch
+  shellActivityToken?: string
   child?: pty.IPty
   shell?: string
   managed?: {
@@ -170,6 +171,7 @@ export class TerminalManager {
       serializer,
       keyboard,
       exited: false,
+      shellActivity: 'unknown',
       pending: [],
       parsing: 0,
       inFlight: 0,
@@ -227,6 +229,8 @@ export class TerminalManager {
           })
           // Optional shell preparation must never prevent a usable terminal.
           if (launch.kind !== 'agent') {
+            session.shellActivityToken = randomBytes(32).toString('hex')
+            command.env.COTA_SHELL_ACTIVITY = session.shellActivityToken
             const preparation = prepareAgentShell(
               command.executable,
               command.env,
@@ -257,6 +261,21 @@ export class TerminalManager {
         session.subscriptions.push(
           screen.parser.registerOscHandler(133, (data) => {
             if (session.managed && /^[CD](?:;|$)/.test(data)) this.observeAgents()
+            const marker = /^([CD]);Cota=([a-f0-9]{64});Shell=(\d+)$/.exec(data)
+            if (
+              marker &&
+              !session.exited &&
+              !session.closing &&
+              marker[2] === session.shellActivityToken &&
+              Number(marker[3]) === session.child?.pid
+            ) {
+              const activity = marker[1] === 'C' ? 'running' : 'idle'
+              if (session.shellActivity !== activity) {
+                session.shellActivity = activity
+                if (session.attachmentId)
+                  this.send({ type: 'activity', id, attachmentId: session.attachmentId, activity })
+              }
+            }
             return false
           }),
           screen.onData((data) => {
@@ -281,6 +300,7 @@ export class TerminalManager {
             session.exitCode = exitCode
             if (session.service && (session.stoppingService || session.exited)) return
             session.exited = true
+            session.shellActivity = 'unknown'
             session.managed = undefined
             if (session.agent) this.agents.runtime(id, 'exited', exitCode)
             screen.write('', () => {
@@ -338,6 +358,7 @@ export class TerminalManager {
         agent,
         agentRevision,
         service,
+        shellActivity,
       }) => ({
         id,
         projectPath,
@@ -350,6 +371,7 @@ export class TerminalManager {
         rows,
         exited,
         exitCode,
+        shellActivity,
         ...(kind === 'agent' ? { kind, provider } : {}),
         ...(agent ? { agent: { ...agent } } : {}),
         ...(agentRevision ? { agentRevision } : {}),
@@ -388,6 +410,7 @@ export class TerminalManager {
             rows: session.rows,
             exited: session.exited,
             exitCode: session.exitCode,
+            shellActivity: session.shellActivity,
             ...(session.service ? { service: { ...session.service } } : {}),
             ...(session.kind === 'agent' ? { kind: session.kind, provider: session.provider } : {}),
             ...(session.agent ? { agent: { ...session.agent } } : {}),
@@ -490,6 +513,7 @@ export class TerminalManager {
         .then(async () => {
           if (session.child) await stopProcessTree(session.child.pid)
           session.exited = true
+          session.shellActivity = 'unknown'
           session.managed = undefined
           if (session.agent) this.agents.runtime(id, 'exited', session.exitCode)
           session.screen.write('', () => {

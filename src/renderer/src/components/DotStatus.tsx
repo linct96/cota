@@ -1,4 +1,4 @@
-import type { AgentDisplayState } from '../lib/agent-status'
+import type { TerminalDisplayState } from '../lib/agent-status'
 
 function synchronizeBreathing(element: HTMLSpanElement | null) {
   if (!element) return
@@ -8,7 +8,7 @@ function synchronizeBreathing(element: HTMLSpanElement | null) {
   }
 }
 
-export function DotStatus({ state }: { state: AgentDisplayState }) {
+export function DotStatus({ state }: { state: TerminalDisplayState }) {
   if (state === 'other') return null
   if (state === 'working') {
     return (

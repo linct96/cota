@@ -30,7 +30,8 @@ import type { FileEntry } from '../src/shared/file-explorer'
 import {
   agentIndicatorState,
   agentTabState,
-  workspaceAgentSummary,
+  workspaceTerminalSummary as workspaceAgentSummary,
+  terminalIndicatorState,
 } from '../src/renderer/src/lib/agent-status'
 
 vi.mock('@xterm/addon-webgl', () => ({
@@ -1046,6 +1047,36 @@ describe('workspace state', () => {
     expect(store().tabs[0]).toMatchObject({ workspaceId: workspace.id, status: 'starting' })
   })
 
+  it('shows ordinary running dots only for executing shells without changing Agent indicators', () => {
+    const shell = {
+      id: crypto.randomUUID(),
+      workspaceId: crypto.randomUUID(),
+      projectPath: '/tmp/project',
+      title: 'Shell',
+      kind: 'shell' as const,
+      status: 'running' as const,
+      shellActivity: 'running' as const,
+    }
+    expect(terminalIndicatorState(shell)).toBe('running')
+    expect(workspaceAgentSummary([shell])).toEqual({
+      state: 'running',
+      count: 1,
+      description: '1 个运行中',
+    })
+    for (const shellActivity of ['unknown', 'idle', undefined] as const) {
+      expect(terminalIndicatorState({ ...shell, shellActivity })).toBe('other')
+      expect(workspaceAgentSummary([{ ...shell, shellActivity }])).toBeUndefined()
+    }
+    for (const status of ['starting', 'exited', 'error'] as const)
+      expect(terminalIndicatorState({ ...shell, status })).toBe('other')
+    expect(terminalIndicatorState({ ...shell, closingStatus: 'running' })).toBe('other')
+    expect(terminalIndicatorState({ ...shell, kind: 'agent' })).toBe('other')
+    expect(workspaceAgentSummary([shell, { ...shell, kind: 'agent', status: 'error' }])).toEqual({
+      state: 'error',
+      count: 1,
+      description: '1 个连接失败 · 1 个运行中',
+    })
+  })
   it('activates the last workspace and active tab only when its Host sessions still exist', async () => {
     const path = '/tmp/project'
     const workspace = {

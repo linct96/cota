@@ -269,7 +269,7 @@ body:has(
 .terminal-tab:active {
   translate: none;
 }
-.terminal-tab-agent-status,
+.terminal-tab-status,
 .workspace-tab-actions-overlay::before {
   background-color: var(--terminal-tab-background);
   transition: background-color var(--default-transition-duration, 150ms)
@@ -365,7 +365,7 @@ body:has(
   height: var(--resizable-indicator-size);
 }
 @media (prefers-reduced-motion: reduce) {
-  .terminal-tab-agent-status,
+  .terminal-tab-status,
   .terminal-tab-actions::before,
   .ui-resizable-handle::before {
     transition: none;
@@ -505,6 +505,9 @@ button:not([data-slot='button']):focus-visible {
 .dot-status-dot {
   border-radius: 50%;
   background: currentColor;
+}
+.dot-status[data-state='running'] {
+  color: var(--dot-status-working);
 }
 .dot-status[data-state='needs-input'] {
   color: var(--dot-status-attention);

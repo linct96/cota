@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import { homedir } from 'node:os'
 import { inspectAgentHook } from './managed-hooks'
 import { isWindows } from '../system/platform'
+import { shellActivityScripts } from '../terminal/shell-activity'
 
 export const codexShellFunction = `
 if ! alias codex >/dev/null 2>&1 && ! typeset -f codex >/dev/null 2>&1; then
@@ -46,9 +47,11 @@ if [[ -n "\${COTA_STARTUP_COMMAND-}" ]]; then
   __cota_startup_command="$COTA_STARTUP_COMMAND"
   unset COTA_STARTUP_COMMAND
   printf '%s\\n' "$__cota_startup_command"
+  if [[ -n "\${COTA_SHELL_ACTIVITY-}" ]]; then __cota_activity C; fi
   eval "$__cota_startup_command"
   __cota_exit_status=$?
   if [[ "\${COTA_SERVICE-}" = 1 ]]; then exit $__cota_exit_status; fi
+  if [[ -n "\${COTA_SHELL_ACTIVITY-}" ]]; then __cota_activity D; fi
   unset __cota_startup_command __cota_exit_status
 fi
 `
@@ -58,9 +61,11 @@ if set -q COTA_STARTUP_COMMAND
   set -l __cota_startup_command "$COTA_STARTUP_COMMAND"
   set -e COTA_STARTUP_COMMAND
   printf '%s\\n' "$__cota_startup_command"
+  if set -q COTA_SHELL_ACTIVITY; __cota_activity C; end
   eval "$__cota_startup_command"
   set -l __cota_exit_status $status
   if test "$COTA_SERVICE" = 1; exit $__cota_exit_status; end
+  if set -q COTA_SHELL_ACTIVITY; __cota_activity D; end
 end
 `
 
@@ -68,6 +73,7 @@ const powershellStartupCommand = `
 $cotaStartupCommand = $env:COTA_STARTUP_COMMAND
 Remove-Item Env:COTA_STARTUP_COMMAND
 Write-Host $cotaStartupCommand
+if ($env:COTA_SHELL_ACTIVITY) { __cota_activity C }
 if ($env:COTA_SERVICE -eq '1') {
   $global:LASTEXITCODE = 0
   try {
@@ -76,7 +82,10 @@ if ($env:COTA_SERVICE -eq '1') {
     if (-not $cotaSucceeded -and $LASTEXITCODE -eq 0) { exit 1 }
     exit $LASTEXITCODE
   } catch { Write-Error $_; exit 1 }
-} else { Invoke-Expression $cotaStartupCommand }
+} else {
+  try { Invoke-Expression $cotaStartupCommand }
+  finally { if ($env:COTA_SHELL_ACTIVITY) { __cota_activity D } }
+}
 Remove-Variable cotaStartupCommand -ErrorAction SilentlyContinue
 `
 
@@ -97,7 +106,7 @@ export async function prepareAgentShell(
         throw new Error('快捷命令需要使用 PowerShell、Bash、Zsh 或 Fish。')
       return
     }
-    if (!codex && startupCommand === undefined) return
+    if (!codex && startupCommand === undefined && !env.COTA_SHELL_ACTIVITY) return
     const codexFunction = `
 $cotaCommand = Get-Command codex -ErrorAction SilentlyContinue
 if ($cotaCommand -and $cotaCommand.CommandType -eq 'Application') {
@@ -114,7 +123,9 @@ if ($cotaCommand -and $cotaCommand.CommandType -eq 'Application') {
 Remove-Variable cotaCommand -ErrorAction SilentlyContinue
 `
     const script =
-      (codex ? codexFunction : '') + (startupCommand === undefined ? '' : powershellStartupCommand)
+      (codex ? codexFunction : '') +
+      (env.COTA_SHELL_ACTIVITY ? shellActivityScripts.powershell : '') +
+      (startupCommand === undefined ? '' : powershellStartupCommand)
     return [
       '-NoLogo',
       '-NoExit',
@@ -127,7 +138,10 @@ Remove-Variable cotaCommand -ErrorAction SilentlyContinue
       throw new Error('快捷命令需要使用 PowerShell、Bash、Zsh 或 Fish。')
     return
   }
-  if (!codex && startupCommand === undefined) return
+  if (!codex && startupCommand === undefined && !env.COTA_SHELL_ACTIVITY) return
+  const activity = env.COTA_SHELL_ACTIVITY
+    ? shellActivityScripts[name as 'bash' | 'zsh' | 'fish']
+    : ''
   // Native startup scripts run commands after user initialization, without racing PTY input.
   const startup = startupCommand === undefined ? '' : shellStartupCommand
   if (name === 'fish')
@@ -135,12 +149,13 @@ Remove-Variable cotaCommand -ErrorAction SilentlyContinue
       '-il',
       '-C',
       (codex ? fishCodexShellFunction : '') +
+        activity +
         (startupCommand === undefined ? '' : fishStartupCommand),
     ]
 
   const directory = join(
     runtime,
-    `shell-${name}${startupCommand === undefined ? '' : codex ? '-command-codex' : '-command'}`,
+    `shell-${name}${codex ? '-codex' : ''}${startupCommand === undefined ? '' : '-command'}${activity ? '-activity' : ''}`,
   )
   let preparation = preparations.get(directory)
   if (!preparation) {
@@ -160,6 +175,7 @@ for __cota_profile in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"
 done
 unset __cota_profile
 ${codex ? codexShellFunction : ''}
+${activity}
 ${startup}`,
           { mode: 0o600 },
         )
@@ -173,7 +189,7 @@ fi
 export COTA_SHELL_SOURCE="\${ZDOTDIR:-$HOME}"
 export ZDOTDIR="$COTA_SHELL_WRAPPER"
 ${codex && (file === '.zshrc' || file === '.zlogin') ? codexShellFunction : ''}
-${file === '.zlogin' ? 'export ZDOTDIR="$COTA_SHELL_SOURCE"\n' + startup : ''}`
+${file === '.zlogin' ? 'export ZDOTDIR="$COTA_SHELL_SOURCE"\n' + activity + startup : ''}`
         await writeFile(join(directory, file), source, { mode: 0o600 })
       }
     })().catch((error) => {

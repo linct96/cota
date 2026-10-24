@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useSourceControl } from './lib/source-control-store'
 import { useRightPanel } from './lib/right-panel-store'
-import { agentIndicatorState, workspaceAgentSummary } from './lib/agent-status'
+import { terminalIndicatorState, workspaceTerminalSummary } from './lib/agent-status'
 import { gitFileKey } from '../../shared/source-control'
 import {
   mapTerminalPane,
@@ -45,6 +45,7 @@ export interface TerminalTab {
   agentRevision?: number
   cwd?: string
   status: 'starting' | 'running' | 'exited' | 'error'
+  shellActivity?: import('../../shared/contracts').ShellActivity
   exitCode?: number
   error?: string
   startupCommand?: string
@@ -167,14 +168,10 @@ export function terminalTabs(
     const ids = terminalPaneIds(group.root)
     const panes = state.tabs.filter((pane) => ids.includes(pane.id))
     const focused = panes.find((pane) => pane.id === group.activePaneId) || panes[0]
-    const indicatorState = workspaceAgentSummary(panes)?.state
+    const indicatorState = workspaceTerminalSummary(panes)?.state
     const indicatorTab =
       indicatorState !== 'other'
-        ? [focused, ...panes].find(
-            (pane) =>
-              (pane.kind === 'agent' || pane.provider || pane.agent) &&
-              agentIndicatorState(pane) === indicatorState,
-          )
+        ? [focused, ...panes].find((pane) => terminalIndicatorState(pane) === indicatorState)
         : undefined
     return [
       {
@@ -344,6 +341,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           agentRevision: session.agent?.revision ?? session.agentRevision,
           cwd: session.cwd,
           status: session.exited ? 'exited' : 'running',
+          shellActivity: session.shellActivity,
           exitCode: session.exitCode,
         })
       }

@@ -35,18 +35,38 @@ export function agentIndicatorState(tab: TerminalTab): AgentDisplayState {
   return (state === 'completed' || state === 'succeeded') && !tab.agent?.unread ? 'other' : state
 }
 
-export function workspaceAgentSummary(tabs: TerminalTab[]) {
+export type TerminalDisplayState = AgentDisplayState | 'running'
+export const TERMINAL_STATE_LABELS: Record<TerminalDisplayState, string> = {
+  ...AGENT_STATE_LABELS,
+  running: '运行中',
+}
+
+export function terminalIndicatorState(tab: TerminalTab): TerminalDisplayState {
+  if (tab.kind === 'agent' || tab.provider || tab.agent) return agentIndicatorState(tab)
+  return !tab.closingStatus && tab.status === 'running' && tab.shellActivity === 'running'
+    ? 'running'
+    : 'other'
+}
+
+export function workspaceTerminalSummary(tabs: TerminalTab[]) {
   const states = tabs
-    .filter((tab) => tab.kind === 'agent' || tab.provider || tab.agent)
+    .filter(
+      (tab) =>
+        tab.kind === 'agent' ||
+        tab.provider ||
+        tab.agent ||
+        terminalIndicatorState(tab) === 'running',
+    )
     .map((tab) => {
-      const state = agentIndicatorState(tab)
+      const state = terminalIndicatorState(tab)
       return state === 'failed' && !tab.agent?.unread ? 'other' : state
     })
-  const priority: AgentDisplayState[] = [
+  const priority: TerminalDisplayState[] = [
     'needs-input',
     'error',
     'failed',
     'working',
+    'running',
     'succeeded',
     'completed',
     'interrupted',
@@ -60,7 +80,7 @@ export function workspaceAgentSummary(tabs: TerminalTab[]) {
   return {
     ...counts[0],
     description: counts
-      .map(({ state, count }) => `${count} 个${AGENT_STATE_LABELS[state]}`)
+      .map(({ state, count }) => `${count} 个${TERMINAL_STATE_LABELS[state]}`)
       .join(' · '),
   }
 }

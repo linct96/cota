@@ -113,9 +113,12 @@ export type Shortcut =
   | 'settings'
   | 'toggle-right-panel'
   | `tab-${number}`
+export type ShellActivity = 'unknown' | 'idle' | 'running'
+
 export type TerminalEvent =
   | ((
       | { type: 'data'; id: string; data: string }
+      | { type: 'activity'; id: string; activity: ShellActivity }
       | { type: 'exit'; id: string; exitCode: number; signal?: number }
       | { type: 'error'; id: string; error: string }
     ) & { attachmentId: string })
@@ -378,6 +381,7 @@ export interface TerminalBinding extends WorkspaceTarget {
 }
 
 export interface TerminalSession extends TerminalBinding {
+  shellActivity?: ShellActivity
   service?: TerminalService
   id: string
   cols: number

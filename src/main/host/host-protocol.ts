@@ -11,7 +11,7 @@ import type {
   WorkspaceTarget,
 } from '../../shared/contracts'
 
-export const HOST_PROTOCOL = 12
+export const HOST_PROTOCOL = 13
 
 export type ResolvedTerminalCreate = CreateTerminal & TerminalBinding
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}

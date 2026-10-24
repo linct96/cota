@@ -158,6 +158,8 @@ export function TerminalView({
         terminal.write(event.data, () => {
           if (!disposed) window.desktop.acknowledge(id, attachmentId, event.data.length)
         })
+      } else if (event.type === 'activity') {
+        useWorkspace.getState().updateTab(id, { shellActivity: event.activity })
       } else {
         terminal.options.disableStdin = true
         useWorkspace.getState().updateTab(
@@ -228,6 +230,7 @@ export function TerminalView({
         status: attached.exited ? 'exited' : 'running',
         startupCommand: undefined,
         service: attached.service,
+        shellActivity: attached.shellActivity,
         exitCode: attached.exitCode,
         agent: attached.agent,
         agentRevision: attached.agentRevision,

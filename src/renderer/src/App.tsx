@@ -50,7 +50,7 @@ import {
   AGENT_STATE_LABELS,
   agentIndicatorState,
   agentTabState,
-  workspaceAgentSummary,
+  workspaceTerminalSummary,
 } from './lib/agent-status'
 import { WorktreeDialog } from './components/WorktreeDialog'
 import { WorktreeSetupConfigDialog } from './components/WorktreeSetupConfigDialog'
@@ -841,7 +841,7 @@ export function App() {
                               const workspaceAgents = workspaceTabs.filter(
                                 (tab) => tab.kind === 'agent' || tab.provider || tab.agent,
                               )
-                              const agentSummary = workspaceAgentSummary(workspaceTabs)
+                              const terminalSummary = workspaceTerminalSummary(workspaceTabs)
                               return (
                                 <ContextMenu
                                   key={workspace.id}
@@ -865,7 +865,7 @@ export function App() {
                                       variant="ghost"
                                       disabled={!!state.removingWorkspace}
                                       data-active={isSelected}
-                                      aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${agentSummary ? `，Agent ${agentSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
+                                      aria-label={`${folderName(path)} ${workspace.name}${workspace.kind === 'git-worktree' ? '，Git Worktree' : ''}，${hasTerminals ? '有终端' : '无终端'}${terminalSummary ? `，${terminalSummary.description}` : ''}${branch ? `，分支 ${branch}` : ''}`}
                                       aria-current={isSelected ? 'page' : undefined}
                                       aria-haspopup="menu"
                                       className="project-item-button grid h-auto min-h-9 min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] content-center gap-x-2 gap-y-0 border-0 px-2 py-2 text-left text-inherit hover:bg-transparent hover:text-inherit focus-visible:ring-0 dark:hover:bg-transparent"
@@ -877,8 +877,8 @@ export function App() {
                                         className="project-item-status flex size-3.5 items-center justify-center"
                                         aria-hidden="true"
                                       >
-                                        {agentSummary && agentSummary.state !== 'other' ? (
-                                          <DotStatus state={agentSummary.state} />
+                                        {terminalSummary && terminalSummary.state !== 'other' ? (
+                                          <DotStatus state={terminalSummary.state} />
                                         ) : (
                                           <span
                                             className={cn(

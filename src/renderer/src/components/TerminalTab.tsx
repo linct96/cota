@@ -2,7 +2,7 @@ import { useSortable } from '@dnd-kit/react/sortable'
 import { Terminal as TerminalIcon } from 'lucide-react'
 import { AgentIcon } from './AgentIcon'
 import { DotStatus } from './DotStatus'
-import { agentIndicatorState, AGENT_STATE_LABELS } from '../lib/agent-status'
+import { terminalIndicatorState, TERMINAL_STATE_LABELS } from '../lib/agent-status'
 import { cn, shortenPath } from '../lib/utils'
 import { WorkspaceTab } from './WorkspaceTab'
 import type { TerminalTab as TerminalTabData } from '../store'
@@ -39,7 +39,7 @@ export function TerminalTab({
   })
   const isAgent = indicatorTab.kind === 'agent' || !!indicatorTab.provider || !!indicatorTab.agent
   const provider = indicatorTab.provider || indicatorTab.agent?.provider
-  const agentState = isAgent && !tab.closingStatus ? agentIndicatorState(indicatorTab) : 'other'
+  const indicatorState = !tab.closingStatus ? terminalIndicatorState(indicatorTab) : 'other'
 
   return (
     <WorkspaceTab
@@ -47,7 +47,9 @@ export function TerminalTab({
       aria-roledescription="可排序终端标签"
       id={`terminal-tab-${tab.id}`}
       aria-controls={`terminal-panel-${tab.id}`}
-      aria-label={agentState === 'other' ? title : `${title}，${AGENT_STATE_LABELS[agentState]}`}
+      aria-label={
+        indicatorState === 'other' ? title : `${title}，${TERMINAL_STATE_LABELS[indicatorState]}`
+      }
       title={path}
       label={title}
       active={active}
@@ -56,22 +58,22 @@ export function TerminalTab({
       onClose={onClose}
       className={cn('terminal-tab', className)}
       icon={
-        isAgent ? (
-          <span className="terminal-tab-agent-icon relative inline-flex size-3.5 shrink-0">
+        <span className="terminal-tab-status-icon relative inline-flex size-3.5 shrink-0">
+          {isAgent ? (
             <AgentIcon
               provider={provider}
               size={14}
               className="terminal-tab-icon size-3.5 shrink-0"
             />
-            {agentState !== 'other' && (
-              <span className="terminal-tab-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2">
-                <DotStatus state={agentState} />
-              </span>
-            )}
-          </span>
-        ) : (
-          <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
-        )
+          ) : (
+            <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
+          )}
+          {indicatorState !== 'other' && (
+            <span className="terminal-tab-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2">
+              <DotStatus state={indicatorState} />
+            </span>
+          )}
+        </span>
       }
     />
   )
