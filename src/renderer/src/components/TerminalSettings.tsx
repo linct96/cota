@@ -196,20 +196,20 @@ export function TerminalSettings() {
         </div>
       </div>
 
-      <FieldGroup className="terminal-settings-groups gap-8">
+      <div className="terminal-settings-groups flex w-full flex-col gap-8">
         <section
           className="terminal-settings-general flex flex-col gap-3"
           aria-labelledby="terminal-settings-general-title"
         >
-          <h4
+          <h2
             id="terminal-settings-general-title"
             className="terminal-settings-general-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
           >
             常规
-          </h4>
+          </h2>
           <Card className="terminal-settings-card" aria-busy={saving}>
-            <Field className="terminal-settings-shell-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-              <div className="terminal-settings-shell-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+            <div className="terminal-settings-shell-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+              <div className="terminal-settings-shell-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="terminal-settings-shell-label"
                   className="terminal-settings-shell-label text-sm leading-5 font-medium"
@@ -299,12 +299,12 @@ export function TerminalSettings() {
                   </Button>
                 )}
               </div>
-            </Field>
+            </div>
 
             <Separator className="terminal-settings-separator" />
 
-            <Field className="terminal-settings-scrollback-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-              <div className="terminal-settings-scrollback-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+            <div className="terminal-settings-scrollback-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+              <div className="terminal-settings-scrollback-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                 <span
                   id="terminal-settings-scrollback-label"
                   className="terminal-settings-scrollback-label text-sm leading-5 font-medium"
@@ -378,12 +378,12 @@ export function TerminalSettings() {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-            </Field>
+            </div>
 
             <Separator className="terminal-settings-separator" />
 
-            <Field className="terminal-gpu-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-              <div className="terminal-gpu-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+            <div className="terminal-gpu-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+              <div className="terminal-gpu-description flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                 <p
                   id="terminal-gpu-label"
                   className="terminal-gpu-label text-sm leading-5 font-medium"
@@ -431,11 +431,11 @@ export function TerminalSettings() {
                   关闭
                 </ToggleGroupItem>
               </ToggleGroup>
-            </Field>
+            </div>
           </Card>
         </section>
         <TerminalAppearanceSettings savePreferences={savePreferences} />
-      </FieldGroup>
+      </div>
 
       <Dialog
         open={shellDialogOpen}

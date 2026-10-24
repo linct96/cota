@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { Fragment, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { Terminal } from '@xterm/xterm'
@@ -135,6 +135,28 @@ const COLOR_LABELS = [
   '亮白',
 ]
 
+const PREVIEW_PROMPT = '\x1b[34m~/cota\x1b[0m \x1b[35mmain\x1b[0m \x1b[32m❯\x1b[0m '
+const PREVIEW_OUTPUT = [
+  `${PREVIEW_PROMPT}pnpm test`,
+  '\x1b[1;32m PASS \x1b[0m src/terminal.test.ts',
+  ' \x1b[32m✓\x1b[0m 中文与 English 混排',
+  ' \x1b[32m✓\x1b[0m theme updated  \x1b[2m12ms\x1b[0m',
+  ' \x1b[33m⚠ preview mode · 示例输出\x1b[0m',
+  '',
+  `${PREVIEW_PROMPT}git diff`,
+  '\x1b[36m@@ -1,2 +1,2 @@\x1b[0m',
+  '\x1b[31m-const fontSize = 13;\x1b[0m',
+  '\x1b[32m+const fontSize = 14;\x1b[0m',
+  '',
+  '\x1b[2;3m// 字体连字与字符辨识\x1b[0m',
+  '\x1b[34mconst\x1b[0m ready = a !== b && count >= 1;',
+  '=> -> === !== <= >=  0O 1Il {} []',
+  '',
+  '标准 \x1b[30m██ \x1b[31m██ \x1b[32m██ \x1b[33m██ \x1b[34m██ \x1b[35m██ \x1b[36m██ \x1b[37m██\x1b[0m',
+  '高亮 \x1b[90m██ \x1b[91m██ \x1b[92m██ \x1b[93m██ \x1b[94m██ \x1b[95m██ \x1b[96m██ \x1b[97m██\x1b[0m',
+  PREVIEW_PROMPT,
+].join('\r\n')
+
 function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance }) {
   const host = useRef<HTMLDivElement>(null)
   const currentSettings = useEffectEvent(() => settings)
@@ -159,9 +181,7 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
     }
     apply.current = update
     update()
-    terminal.write(
-      '\x1b[32m❯\x1b[0m git status\r\n\x1b[1mOn branch main\x1b[0m\r\n\x1b[32m  + Ready to build\x1b[0m\r\n\x1b[33m  ~ Theme preview\x1b[0m\r\n\x1b[31m  - Removed line\x1b[0m\r\n\x1b[34mconst\x1b[0m ready = a !== b && count >= 1;\r\n\x1b[32m❯\x1b[0m ',
-    )
+    terminal.write(PREVIEW_OUTPUT)
     const observer = new ResizeObserver(() => update())
     observer.observe(container)
     const stopTheme = observeDocumentTheme(() => update())
@@ -176,8 +196,8 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
   useEffect(() => apply.current(settings), [settings])
   return (
     <section
-      className="terminal-appearance-preview h-56 overflow-hidden rounded-lg border"
-      aria-label="终端外观预览：包含粗体、彩色输出、字体连字和光标示例"
+      className="terminal-appearance-preview h-96 overflow-hidden rounded-lg border"
+      aria-label="终端外观预览：包含示例测试输出、Git Diff、中英文、粗体、斜体、弱化文字、字体连字、易混淆字符、ANSI 十六色和光标示例"
     >
       <div
         ref={host}
@@ -280,85 +300,120 @@ export function TerminalAppearanceSettings({
                           ),
                         ].join(' ')
                         return (
-                          <>
-                            {group.name === 'typography' && (
-                              <Separator className="terminal-appearance-number-separator" />
+                          <Field
+                            className={cn(
+                              'terminal-appearance-number-field',
+                              group.name !== 'background' &&
+                                'min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5',
                             )}
-                            <Field
+                            data-invalid={invalid}
+                          >
+                            <label
+                              htmlFor={`terminal-${name}`}
                               className={cn(
-                                'terminal-appearance-number-field',
-                                group.name !== 'background' &&
-                                  'min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5',
+                                'terminal-appearance-number-label text-sm font-medium leading-5',
+                                group.name !== 'background' && 'min-w-0 flex-1 basis-64',
                               )}
-                              data-invalid={invalid}
                             >
-                              <label
-                                htmlFor={`terminal-${name}`}
-                                className={cn(
-                                  'terminal-appearance-number-label text-sm font-medium leading-5',
-                                  group.name !== 'background' && 'min-w-0 flex-1 basis-64',
-                                )}
+                              {label}
+                              <span
+                                id={`terminal-${name}-help`}
+                                className="terminal-appearance-number-range text-xs font-normal text-muted-foreground"
                               >
-                                {label}
-                                <span
-                                  id={`terminal-${name}-help`}
-                                  className="terminal-appearance-number-range text-xs font-normal text-muted-foreground"
-                                >
-                                  （{min}–{max}）
-                                </span>
-                              </label>
-                              <Input
-                                id={`terminal-${name}`}
+                                （{min}–{max}）
+                              </span>
+                            </label>
+                            <Input
+                              id={`terminal-${name}`}
+                              className={cn(
+                                'terminal-appearance-number-input',
+                                group.name !== 'background' && 'w-32 max-w-full shrink-0',
+                              )}
+                              type="number"
+                              min={min}
+                              max={max}
+                              step={step}
+                              value={
+                                Number.isNaN(field.state.value)
+                                  ? ''
+                                  : name === 'backgroundOpacity'
+                                    ? Number((1 - field.state.value).toFixed(2))
+                                    : field.state.value
+                              }
+                              onBlur={field.handleBlur}
+                              onChange={(event) =>
+                                field.handleChange(
+                                  name === 'backgroundOpacity'
+                                    ? 1 - event.target.valueAsNumber
+                                    : event.target.valueAsNumber,
+                                )
+                              }
+                              aria-invalid={invalid}
+                              aria-describedby={`terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`}
+                            />
+                            {name === 'backgroundOpacity' && (
+                              <p
+                                id="terminal-background-opacity-description"
+                                className="terminal-appearance-number-description text-xs text-muted-foreground"
+                              >
+                                0 为不透明，1 为完全透明
+                              </p>
+                            )}
+                            {errorMessage && (
+                              <p
+                                id={`terminal-${name}-error`}
                                 className={cn(
-                                  'terminal-appearance-number-input',
-                                  group.name !== 'background' && 'w-32 max-w-full shrink-0',
+                                  'terminal-appearance-number-error text-xs text-destructive',
+                                  group.name !== 'background' && 'basis-full',
                                 )}
-                                type="number"
-                                min={min}
-                                max={max}
-                                step={step}
-                                value={
-                                  Number.isNaN(field.state.value)
-                                    ? ''
-                                    : name === 'backgroundOpacity'
-                                      ? Number((1 - field.state.value).toFixed(2))
-                                      : field.state.value
-                                }
-                                onBlur={field.handleBlur}
-                                onChange={(event) =>
-                                  field.handleChange(
-                                    name === 'backgroundOpacity'
-                                      ? 1 - event.target.valueAsNumber
-                                      : event.target.valueAsNumber,
-                                  )
-                                }
-                                aria-invalid={invalid}
-                                aria-describedby={`terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`}
-                              />
-                              {name === 'backgroundOpacity' && (
-                                <p
-                                  id="terminal-background-opacity-description"
-                                  className="terminal-appearance-number-description text-xs text-muted-foreground"
-                                >
-                                  0 为不透明，1 为完全透明
-                                </p>
-                              )}
-                              {errorMessage && (
-                                <p
-                                  id={`terminal-${name}-error`}
-                                  className={cn(
-                                    'terminal-appearance-number-error text-xs text-destructive',
-                                    group.name !== 'background' && 'basis-full',
-                                  )}
-                                  role="alert"
-                                >
-                                  {errorMessage}
-                                </p>
-                              )}
-                            </Field>
-                          </>
+                                role="alert"
+                              >
+                                {errorMessage}
+                              </p>
+                            )}
+                          </Field>
                         )
                       }}
+                    </form.Field>
+                  ))
+                  const choiceFields = ENUM_FIELDS.filter(
+                    (field) => field.group === group.name,
+                  ).map(({ name, label, options }) => (
+                    <form.Field key={name} name={name}>
+                      {(field) => (
+                        <Field className="terminal-appearance-choice-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                          <p
+                            id={`terminal-${name}-label`}
+                            className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-sm font-medium leading-5"
+                          >
+                            {label}
+                          </p>
+                          <ToggleGroup
+                            className="terminal-appearance-choices"
+                            variant="outline"
+                            size="lg"
+                            spacing={0}
+                            value={[field.state.value]}
+                            aria-labelledby={`terminal-${name}-label`}
+                            onBlur={field.handleBlur}
+                            onValueChange={([value]) => {
+                              if (!value || !options.some(([option]) => option === value)) return
+                              field.handleChange(value as typeof field.state.value)
+                              setSaved(false)
+                            }}
+                          >
+                            {options.map(([value, text]) => (
+                              <ToggleGroupItem
+                                className="terminal-appearance-choice"
+                                key={value}
+                                value={value}
+                              >
+                                {text}
+                              </ToggleGroupItem>
+                            ))}
+                          </ToggleGroup>
+                        </Field>
+                      )}
                     </form.Field>
                   ))
                   return (
@@ -380,17 +435,10 @@ export function TerminalAppearanceSettings({
                             'divide-y divide-border [&>fieldset:not(:last-child)]:pb-(--card-spacing)',
                         )}
                       >
-                        {group.name === 'typography' && (
-                          <form.Field name="fontFamily">
-                            {(field) => {
-                              const errorMessage = [
-                                ...new Set(
-                                  (field.state.meta.isTouched ? field.state.meta.errors : [])
-                                    .map((error) => error?.message)
-                                    .filter(Boolean),
-                                ),
-                              ].join(' ')
-                              return (
+                        {group.name === 'typography' ? (
+                          <>
+                            <form.Field name="fontFamily">
+                              {(field) => (
                                 <Field
                                   className="terminal-font-family-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
                                   data-invalid={
@@ -404,21 +452,19 @@ export function TerminalAppearanceSettings({
                                     >
                                       字体
                                     </span>
-                                    <p
+                                    <FieldDescription
                                       id="terminal-font-family-help"
-                                      className="terminal-font-family-description text-xs text-muted-foreground"
+                                      className="terminal-font-family-description"
                                     >
                                       使用已安装的等宽字体；可用逗号设置回退字体。
-                                    </p>
-                                    {errorMessage && (
-                                      <p
-                                        id="terminal-font-family-error"
-                                        className="terminal-font-family-error text-xs text-destructive"
-                                        role="alert"
-                                      >
-                                        {errorMessage}
-                                      </p>
-                                    )}
+                                    </FieldDescription>
+                                    <FieldError
+                                      id="terminal-font-family-error"
+                                      className="terminal-font-family-error"
+                                      errors={
+                                        field.state.meta.isTouched ? field.state.meta.errors : []
+                                      }
+                                    />
                                   </div>
                                   <Combobox
                                     items={FONT_SUGGESTIONS}
@@ -462,310 +508,256 @@ export function TerminalAppearanceSettings({
                                     </ComboboxContent>
                                   </Combobox>
                                 </Field>
-                              )
-                            }}
-                          </form.Field>
-                        )}
-                        {numberFields.length > 0 && (
-                          <>
-                            {group.name === 'cursor' ? (
-                              numberFields
-                            ) : (
-                              <FieldGroup
-                                className={cn(
-                                  'terminal-appearance-numbers',
-                                  group.name === 'background' &&
-                                    'grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4 px-5',
-                                )}
-                              >
-                                {numberFields}
-                              </FieldGroup>
-                            )}
-                            {group.name !== 'cursor' && (
-                              <Separator className="terminal-appearance-group-separator" />
-                            )}
-                          </>
-                        )}
-                        {ENUM_FIELDS.filter((field) => field.group === group.name).map(
-                          ({ name, label, options }) => (
-                            <form.Field key={name} name={name}>
+                              )}
+                            </form.Field>
+                            {numberFields.map((field) => (
+                              <Fragment key={field.key}>
+                                <Separator className="terminal-appearance-number-separator" />
+                                {field}
+                              </Fragment>
+                            ))}
+                            <Separator className="terminal-appearance-group-separator" />
+                            {choiceFields}
+                            <Separator className="terminal-appearance-contrast-separator" />
+                            <form.Field name="contrastMode">
                               {(field) => (
-                                <Field className="terminal-appearance-choice-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                                  <p
-                                    id={`terminal-${name}-label`}
-                                    className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-sm font-medium leading-5"
-                                  >
-                                    {label}
-                                  </p>
+                                <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                                  <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                                    <p
+                                      id="terminal-contrastMode-label"
+                                      className="terminal-contrast-mode-label text-sm font-medium leading-5"
+                                    >
+                                      文字对比度
+                                    </p>
+                                    <FieldDescription
+                                      id="terminal-contrast-mode-description"
+                                      className="terminal-contrast-mode-description"
+                                    >
+                                      自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。自定义值越大，文字与背景的区分越明显，但可能改变原有配色。
+                                    </FieldDescription>
+                                  </div>
                                   <ToggleGroup
-                                    className="terminal-appearance-choices"
+                                    className="terminal-contrast-mode-options shrink-0"
                                     variant="outline"
                                     size="lg"
                                     spacing={0}
                                     value={[field.state.value]}
-                                    aria-labelledby={`terminal-${name}-label`}
+                                    aria-labelledby="terminal-contrastMode-label"
+                                    aria-describedby="terminal-contrast-mode-description"
                                     onBlur={field.handleBlur}
                                     onValueChange={([value]) => {
-                                      if (!value || !options.some(([option]) => option === value))
+                                      if (value !== 'auto' && value !== 'off' && value !== 'custom')
                                         return
-                                      field.handleChange(value as typeof field.state.value)
+                                      field.handleChange(value)
                                       setSaved(false)
                                     }}
                                   >
-                                    {options.map(([value, text]) => (
-                                      <ToggleGroupItem
-                                        className="terminal-appearance-choice"
-                                        key={value}
-                                        value={value}
-                                      >
-                                        {text}
-                                      </ToggleGroupItem>
-                                    ))}
+                                    <ToggleGroupItem
+                                      className="terminal-contrast-mode-option"
+                                      value="auto"
+                                    >
+                                      自动
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem
+                                      className="terminal-contrast-mode-option"
+                                      value="off"
+                                    >
+                                      关闭
+                                    </ToggleGroupItem>
+                                    <ToggleGroupItem
+                                      className="terminal-contrast-mode-option"
+                                      value="custom"
+                                    >
+                                      自定义
+                                    </ToggleGroupItem>
                                   </ToggleGroup>
                                 </Field>
                               )}
                             </form.Field>
-                          ),
-                        )}
-                        {SWITCH_FIELDS.filter((field) => field.group === group.name).map(
-                          ({ name, label }) => (
-                            <form.Field key={name} name={name}>
-                              {(field) => (
-                                <Field className="terminal-appearance-switch-field min-h-8 flex-row items-center justify-between gap-4 px-5">
-                                  <span
-                                    id={`terminal-${name}-label`}
-                                    className="terminal-appearance-switch-label text-sm font-medium leading-5"
-                                  >
-                                    {label}
-                                  </span>
-                                  <Switch
-                                    id={`terminal-${name}`}
-                                    aria-labelledby={`terminal-${name}-label`}
-                                    className="terminal-appearance-switch"
-                                    checked={field.state.value}
-                                    onBlur={field.handleBlur}
-                                    onCheckedChange={(value) => {
-                                      field.handleChange(value)
-                                      setSaved(false)
-                                    }}
-                                    disabled={
-                                      name === 'windowBlur' &&
-                                      !['darwin', 'win32'].includes(window.desktop.platform)
-                                    }
-                                  />
-                                </Field>
-                              )}
-                            </form.Field>
-                          ),
-                        )}
-                        {group.name === 'typography' && (
-                          <>
-                            <Separator className="terminal-appearance-contrast-separator" />
-                            <form.Subscribe selector={(state) => state.values.contrastMode}>
-                              {(contrastMode) => (
-                                <fieldset
-                                  className="terminal-contrast-settings flex min-w-0 flex-col gap-3"
-                                  aria-busy={saving}
-                                >
-                                  <form.Field name="contrastMode">
-                                    {(field) => (
-                                      <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                                        <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                                          <p
-                                            id="terminal-contrastMode-label"
-                                            className="terminal-contrast-mode-label text-sm font-medium leading-5"
+                            {values.contrastMode === 'custom' && (
+                              <>
+                                <Separator className="terminal-contrast-ratio-separator" />
+                                <form.Field name="minimumContrastRatio">
+                                  {(field) => {
+                                    const invalid =
+                                      field.state.meta.isTouched && !field.state.meta.isValid
+
+                                    return (
+                                      <Field
+                                        className="terminal-contrast-ratio-field min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5"
+                                        data-invalid={invalid}
+                                      >
+                                        <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                                          <label
+                                            htmlFor="terminal-minimumContrastRatio"
+                                            className="terminal-contrast-ratio-label text-sm font-medium leading-5"
                                           >
-                                            文字对比度
-                                          </p>
-                                          <p
-                                            id="terminal-contrast-mode-description"
-                                            className="terminal-contrast-mode-description text-xs text-muted-foreground"
+                                            最低对比度
+                                            <span
+                                              id="terminal-minimumContrastRatio-help"
+                                              className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground"
+                                            >
+                                              （1–21）
+                                            </span>
+                                          </label>
+                                          <FieldDescription
+                                            id="terminal-minimumContrastRatio-description"
+                                            className="terminal-contrast-ratio-description"
                                           >
-                                            自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。自定义值越大，文字与背景的区分越明显，但可能改变原有配色。
-                                          </p>
+                                            推荐 4.5（WCAG AA）或 7.0（WCAG
+                                            AAA）。数值越高文字越醒目。
+                                          </FieldDescription>
                                         </div>
-                                        <ToggleGroup
-                                          className="terminal-contrast-mode-options shrink-0"
-                                          variant="outline"
-                                          size="lg"
-                                          spacing={0}
-                                          value={[field.state.value]}
-                                          aria-labelledby="terminal-contrastMode-label"
-                                          aria-describedby="terminal-contrast-mode-description"
+                                        <Input
+                                          id="terminal-minimumContrastRatio"
+                                          className="terminal-contrast-ratio-input w-32 max-w-full shrink-0"
+                                          type="number"
+                                          min={1}
+                                          max={21}
+                                          step={0.1}
+                                          value={
+                                            Number.isNaN(field.state.value) ? '' : field.state.value
+                                          }
                                           onBlur={field.handleBlur}
-                                          onValueChange={([value]) => {
-                                            if (
-                                              value !== 'auto' &&
-                                              value !== 'off' &&
-                                              value !== 'custom'
-                                            )
-                                              return
-                                            field.handleChange(value)
+                                          onChange={(event) => {
+                                            field.handleChange(event.target.valueAsNumber)
                                             setSaved(false)
                                           }}
+                                          aria-invalid={invalid}
+                                          aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
+                                        />
+                                        <FieldError
+                                          id="terminal-minimumContrastRatio-error"
+                                          className="terminal-contrast-ratio-error basis-full"
+                                          errors={
+                                            field.state.meta.isTouched
+                                              ? field.state.meta.errors
+                                              : []
+                                          }
+                                        />
+                                      </Field>
+                                    )
+                                  }}
+                                </form.Field>
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {numberFields.length > 0 && (
+                              <>
+                                {group.name === 'cursor' ? (
+                                  numberFields
+                                ) : (
+                                  <FieldGroup
+                                    className={cn(
+                                      'terminal-appearance-numbers',
+                                      group.name === 'background' &&
+                                        'grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4 px-5',
+                                    )}
+                                  >
+                                    {numberFields}
+                                  </FieldGroup>
+                                )}
+                                {group.name !== 'cursor' && (
+                                  <Separator className="terminal-appearance-group-separator" />
+                                )}
+                              </>
+                            )}
+                            {choiceFields}
+                            {SWITCH_FIELDS.filter((field) => field.group === group.name).map(
+                              ({ name, label }) => (
+                                <form.Field key={name} name={name}>
+                                  {(field) => (
+                                    <Field className="terminal-appearance-switch-field min-h-8 flex-row items-center justify-between gap-4 px-5">
+                                      <span
+                                        id={`terminal-${name}-label`}
+                                        className="terminal-appearance-switch-label text-sm font-medium leading-5"
+                                      >
+                                        {label}
+                                      </span>
+                                      <Switch
+                                        id={`terminal-${name}`}
+                                        aria-labelledby={`terminal-${name}-label`}
+                                        className="terminal-appearance-switch"
+                                        checked={field.state.value}
+                                        onBlur={field.handleBlur}
+                                        onCheckedChange={(value) => {
+                                          field.handleChange(value)
+                                          setSaved(false)
+                                        }}
+                                        disabled={
+                                          name === 'windowBlur' &&
+                                          !['darwin', 'win32'].includes(window.desktop.platform)
+                                        }
+                                      />
+                                    </Field>
+                                  )}
+                                </form.Field>
+                              ),
+                            )}
+                            {group.name === 'theme' &&
+                              (['themeDark', 'themeLight'] as const).map((name) =>
+                                name === 'themeLight' && !values.separateLightTheme ? null : (
+                                  <form.Field key={name} name={name}>
+                                    {(field) => (
+                                      <Field className="terminal-theme-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                                        <span
+                                          id={`terminal-${name}-label`}
+                                          className="terminal-theme-label text-sm font-medium leading-5"
                                         >
-                                          <ToggleGroupItem
-                                            className="terminal-contrast-mode-option"
-                                            value="auto"
+                                          {name === 'themeDark' ? '深色模式配色' : '浅色模式配色'}
+                                        </span>
+                                        <Select
+                                          value={field.state.value}
+                                          onValueChange={(value) => {
+                                            if (value) {
+                                              field.handleChange(value)
+                                              setSaved(false)
+                                            }
+                                          }}
+                                        >
+                                          <SelectTrigger
+                                            id={`terminal-${name}`}
+                                            aria-labelledby={`terminal-${name}-label`}
+                                            className="terminal-theme-trigger min-w-0 max-w-full"
+                                            onBlur={field.handleBlur}
                                           >
-                                            自动
-                                          </ToggleGroupItem>
-                                          <ToggleGroupItem
-                                            className="terminal-contrast-mode-option"
-                                            value="off"
-                                          >
-                                            关闭
-                                          </ToggleGroupItem>
-                                          <ToggleGroupItem
-                                            className="terminal-contrast-mode-option"
-                                            value="custom"
-                                          >
-                                            自定义
-                                          </ToggleGroupItem>
-                                        </ToggleGroup>
+                                            <SelectValue className="terminal-theme-value">
+                                              {field.state.value === 'auto'
+                                                ? '跟随应用主题'
+                                                : field.state.value}
+                                            </SelectValue>
+                                          </SelectTrigger>
+                                          <SelectContent className="terminal-theme-content">
+                                            <SelectGroup className="terminal-theme-items">
+                                              <SelectItem
+                                                className="terminal-theme-item"
+                                                value="auto"
+                                              >
+                                                跟随应用主题
+                                              </SelectItem>
+                                              {Object.keys(TERMINAL_THEME_CATALOG)
+                                                .sort()
+                                                .map((theme) => (
+                                                  <SelectItem
+                                                    className="terminal-theme-item"
+                                                    key={theme}
+                                                    value={theme}
+                                                  >
+                                                    {theme}
+                                                  </SelectItem>
+                                                ))}
+                                            </SelectGroup>
+                                          </SelectContent>
+                                        </Select>
                                       </Field>
                                     )}
                                   </form.Field>
-                                  {contrastMode === 'custom' && (
-                                    <div className="terminal-contrast-custom-row ml-5 mr-5 border-l-2 border-border/80 py-1 pl-4">
-                                      <form.Field name="minimumContrastRatio">
-                                        {(field) => {
-                                          const invalid =
-                                            field.state.meta.isTouched && !field.state.meta.isValid
-
-                                          const errorMessage = [
-                                            ...new Set(
-                                              (field.state.meta.isTouched
-                                                ? field.state.meta.errors
-                                                : []
-                                              )
-                                                .map((error) => error?.message)
-                                                .filter(Boolean),
-                                            ),
-                                          ].join(' ')
-                                          return (
-                                            <Field
-                                              className="terminal-contrast-ratio-field min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2"
-                                              data-invalid={invalid}
-                                            >
-                                              <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                                                <label
-                                                  htmlFor="terminal-minimumContrastRatio"
-                                                  className="terminal-contrast-ratio-label text-sm font-medium leading-5"
-                                                >
-                                                  最低对比度
-                                                  <span
-                                                    id="terminal-minimumContrastRatio-help"
-                                                    className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground"
-                                                  >
-                                                    （1–21）
-                                                  </span>
-                                                </label>
-                                                <p
-                                                  id="terminal-minimumContrastRatio-description"
-                                                  className="terminal-contrast-ratio-description text-xs text-muted-foreground"
-                                                >
-                                                  推荐 4.5（WCAG AA）或 7.0（WCAG
-                                                  AAA）。数值越高文字越醒目。
-                                                </p>
-                                              </div>
-                                              <Input
-                                                id="terminal-minimumContrastRatio"
-                                                className="terminal-contrast-ratio-input w-28 max-w-full shrink-0 font-mono"
-                                                type="number"
-                                                min={1}
-                                                max={21}
-                                                step={0.1}
-                                                value={
-                                                  Number.isNaN(field.state.value)
-                                                    ? ''
-                                                    : field.state.value
-                                                }
-                                                onBlur={field.handleBlur}
-                                                onChange={(event) => {
-                                                  field.handleChange(event.target.valueAsNumber)
-                                                  setSaved(false)
-                                                }}
-                                                aria-invalid={invalid}
-                                                aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
-                                              />
-                                              {errorMessage && (
-                                                <p
-                                                  id="terminal-minimumContrastRatio-error"
-                                                  className="terminal-contrast-ratio-error basis-full text-xs text-destructive"
-                                                  role="alert"
-                                                >
-                                                  {errorMessage}
-                                                </p>
-                                              )}
-                                            </Field>
-                                          )
-                                        }}
-                                      </form.Field>
-                                    </div>
-                                  )}
-                                </fieldset>
+                                ),
                               )}
-                            </form.Subscribe>
                           </>
                         )}
-                        {group.name === 'theme' &&
-                          (['themeDark', 'themeLight'] as const).map((name) =>
-                            name === 'themeLight' && !values.separateLightTheme ? null : (
-                              <form.Field key={name} name={name}>
-                                {(field) => (
-                                  <Field className="terminal-theme-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                                    <span
-                                      id={`terminal-${name}-label`}
-                                      className="terminal-theme-label text-sm font-medium leading-5"
-                                    >
-                                      {name === 'themeDark' ? '深色模式配色' : '浅色模式配色'}
-                                    </span>
-                                    <Select
-                                      value={field.state.value}
-                                      onValueChange={(value) => {
-                                        if (value) {
-                                          field.handleChange(value)
-                                          setSaved(false)
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger
-                                        id={`terminal-${name}`}
-                                        aria-labelledby={`terminal-${name}-label`}
-                                        className="terminal-theme-trigger min-w-0 max-w-full"
-                                        onBlur={field.handleBlur}
-                                      >
-                                        <SelectValue className="terminal-theme-value">
-                                          {field.state.value === 'auto'
-                                            ? '跟随应用主题'
-                                            : field.state.value}
-                                        </SelectValue>
-                                      </SelectTrigger>
-                                      <SelectContent className="terminal-theme-content">
-                                        <SelectGroup className="terminal-theme-items">
-                                          <SelectItem className="terminal-theme-item" value="auto">
-                                            跟随应用主题
-                                          </SelectItem>
-                                          {Object.keys(TERMINAL_THEME_CATALOG)
-                                            .sort()
-                                            .map((theme) => (
-                                              <SelectItem
-                                                className="terminal-theme-item"
-                                                key={theme}
-                                                value={theme}
-                                              >
-                                                {theme}
-                                              </SelectItem>
-                                            ))}
-                                        </SelectGroup>
-                                      </SelectContent>
-                                    </Select>
-                                  </Field>
-                                )}
-                              </form.Field>
-                            ),
-                          )}
                       </Card>
                     </section>
                   )
