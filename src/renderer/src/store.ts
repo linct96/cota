@@ -193,6 +193,7 @@ function activeWorkspaceTab(workspaceId: string): string | undefined {
   const session = useSourceControl.getState().sessions[workspaceId]
   if (session?.changesActive) return 'changes'
   if (session?.activePinnedDiff) return `diff:${gitFileKey(session.activePinnedDiff)}`
+  if (session?.activePinnedFile) return `file:${session.activePinnedFile}`
   if (session?.preview) return 'preview'
   const state = useWorkspace.getState()
   const id = state.activeTabs[workspaceId]
@@ -887,9 +888,14 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         sourceControl.selectPinnedDiff(workspace.id, key)
         break
       }
+      case 'file':
+        if (!session.pinnedFiles.includes(tab.path))
+          sourceControl.update(workspace.id, { pinnedFiles: [...session.pinnedFiles, tab.path] })
+        sourceControl.selectPinnedFile(workspace.id, tab.path)
+        break
       case 'preview':
         if (tab.selection) sourceControl.openDiff(workspace.id, tab.selection)
-        else sourceControl.update(workspace.id, { file: tab.file, preview: true })
+        else if (tab.file) sourceControl.openFile(workspace.id, tab.file)
         break
     }
     sourceControl.update(workspace.id, { closedTabs: session.closedTabs.slice(0, -1) })
@@ -931,6 +937,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     if (key === 'changes') sourceControl.openChanges(workspaceId)
     else if (key.startsWith('diff:'))
       sourceControl.selectPinnedDiff(workspaceId, key.slice('diff:'.length))
+    else if (key.startsWith('file:'))
+      sourceControl.selectPinnedFile(workspaceId, key.slice('file:'.length))
     else if (key === 'preview') sourceControl.update(workspaceId, { preview: true })
     set((state) => ({ focusVersion: state.focusVersion + 1 }))
   },
@@ -947,6 +955,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     if (key === 'changes') sourceControl.closeChanges(workspaceId)
     else if (key.startsWith('diff:'))
       sourceControl.closePinnedDiff(workspaceId, key.slice('diff:'.length))
+    else if (key.startsWith('file:'))
+      sourceControl.closePinnedFile(workspaceId, key.slice('file:'.length))
     else if (key === 'preview') sourceControl.closePreview(workspaceId)
     if (!active) return
     if (next) get().selectWorkspaceTab(workspaceId, next)

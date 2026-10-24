@@ -14,10 +14,12 @@ const Editor = lazy(() => import('./FilePreviewEditor'))
 export function FilePreview({
   workspace,
   path,
+  pinned = false,
   active,
 }: {
   workspace: ProjectWorkspace
   path: string
+  pinned?: boolean
   active: boolean
 }) {
   const [result, setResult] = useState<Preview>()
@@ -73,10 +75,18 @@ export function FilePreview({
 
   return (
     <section
-      id={`source-control-panel-${workspace.id}`}
+      id={
+        pinned
+          ? `file-pinned-panel-${workspace.id}-${encodeURIComponent(path)}`
+          : `source-control-panel-${workspace.id}`
+      }
       role="tabpanel"
       tabIndex={0}
-      aria-labelledby={`source-control-tab-${workspace.id}`}
+      aria-labelledby={
+        pinned
+          ? `file-pinned-tab-${workspace.id}-${encodeURIComponent(path)}`
+          : `source-control-tab-${workspace.id}`
+      }
       className="file-preview flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
       <header className="file-preview-header flex min-w-0 shrink-0 items-center gap-2 border-b px-3 py-2">

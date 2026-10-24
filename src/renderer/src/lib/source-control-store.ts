@@ -12,6 +12,7 @@ export type ClosedTab =
     }
   | { kind: 'changes' }
   | { kind: 'diff'; selection: GitDiffSelection }
+  | { kind: 'file'; path: string }
   | { kind: 'preview'; file?: string; selection?: GitDiffSelection }
 
 interface SourceControlSession {
@@ -20,6 +21,8 @@ interface SourceControlSession {
   selection?: GitDiffSelection
   pinnedDiffs: GitDiffSelection[]
   activePinnedDiff?: GitDiffSelection
+  pinnedFiles: string[]
+  activePinnedFile?: string
   file?: string
   mode: 'changes' | 'history' | 'compare'
   baseRef: string
@@ -35,6 +38,7 @@ export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
   tabOrder: [],
   closedTabs: [],
   pinnedDiffs: [],
+  pinnedFiles: [],
   preview: false,
   changesOpen: false,
   changesActive: false,
@@ -52,6 +56,10 @@ interface SourceControlState {
   pinDiff(id: string): void
   selectPinnedDiff(id: string, key: string): void
   closePinnedDiff(id: string, key: string): void
+  openFile(id: string, path: string): void
+  pinFile(id: string): void
+  selectPinnedFile(id: string, path: string): void
+  closePinnedFile(id: string, path: string): void
   openChanges(id: string): void
   closeChanges(id: string): void
   closePreview(id: string): void
@@ -70,8 +78,20 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
       if (patch.file !== undefined) session.selection = undefined
       else if ('selection' in patch) session.file = undefined
       if (patch.preview) session.changesActive = false
-      if (patch.preview || patch.changesActive || patch.file !== undefined)
+      if (
+        patch.preview ||
+        patch.changesActive ||
+        patch.file !== undefined ||
+        patch.activePinnedFile !== undefined
+      )
         session.activePinnedDiff = undefined
+      if (
+        patch.preview ||
+        patch.changesActive ||
+        patch.file !== undefined ||
+        patch.activePinnedDiff !== undefined
+      )
+        session.activePinnedFile = undefined
       if (patch.status && session.selection && session.selection.area !== 'review') {
         const selection = session.selection
         const entry =
@@ -83,6 +103,7 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
       const extraTabs = [
         ...(session.changesOpen ? ['changes'] : []),
         ...session.pinnedDiffs.map((selection) => `diff:${gitFileKey(selection)}`),
+        ...session.pinnedFiles.map((path) => `file:${path}`),
         ...(session.file || session.selection ? ['preview'] : []),
       ]
       const tabOrder = session.tabOrder.filter(
@@ -148,6 +169,35 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
           : session.activePinnedDiff,
     })
   },
+  openFile(id, path) {
+    if (get().sessions[id]?.pinnedFiles.includes(path)) get().selectPinnedFile(id, path)
+    else get().update(id, { file: path, preview: true })
+  },
+  pinFile(id) {
+    const session = get().sessions[id]
+    if (!session?.preview || !session.file) return
+    const path = session.file
+    get().update(id, {
+      tabOrder: session.tabOrder.map((key) => (key === 'preview' ? `file:${path}` : key)),
+      pinnedFiles: [...session.pinnedFiles, path],
+      activePinnedFile: path,
+      file: undefined,
+      preview: false,
+    })
+  },
+  selectPinnedFile(id, path) {
+    if (get().sessions[id]?.pinnedFiles.includes(path))
+      get().update(id, { activePinnedFile: path, preview: false, changesActive: false })
+  },
+  closePinnedFile(id, path) {
+    const session = get().sessions[id]
+    if (!session?.pinnedFiles.includes(path)) return
+    get().rememberClosedTab(id, { kind: 'file', path })
+    get().update(id, {
+      pinnedFiles: session.pinnedFiles.filter((file) => file !== path),
+      activePinnedFile: session.activePinnedFile === path ? undefined : session.activePinnedFile,
+    })
+  },
   openChanges(id) {
     get().update(id, { changesOpen: true, changesActive: true, preview: false })
   },
@@ -172,7 +222,17 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
   },
   showTerminal(id) {
     const session = get().sessions[id]
-    if (session?.preview || session?.changesActive || session?.activePinnedDiff)
-      get().update(id, { preview: false, changesActive: false, activePinnedDiff: undefined })
+    if (
+      session?.preview ||
+      session?.changesActive ||
+      session?.activePinnedDiff ||
+      session?.activePinnedFile
+    )
+      get().update(id, {
+        preview: false,
+        changesActive: false,
+        activePinnedDiff: undefined,
+        activePinnedFile: undefined,
+      })
   },
 }))

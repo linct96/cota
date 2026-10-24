@@ -385,7 +385,11 @@ body:has(
   pointer-events: none;
   background-color: var(--terminal-pane-inactive-overlay);
 }
-.source-control-preview-tab[data-diff='true'] .workspace-tab-title {
+:is(.source-control-preview-tab, .source-control-pinned-tab, .file-pinned-tab)
+  .workspace-tab-title {
+  padding-inline-end: 2px;
+}
+.source-control-preview-tab .workspace-tab-title {
   font-style: italic;
 }
 .top-status-bar-history {

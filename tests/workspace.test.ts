@@ -2050,6 +2050,87 @@ describe('workspace state', () => {
     expect(session().tabOrder).not.toContain(`terminal:${added.id}`)
   })
 
+  it('pins ordinary file previews without replacing fixed tabs and restores them after closing', async () => {
+    const store = () => useWorkspace.getState()
+    await store().bootstrap()
+    await store().openProject()
+    const id = currentWorkspace(store())!.id
+    const scm = useSourceControl.getState()
+    const session = () => useSourceControl.getState().sessions[id]
+    const terminals = store().tabs
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    const third = 'src/third.ts'
+    const diff = { path: first, area: 'unstaged' as const }
+
+    scm.openFile(id, first)
+    scm.openFile(id, second)
+    expect(session()).toMatchObject({ file: second, preview: true, pinnedFiles: [] })
+    scm.pinFile(id)
+    scm.pinFile(id)
+    expect(session()).toMatchObject({
+      file: undefined,
+      preview: false,
+      pinnedFiles: [second],
+      activePinnedFile: second,
+    })
+    expect(session().tabOrder).toEqual([`terminal:${terminals[0].id}`, `file:${second}`])
+    scm.openFile(id, first)
+    scm.pinFile(id)
+    scm.openFile(id, third)
+    scm.openFile(id, second)
+    scm.pinFile(id)
+    expect(session()).toMatchObject({
+      file: third,
+      preview: false,
+      pinnedFiles: [second, first],
+      activePinnedFile: second,
+    })
+    expect(session().tabOrder).toEqual([
+      `terminal:${terminals[0].id}`,
+      `file:${second}`,
+      `file:${first}`,
+      'preview',
+    ])
+
+    store().shortcut('tab-4')
+    expect(session()).toMatchObject({ file: third, preview: true, activePinnedFile: undefined })
+    store().shortcut('tab-3')
+    expect(session()).toMatchObject({ preview: false, activePinnedFile: first })
+    scm.openDiff(id, diff)
+    scm.pinDiff(id)
+    expect(session()).toMatchObject({ activePinnedFile: undefined, activePinnedDiff: diff })
+    scm.openFile(id, first)
+    expect(session()).toMatchObject({ activePinnedFile: first, activePinnedDiff: undefined })
+    scm.openChanges(id)
+    expect(session()).toMatchObject({ changesActive: true, activePinnedFile: undefined })
+    store().shortcut('tab-2')
+    expect(session()).toMatchObject({ changesActive: false, activePinnedFile: second })
+    store().shortcut('tab-1')
+    expect(session()).toMatchObject({ activePinnedFile: undefined, pinnedFiles: [second, first] })
+    store().shortcut('tab-2')
+    store().shortcut('close-terminal')
+    expect(session()).toMatchObject({ pinnedFiles: [first], activePinnedFile: first })
+    expect(session().tabOrder).not.toContain(`file:${second}`)
+    expect(session().closedTabs.at(-1)).toEqual({ kind: 'file', path: second })
+    store().shortcut('reopen-tab')
+    expect(session()).toMatchObject({ pinnedFiles: [first, second], activePinnedFile: second })
+    expect(session().tabOrder.at(-1)).toBe(`file:${second}`)
+    store().shortcut('close-terminal')
+    scm.openFile(id, second)
+    scm.pinFile(id)
+    store().shortcut('reopen-tab')
+    expect(session().pinnedFiles).toEqual([first, second])
+    expect(session().closedTabs).toEqual([])
+
+    scm.openFile('other-workspace', first)
+    scm.pinFile('other-workspace')
+    scm.closePinnedFile('other-workspace', first)
+    expect(session().pinnedFiles).toEqual([first, second])
+    expect(store().tabs).toBe(terminals)
+    expect(api.closeTerminal).not.toHaveBeenCalled()
+  })
+
   it('reopens closed tabs in workspace-local reverse order without reviving terminal identity', async () => {
     const store = () => useWorkspace.getState()
     await store().bootstrap()

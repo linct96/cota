@@ -249,9 +249,11 @@ export function App() {
   const previewPath = sourceControl.file || previewSelection?.path || ''
   const previewTitle = `${folderName(previewPath)}${previewSelection ? '（Diff）' : ''}`
   const activePinnedDiff = sourceControl.activePinnedDiff
+  const activePinnedFile = sourceControl.activePinnedFile
   const showingPreview = hasPreview && sourceControl.preview
   const showingChanges = sourceControl.changesOpen && sourceControl.changesActive
-  const showingDiff = showingPreview || showingChanges || !!activePinnedDiff
+  const showingFile = activePinnedFile || (showingPreview ? sourceControl.file : undefined)
+  const showingDiff = showingPreview || showingChanges || !!activePinnedDiff || !!activePinnedFile
   function focusActiveTab() {
     requestAnimationFrame(() =>
       (
@@ -262,12 +264,16 @@ export function App() {
     )
   }
   function pinPreview() {
-    if (!workspaceId || !previewSelection || state.removingWorkspace) return
-    useSourceControl.getState().pinDiff(workspaceId)
+    if (!workspaceId || !hasPreview || state.removingWorkspace) return
+    const sourceControl = useSourceControl.getState()
+    if (previewSelection) sourceControl.pinDiff(workspaceId)
+    else sourceControl.pinFile(workspaceId)
     requestAnimationFrame(() =>
       document
         .getElementById(
-          `source-control-pinned-tab-${workspaceId}-${encodeURIComponent(gitFileKey(previewSelection))}`,
+          previewSelection
+            ? `source-control-pinned-tab-${workspaceId}-${encodeURIComponent(gitFileKey(previewSelection))}`
+            : `file-pinned-tab-${workspaceId}-${encodeURIComponent(previewPath)}`,
         )
         ?.focus(),
     )
@@ -358,7 +364,8 @@ export function App() {
                     (currentTabs.length > 0 ||
                       hasPreview ||
                       sourceControl.changesOpen ||
-                      sourceControl.pinnedDiffs.length > 0) && (
+                      sourceControl.pinnedDiffs.length > 0 ||
+                      sourceControl.pinnedFiles.length > 0) && (
                       <TerminalTabList
                         key={workspaceId}
                         workspaceId={workspaceId}
@@ -441,6 +448,31 @@ export function App() {
                               />
                             )
                           }
+                          const file = sourceControl.pinnedFiles.find(
+                            (path) => key === `file:${path}`,
+                          )
+                          if (file) {
+                            const active = activePinnedFile === file
+                            return (
+                              <WorkspaceTab
+                                key={key}
+                                id={`file-pinned-tab-${workspaceId}-${encodeURIComponent(file)}`}
+                                aria-controls={`file-pinned-panel-${workspaceId}-${encodeURIComponent(file)}`}
+                                aria-label={file}
+                                title={file}
+                                label={folderName(file)}
+                                active={active}
+                                className="file-pinned-tab"
+                                onSelect={() =>
+                                  useSourceControl.getState().selectPinnedFile(workspaceId, file)
+                                }
+                                onClose={() => closeWorkspaceTab(key, active)}
+                                closeDisabled={!!state.removingWorkspace}
+                                closeLabel={`关闭 ${file}`}
+                                icon={<FileTypeIcon path={file} />}
+                              />
+                            )
+                          }
                           if (key === 'preview' && hasPreview)
                             return (
                               <WorkspaceTab
@@ -448,7 +480,7 @@ export function App() {
                                 id={`source-control-tab-${workspaceId}`}
                                 aria-controls={`source-control-panel-${workspaceId}`}
                                 aria-label={`${previewPath}${previewSelection ? '（Diff）' : ''} 预览`}
-                                title={`${previewPath}${previewSelection ? '（Diff） · 双击或 Enter 固定' : ''}`}
+                                title={`${previewPath}${previewSelection ? '（Diff）' : ''} · 双击或 Enter 固定`}
                                 label={previewTitle}
                                 active={showingPreview}
                                 className="source-control-preview-tab"
@@ -464,7 +496,6 @@ export function App() {
                                 onKeyDownCapture={(event) => {
                                   if (
                                     showingPreview &&
-                                    previewSelection &&
                                     event.target === event.currentTarget &&
                                     event.key === 'Enter' &&
                                     !event.metaKey &&
@@ -1097,11 +1128,7 @@ export function App() {
                 <main
                   className="terminal-workspace flex min-h-0 min-w-0 flex-1 flex-col"
                   aria-label={
-                    showingDiff
-                      ? showingPreview && sourceControl.file
-                        ? '文件预览工作区'
-                        : '变更审阅工作区'
-                      : '终端工作区'
+                    showingDiff ? (showingFile ? '文件预览工作区' : '变更审阅工作区') : '终端工作区'
                   }
                 >
                   {state.worktreeError && (
@@ -1126,11 +1153,12 @@ export function App() {
                       />
                     </div>
                   )}
-                  {showingPreview && activeWorkspace && sourceControl.file && (
+                  {activeWorkspace && showingFile && (
                     <FilePreview
-                      key={`${activeWorkspace.id}:${sourceControl.file}`}
+                      key={`${activeWorkspace.id}:${showingFile}`}
                       workspace={activeWorkspace}
-                      path={sourceControl.file}
+                      path={showingFile}
+                      pinned={!!activePinnedFile}
                       active={!secondaryPageOpen}
                     />
                   )}
