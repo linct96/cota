@@ -181,6 +181,26 @@ describe('workspace program launch', () => {
       )
       expect(await readdir(root)).not.toContain('nope')
       await rm(join(root, 'startup output'))
+      for (const fails of [false, true]) {
+        const serviceEnv = { ...env, ZDOTDIR: root, COTA_SERVICE: '1', PORT: '32123' }
+        const serviceArgs = await prepareAgentShell(
+          `/bin/${name}`,
+          serviceEnv,
+          join(root, 'runtime'),
+          `printf COTA_SERVICE_ONCE${fails ? '; false' : ''}`,
+        )
+        const result = await run(shell, [...serviceArgs!, '-c', 'printf SHOULD_NOT_RUN'], {
+          env: serviceEnv,
+          cwd: root,
+          timeout: 5000,
+        }).then(
+          (value) => ({ ...value, code: 0 }),
+          (error) => error,
+        )
+        expect(result.code).toBe(fails ? 1 : 0)
+        expect(result.stdout).not.toContain('SHOULD_NOT_RUN')
+        expect(result.stdout.split('COTA_SERVICE_ONCE').length - 1).toBe(2)
+      }
     }
     await expect(
       prepareAgentShell('/bin/sh', { HOME: root }, join(root, 'runtime'), command),

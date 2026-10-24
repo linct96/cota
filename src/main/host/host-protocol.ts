@@ -11,7 +11,7 @@ import type {
   WorkspaceTarget,
 } from '../../shared/contracts'
 
-export const HOST_PROTOCOL = 11
+export const HOST_PROTOCOL = 12
 
 export type ResolvedTerminalCreate = CreateTerminal & TerminalBinding
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
@@ -29,6 +29,7 @@ export interface HostMethods {
   readAgent: { args: [string, string, number]; value: void }
   acknowledge: { args: [string, string, number]; value: void }
   close: { args: [string]; value: void }
+  stopService: { args: [string]; value: void }
   needsCloseConfirmation: { args: [string]; value: boolean }
   closeProject: { args: [string]; value: void }
   closeWorkspace: { args: [WorkspaceTarget]; value: void }

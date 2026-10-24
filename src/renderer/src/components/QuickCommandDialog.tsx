@@ -5,7 +5,7 @@ import { quickCommandFormSchema } from '../lib/form-schemas'
 import { useWorkspace } from '../store'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
-import { Field, FieldError, FieldGroup, FieldLabel } from './ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
 import {
   Select,
@@ -45,6 +45,8 @@ export function QuickCommandDialog({
     defaultValues: {
       name: command?.name || '',
       command: command?.command || '',
+      mode: command?.mode || ('task' as const),
+      port: command?.port?.toString() || '',
       scope: defaultScope,
       projectPath: defaultProjectPath,
     },
@@ -68,6 +70,10 @@ export function QuickCommandDialog({
           id: command?.id || crypto.randomUUID(),
           name: value.name.trim(),
           command: value.command.replace(/\r\n?/g, '\n'),
+          mode: value.mode,
+          ...(value.mode === 'service' && value.port.trim()
+            ? { port: value.port.trim() === 'auto' ? ('auto' as const) : Number(value.port.trim()) }
+            : {}),
           scope,
         }
         await state.savePreferences({
@@ -86,11 +92,14 @@ export function QuickCommandDialog({
   })
   const submitting = useStore(form.store, (state) => state.isSubmitting)
   const scope = useStore(form.store, (state) => state.values.scope)
+  const mode = useStore(form.store, (state) => state.values.mode)
   useEffect(() => {
     if (!open) return
     form.reset({
       name: command?.name || '',
       command: command?.command || '',
+      mode: command?.mode || 'task',
+      port: command?.port?.toString() || '',
       scope: defaultScope,
       projectPath: defaultProjectPath,
     })
@@ -170,6 +179,95 @@ export function QuickCommandDialog({
                 }}
               </form.Field>
             ))}
+            <form.Field name="mode">
+              {(field) => {
+                const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                return (
+                  <Field className="quick-command-mode-field" data-invalid={invalid}>
+                    <FieldLabel className="quick-command-mode-label" id={`${id}-mode-label`}>
+                      运行类型
+                    </FieldLabel>
+                    <ToggleGroup
+                      className="quick-command-mode-options"
+                      variant="outline"
+                      spacing={0}
+                      value={[field.state.value]}
+                      disabled={submitting}
+                      onBlur={field.handleBlur}
+                      aria-labelledby={`${id}-mode-label`}
+                      aria-invalid={invalid}
+                      aria-describedby={`${id}-mode-description${invalid ? ` ${id}-mode-error` : ''}`}
+                      onValueChange={([value]) => {
+                        if (value === 'task' || value === 'service') field.handleChange(value)
+                      }}
+                    >
+                      <ToggleGroupItem className="quick-command-mode-task" value="task">
+                        普通命令
+                      </ToggleGroupItem>
+                      <ToggleGroupItem className="quick-command-mode-service" value="service">
+                        长驻服务
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                    <FieldDescription
+                      className="quick-command-mode-description"
+                      id={`${id}-mode-description`}
+                    >
+                      {field.state.value === 'service'
+                        ? '每个工作区只运行一个实例；命令退出后服务结束。请以前台方式运行，不要使用 & 或 daemon。'
+                        : '在新终端中执行，执行后保留 Shell。'}
+                    </FieldDescription>
+                    {invalid && (
+                      <FieldError
+                        className="quick-command-mode-error"
+                        id={`${id}-mode-error`}
+                        errors={field.state.meta.errors}
+                      />
+                    )}
+                  </Field>
+                )
+              }}
+            </form.Field>
+            {mode === 'service' && (
+              <form.Field name="port">
+                {(field) => {
+                  const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                  return (
+                    <Field className="quick-command-port-field" data-invalid={invalid}>
+                      <FieldLabel className="quick-command-port-label" htmlFor={`${id}-port`}>
+                        端口（可选）
+                      </FieldLabel>
+                      <Input
+                        className="quick-command-port-input"
+                        id={`${id}-port`}
+                        name={field.name}
+                        value={field.state.value}
+                        disabled={submitting}
+                        placeholder="auto 或 3000"
+                        maxLength={5}
+                        onBlur={field.handleBlur}
+                        onChange={(event) => field.handleChange(event.target.value)}
+                        aria-invalid={invalid}
+                        aria-describedby={`${id}-port-description${invalid ? ` ${id}-port-error` : ''}`}
+                      />
+                      <FieldDescription
+                        className="quick-command-port-description"
+                        id={`${id}-port-description`}
+                      >
+                        auto 自动分配，留空不分配。通过 PORT 和 COTA_PORT
+                        传入；命令须读取该环境变量。
+                      </FieldDescription>
+                      {invalid && (
+                        <FieldError
+                          className="quick-command-port-error"
+                          id={`${id}-port-error`}
+                          errors={field.state.meta.errors}
+                        />
+                      )}
+                    </Field>
+                  )
+                }}
+              </form.Field>
+            )}
             <Field className="quick-command-scope-project-field" data-disabled={submitting}>
               <FieldLabel className="quick-command-scope-project-label">范围和项目</FieldLabel>
               <div className="quick-command-scope-project-controls flex min-w-0 items-start gap-2">

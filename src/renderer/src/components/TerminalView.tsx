@@ -200,6 +200,7 @@ export function TerminalView({
             id,
             projectPath,
             workspaceId,
+            service: useWorkspace.getState().tabs.find((item) => item.id === id)?.service,
             startupCommand: useWorkspace.getState().tabs.find((item) => item.id === id)
               ?.startupCommand,
             ...(kind === 'agent'
@@ -226,6 +227,7 @@ export function TerminalView({
       useWorkspace.getState().updateTab(id, {
         status: attached.exited ? 'exited' : 'running',
         startupCommand: undefined,
+        service: attached.service,
         exitCode: attached.exitCode,
         agent: attached.agent,
         agentRevision: attached.agentRevision,

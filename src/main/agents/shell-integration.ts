@@ -47,7 +47,9 @@ if [[ -n "\${COTA_STARTUP_COMMAND-}" ]]; then
   unset COTA_STARTUP_COMMAND
   printf '%s\\n' "$__cota_startup_command"
   eval "$__cota_startup_command"
-  unset __cota_startup_command
+  __cota_exit_status=$?
+  if [[ "\${COTA_SERVICE-}" = 1 ]]; then exit $__cota_exit_status; fi
+  unset __cota_startup_command __cota_exit_status
 fi
 `
 
@@ -57,6 +59,8 @@ if set -q COTA_STARTUP_COMMAND
   set -e COTA_STARTUP_COMMAND
   printf '%s\\n' "$__cota_startup_command"
   eval "$__cota_startup_command"
+  set -l __cota_exit_status $status
+  if test "$COTA_SERVICE" = 1; exit $__cota_exit_status; end
 end
 `
 
@@ -64,7 +68,15 @@ const powershellStartupCommand = `
 $cotaStartupCommand = $env:COTA_STARTUP_COMMAND
 Remove-Item Env:COTA_STARTUP_COMMAND
 Write-Host $cotaStartupCommand
-Invoke-Expression $cotaStartupCommand
+if ($env:COTA_SERVICE -eq '1') {
+  $global:LASTEXITCODE = 0
+  try {
+    Invoke-Expression $cotaStartupCommand
+    $cotaSucceeded = $?
+    if (-not $cotaSucceeded -and $LASTEXITCODE -eq 0) { exit 1 }
+    exit $LASTEXITCODE
+  } catch { Write-Error $_; exit 1 }
+} else { Invoke-Expression $cotaStartupCommand }
 Remove-Variable cotaStartupCommand -ErrorAction SilentlyContinue
 `
 

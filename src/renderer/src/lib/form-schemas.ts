@@ -92,6 +92,8 @@ export const openerFormSchema = z.object({
 
 export const quickCommandFormSchema = z
   .object({
+    mode: z.enum(['task', 'service']),
+    port: z.string(),
     scope: z.enum(['project', 'global']),
     projectPath: z.string(),
     name: z
@@ -107,6 +109,17 @@ export const quickCommandFormSchema = z
       .regex(/^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]*$/, '命令不能包含控制字符。'),
   })
   .superRefine((value, context) => {
+    if (
+      value.mode === 'service' &&
+      value.port.trim() &&
+      value.port.trim() !== 'auto' &&
+      (!/^\d+$/.test(value.port.trim()) || Number(value.port) < 1024 || Number(value.port) > 65535)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['port'],
+        message: '请输入 auto 或 1024–65535 的端口，留空则不分配。',
+      })
     if (value.scope === 'project' && !value.projectPath.trim()) {
       context.addIssue({ code: 'custom', path: ['projectPath'], message: '请选择项目。' })
     }

@@ -29,6 +29,14 @@ export interface QuickCommand {
   name: string
   command: string
   scope: { type: 'global' } | { type: 'project'; projectPath: string }
+  mode?: 'task' | 'service'
+  port?: number | 'auto'
+}
+
+export interface TerminalService {
+  commandId: string
+  name: string
+  port?: number
 }
 
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
@@ -370,6 +378,7 @@ export interface TerminalBinding extends WorkspaceTarget {
 }
 
 export interface TerminalSession extends TerminalBinding {
+  service?: TerminalService
   id: string
   cols: number
   rows: number
@@ -405,6 +414,7 @@ export type CreateTerminal = WorkspaceTarget &
     cols: number
     rows: number
     startupCommand?: string
+    service?: { commandId: string }
   }
 
 export interface ConfirmationRequest {
@@ -512,6 +522,8 @@ export interface DesktopAPI {
   resizeTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
   acknowledge(id: string, attachmentId: string, length: number): void
   closeTerminal(id: string): Promise<Result<boolean>>
+  stopService(id: string): Promise<Result<void>>
+  openService(id: string): Promise<Result<void>>
   minimizeWindow(): void
   toggleMaximizeWindow(): void
   isWindowMaximized(): Promise<Result<boolean>>

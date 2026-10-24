@@ -96,6 +96,8 @@ export async function startHost(directory: string, token: string, onStopped = ()
           return manager.acknowledge(terminalId(args[0]), terminalId(args[1]), args[2])
         case 'close':
           return manager.close(terminalId(args[0]))
+        case 'stopService':
+          return manager.stopService(terminalId(args[0]))
         case 'needsCloseConfirmation':
           return manager.needsCloseConfirmation(terminalId(args[0]))
         case 'closeProject':

@@ -131,6 +131,14 @@ export function QuickCommandsSettings() {
                         >
                           {entry.name}
                         </span>
+                        {entry.mode === 'service' && (
+                          <Badge className="quick-commands-list-service" variant="secondary">
+                            服务
+                            {entry.port === undefined
+                              ? ''
+                              : ` · ${entry.port === 'auto' ? '自动端口' : entry.port}`}
+                          </Badge>
+                        )}
                         {entry.scope.type === 'project' && (
                           <Badge
                             className="quick-commands-list-project max-w-full"

@@ -48,6 +48,7 @@ export interface TerminalTab {
   exitCode?: number
   error?: string
   startupCommand?: string
+  service?: import('../../shared/contracts').TerminalService
   closingStatus?: TerminalTab['status']
 }
 
@@ -92,7 +93,7 @@ interface Workspace {
   newTerminal(
     provider?: AgentProvider,
     workspaceId?: string,
-    command?: { name: string; command: string },
+    command?: import('../../shared/contracts').QuickCommand,
   ): string | undefined
   recentQuickCommands: Record<string, string>
   runQuickCommand(id: string, workspaceId: string): void
@@ -336,6 +337,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
               : undefined) ||
             `Terminal ${tabs.length + 1}`,
           kind: session.kind,
+          service: session.service,
           provider: session.provider,
           launchId: session.kind === 'agent' ? session.agent?.launchId : undefined,
           agent: session.agent,
@@ -697,6 +699,18 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       (command.scope.type === 'project' && command.scope.projectPath !== workspace.projectPath)
     )
       throw new Error('快捷命令不存在或不属于当前项目。')
+    if (command.mode === 'service') {
+      const existing = get().tabs.find(
+        (tab) =>
+          tab.workspaceId === workspaceId &&
+          tab.service?.commandId === id &&
+          (tab.status === 'starting' || tab.status === 'running'),
+      )
+      if (existing) {
+        get().selectTab(existing.id)
+        return
+      }
+    }
     if (get().tabs.length >= MAX_TERMINALS)
       throw new Error('最多保留 10 个终端，请先关闭一个标签。')
     if (!get().newTerminal(undefined, workspaceId, command))
@@ -749,6 +763,9 @@ export const useWorkspace = create<Workspace>((set, get) => ({
             command?.name ||
             (provider ? `${AGENT_PROVIDERS[provider].name} · ${number}` : `Terminal ${number}`),
           ...(command ? { startupCommand: command.command } : {}),
+          ...(command?.mode === 'service'
+            ? { service: { commandId: command.id, name: command.name } }
+            : {}),
           cwd: worktree?.record.path || selectedProject,
           ...(provider ? { kind: 'agent' as const, provider, launchId: crypto.randomUUID() } : {}),
           status: 'starting',

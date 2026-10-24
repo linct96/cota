@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
-import { Check, ChevronDown, Copy, Pencil, Play, Plus, Settings2, Trash2 } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Copy,
+  Pencil,
+  Play,
+  Plus,
+  Server,
+  Settings2,
+  Trash2,
+} from 'lucide-react'
 import type { ProjectWorkspace, QuickCommand } from '../../../shared/contracts'
 import { MAX_TERMINALS } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
@@ -30,11 +40,11 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
   const router = useRouter()
   const commands = useWorkspace((state) => state.preferences.quickCommands)
   const recentId = useWorkspace((state) => state.recentQuickCommands[workspace.id])
+  const tabs = useWorkspace((state) => state.tabs)
   const unavailable = useWorkspace(
     (state) =>
       !!state.removingWorkspace ||
       state.creatingWorktree ||
-      state.tabs.length >= MAX_TERMINALS ||
       (workspace.kind === 'git-worktree' &&
         state.worktreeScans[workspace.projectPath]?.entries.find(
           (entry) => entry.record.id === workspace.worktreeId,
@@ -64,6 +74,22 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
   const globalCommands = commands.filter((entry) => entry.scope.type === 'global')
   const visible = [...projectCommands, ...globalCommands]
   const recent = visible.find((entry) => entry.id === recentId) || visible[0]
+
+  function isRunning(command: QuickCommand) {
+    return (
+      command.mode === 'service' &&
+      tabs.some(
+        (tab) =>
+          tab.workspaceId === workspace.id &&
+          tab.service?.commandId === command.id &&
+          (tab.status === 'running' || tab.status === 'starting'),
+      )
+    )
+  }
+
+  function cannotRun(command: QuickCommand) {
+    return unavailable || (tabs.length >= MAX_TERMINALS && !isRunning(command))
+  }
 
   function run(command: QuickCommand) {
     try {
@@ -118,16 +144,26 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
           variant="outline"
           size="sm"
           className="quick-commands-run"
-          disabled={unavailable || (!recent && commands.length >= 50)}
+          disabled={recent ? cannotRun(recent) : unavailable || commands.length >= 50}
           title={
-            unavailable
+            recent && cannotRun(recent)
               ? '工作区不可用、正在关闭或终端数量已达上限'
-              : recent?.command || '新增快捷命令'
+              : recent && isRunning(recent)
+                ? '查看正在运行的服务日志'
+                : recent?.command || '新增快捷命令'
           }
-          aria-label={recent ? `在新终端运行 ${recent.name}` : '新增快捷命令'}
+          aria-label={
+            recent
+              ? `${isRunning(recent) ? '查看服务日志' : '运行'} ${recent.name}`
+              : '新增快捷命令'
+          }
           onClick={() => (recent ? run(recent) : setEditor({}))}
         >
-          <Play className="quick-commands-run-icon" data-icon="inline-start" />
+          {recent?.mode === 'service' ? (
+            <Server className="quick-commands-run-icon" data-icon="inline-start" />
+          ) : (
+            <Play className="quick-commands-run-icon" data-icon="inline-start" />
+          )}
           <span className="quick-commands-run-name max-w-32 truncate">
             {recent?.name || '快捷命令'}
           </span>
@@ -171,15 +207,22 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
                         <DropdownMenuItem
                           key={entry.id}
                           className="quick-commands-option group/option justify-between"
-                          disabled={unavailable}
+                          disabled={cannotRun(entry)}
                           onClick={() => run(entry)}
                         >
                           <div className="quick-commands-option-main grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2">
-                            <Play className="quick-commands-option-icon" />
+                            {entry.mode === 'service' ? (
+                              <Server className="quick-commands-option-icon" />
+                            ) : (
+                              <Play className="quick-commands-option-icon" />
+                            )}
                             <span className="quick-commands-option-name truncate font-sans font-medium">
                               {entry.name}
                             </span>
                             <span className="quick-commands-option-command col-start-2 truncate font-mono text-2xs text-muted-foreground">
+                              {entry.mode === 'service'
+                                ? `${isRunning(entry) ? '运行中' : '服务'} · `
+                                : ''}
                               {entry.command}
                             </span>
                           </div>

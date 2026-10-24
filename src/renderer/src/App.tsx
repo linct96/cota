@@ -33,6 +33,7 @@ import { TerminalWorkspace } from './components/TerminalWorkspace'
 import { TopStatusBar } from './components/TopStatusBar'
 import { OpenWorkspaceButton } from './components/OpenWorkspaceButton'
 import { QuickCommandsButton } from './components/QuickCommandsButton'
+import { WorkspaceServicesButton } from './components/WorkspaceServicesButton'
 import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
 import { FilePreview } from './components/FilePreview'
@@ -513,6 +514,10 @@ export function App() {
               <div className="workspace-header-spacer min-w-0 flex-1" />
               {activeWorkspace && (
                 <>
+                  <WorkspaceServicesButton
+                    key={`services-${activeWorkspace.id}`}
+                    workspaceId={activeWorkspace.id}
+                  />
                   <QuickCommandsButton
                     key={`commands-${activeWorkspace.id}`}
                     workspace={activeWorkspace}

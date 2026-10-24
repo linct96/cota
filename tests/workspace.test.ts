@@ -128,6 +128,8 @@ beforeEach(() => {
     chooseNotificationSound: vi.fn(),
     onNotificationSound: vi.fn(() => vi.fn()),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
+    stopService: vi.fn().mockResolvedValue({ ok: true }),
+    openService: vi.fn().mockResolvedValue({ ok: true }),
     closeWindow: vi.fn(),
     forceExitApp: vi.fn(),
     minimizeWindow: vi.fn(),
@@ -281,6 +283,33 @@ describe('Worktree state transactions and recovery', () => {
     })
     expect(() => store().runQuickCommand('global', local.id)).toThrow('最多保留 10 个终端')
     expect(api.writeTerminal).not.toHaveBeenCalled()
+    scan.entries[0].status = 'ready'
+    useWorkspace.setState({
+      tabs: [],
+      preferences: {
+        ...store().preferences,
+        quickCommands: store().preferences.quickCommands.map((entry) =>
+          entry.id === 'dev'
+            ? { ...entry, mode: 'service' as const, port: 'auto' as const }
+            : entry,
+        ),
+      },
+    })
+    store().runQuickCommand('dev', value.workspace.id)
+    const service = store().tabs[0]
+    expect(service.service).toEqual({ commandId: 'dev', name: '开发服务' })
+    store().runQuickCommand('dev', value.workspace.id)
+    expect(store().tabs).toHaveLength(1)
+    store().updateTab(service.id, { status: 'running' })
+    store().runQuickCommand('dev', local.id)
+    expect(store().tabs).toHaveLength(2)
+    store().runQuickCommand('dev', value.workspace.id)
+    expect(store().activeTabs[value.workspace.id]).toBe(service.id)
+    expect(store().tabs).toHaveLength(2)
+    store().updateTab(service.id, { status: 'exited' })
+    store().runQuickCommand('dev', value.workspace.id)
+    expect(store().tabs).toHaveLength(3)
+    expect(store().tabs.at(-1)!.id).not.toBe(service.id)
   })
   it('adopts only Main success once, prevents duplicate submission and retains Worktree after Shell failure', async () => {
     await useWorkspace.getState().bootstrap()

@@ -193,6 +193,8 @@ const api: DesktopAPI = {
   acknowledge: (id, attachmentId, length) =>
     ipcRenderer.send('terminal:ack', id, attachmentId, length),
   closeTerminal: (id) => ipcRenderer.invoke('terminal:close', id),
+  stopService: (id) => ipcRenderer.invoke('service:stop', id),
+  openService: (id) => ipcRenderer.invoke('service:open', id),
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   toggleMaximizeWindow: () => ipcRenderer.send('window:toggle-maximize'),
   isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),

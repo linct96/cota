@@ -39,6 +39,7 @@ import { hasRunningJob, stopProcessTree } from '../system/process-tree'
 import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from '../host/host-protocol'
 import { sameBinding, terminalBinding, validateTerminalBinding } from './terminal-binding'
 import { createTerminalKeyboardState } from '../../shared/terminal-keyboard-state'
+import { claimServicePort } from './service-port'
 
 interface Session extends TerminalSession {
   launch: TerminalLaunch
@@ -58,6 +59,7 @@ interface Session extends TerminalSession {
     }
   }
   creation?: Promise<void>
+  stoppingService?: Promise<void>
   screen: Terminal
   serializer: SerializeAddon
   keyboard: ReturnType<typeof createTerminalKeyboardState>
@@ -97,13 +99,24 @@ export class TerminalManager {
     const id = terminalId(options?.id)
     const target = terminalBinding(options)
     const launch = terminalLaunch(options)
-    const startup = startupCommand(options.startupCommand)
+    settings = preferences(settings)
+    const definition =
+      options.service === undefined
+        ? undefined
+        : settings.quickCommands.find(
+            (entry) =>
+              entry.id === options.service?.commandId &&
+              entry.mode === 'service' &&
+              (entry.scope.type === 'global' || entry.scope.projectPath === target.projectPath),
+          )
+    if (options.service !== undefined && (!definition || launch.kind !== 'shell'))
+      return Promise.reject(new Error('服务定义不存在或不属于当前项目。'))
+    const startup = definition?.command ?? startupCommand(options.startupCommand)
     if (startup !== undefined && launch.kind === 'agent')
       return Promise.reject(new Error('快捷命令只能在新建 Shell 中执行。'))
     if (startup !== undefined && !this.agentSocketPath)
       return Promise.reject(new Error('终端 Host 缺少 Shell 初始化目录。'))
     const size = dimensions(options.cols, options.rows)
-    settings = preferences(settings)
     const existing = this.sessions.get(id)
     if (existing) {
       // A retry may reattach, but must never change a launch's immutable identity.
@@ -112,11 +125,23 @@ export class TerminalManager {
         existing.launch.kind !== launch.kind ||
         existing.launch.provider !== launch.provider ||
         existing.launch.launchId !== launch.launchId ||
+        existing.service?.commandId !== definition?.id ||
         existing.closing
       )
         return Promise.reject(new Error('终端标识已被其他会话占用。'))
       return existing.creation || Promise.resolve()
     }
+    if (
+      definition &&
+      [...this.sessions.values()].some(
+        (session) =>
+          session.workspaceId === target.workspaceId &&
+          session.projectPath === target.projectPath &&
+          session.service?.commandId === definition.id &&
+          !session.exited,
+      )
+    )
+      return Promise.reject(new Error('该服务已在当前工作区运行，请查看日志或先停止。'))
     if (this.sessions.size >= MAX_TERMINALS)
       return Promise.reject(new Error('最多保留 10 个终端，请先关闭一个标签。'))
     const screen = new Terminal({
@@ -133,6 +158,7 @@ export class TerminalManager {
       ...size,
       id,
       launch,
+      ...(definition ? { service: { commandId: definition.id, name: definition.name } } : {}),
       ...(launch.kind === 'agent'
         ? {
             kind: 'agent' as const,
@@ -153,7 +179,27 @@ export class TerminalManager {
     }
     this.sessions.set(id, session)
     const operation = (async () => {
+      let claimed: Awaited<ReturnType<typeof claimServicePort>> | undefined
       try {
+        if (definition?.port !== undefined) {
+          if (
+            typeof definition.port === 'number' &&
+            [...this.sessions.values()].some(
+              (other) =>
+                other !== session && !other.exited && other.service?.port === definition.port,
+            )
+          )
+            throw new Error(`服务端口 ${definition.port} 已被 Cota 中的其他服务使用。`)
+          claimed = await claimServicePort(definition.port)
+          if (
+            [...this.sessions.values()].some(
+              (other) =>
+                other !== session && !other.exited && other.service?.port === claimed!.port,
+            )
+          )
+            throw new Error(`服务端口 ${claimed.port} 已被 Cota 中的其他服务使用。`)
+          session.service!.port = claimed.port
+        }
         const command =
           launch.kind === 'agent'
             ? await resolveAgent(launch.provider, settings)
@@ -161,6 +207,13 @@ export class TerminalManager {
                 const executable = await resolveShell(settings)
                 return { executable, args: shellArguments(executable), env: shellEnvironment() }
               })()
+        if (session.service) {
+          command.env.COTA_SERVICE = '1'
+          if (session.service.port !== undefined) {
+            command.env.PORT = String(session.service.port)
+            command.env.COTA_PORT = String(session.service.port)
+          }
+        }
         if (this.agentSocketPath) {
           const token = randomBytes(32).toString('hex')
           session.managed = { token, settings }
@@ -189,6 +242,10 @@ export class TerminalManager {
         await validateTerminalBinding(target)
         if (this.stopping) throw new Error('应用正在退出。')
         if (launch.kind !== 'agent') session.shell = command.executable
+        if (claimed) {
+          await claimed.release()
+          claimed = undefined
+        }
         session.child = pty.spawn(command.executable, command.args, {
           ...size,
           cwd: target.cwd,
@@ -221,8 +278,9 @@ export class TerminalManager {
             this.flow(session)
           }),
           session.child.onExit(({ exitCode, signal }) => {
-            session.exited = true
             session.exitCode = exitCode
+            if (session.service && (session.stoppingService || session.exited)) return
+            session.exited = true
             session.managed = undefined
             if (session.agent) this.agents.runtime(id, 'exited', exitCode)
             screen.write('', () => {
@@ -239,6 +297,7 @@ export class TerminalManager {
           }),
         )
       } catch (error) {
+        if (claimed) await claimed.release().catch(() => {})
         if (session.agent) {
           this.agents.runtime(id, 'error')
           this.agents.remove(id)
@@ -278,6 +337,7 @@ export class TerminalManager {
         provider,
         agent,
         agentRevision,
+        service,
       }) => ({
         id,
         projectPath,
@@ -293,6 +353,7 @@ export class TerminalManager {
         ...(kind === 'agent' ? { kind, provider } : {}),
         ...(agent ? { agent: { ...agent } } : {}),
         ...(agentRevision ? { agentRevision } : {}),
+        ...(service ? { service: { ...service } } : {}),
       }),
     )
   }
@@ -327,6 +388,7 @@ export class TerminalManager {
             rows: session.rows,
             exited: session.exited,
             exitCode: session.exitCode,
+            ...(session.service ? { service: { ...session.service } } : {}),
             ...(session.kind === 'agent' ? { kind: session.kind, provider: session.provider } : {}),
             ...(session.agent ? { agent: { ...session.agent } } : {}),
             ...(session.agentRevision ? { agentRevision: session.agentRevision } : {}),
@@ -360,7 +422,7 @@ export class TerminalManager {
     if (!session || session.exited) return false
     await session.creation
     if (session.exited) return false
-    if (session.agent) return true
+    if (session.agent || session.service) return true
     if (!session.child || !session.shell) return true
     try {
       const busy = await hasRunningJob(session.child.pid, session.shell)
@@ -416,10 +478,43 @@ export class TerminalManager {
     this.flow(session)
   }
 
+  async stopService(id: string): Promise<void> {
+    const session = this.sessions.get(terminalId(id))
+    if (!session?.service) throw new Error('服务会话不存在。')
+    await session.creation
+    if (session.closing) throw new Error('服务正在关闭。')
+    if (session.stoppingService) return session.stoppingService
+    if (session.exited) return
+    if (!session.stoppingService) {
+      session.stoppingService = Promise.resolve()
+        .then(async () => {
+          if (session.child) await stopProcessTree(session.child.pid)
+          session.exited = true
+          session.managed = undefined
+          if (session.agent) this.agents.runtime(id, 'exited', session.exitCode)
+          session.screen.write('', () => {
+            this.flush(session)
+            if (session.attachmentId)
+              this.send({
+                type: 'exit',
+                id: session.id,
+                attachmentId: session.attachmentId,
+                exitCode: session.exitCode ?? 0,
+              })
+          })
+        })
+        .finally(() => {
+          session.stoppingService = undefined
+        })
+    }
+    await session.stoppingService
+  }
+
   async close(id: string): Promise<void> {
     const session = this.sessions.get(terminalId(id))
     if (!session) return
     if (session.creation) throw new Error('终端正在创建，请稍后再关闭。')
+    if (session.stoppingService) await session.stoppingService
     if (!session.closing) {
       session.managed = undefined
       if (session.agent && !session.exited) this.agents.runtime(id, 'stopping')

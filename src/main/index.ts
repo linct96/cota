@@ -802,10 +802,21 @@ function installIPC(): void {
           ...binding,
           ...launch,
           ...(command === undefined ? {} : { startupCommand: command }),
+          ...(value.service === undefined ? {} : { service: value.service }),
         },
         snapshot.preferences,
       ])
     })
+  })
+  handle('service:stop', (id: string) => {
+    assertLifecycle()
+    return manager.request('stopService', [terminalId(id)])
+  })
+  handle('service:open', async (id: string) => {
+    assertLifecycle()
+    const session = (await manager.request('list', [])).find((entry) => entry.id === terminalId(id))
+    if (!session?.service?.port || session.exited) throw new Error('服务未运行或未配置端口。')
+    await shell.openExternal(`http://127.0.0.1:${session.service.port}`)
   })
   handle('terminal:attach', (value: AttachTerminal) => {
     if (!value || !config.snapshot().recentProjects.includes(value.projectPath))
