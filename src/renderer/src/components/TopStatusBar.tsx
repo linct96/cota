@@ -8,7 +8,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react'
-import { formatShortcut, shortcutBinding } from '../../../shared/shortcuts'
+import { shortcutBinding } from '../../../shared/shortcuts'
 import { useWorkspace } from '../store'
 import { isWindows } from '../lib/platform'
 import { useRightPanel } from '../lib/right-panel-store'
@@ -17,6 +17,7 @@ import { Button } from './ui/button'
 import { Separator } from './ui/separator'
 import { TabsList, TabsTrigger } from './ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { ShortcutKbd } from './ShortcutKbd'
 import { WindowControls } from './WindowControls'
 
 interface TopStatusBarProps {
@@ -170,7 +171,7 @@ export function TopStatusBar({
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 {rightPanelLabel}
-                {rightPanelShortcut && formatShortcut(rightPanelShortcut, window.desktop.platform)}
+                <ShortcutKbd binding={rightPanelShortcut} />
               </TooltipContent>
             </Tooltip>
           </>
@@ -194,7 +195,7 @@ export function TopStatusBar({
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {rightPanelLabel}
-              {rightPanelShortcut && formatShortcut(rightPanelShortcut, window.desktop.platform)}
+              <ShortcutKbd binding={rightPanelShortcut} />
             </TooltipContent>
           </Tooltip>
         )}

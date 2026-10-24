@@ -31,6 +31,7 @@ import { TerminalTab } from './components/TerminalTab'
 import { WorkspaceTab } from './components/WorkspaceTab'
 import { TerminalWorkspace } from './components/TerminalWorkspace'
 import { TopStatusBar } from './components/TopStatusBar'
+import { ShortcutKbd } from './components/ShortcutKbd'
 import { OpenWorkspaceButton } from './components/OpenWorkspaceButton'
 import { QuickCommandsButton } from './components/QuickCommandsButton'
 import { WorkspaceServicesButton } from './components/WorkspaceServicesButton'
@@ -600,7 +601,16 @@ export function App() {
                     weight={settingsOpen ? 'fill' : 'regular'}
                   />
                 </TooltipTrigger>
-                <TooltipContent side="right">设置 {shortcutLabel('settings')}</TooltipContent>
+                <TooltipContent side="right">
+                  设置
+                  <ShortcutKbd
+                    binding={shortcutBinding(
+                      state.preferences.shortcuts,
+                      'settings',
+                      window.desktop.platform,
+                    )}
+                  />
+                </TooltipContent>
               </Tooltip>
             </div>
           </nav>
@@ -649,7 +659,14 @@ export function App() {
                         <FolderPlus className="project-add-icon" />
                       </TooltipTrigger>
                       <TooltipContent side="bottom">
-                        添加项目 {shortcutLabel('open-folder')}
+                        添加项目
+                        <ShortcutKbd
+                          binding={shortcutBinding(
+                            state.preferences.shortcuts,
+                            'open-folder',
+                            window.desktop.platform,
+                          )}
+                        />
                       </TooltipContent>
                     </Tooltip>
                   </div>
