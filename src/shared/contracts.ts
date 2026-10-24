@@ -41,6 +41,7 @@ export interface TerminalService {
 
 export type TerminalGpuAcceleration = 'auto' | 'on' | 'off'
 export type ThemePreference = 'system' | 'light' | 'dark'
+export type FileIconTheme = 'default' | 'material'
 export type TurnCompleteNotification = 'never' | 'unfocused' | 'always'
 
 export interface FileExplorerPreferences {
@@ -56,6 +57,7 @@ export interface Preferences {
   interfaceColors: InterfaceColors
   terminalAppearance: TerminalAppearance
   fileExplorer: FileExplorerPreferences
+  fileIconTheme: FileIconTheme
   shortcuts: ShortcutBindings
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
@@ -553,6 +555,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     interfaceColors: DEFAULT_INTERFACE_COLORS,
     terminalAppearance: DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer: { showIgnored: true, followSymlinks: true },
+    fileIconTheme: 'default',
     shortcuts: {},
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',

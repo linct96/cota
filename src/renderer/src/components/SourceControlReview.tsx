@@ -6,6 +6,7 @@ import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-st
 import { buildGitChangeTree } from '../lib/source-control-tree'
 import { FileTypeIcon } from './FileTypeIcon'
 import { SourceFileExplorer } from './SourceFileExplorer'
+import { FileTreeFile } from './ui/file-tree'
 import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
@@ -318,9 +319,9 @@ export function SourceControlReview({
                       label: comparison.label,
                     }
                     return (
-                      <Button
+                      <FileTreeFile
                         {...itemProps}
-                        variant="project"
+                        path={entry.path}
                         className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
                         title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
                         onClick={() =>
@@ -339,7 +340,7 @@ export function SourceControlReview({
                         <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
                           {entry.status}
                         </span>
-                      </Button>
+                      </FileTreeFile>
                     )
                   }}
                 />

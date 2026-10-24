@@ -74,6 +74,7 @@ import { Textarea } from './ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
 import { SourceControlReview } from './SourceControlReview'
 import { SourceFileExplorer } from './SourceFileExplorer'
+import { FileTreeActions, FileTreeFile } from './ui/file-tree'
 import { FileTypeIcon } from './FileTypeIcon'
 
 const groups: { area: GitArea; label: string }[] = [
@@ -520,9 +521,9 @@ export function SourceControlPanel({
                             className="source-control-file-row flex min-w-0 items-center gap-1 pr-1"
                             data-selected={selectedDiff && gitFileKey(selectedDiff) === key}
                           >
-                            <Button
+                            <FileTreeFile
                               {...itemProps}
-                              variant="project"
+                              path={entry.path}
                               className="source-file-explorer-item source-control-file-open min-w-0 flex-1 justify-start gap-1.5"
                               title={`${entry.oldPath ? `${entry.oldPath} → ` : ''}${entry.path}`}
                               onClick={() =>
@@ -546,8 +547,8 @@ export function SourceControlPanel({
                                   子模块
                                 </span>
                               )}
-                            </Button>
-                            <div className="source-control-file-trailing grid shrink-0 items-center">
+                            </FileTreeFile>
+                            <FileTreeActions className="source-control-file-trailing grid items-center">
                               <div className="source-control-file-summary flex items-center justify-end gap-1.5">
                                 <span
                                   className="source-control-file-stats"
@@ -619,7 +620,7 @@ export function SourceControlPanel({
                                   )}
                                 </Button>
                               </div>
-                            </div>
+                            </FileTreeActions>
                           </div>
                         )
                       }}

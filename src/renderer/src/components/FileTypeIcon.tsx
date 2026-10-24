@@ -10,6 +10,8 @@ import {
   FileText,
   FileType,
   FileVideo,
+  Folder,
+  FolderOpen,
   FolderGit2,
   KeyRound,
   Package,
@@ -33,6 +35,7 @@ import {
   type SimpleIcon,
 } from 'simple-icons'
 import { fileIconKind, type FileIconKind } from '../lib/file-icon'
+import { useWorkspace } from '../store'
 
 const icons: Record<FileIconKind, SimpleIcon | LucideIcon> = {
   javascript: siJavascript,
@@ -66,14 +69,38 @@ const icons: Record<FileIconKind, SimpleIcon | LucideIcon> = {
   submodule: FolderGit2,
 }
 
-export function FileTypeIcon({ path, submodule = false }: { path: string; submodule?: boolean }) {
-  const kind = fileIconKind(path, submodule)
+export function FileTypeIcon({
+  path,
+  submodule = false,
+  directory = false,
+  open = false,
+}: {
+  path: string
+  submodule?: boolean
+  directory?: boolean
+  open?: boolean
+}) {
+  const theme = useWorkspace((state) => state.preferences.fileIconTheme)
+  if (directory) {
+    const Glyph = open ? FolderOpen : Folder
+    return (
+      <Glyph
+        className="file-type-icon file-type-folder-icon"
+        data-theme={theme}
+        aria-hidden="true"
+        focusable="false"
+      />
+    )
+  }
+  // shortcut: Material 资源接入前统一使用通用图标，接入后替换此主题分支。
+  const kind = theme === 'material' ? 'file' : fileIconKind(path, submodule)
   const icon = icons[kind]
   if ('path' in icon) {
     return (
       <svg
         className="file-type-icon"
         data-kind={kind}
+        data-theme={theme}
         viewBox="0 0 24 24"
         fill="currentColor"
         aria-hidden="true"
@@ -84,5 +111,13 @@ export function FileTypeIcon({ path, submodule = false }: { path: string; submod
     )
   }
   const Glyph = icon
-  return <Glyph className="file-type-icon" data-kind={kind} aria-hidden="true" focusable="false" />
+  return (
+    <Glyph
+      className="file-type-icon"
+      data-kind={kind}
+      data-theme={theme}
+      aria-hidden="true"
+      focusable="false"
+    />
+  )
 }

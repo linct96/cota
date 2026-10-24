@@ -94,6 +94,7 @@ export function preferences(value: unknown): Preferences {
     interfaceColors = DEFAULT_INTERFACE_COLORS,
     terminalAppearance = DEFAULT_TERMINAL_APPEARANCE,
     fileExplorer = { showIgnored: true, followSymlinks: true },
+    fileIconTheme = 'default',
     shortcuts = {},
     shellName,
     shellPath,
@@ -106,6 +107,8 @@ export function preferences(value: unknown): Preferences {
     commitMessagePrompt = '',
   } = value as Partial<Preferences>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
+  if (fileIconTheme !== 'default' && fileIconTheme !== 'material')
+    throw new Error('文件图标主题选项无效。')
   if (typeof preventSleep !== 'boolean') throw new Error('防休眠选项无效。')
   if (typeof notificationsEnabled !== 'boolean') throw new Error('通知开关选项无效。')
   const sound = notificationSoundPreference(notificationSound)
@@ -160,6 +163,7 @@ export function preferences(value: unknown): Preferences {
       showIgnored: fileExplorer.showIgnored,
       followSymlinks: fileExplorer.followSymlinks,
     },
+    fileIconTheme,
     shortcuts: validateShortcutBindings(shortcuts, process.platform),
     ...(preferredOpenerId === undefined ? {} : { preferredOpenerId }),
     terminalGpuAcceleration,

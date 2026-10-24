@@ -75,7 +75,12 @@ const SETTING_GROUPS: SettingGroup[] = [
         icon: Bot,
         keywords: 'agent cli 安装 更新 版本 codex claude pi',
       },
-      { id: 'file-explorer', label: '文件浏览器', icon: FolderTree, keywords: 'git 忽略 符号链接' },
+      {
+        id: 'file-explorer',
+        label: '文件浏览器',
+        icon: FolderTree,
+        keywords: 'git 忽略 符号链接 外观 文件夹 图标 主题 material icon theme',
+      },
       { id: 'source-control', label: '源代码管理', icon: GitBranch },
       { id: 'quick-commands', label: '快捷命令', icon: SquareTerminal },
       { id: 'shortcuts', label: '键盘快捷键', icon: Keyboard },

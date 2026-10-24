@@ -25,6 +25,15 @@ describe('local JSON configuration', () => {
     const store = new ConfigStore(file)
     expect((await store.load()).config).toEqual(DEFAULT_CONFIG)
     expect(DEFAULT_CONFIG.preferences.fileExplorer.followSymlinks).toBe(true)
+    expect(DEFAULT_CONFIG.preferences.fileIconTheme).toBe('default')
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme: undefined }).fileIconTheme,
+    ).toBe('default')
+    for (const fileIconTheme of [null, false, 1, 'invalid', {}, []]) {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme })).toThrow(
+        '文件图标主题选项无效',
+      )
+    }
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, fileExplorer: undefined }).fileExplorer
         .followSymlinks,
@@ -79,6 +88,12 @@ describe('local JSON configuration', () => {
       await store.savePreferences({ ...store.snapshot().preferences, terminalGpuAcceleration })
       expect((await new ConfigStore(file).load()).config.preferences.terminalGpuAcceleration).toBe(
         terminalGpuAcceleration,
+      )
+    }
+    for (const fileIconTheme of ['material', 'default'] as const) {
+      await store.savePreferences(preferences({ ...store.snapshot().preferences, fileIconTheme }))
+      expect((await new ConfigStore(file).load()).config.preferences.fileIconTheme).toBe(
+        fileIconTheme,
       )
     }
     for (const notificationsEnabled of [false, true]) {
@@ -180,12 +195,14 @@ describe('local JSON configuration', () => {
     delete legacy.preferences.notificationsEnabled
     delete legacy.preferences.turnCompleteNotification
     delete legacy.preferences.notificationSound
+    delete legacy.preferences.fileIconTheme
     await writeFile(file, JSON.stringify(legacy))
     expect((await new ConfigStore(file).load()).config.preferences.terminalGpuAcceleration).toBe(
       'auto',
     )
     expect((await new ConfigStore(file).load()).config.preferences.quickCommands).toEqual([])
     expect((await new ConfigStore(file).load()).config.preferences.preventSleep).toBe(true)
+    expect((await new ConfigStore(file).load()).config.preferences.fileIconTheme).toBe('default')
     expect((await new ConfigStore(file).load()).config.preferences.notificationsEnabled).toBe(true)
     expect((await new ConfigStore(file).load()).config.preferences.notificationSound).toBe('system')
     expect((await new ConfigStore(file).load()).config.preferences.turnCompleteNotification).toBe(

@@ -619,21 +619,32 @@ button:not([data-slot='button']):focus-visible {
 .source-file-explorer-chevron[data-expanded='true'] {
   transform: rotate(90deg);
 }
+:is(.file-explorer-entry-name, .source-control-file-path, .source-control-review-path) {
+  color: var(--text-normal);
+}
+.file-tree-file:hover
+  :is(.file-explorer-entry-name, .source-control-file-path, .source-control-review-path),
+.source-control-file-row:hover .source-control-file-path {
+  color: var(--foreground);
+}
+.file-tree-file[aria-selected='true']
+  :is(.file-explorer-entry-name, .source-control-file-path, .source-control-review-path) {
+  color: var(--accent-foreground);
+}
+.file-tree-folder-trigger .file-tree-name {
+  color: var(--text-normal);
+}
+.file-tree-folder-trigger .file-tree-icon,
 .file-explorer-folder-icon,
 .file-explorer-link-icon,
 .source-file-explorer-folder-icon {
   color: var(--file-icon-neutral);
 }
 .file-explorer-row[data-ignored='true']:not([aria-selected='true'])
-  :is(
-    .file-explorer-entry-name,
-    .file-type-icon,
-    .file-explorer-folder-icon,
-    .file-explorer-link-icon
-  ) {
+  :is(.file-tree-name, .file-type-icon, .file-explorer-folder-icon, .file-explorer-link-icon) {
   color: var(--text-subtle);
 }
-.file-explorer-row[data-ignored='true'] .file-explorer-entry-name {
+.file-explorer-row[data-ignored='true'] .file-tree-name {
   font-style: italic;
 }
 .file-explorer-scroll {

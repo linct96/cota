@@ -1,21 +1,16 @@
 import {
-  Fragment,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from 'react'
-import { ChevronRight, ChevronsDownUp, Folder, FolderOpen, Link, RefreshCw } from 'lucide-react'
+import { ChevronRight, ChevronsDownUp, Link, RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import type { FileAction } from '../../../shared/file-explorer'
-import {
-  EMPTY_EXPLORER,
-  explorerRows,
-  useFileExplorer,
-  type ExplorerRow,
-} from '../lib/file-explorer-store'
+import { EMPTY_EXPLORER, explorerRows, useFileExplorer } from '../lib/file-explorer-store'
 import { useSourceControl } from '../lib/source-control-store'
 import { useFileWatch } from '../lib/use-file-watch'
 import { useWorkspace } from '../store'
@@ -23,6 +18,7 @@ import { FileTypeIcon } from './FileTypeIcon'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
+import { FileTree, FileTreeFile, FileTreeFolder, FileTreeIcon, FileTreeName } from './ui/file-tree'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -49,7 +45,6 @@ export function FileExplorer({
     folderPath?.split(/[\\/]/).filter(Boolean).pop() || folderPath || workspace.name
   const scroll = useRef<HTMLDivElement>(null)
   const scrollTop = useRef(session.scrollTop)
-  const tree = useRef<HTMLDivElement>(null)
   const [restart, setRestart] = useState(0)
   const [actionError, setActionError] = useState<string>()
   const visibleSession = {
@@ -84,9 +79,6 @@ export function FileExplorer({
   )
   const root = session.directories['']
   const rootLoaded = !!root?.entries
-  const focusPath = rows.some((row) => row.path === session.selected)
-    ? session.selected
-    : rows[0]?.path
   const watchError = useFileWatch(
     target,
     directories,
@@ -121,27 +113,127 @@ export function FileExplorer({
     }
   }, [active, workspace.id, rootLoaded])
 
-  function toggle(path: string, open: boolean) {
-    useFileExplorer
-      .getState()
-      .update(workspace.id, { expanded: { ...session.expanded, [path]: open } })
-  }
-  function activate(row: ExplorerRow) {
-    if (row.kind === 'directory') toggle(row.path, !session.expanded[row.path])
-    else useSourceControl.getState().update(workspace.id, { file: row.path, preview: true })
-  }
-  function focus(path?: string) {
-    const elements = tree.current?.querySelectorAll<HTMLElement>('[role="treeitem"]')
-    Array.from(elements || [])
-      .find((entry) => entry.dataset.path === path)
-      ?.focus()
-  }
   function act(path: string, action: FileAction) {
     setActionError(undefined)
     void window.desktop
       .fileAction(target, path, action)
       .then(unwrap)
       .catch((cause) => setActionError(cause instanceof Error ? cause.message : String(cause)))
+  }
+
+  function renderEntries(parent = '', depth = 0): ReactNode {
+    const entries = visibleSession.directories[parent]?.entries || []
+    return entries.map((entry, index) => {
+      const expanded = entry.kind === 'directory' && !!session.expanded[entry.path]
+      const directory = session.directories[entry.path]
+      const itemProps = {
+        'aria-posinset': index + 1,
+        'aria-setsize': entries.length,
+        'aria-busy': expanded && !directory?.entries && !directory?.error,
+        'data-ignored': entry.ignored || undefined,
+        className: 'file-explorer-row gap-1.5',
+        title: entry.kind === 'link' ? `${entry.path}（符号链接，不跟随）` : entry.path,
+        onFocus: () => useFileExplorer.getState().update(workspace.id, { selected: entry.path }),
+      }
+      return (
+        <ContextMenu key={entry.path}>
+          {entry.kind === 'directory' ? (
+            <FileTreeFolder
+              {...itemProps}
+              path={entry.path}
+              name={entry.name}
+              icon={(open) => <FileTypeIcon path={entry.path} directory open={open} />}
+              render={
+                <ContextMenuTrigger
+                  render={
+                    <button className="file-explorer-folder-trigger" aria-label={entry.name} />
+                  }
+                />
+              }
+            >
+              {expanded && renderEntries(entry.path, depth + 1)}
+              {expanded && (directory?.error || directory?.entries?.length === 0) && (
+                <div
+                  role="none"
+                  className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-app-muted-foreground"
+                  style={{ paddingLeft: 24 + depth * 12 }}
+                >
+                  <span
+                    role={directory?.error ? 'alert' : 'status'}
+                    className="file-explorer-directory-message min-w-0 flex-1 break-words"
+                  >
+                    {directory?.error || '空目录'}
+                  </span>
+                  {directory?.error && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="file-explorer-directory-retry"
+                      aria-label={`重新读取 ${entry.path}`}
+                      onClick={() => refresh([entry.path])}
+                    >
+                      <RefreshCw className="file-explorer-directory-retry-icon" />
+                    </Button>
+                  )}
+                </div>
+              )}
+            </FileTreeFolder>
+          ) : (
+            <ContextMenuTrigger
+              {...itemProps}
+              render={<FileTreeFile path={entry.path} />}
+              onDoubleClick={() => {
+                if (useWorkspace.getState().removingWorkspace) return
+                const sourceControl = useSourceControl.getState()
+                sourceControl.openFile(workspace.id, entry.path)
+                sourceControl.pinFile(workspace.id)
+              }}
+            >
+              <ChevronRight
+                className="file-explorer-chevron"
+                data-visible="false"
+                aria-hidden="true"
+              />
+              <FileTreeIcon>
+                {entry.kind === 'link' ? (
+                  <Link className="file-explorer-link-icon" />
+                ) : (
+                  <FileTypeIcon path={entry.path} />
+                )}
+              </FileTreeIcon>
+              <FileTreeName className="file-explorer-entry-name">{entry.name}</FileTreeName>
+            </ContextMenuTrigger>
+          )}
+          <ContextMenuContent
+            className="file-explorer-context-menu"
+            aria-label={`${entry.name} 操作`}
+          >
+            <ContextMenuGroup className="file-explorer-context-actions">
+              <ContextMenuItem
+                className="file-explorer-copy-relative"
+                onClick={() => act(entry.path, 'copy-relative')}
+              >
+                复制相对路径
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="file-explorer-copy-absolute"
+                onClick={() => act(entry.path, 'copy-absolute')}
+              >
+                复制绝对路径
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="file-explorer-reveal"
+                onClick={() => act(entry.path, 'reveal')}
+              >
+                {window.desktop.platform === 'darwin'
+                  ? '在 Finder 中显示'
+                  : '在文件资源管理器中显示'}
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
+      )
+    })
   }
 
   return (
@@ -211,149 +303,19 @@ export function FileExplorer({
             </EmptyHeader>
           </Empty>
         )}
-        <div
-          ref={tree}
-          role="tree"
-          tabIndex={-1}
+        <FileTree
           aria-label={`${folderName} 文件树`}
           aria-busy={!rootLoaded && !root?.error}
-          className="file-explorer-tree flex min-w-0 flex-col gap-0.5"
-          onKeyDown={(event) => {
-            const element = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]')
-            if (!element || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-            const index = rows.findIndex((row) => row.path === element.dataset.path)
-            const row = rows[index]
-            if (!row) return
-            switch (event.key) {
-              case 'ArrowDown':
-                focus(rows[Math.min(index + 1, rows.length - 1)]?.path)
-                break
-              case 'ArrowUp':
-                focus(rows[Math.max(0, index - 1)]?.path)
-                break
-              case 'Home':
-                focus(rows[0]?.path)
-                break
-              case 'End':
-                focus(rows.at(-1)?.path)
-                break
-              case 'ArrowRight':
-                if (row.kind !== 'directory') return
-                if (!session.expanded[row.path]) toggle(row.path, true)
-                else if (rows[index + 1]?.parent === row.path) focus(rows[index + 1].path)
-                break
-              case 'ArrowLeft':
-                if (row.kind === 'directory' && session.expanded[row.path]) toggle(row.path, false)
-                else focus(row.parent)
-                break
-              default:
-                return
-            }
-            event.preventDefault()
-          }}
+          className="file-explorer-tree"
+          expanded={session.expanded}
+          onExpandedChange={(expanded) =>
+            useFileExplorer.getState().update(workspace.id, { expanded })
+          }
+          selectedPath={session.selected ?? null}
+          onSelect={(path) => useSourceControl.getState().openFile(workspace.id, path)}
         >
-          {rows.map((row) => {
-            const expanded = row.kind === 'directory' && !!session.expanded[row.path]
-            const directory = session.directories[row.path]
-            return (
-              <Fragment key={row.path}>
-                <ContextMenu>
-                  <ContextMenuTrigger
-                    render={<Button variant="project" />}
-                    role="treeitem"
-                    aria-level={row.depth + 1}
-                    aria-posinset={row.position}
-                    aria-setsize={row.siblings}
-                    aria-expanded={row.kind === 'directory' ? expanded : undefined}
-                    aria-busy={expanded && !directory?.entries && !directory?.error}
-                    aria-selected={session.selected === row.path}
-                    tabIndex={focusPath === row.path ? 0 : -1}
-                    data-path={row.path}
-                    data-ignored={row.ignored || undefined}
-                    className="file-explorer-row w-full min-w-0 justify-start gap-1.5"
-                    style={{ paddingLeft: 6 + row.depth * 12 }}
-                    title={row.kind === 'link' ? `${row.path}（符号链接，不跟随）` : row.path}
-                    onFocus={() =>
-                      useFileExplorer.getState().update(workspace.id, { selected: row.path })
-                    }
-                    onClick={() => activate(row)}
-                  >
-                    <ChevronRight
-                      className="file-explorer-chevron"
-                      data-visible={row.kind === 'directory'}
-                      data-expanded={expanded}
-                      aria-hidden="true"
-                    />
-                    {row.kind === 'directory' ? (
-                      expanded ? (
-                        <FolderOpen className="file-explorer-folder-icon" aria-hidden="true" />
-                      ) : (
-                        <Folder className="file-explorer-folder-icon" aria-hidden="true" />
-                      )
-                    ) : row.kind === 'link' ? (
-                      <Link className="file-explorer-link-icon" aria-hidden="true" />
-                    ) : (
-                      <FileTypeIcon path={row.path} />
-                    )}
-                    <span className="file-explorer-entry-name min-w-0 truncate">{row.name}</span>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent
-                    className="file-explorer-context-menu"
-                    aria-label={`${row.name} 操作`}
-                  >
-                    <ContextMenuGroup className="file-explorer-context-actions">
-                      <ContextMenuItem
-                        className="file-explorer-copy-relative"
-                        onClick={() => act(row.path, 'copy-relative')}
-                      >
-                        复制相对路径
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        className="file-explorer-copy-absolute"
-                        onClick={() => act(row.path, 'copy-absolute')}
-                      >
-                        复制绝对路径
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        className="file-explorer-reveal"
-                        onClick={() => act(row.path, 'reveal')}
-                      >
-                        {window.desktop.platform === 'darwin'
-                          ? '在 Finder 中显示'
-                          : '在文件资源管理器中显示'}
-                      </ContextMenuItem>
-                    </ContextMenuGroup>
-                  </ContextMenuContent>
-                </ContextMenu>
-                {expanded && (directory?.error || directory?.entries?.length === 0) && (
-                  <div
-                    role="none"
-                    className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-app-muted-foreground"
-                    style={{ paddingLeft: 24 + row.depth * 12 }}
-                  >
-                    <span
-                      role={directory?.error ? 'alert' : 'status'}
-                      className="file-explorer-directory-message min-w-0 flex-1 break-words"
-                    >
-                      {directory?.error || '空目录'}
-                    </span>
-                    {directory?.error && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="file-explorer-directory-retry"
-                        aria-label={`重新读取 ${row.path}`}
-                        onClick={() => refresh([row.path])}
-                      >
-                        <RefreshCw className="file-explorer-directory-retry-icon" />
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </Fragment>
-            )
-          })}
-        </div>
+          {renderEntries()}
+        </FileTree>
       </div>
     </section>
   )
