@@ -35,6 +35,7 @@ export class WorktreeManager {
     string,
     { plan: WorktreePlan; commonDir: string; expires: number }
   >()
+  readonly initializing = new Set<string>()
   private removalCount = 0
   get removing(): boolean {
     return this.removalCount > 0
@@ -634,6 +635,7 @@ export class WorktreeManager {
       .map((session) => session.id)
     let currentBranch: string | null = null
     if (record.origin !== 'created') blockers.push('UNMANAGED')
+    if (this.initializing.has(record.id)) blockers.push('INITIALIZING')
     if (liveTerminalIds.length) blockers.push('RUNNING_SESSIONS')
     try {
       const repository = await this.git.requireRepository(record.projectPath)
@@ -834,6 +836,7 @@ export class WorktreeManager {
       this.removalCount++
       try {
         this.config.assertWritable()
+        if (this.initializing.has(record.id)) throw new Error('请先停止工作区初始化，再移除关联。')
         if (JSON.stringify(this.registered(record.id)) !== JSON.stringify(record))
           throw new WorktreeError('REPOSITORY_UNAVAILABLE', '登记已改变，请重新扫描。')
         if (!(await options.confirm())) return false

@@ -7,6 +7,20 @@ import {
 } from '../../../shared/shortcuts'
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 
+import { setupFileLines, worktreeSetupSchema } from '../../../shared/worktree-setup'
+
+export const worktreeSetupFormSchema = z.object({
+  command: worktreeSetupSchema.shape.command,
+  copyFiles: z
+    .string()
+    .max(110000, '复制文件配置过长。')
+    .superRefine((value, context) => {
+      const result = worktreeSetupSchema.shape.copyFiles.safeParse(setupFileLines(value))
+      if (!result.success)
+        context.addIssue({ code: 'custom', message: result.error.issues[0].message })
+    }),
+})
+
 const absolutePathPattern = /^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i
 
 export const commitMessageFormSchema = z.object({

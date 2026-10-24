@@ -1,3 +1,4 @@
+import type { WorktreeSetupConfig, WorktreeSetupSnapshot } from './worktree-setup'
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
 import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
@@ -66,6 +67,7 @@ export interface AppConfig {
   layout?: WorkspaceLayout
   worktreeRecords: WorktreeRecord[]
   worktreeNameHistory?: Record<string, string[]>
+  worktreeSetups?: Record<string, WorktreeSetupConfig>
 }
 
 export type WorktreeErrorCode =
@@ -215,6 +217,7 @@ export type RemovalBlocker =
   | 'IGNORED_CONTENT'
   | 'POPULATED_SUBMODULE'
   | 'RUNNING_SESSIONS'
+  | 'INITIALIZING'
   | 'GIT_UNAVAILABLE'
   | 'OWNERSHIP_MISMATCH'
 export const REMOVAL_BLOCKER_LABELS: Record<RemovalBlocker, string> = {
@@ -228,6 +231,7 @@ export const REMOVAL_BLOCKER_LABELS: Record<RemovalBlocker, string> = {
   IGNORED_CONTENT: '存在被忽略的文件',
   POPULATED_SUBMODULE: '存在已初始化的子模块',
   RUNNING_SESSIONS: '有关联运行中终端',
+  INITIALIZING: '工作区正在初始化',
   GIT_UNAVAILABLE: 'Git 查询不可用',
   OWNERSHIP_MISMATCH: '路径或仓库归属不匹配',
 }
@@ -472,6 +476,14 @@ export interface DesktopAPI {
   inspectWorktreeRemoval(id: string): Promise<Result<WorktreeRemovalCheck>>
   removeGitWorktree(id: string, deleteBranch: boolean): Promise<Result<RemoveWorktreeResult>>
   unlinkGitWorktree(id: string): Promise<Result<boolean>>
+  worktreeSetupConfig(projectPath: string): Promise<Result<WorktreeSetupConfig>>
+  saveWorktreeSetupConfig(projectPath: string, value: WorktreeSetupConfig): Promise<Result<void>>
+  inspectWorktreeSetup(target: WorkspaceTarget): Promise<Result<WorktreeSetupSnapshot>>
+  startWorktreeSetup(
+    target: WorkspaceTarget,
+    definition: WorktreeSetupConfig,
+  ): Promise<Result<boolean>>
+  stopWorktreeSetup(target: WorkspaceTarget): Promise<Result<void>>
   workspacePath(target: WorkspaceTarget): Promise<Result<string>>
   listWorkspaceOpeners(): Promise<Result<WorkspaceOpener[]>>
   openWorkspaceWith(path: string | WorkspaceTarget, openerId: string): Promise<Result<void>>

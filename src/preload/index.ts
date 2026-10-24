@@ -143,6 +143,13 @@ const api: DesktopAPI = {
   removeGitWorktree: (id, deleteBranch) =>
     ipcRenderer.invoke('git:remove-worktree', id, deleteBranch),
   unlinkGitWorktree: (id) => ipcRenderer.invoke('git:unlink-worktree', id),
+  worktreeSetupConfig: (path) => ipcRenderer.invoke('worktree-setup:config', path),
+  saveWorktreeSetupConfig: (path, value) =>
+    ipcRenderer.invoke('worktree-setup:save-config', path, value),
+  inspectWorktreeSetup: (target) => ipcRenderer.invoke('worktree-setup:inspect', target),
+  startWorktreeSetup: (target, definition) =>
+    ipcRenderer.invoke('worktree-setup:start', target, definition),
+  stopWorktreeSetup: (target) => ipcRenderer.invoke('worktree-setup:stop', target),
   workspacePath: (target) => ipcRenderer.invoke('workspace:path', target),
   listWorkspaceOpeners: () => ipcRenderer.invoke('workspace:openers'),
   openWorkspaceWith: (path, openerId) => ipcRenderer.invoke('workspace:open-with', path, openerId),

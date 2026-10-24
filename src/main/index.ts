@@ -34,6 +34,7 @@ import type {
   GitCompareRequest,
 } from '../shared/source-control'
 import { WorktreeManager } from './git/worktree-manager'
+import { WorktreeSetupService } from './git/worktree-setup'
 import { WorktreeError } from './git/git-worktrees'
 import { listWorkspaceOpeners, openWorkspaceWith } from './system/open-with'
 import { detectAgents } from './agents/registry'
@@ -90,6 +91,7 @@ let manager: HostClient
 let config: ConfigStore
 let accounts: AccountService
 let worktrees: WorktreeManager
+let worktreeSetups: WorktreeSetupService
 const sourceControl = new SourceControlService()
 const commitMessages = new CommitMessageService()
 const agentClis = new AgentCliManagement()
@@ -236,6 +238,23 @@ function requestConfirmation(request: Omit<ConfirmationRequest, 'id'>): Promise<
 async function removeTarget(target: RemovalTarget): Promise<boolean> {
   if (removingWorkspace || worktrees?.removing || exitPending || exiting || closingTabs.size)
     return false
+  if (
+    config
+      .snapshot()
+      .worktreeRecords.some(
+        (record) =>
+          record.projectPath === target.projectPath &&
+          (!target.workspaceId ||
+            config
+              .snapshot()
+              .layout?.workspaces.some(
+                (workspace) =>
+                  workspace.id === target.workspaceId && workspace.worktreeId === record.id,
+              )) &&
+          worktrees.initializing.has(record.id),
+      )
+  )
+    throw new Error('请先停止项目中的工作树初始化，再删除工作区或项目。')
   removingWorkspace = target
   try {
     if (target.workspaceId) {
@@ -480,6 +499,29 @@ function installIPC(): void {
       )
     })
   })
+  handle('worktree-setup:config', (path: string) => worktreeSetups.definition(path))
+  handle('worktree-setup:save-config', (path: string, value: unknown) => {
+    assertLifecycle()
+    worktreeSetups.definition(path)
+    return config.saveWorktreeSetup(path, value)
+  })
+  handle('worktree-setup:inspect', (target: WorkspaceTarget) => worktreeSetups.inspect(target))
+  handle('worktree-setup:start', (target: WorkspaceTarget, definition: unknown) => {
+    assertLifecycle()
+    if (removingWorkspace) throw new Error('工作区正在关闭。')
+    return worktreeSetups.start(
+      target,
+      definition,
+      (description) =>
+        requestConfirmation({
+          title: '初始化工作树？',
+          description,
+          confirmLabel: '执行初始化',
+        }),
+      assertLifecycle,
+    )
+  })
+  handle('worktree-setup:stop', (target: WorkspaceTarget) => worktreeSetups.stop(target))
   handle('git:plan-worktree', (input: unknown) => {
     assertLifecycle()
     return worktrees.planWorktree(input)
@@ -857,6 +899,7 @@ async function requestForceExit(confirmed = false): Promise<void> {
       if (response !== 1) return
     }
     settleConfirmation(false)
+    await worktreeSetups?.close()
     await config?.flush()
     sourceControlWatches.close()
     fileWatches.close()
@@ -880,7 +923,7 @@ async function requestExit(): Promise<void> {
       return
     }
     exitPending = true
-    if (await manager.request('hasLive', [])) {
+    if (worktreeSetups.running || (await manager.request('hasLive', []))) {
       const title = '退出 Cota？'
       const description = '退出将结束所有终端及运行中的程序，项目设置将会保留。'
       const confirmLabel = '结束终端并退出'
@@ -901,6 +944,7 @@ async function requestExit(): Promise<void> {
         if (response !== 1) return
       }
     }
+    await worktreeSetups.close()
     await config.flush()
     await manager.request('shutdown', [])
     await commitMessages.close()
@@ -1111,6 +1155,11 @@ if (!app.requestSingleInstanceLock()) {
       worktrees = new WorktreeManager(
         config,
         join(homedir(), app.isPackaged ? '.cota' : '.cota-dev', 'worktrees'),
+      )
+      worktreeSetups = new WorktreeSetupService(
+        config,
+        worktrees,
+        join(app.getPath('userData'), 'worktree-setups'),
       )
       try {
         manager = await connectTerminalHost(

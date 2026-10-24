@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { worktreeSetupSchema } from '../shared/worktree-setup'
 import { pruneTerminalLayouts } from '../shared/terminal-layout'
 import {
   DEFAULT_CONFIG,
@@ -36,6 +37,21 @@ export class ConfigStore {
         recentProjects: [...new Set(data.recentProjects.map(absolutePath))].slice(0, 20),
         preferences: preferences(data.preferences),
         worktreeRecords: worktreeRecords(data.worktreeRecords),
+      }
+      if (data.worktreeSetups !== undefined) {
+        if (
+          !data.worktreeSetups ||
+          typeof data.worktreeSetups !== 'object' ||
+          Array.isArray(data.worktreeSetups) ||
+          Object.keys(data.worktreeSetups).length > 1000
+        )
+          throw new Error('Worktree 初始化配置无效。')
+        next.worktreeSetups = Object.fromEntries(
+          Object.entries(data.worktreeSetups).map(([path, value]) => [
+            absolutePath(path),
+            worktreeSetupSchema.parse(value),
+          ]),
+        )
       }
       if (data.worktreeNameHistory !== undefined)
         next.worktreeNameHistory = worktreeNameHistory(data.worktreeNameHistory)
@@ -89,6 +105,18 @@ export class ConfigStore {
   savePreferences(value: Preferences): Promise<void> {
     return this.update((config) => {
       config.preferences = value
+    })
+  }
+
+  saveWorktreeSetup(projectPath: string, value: unknown): Promise<void> {
+    const path = absolutePath(projectPath)
+    const definition = worktreeSetupSchema.parse(value)
+    return this.update((config) => {
+      if (!config.recentProjects.includes(path)) throw new Error('请先打开项目目录。')
+      const definitions = { ...config.worktreeSetups }
+      if (!definition.command && !definition.copyFiles.length) delete definitions[path]
+      else definitions[path] = definition
+      config.worktreeSetups = definitions
     })
   }
 

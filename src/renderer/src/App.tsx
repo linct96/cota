@@ -24,7 +24,7 @@ import {
   terminalTabs,
   useWorkspace,
 } from './store'
-import { unwrap } from '../../shared/contracts'
+import { unwrap, type WorkspaceTarget } from '../../shared/contracts'
 import { gitFileKey } from '../../shared/source-control'
 import { TerminalTabList } from './components/TerminalTabList'
 import { TerminalTab } from './components/TerminalTab'
@@ -51,6 +51,8 @@ import {
   workspaceAgentSummary,
 } from './lib/agent-status'
 import { WorktreeDialog } from './components/WorktreeDialog'
+import { WorktreeSetupConfigDialog } from './components/WorktreeSetupConfigDialog'
+import { WorktreeSetupDialog } from './components/WorktreeSetupDialog'
 import { Badge } from './components/ui/badge'
 import { Button } from './components/ui/button'
 import { Tabs } from './components/ui/tabs'
@@ -115,6 +117,8 @@ export function App() {
   const secondaryPageOpen = settingsOpen || cortanaOpen
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
+  const [setupProject, setSetupProject] = useState<string>()
+  const [setupTarget, setSetupTarget] = useState<{ target: WorkspaceTarget; error?: string }>()
   const [rightTab, setRightTab] = useState('files')
   const [projectSidebarWidth, setProjectSidebarWidth] = useState(240)
   const activeNavigation = settingsOpen ? 'settings' : cortanaOpen ? 'cortana' : 'home'
@@ -768,6 +772,15 @@ export function App() {
                                   >
                                     新建工作区
                                   </DropdownMenuItem>
+                                  {state.worktreeScans[path]?.repository.status === 'ready' && (
+                                    <DropdownMenuItem
+                                      className="project-worktree-setup-item"
+                                      disabled={!state.ready || !!state.removingWorkspace}
+                                      onClick={() => setSetupProject(path)}
+                                    >
+                                      工作树初始化配置
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem
                                     variant="destructive"
                                     className="project-delete-item"
@@ -960,6 +973,26 @@ export function App() {
                                             scanEntry?.status !== 'ready')
                                         }
                                       />
+                                      {workspace.kind === 'git-worktree' && (
+                                        <ContextMenuItem
+                                          className="workspace-initialize-item"
+                                          disabled={
+                                            !state.ready ||
+                                            !!state.removingWorkspace ||
+                                            scanEntry?.status !== 'ready'
+                                          }
+                                          onClick={() =>
+                                            setSetupTarget({
+                                              target: {
+                                                projectPath: path,
+                                                workspaceId: workspace.id,
+                                              },
+                                            })
+                                          }
+                                        >
+                                          初始化环境 / 查看日志
+                                        </ContextMenuItem>
+                                      )}
                                       <ContextMenuItem
                                         disabled={!!state.removingWorkspace}
                                         className="workspace-edit-item"
@@ -1161,8 +1194,29 @@ export function App() {
 
         {worktreeProject && (
           <WorktreeDialog
+            key={worktreeProject}
             projectPath={worktreeProject}
             close={() => setWorktreeProject(undefined)}
+            initialized={(target, error) => setSetupTarget({ target, error })}
+          />
+        )}
+        {setupProject && (
+          <WorktreeSetupConfigDialog
+            key={setupProject}
+            projectPath={setupProject}
+            close={() => setSetupProject(undefined)}
+          />
+        )}
+        {setupTarget && (
+          <WorktreeSetupDialog
+            key={setupTarget.target.workspaceId}
+            target={setupTarget.target}
+            initialError={setupTarget.error}
+            close={() => setSetupTarget(undefined)}
+            configure={() => {
+              setSetupProject(setupTarget.target.projectPath)
+              setSetupTarget(undefined)
+            }}
           />
         )}
         <Toaster

@@ -79,7 +79,7 @@ interface Workspace {
   worktreeError?: string
   orphanSessions: TerminalSession[]
   creatingWorktree: boolean
-  createGitWorktree(input: CreateWorktreeInput & { planId: string }): Promise<void>
+  createGitWorktree(input: CreateWorktreeInput & { planId: string }): Promise<CreateWorktreeResult>
   refreshWorktrees(path: string): Promise<void>
   removeWorktree(id: string, deleteBranch?: boolean, unlink?: boolean): Promise<void>
   bootstrap(): Promise<void>
@@ -398,10 +398,12 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     set({ creatingWorktree: true, worktreeError: undefined })
     try {
       unwrap(await window.desktop.selectProject(input.projectPath))
-      adoptWorktree(unwrap(await window.desktop.createGitWorktree(input)))
+      const result = unwrap(await window.desktop.createGitWorktree(input))
+      adoptWorktree(result)
       await get()
         .refreshWorktrees(input.projectPath)
         .catch((error) => set({ worktreeError: error.message }))
+      return result
     } finally {
       set({ creatingWorktree: false })
     }

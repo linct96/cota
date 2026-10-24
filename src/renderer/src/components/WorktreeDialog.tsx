@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { z } from 'zod'
+import type { WorktreeSetupConfig } from '../../../shared/worktree-setup'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { worktreeFormSchema } from '../lib/form-schemas'
-import { unwrap, type WorktreePlan } from '../../../shared/contracts'
+import { unwrap, type WorktreePlan, type WorkspaceTarget } from '../../../shared/contracts'
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 import { useWorkspace } from '../store'
 import { Button } from './ui/button'
@@ -15,6 +17,7 @@ import {
 } from './ui/dialog'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
+import { Checkbox } from './ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -24,7 +27,17 @@ import {
   SelectValue,
 } from './ui/select'
 
-export function WorktreeDialog({ projectPath, close }: { projectPath: string; close(): void }) {
+export function WorktreeDialog({
+  projectPath,
+  close,
+  initialized,
+}: {
+  projectPath: string
+  close(): void
+  initialized(target: WorkspaceTarget, error?: string): void
+}) {
+  const [setupConfig, setSetupConfig] = useState<WorktreeSetupConfig>()
+  const [setupError, setSetupError] = useState<string>()
   const [branchPrefix, setBranchPrefix] = useState('')
   const [suggestionAttempt, setSuggestionAttempt] = useState(0)
   const [branches, setBranches] = useState<string[]>([])
@@ -38,9 +51,9 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
   const nameEdited = useRef(false)
   const baseEdited = useRef(false)
   const form = useForm({
-    defaultValues: { name: '', baseRef: '' },
+    defaultValues: { name: '', baseRef: '', initialize: false },
     validationLogic: revalidateLogic({ mode: 'blur' }),
-    validators: { onDynamic: worktreeFormSchema },
+    validators: { onDynamic: worktreeFormSchema.extend({ initialize: z.boolean() }) },
     onSubmit: async ({ value }) => {
       const branchName = `${branchPrefix}/${worktreeBranchSegment(value.name)}`
       if (
@@ -56,13 +69,23 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
       submitting.current = true
       setError(undefined)
       try {
-        await useWorkspace.getState().createGitWorktree({
+        const result = await useWorkspace.getState().createGitWorktree({
           projectPath,
           name: value.name.trim(),
           branchName,
           baseRef: value.baseRef,
           planId: plan.id,
         })
+        if (value.initialize && setupConfig) {
+          const target = { projectPath, workspaceId: result.workspace.id }
+          let setupFailure: string | undefined
+          try {
+            unwrap(await window.desktop.startWorktreeSetup(target, setupConfig))
+          } catch (failure) {
+            setupFailure = failure instanceof Error ? failure.message : String(failure)
+          }
+          initialized(target, setupFailure)
+        }
         close()
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure))
@@ -72,6 +95,22 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
       }
     },
   })
+  useEffect(() => {
+    let disposed = false
+    form.reset({ name: '', baseRef: '', initialize: false })
+    void window.desktop
+      .worktreeSetupConfig(projectPath)
+      .then(unwrap)
+      .then((value) => {
+        if (!disposed) setSetupConfig(value)
+      })
+      .catch((failure) => {
+        if (!disposed) setSetupError(failure.message)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [projectPath, form])
   const name = useStore(form.store, (state) => state.values.name)
   const baseRef = useStore(form.store, (state) => state.values.baseRef)
   const pending = useStore(form.store, (state) => state.isSubmitting) || checkingPlan
@@ -268,7 +307,46 @@ export function WorktreeDialog({ projectPath, close }: { projectPath: string; cl
                 )
               }}
             </form.Field>
+            {setupConfig && (setupConfig.command || setupConfig.copyFiles.length > 0) && (
+              <form.Field name="initialize">
+                {(field) => (
+                  <Field
+                    className="worktree-initialize-field flex-row items-start"
+                    data-disabled={pending}
+                  >
+                    <Checkbox
+                      className="worktree-initialize-checkbox"
+                      id="worktree-initialize"
+                      checked={field.state.value}
+                      disabled={pending}
+                      onBlur={field.handleBlur}
+                      onCheckedChange={(value) => field.handleChange(value === true)}
+                      aria-describedby="worktree-initialize-hint"
+                    />
+                    <div className="worktree-initialize-content flex flex-col gap-1">
+                      <FieldLabel
+                        className="worktree-initialize-label"
+                        htmlFor="worktree-initialize"
+                      >
+                        创建后初始化环境
+                      </FieldLabel>
+                      <FieldDescription
+                        className="worktree-initialize-hint"
+                        id="worktree-initialize-hint"
+                      >
+                        创建目录后将再次确认复制文件和命令；失败不会删除工作树。
+                      </FieldDescription>
+                    </div>
+                  </Field>
+                )}
+              </form.Field>
+            )}
           </FieldGroup>
+          {setupError && (
+            <p className="worktree-initialize-unavailable text-sm text-muted-foreground">
+              暂时无法读取初始化配置：{setupError}。仍可创建，之后从工作区菜单初始化。
+            </p>
+          )}
           {(repositoryError || error) && (
             <p className="worktree-create-error text-sm text-destructive break-words" role="alert">
               {repositoryError || error}

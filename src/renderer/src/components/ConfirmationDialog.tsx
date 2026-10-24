@@ -56,7 +56,7 @@ export function ConfirmationDialog() {
       <AlertDialogContent className="app-confirmation-dialog" initialFocus={cancelButton}>
         <AlertDialogHeader className="app-confirmation-header">
           <AlertDialogTitle className="app-confirmation-title">{request?.title}</AlertDialogTitle>
-          <AlertDialogDescription className="app-confirmation-description break-words">
+          <AlertDialogDescription className="app-confirmation-description max-h-[50vh] overflow-y-auto whitespace-pre-wrap break-words">
             {request?.description}
           </AlertDialogDescription>
         </AlertDialogHeader>

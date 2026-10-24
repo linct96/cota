@@ -112,6 +112,11 @@ beforeEach(() => {
     inspectWorktreeRemoval: vi.fn(),
     removeGitWorktree: vi.fn(),
     unlinkGitWorktree: vi.fn(),
+    worktreeSetupConfig: vi.fn(),
+    saveWorktreeSetupConfig: vi.fn(),
+    inspectWorktreeSetup: vi.fn(),
+    startWorktreeSetup: vi.fn(),
+    stopWorktreeSetup: vi.fn(),
     listWorkspaceOpeners: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     openWorkspaceWith: vi.fn().mockResolvedValue({ ok: true }),
     removeWorkspace: vi.fn().mockResolvedValue({ ok: true, value: true }),
@@ -301,7 +306,7 @@ describe('Worktree state transactions and recovery', () => {
     expect(useWorkspace.getState().workspaces).toEqual([])
     await vi.waitFor(() => expect(api.createGitWorktree).toHaveBeenCalledOnce())
     finish({ ok: true, value })
-    await creating
+    expect(await creating).toEqual(value)
     const state = useWorkspace.getState()
     expect(state.workspaces).toEqual([value.workspace])
     expect(state.worktreeRecords).toEqual([value.record])
