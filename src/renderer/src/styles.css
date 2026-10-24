@@ -36,12 +36,6 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-terminal-tab-hover: var(--terminal-tab-hover);
-  --color-project-hover: var(--project-hover);
-  --color-project-active: var(--project-active);
-  --color-project-active-hover: var(--project-active-hover);
-  --color-project-active-foreground: var(--project-active-foreground);
-  --color-project-action-hover: var(--project-action-hover);
-  --color-project-action-active: var(--project-action-active);
   --color-workspace-status-idle: var(--workspace-status-idle);
   --color-workspace-status-active: var(--workspace-status-active);
   --color-overlay: var(--overlay);
@@ -108,12 +102,6 @@
   --workspace-tab-transition-short: 320ms;
   --workspace-tab-transition-medium: 210ms;
   --workspace-tab-transition-wide: 120ms;
-  --project-hover: #f2f2f2;
-  --project-active: #eeeeee;
-  --project-active-hover: #e6e6e6;
-  --project-active-foreground: oklch(0.145 0 0);
-  --project-action-hover: #e0e0e0;
-  --project-action-active: #d6d6d6;
   --workspace-status-idle: var(--app-muted-foreground);
   --workspace-status-active: #16a34a;
   --dot-status-neutral: var(--app-muted-foreground);
@@ -477,7 +465,7 @@ button:not([data-slot='button']):focus-visible {
 .source-control-directory-row:hover,
 .source-control-file-row:hover,
 .source-control-file-row:focus-within {
-  background: var(--project-hover);
+  background: var(--background-hover);
 }
 .source-control-group-header:hover [data-slot='button'],
 .source-control-group-header:hover [data-slot='collapsible-trigger'],
@@ -573,7 +561,7 @@ button:not([data-slot='button']):focus-visible {
   transition-property: color, background-color;
 }
 .source-control-section-tabs > [data-slot='tabs-trigger']:hover {
-  background: var(--project-hover);
+  background: var(--background-hover);
   color: var(--foreground);
 }
 .source-control-section-tabs > [data-slot='tabs-trigger'][data-active] {
@@ -949,12 +937,6 @@ button:not([data-slot='button']):focus-visible {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --project-hover: oklch(0.24 0 0);
-  --project-active: oklch(0.269 0 0);
-  --project-active-hover: oklch(0.3 0 0);
-  --project-active-foreground: oklch(0.985 0 0);
-  --project-action-hover: oklch(0.32 0 0);
-  --project-action-active: oklch(0.38 0 0);
   --dot-status-attention: #fbbf24;
   --dot-status-completed: #35c264;
   --dot-status-working: #38bdf8;
