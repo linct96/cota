@@ -208,6 +208,11 @@ body,
 .app-error-message {
   color: var(--text-normal);
 }
+.settings-detail-container
+  :where([data-slot='field'].flex-row, .open-with-item, .quick-commands-list-row)
+  > :first-child {
+  max-width: 60%;
+}
 html.dev-text-selection body :not(.xterm, .xterm *, .title-bar, .title-bar *) {
   user-select: text;
 }

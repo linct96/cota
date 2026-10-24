@@ -63,6 +63,12 @@ export function GeneralSettings() {
                 >
                   Agent 工作时防止系统休眠
                 </span>
+                <p
+                  id="general-settings-sleep-help"
+                  className="general-settings-sleep-description text-xs text-muted-foreground"
+                >
+                  检测到 Agent 正在执行任务时阻止系统自动休眠，任务结束后恢复。不影响屏幕熄灭。
+                </p>
                 {error && (
                   <p
                     id="general-settings-sleep-error"
@@ -81,7 +87,11 @@ export function GeneralSettings() {
                 onCheckedChange={(value) => void setPreventSleep(value)}
                 aria-busy={saving}
                 aria-invalid={!!error}
-                aria-describedby={error ? 'general-settings-sleep-error' : undefined}
+                aria-describedby={
+                  error
+                    ? 'general-settings-sleep-help general-settings-sleep-error'
+                    : 'general-settings-sleep-help'
+                }
               />
             </Field>
           </Card>

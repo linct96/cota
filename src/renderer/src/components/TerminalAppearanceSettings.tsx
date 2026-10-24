@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { Terminal } from '@xterm/xterm'
@@ -190,10 +190,8 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
 }
 
 export function TerminalAppearanceSettings({
-  renderGeneralSettings,
   savePreferences,
 }: {
-  renderGeneralSettings: (contrastSettings: ReactNode) => ReactNode
   savePreferences: (patch: Partial<Preferences>) => Promise<void>
 }) {
   const [error, setError] = useState<string>()
@@ -240,153 +238,130 @@ export function TerminalAppearanceSettings({
     }
   }
   return (
-    <>
-      {renderGeneralSettings(
-        <form.Subscribe selector={(state) => state.values.contrastMode}>
-          {(contrastMode) => (
+    <section
+      className="terminal-appearance-settings flex flex-col gap-3"
+      aria-labelledby="terminal-appearance-title"
+    >
+      <div className="terminal-appearance-heading flex flex-col gap-3">
+        <h4
+          id="terminal-appearance-title"
+          className="terminal-appearance-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
+        >
+          终端预览
+        </h4>
+      </div>
+      <form
+        id="terminal-appearance-form"
+        className="terminal-appearance-form flex flex-col gap-6"
+        noValidate
+        onSubmit={(event) => event.preventDefault()}
+      >
+        <form.Subscribe selector={(state) => state.values}>
+          {(values) => (
             <fieldset
-              className="terminal-contrast-settings flex min-w-0 flex-col gap-4"
+              className="terminal-appearance-controls flex min-w-0 flex-col gap-6"
               aria-busy={saving}
             >
-              <form.Field name="contrastMode">
-                {(field) => (
-                  <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                    <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                      <p
-                        id="terminal-contrastMode-label"
-                        className="terminal-contrast-mode-label text-sm leading-5 font-medium"
-                      >
-                        文字对比度
-                      </p>
-                      <p
-                        id="terminal-contrast-mode-description"
-                        className="terminal-contrast-mode-description text-xs text-muted-foreground"
-                      >
-                        修改后自动保存，实时应用到所有终端。
-                      </p>
-                    </div>
-                    <ToggleGroup
-                      className="terminal-contrast-mode-options shrink-0"
-                      variant="outline"
-                      size="lg"
-                      spacing={0}
-                      value={[field.state.value]}
-                      aria-labelledby="terminal-contrastMode-label"
-                      aria-describedby="terminal-contrast-mode-description"
-                      onBlur={field.handleBlur}
-                      onValueChange={([value]) => {
-                        if (value !== 'auto' && value !== 'off' && value !== 'custom') return
-                        field.handleChange(value)
-                        setSaved(false)
-                      }}
-                    >
-                      <ToggleGroupItem className="terminal-contrast-mode-option" value="auto">
-                        自动
-                      </ToggleGroupItem>
-                      <ToggleGroupItem className="terminal-contrast-mode-option" value="off">
-                        关闭
-                      </ToggleGroupItem>
-                      <ToggleGroupItem className="terminal-contrast-mode-option" value="custom">
-                        自定义
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field>
-                )}
-              </form.Field>
-              {contrastMode === 'custom' && (
-                <>
-                  <Separator className="terminal-contrast-separator" />
-                  <form.Field name="minimumContrastRatio">
-                    {(field) => {
-                      const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+              <TerminalAppearancePreview settings={values} />
+              <FieldGroup className="terminal-appearance-groups gap-6">
+                {APPEARANCE_GROUPS.map((group) => {
+                  const numberFields = NUMBER_FIELDS.filter(
+                    (field) => field.group === group.name,
+                  ).map(({ name, label, min, max, step }) => (
+                    <form.Field key={name} name={name}>
+                      {(field) => {
+                        const invalid = field.state.meta.isTouched && !field.state.meta.isValid
 
-                      const errorMessage = [
-                        ...new Set(
-                          (field.state.meta.isTouched ? field.state.meta.errors : [])
-                            .map((error) => error?.message)
-                            .filter(Boolean),
-                        ),
-                      ].join(' ')
-                      return (
-                        <Field
-                          className="terminal-contrast-ratio-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
-                          data-invalid={invalid}
-                        >
-                          <label
-                            htmlFor="terminal-minimumContrastRatio"
-                            className="terminal-contrast-ratio-label min-w-0 flex-1 basis-64 text-sm leading-5 font-medium"
-                          >
-                            最低对比度
-                            <span
-                              id="terminal-minimumContrastRatio-help"
-                              className="terminal-contrast-ratio-range text-xs font-normal text-muted-foreground"
+                        const errorMessage = [
+                          ...new Set(
+                            (field.state.meta.isTouched ? field.state.meta.errors : [])
+                              .map((error) => error?.message)
+                              .filter(Boolean),
+                          ),
+                        ].join(' ')
+                        return (
+                          <>
+                            {group.name === 'typography' && (
+                              <Separator className="terminal-appearance-number-separator" />
+                            )}
+                            <Field
+                              className={cn(
+                                'terminal-appearance-number-field',
+                                group.name !== 'background' &&
+                                  'min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5',
+                              )}
+                              data-invalid={invalid}
                             >
-                              （1–21）
-                            </span>
-                          </label>
-                          <Input
-                            id="terminal-minimumContrastRatio"
-                            className="terminal-contrast-ratio-input w-32 max-w-full shrink-0"
-                            form="terminal-appearance-form"
-                            type="number"
-                            min={1}
-                            max={21}
-                            step={0.1}
-                            value={Number.isNaN(field.state.value) ? '' : field.state.value}
-                            onBlur={field.handleBlur}
-                            onChange={(event) => {
-                              field.handleChange(event.target.valueAsNumber)
-                              setSaved(false)
-                            }}
-                            aria-invalid={invalid}
-                            aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-error"
-                          />
-                          {errorMessage && (
-                            <p
-                              id="terminal-minimumContrastRatio-error"
-                              className="terminal-contrast-ratio-error basis-full text-xs text-destructive"
-                              role="alert"
-                            >
-                              {errorMessage}
-                            </p>
-                          )}
-                        </Field>
-                      )
-                    }}
-                  </form.Field>
-                </>
-              )}
-            </fieldset>
-          )}
-        </form.Subscribe>,
-      )}
-      <section
-        className="terminal-appearance-settings flex flex-col gap-3"
-        aria-labelledby="terminal-appearance-title"
-      >
-        <div className="terminal-appearance-heading flex flex-col gap-3">
-          <h4
-            id="terminal-appearance-title"
-            className="terminal-appearance-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
-          >
-            终端预览
-          </h4>
-        </div>
-        <form
-          id="terminal-appearance-form"
-          className="terminal-appearance-form flex flex-col gap-6"
-          noValidate
-          onSubmit={(event) => event.preventDefault()}
-        >
-          <form.Subscribe selector={(state) => state.values}>
-            {(values) => (
-              <fieldset
-                className="terminal-appearance-controls flex min-w-0 flex-col gap-6"
-                aria-busy={saving}
-              >
-                <TerminalAppearancePreview settings={values} />
-                <FieldGroup className="terminal-appearance-groups gap-6">
-                  {APPEARANCE_GROUPS.map((group) => (
+                              <label
+                                htmlFor={`terminal-${name}`}
+                                className={cn(
+                                  'terminal-appearance-number-label text-sm font-medium leading-5',
+                                  group.name !== 'background' && 'min-w-0 flex-1 basis-64',
+                                )}
+                              >
+                                {label}
+                                <span
+                                  id={`terminal-${name}-help`}
+                                  className="terminal-appearance-number-range text-xs font-normal text-muted-foreground"
+                                >
+                                  （{min}–{max}）
+                                </span>
+                              </label>
+                              <Input
+                                id={`terminal-${name}`}
+                                className={cn(
+                                  'terminal-appearance-number-input',
+                                  group.name !== 'background' && 'w-32 max-w-full shrink-0',
+                                )}
+                                type="number"
+                                min={min}
+                                max={max}
+                                step={step}
+                                value={
+                                  Number.isNaN(field.state.value)
+                                    ? ''
+                                    : name === 'backgroundOpacity'
+                                      ? Number((1 - field.state.value).toFixed(2))
+                                      : field.state.value
+                                }
+                                onBlur={field.handleBlur}
+                                onChange={(event) =>
+                                  field.handleChange(
+                                    name === 'backgroundOpacity'
+                                      ? 1 - event.target.valueAsNumber
+                                      : event.target.valueAsNumber,
+                                  )
+                                }
+                                aria-invalid={invalid}
+                                aria-describedby={`terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`}
+                              />
+                              {name === 'backgroundOpacity' && (
+                                <p
+                                  id="terminal-background-opacity-description"
+                                  className="terminal-appearance-number-description text-xs text-muted-foreground"
+                                >
+                                  0 为不透明，1 为完全透明
+                                </p>
+                              )}
+                              {errorMessage && (
+                                <p
+                                  id={`terminal-${name}-error`}
+                                  className={cn(
+                                    'terminal-appearance-number-error text-xs text-destructive',
+                                    group.name !== 'background' && 'basis-full',
+                                  )}
+                                  role="alert"
+                                >
+                                  {errorMessage}
+                                </p>
+                              )}
+                            </Field>
+                          </>
+                        )
+                      }}
+                    </form.Field>
+                  ))
+                  return (
                     <section
                       key={group.name}
                       className="terminal-appearance-group flex min-w-0 flex-col gap-3"
@@ -398,7 +373,13 @@ export function TerminalAppearanceSettings({
                       >
                         {group.label}
                       </h4>
-                      <Card className="terminal-appearance-card">
+                      <Card
+                        className={cn(
+                          'terminal-appearance-card',
+                          group.name === 'cursor' &&
+                            'divide-y divide-border [&>fieldset:not(:last-child)]:pb-(--card-spacing)',
+                        )}
+                      >
                         {group.name === 'typography' && (
                           <form.Field name="fontFamily">
                             {(field) => {
@@ -485,119 +466,24 @@ export function TerminalAppearanceSettings({
                             }}
                           </form.Field>
                         )}
-                        {NUMBER_FIELDS.some((field) => field.group === group.name) && (
+                        {numberFields.length > 0 && (
                           <>
-                            <FieldGroup
-                              className={cn(
-                                'terminal-appearance-numbers',
-                                group.name !== 'typography' &&
-                                  'grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4 px-5',
-                              )}
-                            >
-                              {NUMBER_FIELDS.filter((field) => field.group === group.name).map(
-                                ({ name, label, min, max, step }) => (
-                                  <form.Field key={name} name={name}>
-                                    {(field) => {
-                                      const invalid =
-                                        field.state.meta.isTouched && !field.state.meta.isValid
-
-                                      const errorMessage = [
-                                        ...new Set(
-                                          (field.state.meta.isTouched
-                                            ? field.state.meta.errors
-                                            : []
-                                          )
-                                            .map((error) => error?.message)
-                                            .filter(Boolean),
-                                        ),
-                                      ].join(' ')
-                                      return (
-                                        <>
-                                          {group.name === 'typography' && (
-                                            <Separator className="terminal-appearance-number-separator" />
-                                          )}
-                                          <Field
-                                            className={cn(
-                                              'terminal-appearance-number-field',
-                                              group.name === 'typography' &&
-                                                'min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5',
-                                            )}
-                                            data-invalid={invalid}
-                                          >
-                                            <label
-                                              htmlFor={`terminal-${name}`}
-                                              className={cn(
-                                                'terminal-appearance-number-label text-sm font-medium leading-5',
-                                                group.name === 'typography' &&
-                                                  'min-w-0 flex-1 basis-64',
-                                              )}
-                                            >
-                                              {label}
-                                              <span
-                                                id={`terminal-${name}-help`}
-                                                className="terminal-appearance-number-range text-xs font-normal text-muted-foreground"
-                                              >
-                                                （{min}–{max}）
-                                              </span>
-                                            </label>
-                                            <Input
-                                              id={`terminal-${name}`}
-                                              className={cn(
-                                                'terminal-appearance-number-input',
-                                                group.name === 'typography' &&
-                                                  'w-32 max-w-full shrink-0',
-                                              )}
-                                              type="number"
-                                              min={min}
-                                              max={max}
-                                              step={step}
-                                              value={
-                                                Number.isNaN(field.state.value)
-                                                  ? ''
-                                                  : name === 'backgroundOpacity'
-                                                    ? Number((1 - field.state.value).toFixed(2))
-                                                    : field.state.value
-                                              }
-                                              onBlur={field.handleBlur}
-                                              onChange={(event) =>
-                                                field.handleChange(
-                                                  name === 'backgroundOpacity'
-                                                    ? 1 - event.target.valueAsNumber
-                                                    : event.target.valueAsNumber,
-                                                )
-                                              }
-                                              aria-invalid={invalid}
-                                              aria-describedby={`terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`}
-                                            />
-                                            {name === 'backgroundOpacity' && (
-                                              <p
-                                                id="terminal-background-opacity-description"
-                                                className="terminal-appearance-number-description text-xs text-muted-foreground"
-                                              >
-                                                0 为不透明，1 为完全透明
-                                              </p>
-                                            )}
-                                            {errorMessage && (
-                                              <p
-                                                id={`terminal-${name}-error`}
-                                                className={cn(
-                                                  'terminal-appearance-number-error text-xs text-destructive',
-                                                  group.name === 'typography' && 'basis-full',
-                                                )}
-                                                role="alert"
-                                              >
-                                                {errorMessage}
-                                              </p>
-                                            )}
-                                          </Field>
-                                        </>
-                                      )
-                                    }}
-                                  </form.Field>
-                                ),
-                              )}
-                            </FieldGroup>
-                            <Separator className="terminal-appearance-group-separator" />
+                            {group.name === 'cursor' ? (
+                              numberFields
+                            ) : (
+                              <FieldGroup
+                                className={cn(
+                                  'terminal-appearance-numbers',
+                                  group.name === 'background' &&
+                                    'grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4 px-5',
+                                )}
+                              >
+                                {numberFields}
+                              </FieldGroup>
+                            )}
+                            {group.name !== 'cursor' && (
+                              <Separator className="terminal-appearance-group-separator" />
+                            )}
                           </>
                         )}
                         {ENUM_FIELDS.filter((field) => field.group === group.name).map(
@@ -607,10 +493,7 @@ export function TerminalAppearanceSettings({
                                 <Field className="terminal-appearance-choice-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
                                   <p
                                     id={`terminal-${name}-label`}
-                                    className={cn(
-                                      'terminal-appearance-choice-label text-sm font-medium leading-5',
-                                      group.name === 'typography' && 'min-w-0 flex-1 basis-64',
-                                    )}
+                                    className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-sm font-medium leading-5"
                                   >
                                     {label}
                                   </p>
@@ -675,6 +558,157 @@ export function TerminalAppearanceSettings({
                             </form.Field>
                           ),
                         )}
+                        {group.name === 'typography' && (
+                          <>
+                            <Separator className="terminal-appearance-contrast-separator" />
+                            <form.Subscribe selector={(state) => state.values.contrastMode}>
+                              {(contrastMode) => (
+                                <fieldset
+                                  className="terminal-contrast-settings flex min-w-0 flex-col gap-3"
+                                  aria-busy={saving}
+                                >
+                                  <form.Field name="contrastMode">
+                                    {(field) => (
+                                      <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                                        <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                                          <p
+                                            id="terminal-contrastMode-label"
+                                            className="terminal-contrast-mode-label text-sm font-medium leading-5"
+                                          >
+                                            文字对比度
+                                          </p>
+                                          <p
+                                            id="terminal-contrast-mode-description"
+                                            className="terminal-contrast-mode-description text-xs text-muted-foreground"
+                                          >
+                                            自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。自定义值越大，文字与背景的区分越明显，但可能改变原有配色。
+                                          </p>
+                                        </div>
+                                        <ToggleGroup
+                                          className="terminal-contrast-mode-options shrink-0"
+                                          variant="outline"
+                                          size="lg"
+                                          spacing={0}
+                                          value={[field.state.value]}
+                                          aria-labelledby="terminal-contrastMode-label"
+                                          aria-describedby="terminal-contrast-mode-description"
+                                          onBlur={field.handleBlur}
+                                          onValueChange={([value]) => {
+                                            if (
+                                              value !== 'auto' &&
+                                              value !== 'off' &&
+                                              value !== 'custom'
+                                            )
+                                              return
+                                            field.handleChange(value)
+                                            setSaved(false)
+                                          }}
+                                        >
+                                          <ToggleGroupItem
+                                            className="terminal-contrast-mode-option"
+                                            value="auto"
+                                          >
+                                            自动
+                                          </ToggleGroupItem>
+                                          <ToggleGroupItem
+                                            className="terminal-contrast-mode-option"
+                                            value="off"
+                                          >
+                                            关闭
+                                          </ToggleGroupItem>
+                                          <ToggleGroupItem
+                                            className="terminal-contrast-mode-option"
+                                            value="custom"
+                                          >
+                                            自定义
+                                          </ToggleGroupItem>
+                                        </ToggleGroup>
+                                      </Field>
+                                    )}
+                                  </form.Field>
+                                  {contrastMode === 'custom' && (
+                                    <div className="terminal-contrast-custom-row ml-5 mr-5 border-l-2 border-border/80 py-1 pl-4">
+                                      <form.Field name="minimumContrastRatio">
+                                        {(field) => {
+                                          const invalid =
+                                            field.state.meta.isTouched && !field.state.meta.isValid
+
+                                          const errorMessage = [
+                                            ...new Set(
+                                              (field.state.meta.isTouched
+                                                ? field.state.meta.errors
+                                                : []
+                                              )
+                                                .map((error) => error?.message)
+                                                .filter(Boolean),
+                                            ),
+                                          ].join(' ')
+                                          return (
+                                            <Field
+                                              className="terminal-contrast-ratio-field min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2"
+                                              data-invalid={invalid}
+                                            >
+                                              <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                                                <label
+                                                  htmlFor="terminal-minimumContrastRatio"
+                                                  className="terminal-contrast-ratio-label text-sm font-medium leading-5"
+                                                >
+                                                  最低对比度
+                                                  <span
+                                                    id="terminal-minimumContrastRatio-help"
+                                                    className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground"
+                                                  >
+                                                    （1–21）
+                                                  </span>
+                                                </label>
+                                                <p
+                                                  id="terminal-minimumContrastRatio-description"
+                                                  className="terminal-contrast-ratio-description text-xs text-muted-foreground"
+                                                >
+                                                  推荐 4.5（WCAG AA）或 7.0（WCAG
+                                                  AAA）。数值越高文字越醒目。
+                                                </p>
+                                              </div>
+                                              <Input
+                                                id="terminal-minimumContrastRatio"
+                                                className="terminal-contrast-ratio-input w-28 max-w-full shrink-0 font-mono"
+                                                type="number"
+                                                min={1}
+                                                max={21}
+                                                step={0.1}
+                                                value={
+                                                  Number.isNaN(field.state.value)
+                                                    ? ''
+                                                    : field.state.value
+                                                }
+                                                onBlur={field.handleBlur}
+                                                onChange={(event) => {
+                                                  field.handleChange(event.target.valueAsNumber)
+                                                  setSaved(false)
+                                                }}
+                                                aria-invalid={invalid}
+                                                aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
+                                              />
+                                              {errorMessage && (
+                                                <p
+                                                  id="terminal-minimumContrastRatio-error"
+                                                  className="terminal-contrast-ratio-error basis-full text-xs text-destructive"
+                                                  role="alert"
+                                                >
+                                                  {errorMessage}
+                                                </p>
+                                              )}
+                                            </Field>
+                                          )
+                                        }}
+                                      </form.Field>
+                                    </div>
+                                  )}
+                                </fieldset>
+                              )}
+                            </form.Subscribe>
+                          </>
+                        )}
                         {group.name === 'theme' &&
                           (['themeDark', 'themeLight'] as const).map((name) =>
                             name === 'themeLight' && !values.separateLightTheme ? null : (
@@ -734,132 +768,131 @@ export function TerminalAppearanceSettings({
                           )}
                       </Card>
                     </section>
-                  ))}
-                </FieldGroup>
-                <Card className="terminal-color-overrides-card">
-                  <Collapsible className="terminal-color-overrides px-5">
-                    <CollapsibleTrigger
-                      className="terminal-color-overrides-trigger group/terminal-colors w-full justify-between"
-                      render={<Button type="button" variant="ghost" size="lg" />}
-                    >
-                      自定义颜色与 ANSI 调色板
-                      <ChevronDown
-                        className="terminal-color-overrides-chevron group-data-panel-open/terminal-colors:rotate-180"
-                        data-icon="inline-end"
-                      />
-                    </CollapsibleTrigger>
-                    <CollapsibleContent keepMounted className="terminal-color-overrides-content">
-                      <p className="terminal-color-overrides-help mt-3 text-xs text-muted-foreground">
-                        留空沿用配色主题；输入 #RRGGBB 覆盖对应颜色。
-                      </p>
-                      <FieldGroup className="terminal-color-fields mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4">
-                        {TERMINAL_COLOR_KEYS.map((key, index) => (
-                          <form.Field key={key} name={`colors.${key}`}>
-                            {(field) => {
-                              const invalid =
-                                field.state.meta.isTouched && !field.state.meta.isValid
-
-                              const errorMessage = [
-                                ...new Set(
-                                  (field.state.meta.isTouched ? field.state.meta.errors : [])
-                                    .map((error) => error?.message)
-                                    .filter(Boolean),
-                                ),
-                              ].join(' ')
-                              return (
-                                <Field className="terminal-color-field" data-invalid={invalid}>
-                                  <label
-                                    htmlFor={`terminal-color-${key}`}
-                                    className="terminal-color-label text-sm font-medium leading-5"
-                                  >
-                                    {COLOR_LABELS[index]}
-                                  </label>
-                                  <Input
-                                    id={`terminal-color-${key}`}
-                                    className="terminal-color-input"
-                                    value={field.state.value || ''}
-                                    placeholder="沿用主题"
-                                    maxLength={7}
-                                    onBlur={field.handleBlur}
-                                    onChange={(event) => {
-                                      const value = event.target.value
-                                      if (value) field.handleChange(value)
-                                      else {
-                                        form.setFieldValue('colors', (colors) => {
-                                          const next = { ...colors }
-                                          delete next[key]
-                                          return next
-                                        })
-                                        void saveAppearance(form.state.values)
-                                      }
-                                    }}
-                                    aria-invalid={invalid}
-                                    aria-describedby={`terminal-color-${key}-error`}
-                                  />
-                                  {errorMessage && (
-                                    <p
-                                      id={`terminal-color-${key}-error`}
-                                      className="terminal-color-error text-xs text-destructive"
-                                      role="alert"
-                                    >
-                                      {errorMessage}
-                                    </p>
-                                  )}
-                                </Field>
-                              )
-                            }}
-                          </form.Field>
-                        ))}
-                      </FieldGroup>
-                    </CollapsibleContent>
-                  </Collapsible>
-                </Card>
-                {values.windowBlur !== window.desktop.initialAppearance.windowBlur && (
-                  <FieldDescription className="terminal-blur-restart-help">
-                    重启 Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
-                  </FieldDescription>
-                )}
-                <FieldError className="terminal-appearance-save-error">{error}</FieldError>
-                <div className="terminal-appearance-actions flex flex-wrap items-center justify-between gap-3">
-                  <Button
-                    className="terminal-appearance-reset"
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    onClick={() => {
-                      const defaults = structuredClone(DEFAULT_TERMINAL_APPEARANCE)
-                      form.reset(defaults)
-                      void saveAppearance(defaults)
-                    }}
+                  )
+                })}
+              </FieldGroup>
+              <Card className="terminal-color-overrides-card">
+                <Collapsible className="terminal-color-overrides px-5">
+                  <CollapsibleTrigger
+                    className="terminal-color-overrides-trigger group/terminal-colors w-full justify-between"
+                    render={<Button type="button" variant="ghost" size="lg" />}
                   >
-                    恢复默认
-                  </Button>
-                  <div className="terminal-appearance-save-actions ml-auto flex items-center gap-3">
-                    <output className="terminal-appearance-save-status text-xs text-muted-foreground">
-                      {saving
-                        ? '自动保存中…'
-                        : saved && terminalAppearanceSchema.safeParse(values).success
-                          ? '已自动保存'
-                          : ''}
-                    </output>
-                    {error && (
-                      <Button
-                        className="terminal-appearance-retry"
-                        type="button"
-                        size="lg"
-                        disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
-                        onClick={() => void saveAppearance(form.state.values)}
-                      >
-                        重试保存
-                      </Button>
-                    )}
-                  </div>
+                    自定义颜色与 ANSI 调色板
+                    <ChevronDown
+                      className="terminal-color-overrides-chevron group-data-panel-open/terminal-colors:rotate-180"
+                      data-icon="inline-end"
+                    />
+                  </CollapsibleTrigger>
+                  <CollapsibleContent keepMounted className="terminal-color-overrides-content">
+                    <p className="terminal-color-overrides-help mt-3 text-xs text-muted-foreground">
+                      留空沿用配色主题；输入 #RRGGBB 覆盖对应颜色。
+                    </p>
+                    <FieldGroup className="terminal-color-fields mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4">
+                      {TERMINAL_COLOR_KEYS.map((key, index) => (
+                        <form.Field key={key} name={`colors.${key}`}>
+                          {(field) => {
+                            const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+
+                            const errorMessage = [
+                              ...new Set(
+                                (field.state.meta.isTouched ? field.state.meta.errors : [])
+                                  .map((error) => error?.message)
+                                  .filter(Boolean),
+                              ),
+                            ].join(' ')
+                            return (
+                              <Field className="terminal-color-field" data-invalid={invalid}>
+                                <label
+                                  htmlFor={`terminal-color-${key}`}
+                                  className="terminal-color-label text-sm font-medium leading-5"
+                                >
+                                  {COLOR_LABELS[index]}
+                                </label>
+                                <Input
+                                  id={`terminal-color-${key}`}
+                                  className="terminal-color-input"
+                                  value={field.state.value || ''}
+                                  placeholder="沿用主题"
+                                  maxLength={7}
+                                  onBlur={field.handleBlur}
+                                  onChange={(event) => {
+                                    const value = event.target.value
+                                    if (value) field.handleChange(value)
+                                    else {
+                                      form.setFieldValue('colors', (colors) => {
+                                        const next = { ...colors }
+                                        delete next[key]
+                                        return next
+                                      })
+                                      void saveAppearance(form.state.values)
+                                    }
+                                  }}
+                                  aria-invalid={invalid}
+                                  aria-describedby={`terminal-color-${key}-error`}
+                                />
+                                {errorMessage && (
+                                  <p
+                                    id={`terminal-color-${key}-error`}
+                                    className="terminal-color-error text-xs text-destructive"
+                                    role="alert"
+                                  >
+                                    {errorMessage}
+                                  </p>
+                                )}
+                              </Field>
+                            )
+                          }}
+                        </form.Field>
+                      ))}
+                    </FieldGroup>
+                  </CollapsibleContent>
+                </Collapsible>
+              </Card>
+              {values.windowBlur !== window.desktop.initialAppearance.windowBlur && (
+                <FieldDescription className="terminal-blur-restart-help">
+                  重启 Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
+                </FieldDescription>
+              )}
+              <FieldError className="terminal-appearance-save-error">{error}</FieldError>
+              <div className="terminal-appearance-actions flex flex-wrap items-center justify-between gap-3">
+                <Button
+                  className="terminal-appearance-reset"
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  onClick={() => {
+                    const defaults = structuredClone(DEFAULT_TERMINAL_APPEARANCE)
+                    form.reset(defaults)
+                    void saveAppearance(defaults)
+                  }}
+                >
+                  恢复默认
+                </Button>
+                <div className="terminal-appearance-save-actions ml-auto flex items-center gap-3">
+                  <output className="terminal-appearance-save-status text-xs text-muted-foreground">
+                    {saving
+                      ? '自动保存中…'
+                      : saved && terminalAppearanceSchema.safeParse(values).success
+                        ? '已自动保存'
+                        : ''}
+                  </output>
+                  {error && (
+                    <Button
+                      className="terminal-appearance-retry"
+                      type="button"
+                      size="lg"
+                      disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
+                      onClick={() => void saveAppearance(form.state.values)}
+                    >
+                      重试保存
+                    </Button>
+                  )}
                 </div>
-              </fieldset>
-            )}
-          </form.Subscribe>
-        </form>
-      </section>
-    </>
+              </div>
+            </fieldset>
+          )}
+        </form.Subscribe>
+      </form>
+    </section>
   )
 }

@@ -17,10 +17,10 @@ import { Separator } from './ui/separator'
 import { Field, FieldError, FieldGroup } from './ui/field'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
-const colorFields: { role: InterfaceColorRole; label: string }[] = [
-  { role: 'primary', label: '主题色' },
-  { role: 'background', label: '背景色' },
-  { role: 'foreground', label: '前景色' },
+const colorFields: { role: InterfaceColorRole; label: string; description: string }[] = [
+  { role: 'primary', label: '主题色', description: '设置当前模式下主要按钮与强调元素的颜色。' },
+  { role: 'background', label: '背景色', description: '设置当前模式下的界面底色。' },
+  { role: 'foreground', label: '前景色', description: '设置当前模式下主要文字与图标的颜色。' },
 ]
 const colorInputSchema = z
   .string()
@@ -139,12 +139,20 @@ export function AppearanceSettings() {
               disabled={!ready || saving}
               data-invalid={!!errors.theme}
             >
-              <p
-                id="appearance-theme-label"
-                className="appearance-theme-label min-w-0 flex-1 basis-64 text-sm leading-5 font-medium"
-              >
-                模式
-              </p>
+              <div className="appearance-theme-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                <p
+                  id="appearance-theme-label"
+                  className="appearance-theme-label text-sm leading-5 font-medium"
+                >
+                  模式
+                </p>
+                <p
+                  id="appearance-theme-help"
+                  className="appearance-theme-description text-xs text-muted-foreground"
+                >
+                  选择浅色或深色外观，自动模式跟随系统设置。
+                </p>
+              </div>
               <div className="appearance-theme-control flex min-w-0 flex-col gap-2">
                 <ToggleGroup
                   className="appearance-theme-options"
@@ -153,7 +161,11 @@ export function AppearanceSettings() {
                   size="lg"
                   value={[theme]}
                   aria-labelledby="appearance-theme-label"
-                  aria-describedby={errors.theme ? 'appearance-theme-error' : undefined}
+                  aria-describedby={
+                    errors.theme
+                      ? 'appearance-theme-help appearance-theme-error'
+                      : 'appearance-theme-help'
+                  }
                   aria-invalid={!!errors.theme}
                   onValueChange={([value]) => {
                     if (value === 'system' || value === 'light' || value === 'dark')
@@ -184,7 +196,7 @@ export function AppearanceSettings() {
                 )}
               </div>
             </Field>
-            {colorFields.map(({ role, label }) => (
+            {colorFields.map(({ role, label, description }) => (
               <Fragment key={`${mode}.${role}`}>
                 <Separator className="appearance-color-separator" />
                 <form.Field name={`${mode}.${role}`} validators={{ onChange: colorInputSchema }}>
@@ -207,12 +219,20 @@ export function AppearanceSettings() {
                         disabled={!ready}
                         data-invalid={invalid || !!saveError}
                       >
-                        <label
-                          htmlFor={`appearance-${role}`}
-                          className="appearance-color-label text-sm leading-5 font-medium"
-                        >
-                          {label}
-                        </label>
+                        <div className="appearance-color-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                          <label
+                            htmlFor={`appearance-${role}`}
+                            className="appearance-color-label text-sm leading-5 font-medium"
+                          >
+                            {label}
+                          </label>
+                          <p
+                            id={`appearance-${role}-help`}
+                            className="appearance-color-description text-xs text-muted-foreground"
+                          >
+                            {description}
+                          </p>
+                        </div>
                         <div className="appearance-color-control flex min-w-0 flex-col gap-2">
                           <ColorInput
                             id={`appearance-${role}`}
@@ -223,7 +243,11 @@ export function AppearanceSettings() {
                             placeholder="默认"
                             disabled={!ready}
                             aria-invalid={invalid || !!saveError}
-                            aria-describedby={invalid || saveError ? errorId : undefined}
+                            aria-describedby={
+                              invalid || saveError
+                                ? `appearance-${role}-help ${errorId}`
+                                : `appearance-${role}-help`
+                            }
                             onBlur={() => {
                               const value = field.state.value
                               field.handleBlur()
