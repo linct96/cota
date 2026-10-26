@@ -34,6 +34,7 @@ const api: DesktopAPI = {
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
   writeClipboard: (text) => ipcRenderer.invoke('clipboard:write', text),
   setShortcutRecording: (recording) => ipcRenderer.send('shortcuts:recording', recording),
+  setTerminalInputFocused: (focused) => ipcRenderer.send('shortcuts:terminal-focus', focused),
   inspectAgentClis: (checkUpdates = false, provider) =>
     ipcRenderer.invoke('agent:cli-inspect', checkUpdates, provider),
   installAgentCli: (provider) => ipcRenderer.invoke('agent:cli-install', provider),

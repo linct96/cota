@@ -19,7 +19,12 @@ import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './config'
 import { readNotificationSound } from './notification-sound'
 import { NOTIFICATION_SOUND_EXTENSIONS } from '../shared/notification-sounds'
-import { COTA_SHORTCUTS, shortcutBinding } from '../shared/shortcuts'
+import {
+  COTA_SHORTCUTS,
+  isTerminalMenuShortcut,
+  shortcutBinding,
+  type ShortcutBindings,
+} from '../shared/shortcuts'
 import { AccountService } from './accounts/service'
 import { projectBranch } from './git/project-branch'
 import { SourceControlService } from './git/source-control'
@@ -108,6 +113,9 @@ let exiting = false
 let exitPending = false
 let rendererReady = false
 let visibleTerminal: string | undefined
+let terminalInputFocused = false
+let shortcutRecording = false
+let menuShortcuts: ShortcutBindings = {}
 let pendingAgentFocus: { terminalId: string; launchId: string } | undefined
 const notifications = new AgentNotifications({
   createNotification: createDesktopNotification,
@@ -687,7 +695,13 @@ function installIPC(): void {
   })
   ipcMain.on('shortcuts:recording', (event, recording: unknown) => {
     trusted(event)
-    if (typeof recording === 'boolean') event.sender.setIgnoreMenuShortcuts(recording)
+    if (typeof recording !== 'boolean') return
+    shortcutRecording = recording
+    event.sender.setIgnoreMenuShortcuts(recording)
+  })
+  ipcMain.on('shortcuts:terminal-focus', (event, focused: unknown) => {
+    trusted(event)
+    if (typeof focused === 'boolean') terminalInputFocused = focused
   })
   handle('agent:detect', () => detectAgents(config.snapshot().preferences))
   handle('agent:cli-inspect', (checkUpdates: unknown = false, value?: unknown) => {
@@ -988,8 +1002,9 @@ async function requestExit(): Promise<void> {
 }
 
 function installMenu(): void {
+  menuShortcuts = config.snapshot().preferences.shortcuts
   const accelerator = (id: string) =>
-    shortcutBinding(config.snapshot().preferences.shortcuts, id, process.platform) || undefined
+    shortcutBinding(menuShortcuts, id, process.platform) || undefined
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
@@ -1011,13 +1026,20 @@ function installMenu(): void {
               click: () => sendShortcut(id as Shortcut),
             })),
             ...(
-              ['undo', 'redo', 'cut', 'hide', 'hideOthers', 'unhide', 'minimize', 'zoom'] as const
+              [
+                'undo',
+                'redo',
+                'cut',
+                'copy',
+                'paste',
+                'selectAll',
+                'hide',
+                'hideOthers',
+                'unhide',
+                'minimize',
+                'zoom',
+              ] as const
             ).map((role) => ({ role, visible: false })),
-            ...(['copy', 'paste', 'selectAll'] as const).map((role) => ({
-              role,
-              visible: false,
-              accelerator: '',
-            })),
           ],
         },
       ]),
@@ -1086,15 +1108,9 @@ function installMenu(): void {
           { role: 'redo' },
           { type: 'separator' },
           { role: 'cut' },
-          {
-            role: 'copy',
-            accelerator: '',
-          },
-          {
-            role: 'paste',
-            accelerator: '',
-          },
-          { role: 'selectAll', accelerator: '' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll' },
         ],
       },
       {
@@ -1240,6 +1256,25 @@ if (!app.requestSingleInstanceLock()) {
           autoplayPolicy: 'no-user-gesture-required',
         },
       })
+      const contents = window.webContents
+      contents.on('before-input-event', (_event, input) => {
+        contents.setIgnoreMenuShortcuts(
+          shortcutRecording ||
+            (terminalInputFocused &&
+              isTerminalMenuShortcut(
+                {
+                  key: input.key,
+                  code: input.code,
+                  ctrlKey: input.control,
+                  altKey: input.alt,
+                  shiftKey: input.shift,
+                  metaKey: input.meta,
+                },
+                menuShortcuts,
+                process.platform,
+              )),
+        )
+      })
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       window.webContents.on('will-navigate', (event) => event.preventDefault())
       window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
@@ -1264,6 +1299,8 @@ if (!app.requestSingleInstanceLock()) {
         fileWatches.close()
         rendererReady = false
         visibleTerminal = undefined
+        terminalInputFocused = false
+        shortcutRecording = false
         settleConfirmation(false)
         void manager?.detachAll().catch(() => {})
       }

@@ -7,7 +7,11 @@ import type {
 } from '../src/shared/contracts'
 import { DEFAULT_CONFIG, MAX_TERMINALS } from '../src/shared/contracts'
 import { terminalPaneIds } from '../src/shared/terminal-layout'
-import { shortcutBinding, validateShortcutBindings } from '../src/shared/shortcuts'
+import {
+  isTerminalMenuShortcut,
+  shortcutBinding,
+  validateShortcutBindings,
+} from '../src/shared/shortcuts'
 import {
   currentWorkspace,
   nextWorkspaceName,
@@ -56,6 +60,7 @@ beforeEach(() => {
     readClipboard: vi.fn(),
     writeClipboard: vi.fn(),
     setShortcutRecording: vi.fn(),
+    setTerminalInputFocused: vi.fn(),
     inspectAgentClis: vi.fn(),
     installAgentCli: vi.fn(),
     accounts: {
@@ -633,6 +638,37 @@ describe('workspace state', () => {
     }
     try {
       for (const platform of ['darwin', 'win32', 'linux']) {
+        const editKey = (value: string, shiftKey = false) =>
+          key({
+            key: value,
+            code: `Key${value.toUpperCase()}`,
+            shiftKey,
+            metaKey: platform === 'darwin',
+            ctrlKey: platform !== 'darwin',
+          })
+        const remapped = { copy: 'CommandOrControl+Shift+B', paste: '', 'select-all': '' }
+        for (const value of ['c', 'v', 'a']) {
+          expect(isTerminalMenuShortcut(editKey(value), {}, platform)).toBe(true)
+          expect(isTerminalMenuShortcut(editKey(value), remapped, platform)).toBe(true)
+        }
+        expect(isTerminalMenuShortcut(editKey('b', true), remapped, platform)).toBe(true)
+        expect(isTerminalMenuShortcut(editKey('v', true), remapped, platform)).toBe(false)
+        for (const value of ['x', 'z', 't', ','])
+          expect(isTerminalMenuShortcut(editKey(value), remapped, platform)).toBe(false)
+        const onShortcut = vi.fn()
+        const clipboardInput = createTerminalInputHandler({
+          platform,
+          canSend: () => running,
+          write,
+          getKittyFlags: () => 0,
+          textarea: { value: '' },
+          getShortcuts: () => remapped,
+          onShortcut,
+        })
+        for (const type of ['keydown', 'keypress', 'keyup'])
+          clipboardInput.handleKeyEvent({ ...editKey('b', true), type })
+        expect(onShortcut).toHaveBeenCalledExactlyOnceWith('copy')
+        clipboardInput.dispose()
         expect(shortcutBinding({}, 'toggle-right-panel', platform)).toBe('CommandOrControl+L')
         const bindings = validateShortcutBindings(
           { 'toggle-right-panel': 'CommandOrControl+P' },

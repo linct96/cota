@@ -100,6 +100,11 @@ export function TerminalView({
       if (live())
         void window.desktop.resizeTerminal(id, cols, rows).then(unwrap).catch(console.error)
     })
+    const textarea = terminal.textarea!
+    const onInputFocus = () => window.desktop.setTerminalInputFocused(true)
+    const onInputBlur = () => window.desktop.setTerminalInputFocused(false)
+    textarea.addEventListener('focus', onInputFocus)
+    textarea.addEventListener('blur', onInputBlur)
     const input = installTerminalInput(terminal, {
       platform: window.desktop.platform,
       canSend: live,
@@ -251,6 +256,9 @@ export function TerminalView({
     return () => {
       disposed = true
       readingOffset.current = scrolling.offset
+      if (document.activeElement === textarea) onInputBlur()
+      textarea.removeEventListener('focus', onInputFocus)
+      textarea.removeEventListener('blur', onInputBlur)
       input.dispose()
       wheel.dispose()
       scrolling.dispose()

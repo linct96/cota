@@ -441,6 +441,7 @@ export interface DesktopAPI {
   readClipboard(): Promise<Result<string>>
   writeClipboard(text: string): Promise<Result<void>>
   setShortcutRecording(recording: boolean): void
+  setTerminalInputFocused(focused: boolean): void
   inspectAgentClis(
     checkUpdates?: boolean,
     provider?: AgentProvider,

@@ -165,6 +165,20 @@ export function matchesShortcut(event: ShortcutEvent, binding: string, platform:
   )
 }
 
+export function isTerminalMenuShortcut(
+  event: ShortcutEvent,
+  bindings: ShortcutBindings,
+  platform: string,
+): boolean {
+  // Native clipboard accelerators must not act on xterm's hidden textarea, even after remapping.
+  return (
+    ['C', 'V', 'A'].some((key) => matchesShortcut(event, `CommandOrControl+${key}`, platform)) ||
+    TERMINAL_SHORTCUTS.some(([id]) =>
+      matchesShortcut(event, shortcutBinding(bindings, id, platform), platform),
+    )
+  )
+}
+
 export function formatShortcut(binding: string, platform: string): string {
   return (
     binding
