@@ -3,7 +3,8 @@ import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { safeStorage } from 'electron'
-import type { AccountProfile } from '../../shared/accounts'
+import { z } from 'zod'
+import type { AccountProfile, AccountUsageWindow } from '../../shared/accounts'
 import { accountProductSchema } from '../../shared/accounts'
 import { object, text } from './files'
 import { normalizeCredential } from './credentials'
@@ -11,6 +12,20 @@ import { normalizeCredential } from './credentials'
 export interface StoredAccount extends Omit<AccountProfile, 'isActive'> {
   auth: string
   sortOrder: number
+}
+
+const usageWindowSchema = z.object({
+  usedPercent: z.number(),
+  windowMinutes: z.number().nullable(),
+  resetsAt: z.number().nullable(),
+})
+
+function parseUsage(value: unknown): AccountUsageWindow | null {
+  try {
+    return usageWindowSchema.safeParse(JSON.parse(String(value))).data ?? null
+  } catch {
+    return null
+  }
 }
 
 export class AccountStore {
@@ -67,9 +82,8 @@ export class AccountStore {
           planType: String(row.plan_type),
           apiBaseUrl: row.api_base_url === null ? null : String(row.api_base_url),
           auth: safeStorage.decryptString(Buffer.from(row.auth_encrypted as Uint8Array)),
-          usagePrimary: row.usage_primary === null ? null : JSON.parse(String(row.usage_primary)),
-          usageSecondary:
-            row.usage_secondary === null ? null : JSON.parse(String(row.usage_secondary)),
+          usagePrimary: parseUsage(row.usage_primary),
+          usageSecondary: parseUsage(row.usage_secondary),
           usageUpdatedAt: row.usage_updated_at === null ? null : Number(row.usage_updated_at),
           updatedAt: Number(row.updated_at),
           lastUsedAt: row.last_used_at === null ? null : Number(row.last_used_at),

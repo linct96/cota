@@ -61,7 +61,11 @@ export class AccountOAuth {
       const config = OAUTH_CONFIG[product]
       const serve = () =>
         createServer((request, response) => {
-          const url = new URL(request.url || '/', pending.callback)
+          const url = URL.parse(request.url || '/', pending.callback)
+          if (!url) {
+            response.writeHead(400).end('Invalid authorization callback URL.')
+            return
+          }
           if (request.method !== 'GET' || url.pathname !== config.path) {
             response.writeHead(404).end()
             return

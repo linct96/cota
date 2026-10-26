@@ -53,6 +53,7 @@ export async function applyAccountFiles(
     }
   } catch (error) {
     const failures: string[] = []
+    // pi-lens-ignore: no-array-reverse-mutation -- This local rollback list is consumed once in reverse order.
     for (const change of applied.reverse()) {
       try {
         if ((await readOptional(change.path)) !== change.after) throw new Error()

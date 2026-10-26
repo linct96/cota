@@ -280,6 +280,7 @@ export class AccountService {
           if (outgoing.id === account.id) account = updated
         }
       }
+      // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
       const before = current
         .map((entry) => fingerprint(entry.auth))
         .sort()
@@ -302,6 +303,7 @@ export class AccountService {
       if (
         unreadable !== afterUnreadable ||
         before !==
+          // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
           after
             .map((entry) => fingerprint(entry.auth))
             .sort()
@@ -379,10 +381,12 @@ export class AccountService {
       if (active && fresh.auth !== account.auth) {
         const latest = await this.credentials.current(account.product)
         if (
+          // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
           latest
             .map((entry) => fingerprint(entry.auth))
             .sort()
             .join(':') ===
+          // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
           current
             .map((entry) => fingerprint(entry.auth))
             .sort()

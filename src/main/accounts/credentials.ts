@@ -266,6 +266,7 @@ export class AccountCredentials {
         config.value.model_provider = 'cota'
         config.value.model_providers = providers
       } else {
+        // pi-lens-ignore: ts-delete-property -- Omit the relay override when restoring the default provider.
         delete config.value.model_provider
       }
       changes.push({ path: configPath, before: config.content, after: stringifyToml(config.value) })
@@ -294,9 +295,11 @@ export class AccountCredentials {
       const configPath = join(path, '..', 'config.toml')
       const config = await this.toml(configPath)
       const authentication = object(config.value.auth)
+      // pi-lens-ignore: ts-delete-property -- Remove the obsolete override from the serialized TOML config.
       delete authentication.preferred_method
       config.value.auth = authentication
       const endpoints = object(config.value.endpoints)
+      // pi-lens-ignore: ts-delete-property -- Remove the relay endpoint from the serialized TOML config.
       delete endpoints.models_base_url
       config.value.endpoints = endpoints
       changes.push({ path: configPath, before: config.content, after: stringifyToml(config.value) })
