@@ -109,8 +109,9 @@
   --dot-status-completed: #299f51;
   --dot-status-working: #38bdf8;
   --source-control-editor-background: #ffffff;
-  --source-control-diff-added: #edf9ef;
-  --source-control-diff-removed: #fff0f0;
+  /* Monaco 的 Diff 行背景叠在选区上方，必须半透明以保留选中效果。 */
+  --source-control-diff-added: #4cc4601a;
+  --source-control-diff-removed: #ff69691a;
   --source-control-stat-added: #166534;
   --source-control-stat-removed: var(--destructive);
   --file-icon-neutral: var(--app-muted-foreground);
@@ -917,8 +918,8 @@ button:not([data-slot='button']):focus-visible {
   --destructive: oklch(0.704 0.191 22.216);
   --source-control-stat-added: #86efac;
   --source-control-editor-background: #262626;
-  --source-control-diff-added: #233b2a;
-  --source-control-diff-removed: #442727;
+  --source-control-diff-added: #178f3a33;
+  --source-control-diff-removed: #bc2b2b33;
   --titlebar-separator: var(--border);
   --terminal-black: #282c34;
   --terminal-red: #e06c75;
