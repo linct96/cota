@@ -2,7 +2,9 @@ import { startHost } from './host-server'
 
 const directory = process.env.COTA_HOST_DIRECTORY
 const token = process.env.COTA_HOST_TOKEN
+// pi-lens-ignore: ts-delete-property -- Remove bootstrap credentials so child processes cannot inherit them.
 delete process.env.COTA_HOST_DIRECTORY
+// pi-lens-ignore: ts-delete-property -- Remove bootstrap credentials so child processes cannot inherit them.
 delete process.env.COTA_HOST_TOKEN
 if (!directory || !token) throw new Error('Terminal Host 缺少启动凭据。')
 

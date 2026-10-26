@@ -11,6 +11,12 @@ import type {
   TerminalEvent,
 } from '../shared/contracts'
 
+function initialTheme(): DesktopAPI['initialAppearance']['theme'] {
+  if (process.argv.includes('--cota-theme=dark')) return 'dark'
+  if (process.argv.includes('--cota-theme=light')) return 'light'
+  return 'system'
+}
+
 function initialInterfaceColors(): DesktopAPI['initialAppearance']['interfaceColors'] {
   const argument = process.argv.find((value) => value.startsWith('--cota-interface-colors='))
   if (!argument) return undefined
@@ -23,11 +29,7 @@ function initialInterfaceColors(): DesktopAPI['initialAppearance']['interfaceCol
 
 const api: DesktopAPI = {
   initialAppearance: {
-    theme: process.argv.includes('--cota-theme=dark')
-      ? 'dark'
-      : process.argv.includes('--cota-theme=light')
-        ? 'light'
-        : 'system',
+    theme: initialTheme(),
     windowBlur: process.argv.includes('--cota-window-blur'),
     interfaceColors: initialInterfaceColors(),
   },
@@ -83,15 +85,13 @@ const api: DesktopAPI = {
     void ipcRenderer
       .invoke('files:watch', target, paths, id)
       .then((result: Result<boolean>) => {
-        if (!disposed)
-          listener(
-            result.ok && result.value
-              ? { kind: 'ready' }
-              : {
-                  kind: 'unavailable',
-                  error: result.ok ? '文件监听不可用，请手动刷新。' : result.error,
-                },
-          )
+        if (disposed) return
+        if (result.ok && result.value) listener({ kind: 'ready' })
+        else
+          listener({
+            kind: 'unavailable',
+            error: result.ok ? '文件监听不可用，请手动刷新。' : result.error,
+          })
       })
       .catch(() => {
         if (!disposed) listener({ kind: 'unavailable', error: '文件监听不可用，请手动刷新。' })

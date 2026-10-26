@@ -1,0 +1,26 @@
+{
+  "ignore": [".agents/skills/shadcn/assets/showcase/**"],
+  "rules": {
+    "ts-double-negation": {
+      "disable": ["ts-double-negation"]
+    },
+    "ts-redundant-filter-map": {
+      "disable": ["ts-redundant-filter-map"]
+    },
+    "no-flag-argument": {
+      "disable": ["no-flag-argument"]
+    },
+    "bundler-imports": {
+      "disable": ["find-import-file-without-extension"]
+    },
+    "prefer-keyboard-event-key": {
+      "ignorePaths": ["src/renderer/src/lib/terminal-input.ts"]
+    },
+    "no-single-promise-in-promise-methods": {
+      "ignorePaths": ["src/main/terminal/terminals.ts"]
+    },
+    "unnecessary-react-hook": {
+      "ignorePaths": ["src/renderer/src/components/ui/sidebar.tsx"]
+    }
+  }
+}

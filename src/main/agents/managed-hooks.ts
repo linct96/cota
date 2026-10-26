@@ -339,6 +339,7 @@ export async function uninstallAgentHook(
       else delete hooks[name]
     }
     if (changed) {
+      // pi-lens-ignore: ts-delete-property -- Uninstall must omit the empty hooks property from the saved config.
       if (!Object.keys(hooks).length) delete data.hooks
       await replaceFile(config, raw, `${JSON.stringify(data, null, 2)}\n`, { backup: false })
     }

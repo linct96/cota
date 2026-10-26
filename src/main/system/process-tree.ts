@@ -104,6 +104,7 @@ export async function stopProcessTree(pid: number): Promise<void> {
       for (const row of processes)
         if (owned.has(row.parent) || row.group === pid) owned.add(row.pid)
     }
+    // pi-lens-ignore: no-array-reverse-mutation -- map creates a fresh PID array, so no shared array is mutated.
     return processes
       .filter((row) => owned.has(row.pid) && !row.stat.includes('Z'))
       .map((row) => row.pid)

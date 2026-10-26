@@ -670,6 +670,16 @@ describe('workspace state', () => {
         expect(onShortcut).toHaveBeenCalledExactlyOnceWith('copy')
         clipboardInput.dispose()
         expect(shortcutBinding({}, 'toggle-right-panel', platform)).toBe('CommandOrControl+L')
+        expect(shortcutBinding({ paste: '' }, 'paste', platform)).toBe('')
+        expect(() =>
+          validateShortcutBindings(
+            {
+              'toggle-right-panel': 'Shift+CommandOrControl+P',
+              'new-terminal': 'CommandOrControl+Shift+P',
+            },
+            platform,
+          ),
+        ).toThrow('“新建终端”与“展开 / 收起右侧面板”的快捷键冲突。')
         const bindings = validateShortcutBindings(
           { 'toggle-right-panel': 'CommandOrControl+P' },
           platform,

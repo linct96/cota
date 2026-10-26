@@ -183,6 +183,7 @@ vi.mock('../src/main/git/worktree-manager', () => ({
     createWorktree = mocks.createWorktree
     scanWorktrees = mocks.scanWorktrees
     withTerminalTarget = mocks.withTerminalTarget
+    initializing = new Set<string>()
     removing = false
   },
 }))

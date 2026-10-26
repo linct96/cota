@@ -86,11 +86,13 @@ type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject:
 let window: BrowserWindow | undefined
 let windowBlurEnabled = false
 
+function windowBackground(): string {
+  if (windowBlurEnabled) return '#00000000'
+  return nativeTheme.shouldUseDarkColors ? '#171717' : '#f0f0f0'
+}
+
 function updateWindowBackground(): void {
-  if (window && !window.isDestroyed())
-    window.setBackgroundColor(
-      windowBlurEnabled ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#171717' : '#f0f0f0',
-    )
+  if (window && !window.isDestroyed()) window.setBackgroundColor(windowBackground())
 }
 let manager: HostClient
 let config: ConfigStore
@@ -121,7 +123,8 @@ const notifications = new AgentNotifications({
   createNotification: createDesktopNotification,
   isEnabled: () => config.snapshot().preferences.notificationsEnabled,
   turnCompleteMode: () => config.snapshot().preferences.turnCompleteNotification,
-  isVisible: (id) => !!window?.isFocused() && !window.isMinimized() && visibleTerminal === id,
+  isVisible: (id) =>
+    window?.isFocused() === true && !window.isMinimized() && visibleTerminal === id,
   describe: (session) => {
     const workspace = config
       .snapshot()
@@ -146,7 +149,7 @@ const closingTabs = new Set<string>()
 const appName = app.isPackaged ? 'Cota' : 'Cota Dev'
 const rendererFile = join(__dirname, '../renderer/index.html')
 const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
-const rendererURL = new URL(devURL || pathToFileURL(rendererFile).href).href.split('#')[0]
+const rendererURL = URL.parse(devURL || pathToFileURL(rendererFile).href)?.href.split('#')[0]
 
 function trusted(event: {
   sender: Electron.WebContents
@@ -190,21 +193,22 @@ function createDesktopNotification(options: Electron.NotificationConstructorOpti
   const sound = config.snapshot().preferences.notificationSound
   const notification = new Notification({ ...options, silent: sound !== 'system' })
   if (typeof sound !== 'string') {
-    notification.once('show', () => {
-      void readNotificationSound(sound)
-        .then((source) => {
-          const current = config.snapshot().preferences
-          if (
-            current.notificationsEnabled &&
-            typeof current.notificationSound !== 'string' &&
-            current.notificationSound.path === sound.path &&
-            rendererReady &&
-            window &&
-            !window.webContents.isDestroyed()
-          )
-            window.webContents.send('notifications:sound', source)
-        })
-        .catch(() => console.warn('无法读取自定义提示音，请在通知设置中重新选择文件。'))
+    notification.once('show', async () => {
+      try {
+        const source = await readNotificationSound(sound)
+        const current = config.snapshot().preferences
+        if (
+          current.notificationsEnabled &&
+          typeof current.notificationSound !== 'string' &&
+          current.notificationSound.path === sound.path &&
+          rendererReady &&
+          window &&
+          !window.webContents.isDestroyed()
+        )
+          window.webContents.send('notifications:sound', source)
+      } catch (error) {
+        console.error('无法读取自定义提示音，请在通知设置中重新选择文件。', error)
+      }
     })
   }
   return notification
@@ -227,16 +231,22 @@ function settleConfirmation(confirmed: boolean): void {
 }
 
 function requestConfirmation(request: Omit<ConfirmationRequest, 'id'>): Promise<boolean> {
-  if (!rendererReady || !window || window.webContents.isDestroyed() || pendingConfirmation)
+  const currentWindow = window
+  if (
+    !rendererReady ||
+    !currentWindow ||
+    currentWindow.webContents.isDestroyed() ||
+    pendingConfirmation
+  )
     return Promise.resolve(false)
   const id = randomUUID()
   return new Promise<boolean>((resolve) => {
     pendingConfirmation = { id, resolve }
     try {
-      if (window!.isMinimized()) window!.restore()
-      window!.show()
-      window!.focus()
-      window!.webContents.send('app:confirm', { ...request, id })
+      if (currentWindow.isMinimized()) currentWindow.restore()
+      currentWindow.show()
+      currentWindow.focus()
+      currentWindow.webContents.send('app:confirm', { ...request, id })
     } catch {
       settleConfirmation(false)
     }
@@ -367,7 +377,9 @@ function installIPC(): void {
   handle('window:is-maximized', () => window?.isMaximized() ?? false)
   handle('workspace:save-layout', (value: WorkspaceLayout) => config.saveLayout(value))
   handle('project:open', async () => {
-    const selected = await dialog.showOpenDialog(window!, {
+    const currentWindow = window
+    if (!currentWindow || currentWindow.isDestroyed()) throw new Error('当前没有可用窗口。')
+    const selected = await dialog.showOpenDialog(currentWindow, {
       properties: ['openDirectory'],
       title: 'Open Folder',
     })
@@ -560,14 +572,24 @@ function installIPC(): void {
       deleteBranch,
       sessions: () => manager.request('list', []),
       close: (id) => manager.request('close', [id]),
-      confirm: (check, force) =>
-        requestConfirmation({
+      confirm: (check, force) => {
+        let branchDescription = ''
+        if (check.currentBranch)
+          branchDescription = deleteBranch
+            ? `同时删除本地分支 ${check.currentBranch}。`
+            : '本地分支保留。'
+        const forceBranchDescription =
+          deleteBranch && check.currentBranch
+            ? `同时强制删除本地分支 ${check.currentBranch}，未合并提交可能丢失。`
+            : ''
+        return requestConfirmation({
           title: force ? '强制删除工作树' : '删除工作树',
           description: force
-            ? `将永久删除 ${check.worktreePath} 及关联工作区，丢弃未提交、未跟踪和忽略的文件，并结束关联终端。${deleteBranch && check.currentBranch ? `同时强制删除本地分支 ${check.currentBranch}，未合并提交可能丢失。` : ''}此操作可能无法恢复。`
-            : `将删除 ${check.worktreePath} 及关联工作区，并结束关联终端。${check.currentBranch ? (deleteBranch ? `同时删除本地分支 ${check.currentBranch}。` : '本地分支保留。') : ''}`,
+            ? `将永久删除 ${check.worktreePath} 及关联工作区，丢弃未提交、未跟踪和忽略的文件，并结束关联终端。${forceBranchDescription}此操作可能无法恢复。`
+            : `将删除 ${check.worktreePath} 及关联工作区，并结束关联终端。${branchDescription}`,
           confirmLabel: force ? '强制删除' : '删除',
-        }),
+        })
+      },
     })
   })
   handle('git:unlink-worktree', (id: string) => {
@@ -637,7 +659,9 @@ function installIPC(): void {
     return next
   })
   handle('notifications:choose-sound', async () => {
-    const selected = await dialog.showOpenDialog(window!, {
+    const currentWindow = window
+    if (!currentWindow || currentWindow.isDestroyed()) throw new Error('当前没有可用窗口。')
+    const selected = await dialog.showOpenDialog(currentWindow, {
       title: '选择通知提示音',
       properties: ['openFile'],
       filters: [{ name: '音频文件', extensions: [...NOTIFICATION_SOUND_EXTENSIONS] }],
@@ -743,6 +767,11 @@ function installIPC(): void {
       const uninstall = operation === 'uninstall'
       const label = uninstall ? '卸载' : '安装'
       const trust = !uninstall && provider === 'codex'
+      const actionLabel = trust ? '安装并信任' : label
+      const integrationLabel = provider === 'pi' ? 'Extension' : 'Hooks'
+      const trustDescription = trust
+        ? '同时授权信任本次安装的 Cota Hooks，使用 Codex 原生定义哈希；不信任其他 Hooks，不修改 Hooks 功能开关，不绕过企业策略。'
+        : ''
       // Codex supplies the native trust hashes and selects supported Hook events.
       const codex = trust
         ? (await detectAgents(config.snapshot().preferences)).find(
@@ -759,22 +788,21 @@ function installIPC(): void {
         )
       if (
         !(await requestConfirmation({
-          title: `${trust ? '安装并信任' : label} ${AGENT_PROVIDERS[provider].name} 的 Cota 状态集成？`,
+          title: `${actionLabel} ${AGENT_PROVIDERS[provider].name} 的 Cota 状态集成？`,
           description: uninstall
             ? `仅在本次确认后移除以下文件中的 Cota 集成：\n${hookFiles(provider, env).config}\n\n保留其他 Hooks 和配置，卸载不创建备份；共享加载脚本不删除。Dev / 正式版共用此配置，均受影响。不会结束正在运行的 Agent，已加载的集成需重启对应 CLI 后停止生效。`
-            : `仅在本次确认后写入以下文件：\n${status.paths.join('\n')}\n\n保留原有 Hooks，修改已有文件前创建备份。${trust ? '同时授权信任本次安装的 Cota Hooks，使用 Codex 原生定义哈希；不信任其他 Hooks，不修改 Hooks 功能开关，不绕过企业策略。' : ''}不改变 CLI 权限。安装后请新建终端。`,
-          confirmLabel: `${trust ? '安装并信任' : label} ${provider === 'pi' ? 'Extension' : 'Hooks'}`,
+            : `仅在本次确认后写入以下文件：\n${status.paths.join('\n')}\n\n保留原有 Hooks，修改已有文件前创建备份。${trustDescription}不改变 CLI 权限。安装后请新建终端。`,
+          confirmLabel: `${actionLabel} ${integrationLabel}`,
         }))
       )
         return null
-      return uninstall
-        ? uninstallAgentHook(provider, env)
-        : installAgentHook(
-            provider,
-            trust ? await loginShellEnvironment(config.snapshot().preferences) : env,
-            version,
-            codex?.executable,
-          )
+      if (uninstall) return uninstallAgentHook(provider, env)
+      return installAgentHook(
+        provider,
+        trust ? await loginShellEnvironment(config.snapshot().preferences) : env,
+        version,
+        codex?.executable,
+      )
     })
   }
   handle('agent:visible', (id: unknown) => {
@@ -905,24 +933,33 @@ function installIPC(): void {
   }
 }
 
-async function requestForceExit(confirmed = false): Promise<void> {
+async function requestForceExit(): Promise<void> {
+  if (exitPending || exiting) return
+  exitPending = true
+  let response: number
+  try {
+    const result = await dialog.showMessageBox({
+      type: 'warning',
+      title: '强制关闭 Cota？',
+      message: '强制关闭 Cota？',
+      detail:
+        '将结束当前应用的所有终端、后台任务及 Terminal Host，清理完成后关闭应用。未保存的内容可能丢失。',
+      buttons: ['取消', '强制关闭'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    response = result.response
+  } finally {
+    exitPending = false
+  }
+  if (response === 1) await forceExit()
+}
+
+async function forceExit(): Promise<void> {
   if (exitPending || exiting) return
   exitPending = true
   try {
-    if (!confirmed) {
-      const { response } = await dialog.showMessageBox({
-        type: 'warning',
-        title: '强制关闭 Cota？',
-        message: '强制关闭 Cota？',
-        detail:
-          '将结束当前应用的所有终端、后台任务及 Terminal Host，清理完成后关闭应用。未保存的内容可能丢失。',
-        buttons: ['取消', '强制关闭'],
-        defaultId: 0,
-        cancelId: 0,
-        noLink: true,
-      })
-      if (response !== 1) return
-    }
     settleConfirmation(false)
     await worktreeSetups?.close()
     await config?.flush()
@@ -1019,12 +1056,17 @@ function installMenu(): void {
             },
             { role: 'quit' },
             // Hidden menu items keep application and native editing shortcuts registered.
-            ...COTA_SHORTCUTS.filter(([id]) => id !== 'settings').map(([id, label]) => ({
-              label,
-              visible: false,
-              accelerator: accelerator(id!),
-              click: () => sendShortcut(id as Shortcut),
-            })),
+            ...COTA_SHORTCUTS.flatMap(([id, label]) => {
+              if (id === 'settings') return []
+              return [
+                {
+                  label,
+                  visible: false,
+                  accelerator: accelerator(id),
+                  click: () => sendShortcut(id as Shortcut),
+                },
+              ]
+            }),
             ...(
               [
                 'undo',
@@ -1159,9 +1201,9 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
   app.on('will-quit', () => agentSleep.dispose())
-  app
-    .whenReady()
-    .then(async () => {
+  void (async () => {
+    try {
+      await app.whenReady()
       app.setName(appName)
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       accounts = new AccountService(
@@ -1218,11 +1260,7 @@ if (!app.requestSingleInstanceLock()) {
         height: 780,
         minWidth: 760,
         minHeight: 480,
-        backgroundColor: windowBlurEnabled
-          ? '#00000000'
-          : nativeTheme.shouldUseDarkColors
-            ? '#171717'
-            : '#f0f0f0',
+        backgroundColor: windowBackground(),
         ...(windowBlurEnabled && process.platform === 'darwin'
           ? {
               vibrancy: 'under-window' as const,
@@ -1315,8 +1353,7 @@ if (!app.requestSingleInstanceLock()) {
       installMenu()
       if (devURL) await window.loadURL(devURL)
       else await window.loadFile(rendererFile)
-    })
-    .catch(async (error) => {
+    } catch (error) {
       agentSleep.dispose()
       console.error(`${appName} 启动失败：`, error)
       let detail = String(error)
@@ -1330,10 +1367,11 @@ if (!app.requestSingleInstanceLock()) {
           noLink: true,
         })
         try {
-          await requestForceExit(true)
+          await forceExit()
         } catch (cleanupError) {
           detail = `${String(error)}\n\n后台清理失败，应用暂未关闭，请重试。\n${String(cleanupError)}`
         }
       }
-    })
+    }
+  })()
 }

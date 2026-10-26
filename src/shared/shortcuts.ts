@@ -1,4 +1,4 @@
-export const COTA_SHORTCUTS = [
+export const COTA_SHORTCUTS: readonly (readonly [string, string, string])[] = [
   ['settings', '打开设置', 'CommandOrControl+,'],
   ['toggle-right-panel', '展开 / 收起右侧面板', 'CommandOrControl+L'],
   ['open-folder', '打开项目', 'CommandOrControl+O'],
@@ -7,12 +7,12 @@ export const COTA_SHORTCUTS = [
   ['split-terminal-down', '向下拆分终端', 'Super+Shift+D'],
   ['reopen-tab', '重新打开关闭的标签', 'CommandOrControl+Shift+T'],
   ['close-terminal', '关闭终端', 'CommandOrControl+W'],
-  ...Array.from({ length: 9 }, (_, index) => [
-    `tab-${index + 1}`,
-    `切换到终端 ${index + 1}`,
-    `CommandOrControl+${index + 1}`,
-  ]),
-] as readonly (readonly string[])[]
+  ...Array.from(
+    { length: 9 },
+    (_, index) =>
+      [`tab-${index + 1}`, `切换到终端 ${index + 1}`, `CommandOrControl+${index + 1}`] as const,
+  ),
+]
 
 export const TERMINAL_SHORTCUTS = [
   ['copy', '复制选中文本', 'CommandOrControl+Shift+C'],
@@ -34,7 +34,7 @@ const keyPattern =
   /^(?:[A-Z0-9,.;/'[\]\\`=-]|F(?:[1-9]|1\d|2[0-4])|Enter|Escape|Tab|Space|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right)$/
 
 export function shortcutBinding(bindings: ShortcutBindings, id: string, platform: string): string {
-  if (Object.hasOwn(bindings, id)) return bindings[id]!
+  if (Object.hasOwn(bindings, id)) return bindings[id] ?? ''
   if (platform !== 'darwin' && ['split-terminal', 'split-terminal-down'].includes(id)) return ''
   if (platform === 'darwin' && ['copy', 'paste', 'select-all'].includes(id))
     return `CommandOrControl+${{ copy: 'C', paste: 'V', 'select-all': 'A' }[id]}`
@@ -45,18 +45,21 @@ export function shortcutIdentity(value: string, platform: string): string {
   return value
     .replace('CommandOrControl', platform === 'darwin' ? 'Super' : 'Control')
     .split('+')
-    .sort()
+    .sort((a, b) => {
+      if (a === b) return 0
+      return a < b ? -1 : 1
+    })
     .join('+')
 }
 
 export function shortcutConflicts(bindings: ShortcutBindings, platform: string): string[][] {
   const groups = new Map<string, string[]>()
   for (const [id] of SHORTCUT_DEFINITIONS) {
-    const binding = shortcutBinding(bindings, id!, platform)
+    const binding = shortcutBinding(bindings, id, platform)
     if (!binding) continue
     const identity = shortcutIdentity(binding, platform)
     const group = groups.get(identity) || []
-    group.push(id!)
+    group.push(id)
     groups.set(identity, group)
   }
   return [...groups.values()].filter((group) => group.length > 1)
@@ -64,7 +67,7 @@ export function shortcutConflicts(bindings: ShortcutBindings, platform: string):
 
 export function validateShortcutBinding(binding: string, platform: string): void {
   const parts = binding.split('+')
-  const key = parts.pop()!
+  const key = parts.pop() ?? ''
   if (
     binding &&
     (!keyPattern.test(key) ||
@@ -73,8 +76,9 @@ export function validateShortcutBinding(binding: string, platform: string): void
       new Set(parts).size !== parts.length)
   )
     throw new Error('快捷键需包含修饰键和一个有效按键。')
+  const primaryModifier = platform === 'darwin' ? 'Super' : 'Control'
   const resolvedModifiers = parts.map((part) =>
-    part === 'CommandOrControl' ? (platform === 'darwin' ? 'Super' : 'Control') : part,
+    part === 'CommandOrControl' ? primaryModifier : part,
   )
   if (new Set(resolvedModifiers).size !== resolvedModifiers.length)
     throw new Error('快捷键包含重复的修饰键。')
@@ -104,7 +108,7 @@ export function validateShortcutBindings(value: unknown, platform: string): Shor
   const [conflict] = shortcutConflicts(result, platform)
   if (conflict) {
     const [first, second] = conflict.map(
-      (id) => SHORTCUT_DEFINITIONS.find(([key]) => key === id)![1],
+      (id) => SHORTCUT_DEFINITIONS.find(([key]) => key === id)?.[1] ?? id,
     )
     throw new Error(`“${second}”与“${first}”的快捷键冲突。`)
   }
@@ -145,23 +149,19 @@ export function captureShortcut(event: ShortcutEvent, platform: string): string 
   if (event.altKey) parts.push('Alt')
   if (event.shiftKey) parts.push('Shift')
   if (platform !== 'darwin' && event.metaKey) parts.push('Super')
-  const key =
-    codeKeys[event.code] ||
-    (event.code.startsWith('Key')
-      ? event.code.slice(3)
-      : event.code.startsWith('Digit')
-        ? event.code.slice(5)
-        : keyAliases[event.key] || event.key)
+  let key = codeKeys[event.code] || keyAliases[event.key] || event.key
+  if (event.code.startsWith('Key')) key = event.code.slice(3)
+  else if (event.code.startsWith('Digit')) key = event.code.slice(5)
   if (!parts.length || !keyPattern.test(key)) return
   return [...parts, key].join('+')
 }
 
 export function matchesShortcut(event: ShortcutEvent, binding: string, platform: string): boolean {
   const captured = captureShortcut(event, platform)
-  return (
-    !!binding &&
-    !!captured &&
-    shortcutIdentity(captured, platform) === shortcutIdentity(binding, platform)
+  return Boolean(
+    binding &&
+    captured &&
+    shortcutIdentity(captured, platform) === shortcutIdentity(binding, platform),
   )
 }
 

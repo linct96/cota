@@ -11,6 +11,7 @@ export function useFileWatch(
   const changed = useEffectEvent(onChange)
   const { projectPath, workspaceId } = target
   const [error, setError] = useState<string>()
+  // pi-lens-ignore: no-sort-without-comparator -- String paths need canonical lexicographic order for watch identity.
   const pathKey = JSON.stringify([...new Set(paths)].sort())
   useEffect(() => {
     // Watch identity changes must clear errors from the previous subscription.
