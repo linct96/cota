@@ -43,9 +43,9 @@ export const TERMINAL_STATE_LABELS: Record<TerminalDisplayState, string> = {
 
 export function terminalIndicatorState(tab: TerminalTab): TerminalDisplayState {
   if (tab.kind === 'agent' || tab.provider || tab.agent) return agentIndicatorState(tab)
-  return !tab.closingStatus && tab.status === 'running' && tab.shellActivity === 'running'
-    ? 'running'
-    : 'other'
+  if (tab.closingStatus || tab.status !== 'running') return 'other'
+  if (tab.shellActivity === 'running') return 'running'
+  return tab.shellActivity === 'idle' && tab.shellUnread ? 'completed' : 'other'
 }
 
 export function workspaceTerminalSummary(tabs: TerminalTab[]) {
@@ -55,7 +55,7 @@ export function workspaceTerminalSummary(tabs: TerminalTab[]) {
         tab.kind === 'agent' ||
         tab.provider ||
         tab.agent ||
-        terminalIndicatorState(tab) === 'running',
+        terminalIndicatorState(tab) !== 'other',
     )
     .map((tab) => {
       const state = terminalIndicatorState(tab)

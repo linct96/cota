@@ -1083,7 +1083,7 @@ describe('workspace state', () => {
     expect(store().tabs[0]).toMatchObject({ workspaceId: workspace.id, status: 'starting' })
   })
 
-  it('shows ordinary running dots only for executing shells without changing Agent indicators', () => {
+  it('shows ordinary shell running and unread completion dots without changing Agent indicators', () => {
     const shell = {
       id: crypto.randomUUID(),
       workspaceId: crypto.randomUUID(),
@@ -1112,6 +1112,91 @@ describe('workspace state', () => {
       count: 1,
       description: '1 个连接失败 · 1 个运行中',
     })
+
+    const store = () => useWorkspace.getState()
+    const current = () => store().tabs[0]
+    useWorkspace.setState({
+      workspaces: [
+        {
+          id: shell.workspaceId,
+          projectPath: shell.projectPath,
+          name: '工作区',
+          kind: 'local',
+        },
+      ],
+      selectedProject: shell.projectPath,
+      activeTabs: { [shell.workspaceId]: shell.id },
+      tabs: [{ ...shell, shellActivity: undefined }],
+    })
+    store().updateTab(shell.id, { shellActivity: 'idle' })
+    expect(terminalIndicatorState(current())).toBe('other')
+    vi.useFakeTimers()
+    try {
+      store().updateTab(shell.id, { shellActivity: 'running' })
+      expect(terminalIndicatorState(current())).toBe('running')
+      store().updateTab(shell.id, { shellActivity: 'idle' })
+      expect(terminalIndicatorState(current())).toBe('completed')
+      expect(workspaceAgentSummary(store().tabs)).toEqual({
+        state: 'completed',
+        count: 1,
+        description: '1 个本轮结束',
+      })
+      const focused = { ...shell, id: 'focused', shellActivity: 'idle' as const }
+      const grouped = terminalTabs({
+        tabs: [focused, current()],
+        closingTerminalTabs: [],
+        terminalLayouts: [
+          {
+            id: 'group',
+            activePaneId: focused.id,
+            root: {
+              type: 'split',
+              id: 'split',
+              direction: 'horizontal',
+              ratio: 0.5,
+              children: [
+                { type: 'terminal', id: focused.id },
+                { type: 'terminal', id: shell.id },
+              ],
+            },
+          },
+        ],
+      })[0]
+      expect(grouped.indicatorTab).toBe(current())
+      vi.advanceTimersByTime(5000)
+      expect(current().shellUnread).toBe(true)
+      store().setVisibleTerminal(shell.id)
+      vi.advanceTimersByTime(1999)
+      expect(terminalIndicatorState(current())).toBe('completed')
+      store().updateTab(shell.id, { title: 'Shell renamed' })
+      vi.advanceTimersByTime(1)
+      expect(terminalIndicatorState(current())).toBe('other')
+      expect(workspaceAgentSummary(store().tabs)).toBeUndefined()
+      store().updateTab(shell.id, { shellActivity: 'idle' })
+      expect(terminalIndicatorState(current())).toBe('other')
+
+      store().updateTab(shell.id, { shellActivity: 'running' })
+      expect(current().shellUnread).toBe(false)
+      store().updateTab(shell.id, { shellActivity: 'idle' })
+      vi.advanceTimersByTime(1000)
+      store().setVisibleTerminal(undefined)
+      vi.advanceTimersByTime(3000)
+      expect(terminalIndicatorState(current())).toBe('completed')
+      store().setVisibleTerminal(shell.id)
+      vi.advanceTimersByTime(1000)
+      store().updateTab(shell.id, { shellActivity: 'running' })
+      vi.advanceTimersByTime(1000)
+      expect(terminalIndicatorState(current())).toBe('running')
+      store().updateTab(shell.id, { shellActivity: 'idle' })
+      vi.advanceTimersByTime(1999)
+      expect(terminalIndicatorState(current())).toBe('completed')
+      vi.advanceTimersByTime(1)
+      expect(terminalIndicatorState(current())).toBe('other')
+      expect(api.readAgent).not.toHaveBeenCalled()
+    } finally {
+      store().setVisibleTerminal(undefined)
+      vi.useRealTimers()
+    }
   })
   it('activates the last workspace and active tab only when its Host sessions still exist', async () => {
     const path = '/tmp/project'

@@ -46,6 +46,8 @@ export interface TerminalTab {
   cwd?: string
   status: 'starting' | 'running' | 'exited' | 'error'
   shellActivity?: import('../../shared/contracts').ShellActivity
+  // shortcut: 完成未读仅保留在 Renderer；需要跨应用重启恢复时再迁移到 Host。
+  shellUnread?: boolean
   exitCode?: number
   error?: string
   startupCommand?: string
@@ -206,7 +208,14 @@ function adjacentWorkspaceTab(workspaceId: string, key: string): string | undefi
   return index < 0 ? undefined : order[index + 1] || order[index - 1]
 }
 
-let completionRead: { session: AgentSession; timer: ReturnType<typeof setTimeout> } | undefined
+let completionRead:
+  | {
+      terminalId: string
+      launchId?: string
+      lastTurnId?: string
+      timer: ReturnType<typeof setTimeout>
+    }
+  | undefined
 
 function markAgentRead(agent: AgentSession): void {
   void window.desktop
@@ -215,42 +224,46 @@ function markAgentRead(agent: AgentSession): void {
     .catch((error) => console.warn('无法标记 Agent 状态已读。', error))
 }
 
-function readVisibleAgent(state: Workspace): void {
-  const tab = state.tabs.find((tab) => tab.id === state.visibleTerminal)
-  const agent =
-    tab &&
-    !state.agentConnectionLost &&
-    !tab.closingStatus &&
-    tab.workspaceId === currentWorkspace(state)?.id &&
-    state.activeTabs[tab.workspaceId] === tab.id
-      ? tab.agent
-      : undefined
-  const completed = agent?.runtimeState === 'running' && agent.activityState === 'completed'
+function readVisibleTerminal(state: Workspace): void {
+  const tab = state.tabs.find(
+    (tab) =>
+      tab.id === state.visibleTerminal &&
+      !tab.closingStatus &&
+      tab.workspaceId === currentWorkspace(state)?.id &&
+      state.activeTabs[tab.workspaceId] === tab.id,
+  )
+  const agent = !state.agentConnectionLost ? tab?.agent : undefined
+  const shellCompleted = !!tab && !tab.agent && terminalIndicatorState(tab) === 'completed'
+  const completed =
+    (agent?.runtimeState === 'running' && agent.activityState === 'completed') || shellCompleted
+  const unread = agent?.unread || shellCompleted
   if (
     completionRead &&
     (!completed ||
-      !agent?.unread ||
-      completionRead.session.terminalId !== agent.terminalId ||
-      completionRead.session.launchId !== agent.launchId ||
-      completionRead.session.lastTurnId !== agent.lastTurnId)
+      !unread ||
+      completionRead.terminalId !== tab?.id ||
+      completionRead.launchId !== agent?.launchId ||
+      completionRead.lastTurnId !== agent?.lastTurnId)
   ) {
     clearTimeout(completionRead.timer)
     completionRead = undefined
   }
-  if (!agent?.unread) return
+  if (!unread || !tab) return
   if (!completed) {
-    markAgentRead(agent)
+    if (agent) markAgentRead(agent)
     return
   }
   if (completionRead) return
   completionRead = {
-    session: agent,
+    terminalId: tab.id,
+    launchId: agent?.launchId,
+    lastTurnId: agent?.lastTurnId,
     timer: setTimeout(() => {
       completionRead = undefined
-      const current = useWorkspace
-        .getState()
-        .tabs.find((item) => item.id === agent.terminalId)?.agent
-      if (current?.unread) markAgentRead(current)
+      const current = useWorkspace.getState().tabs.find((item) => item.id === tab.id)
+      if (current?.agent?.unread) markAgentRead(current.agent)
+      else if (current && terminalIndicatorState(current) === 'completed')
+        useWorkspace.getState().updateTab(current.id, { shellUnread: false })
     }, 2000),
   }
 }
@@ -1013,7 +1026,20 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           const { agentRevision: _revision, ...other } = rest
           return { ...tab, ...other, status: tab.status, exitCode: tab.exitCode }
         }
-        return { ...tab, ...rest, ...(value.agentRevision && !agent ? { agent: undefined } : {}) }
+        return {
+          ...tab,
+          ...rest,
+          ...(fields.shellActivity && fields.shellActivity !== tab.shellActivity
+            ? {
+                shellUnread:
+                  fields.shellActivity === 'idle' &&
+                  tab.shellActivity === 'running' &&
+                  !tab.agent &&
+                  !agent,
+              }
+            : {}),
+          ...(value.agentRevision && !agent ? { agent: undefined } : {}),
+        }
       }),
     }))
     if (agent) get().receiveAgent({ type: 'state', session: agent })
@@ -1086,6 +1112,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         return {
           ...tab,
           agent,
+          shellUnread: false,
           agentRevision: agent.revision,
           cwd: agent.cwd,
           ...(tab.kind === 'agent'
@@ -1454,11 +1481,11 @@ const unsubscribeTabOrder = useWorkspace.subscribe((state, previous) => {
         .map((tab) => tab.id),
     )
 })
-const unsubscribeAgentRead = useWorkspace.subscribe(readVisibleAgent)
+const unsubscribeTerminalRead = useWorkspace.subscribe(readVisibleTerminal)
 if (import.meta.hot)
   import.meta.hot.dispose(() => {
     unsubscribeLayout()
     unsubscribeTabOrder()
-    unsubscribeAgentRead()
+    unsubscribeTerminalRead()
     if (completionRead) clearTimeout(completionRead.timer)
   })
