@@ -543,7 +543,7 @@ export interface DesktopAPI {
   onShortcut(listener: (shortcut: Shortcut) => void): () => void
 }
 
-export const MAX_TERMINALS = 10
+export const MAX_TERMINALS = 50
 export const DEFAULT_CONFIG: AppConfig = {
   version: 2,
   recentProjects: [],

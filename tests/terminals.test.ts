@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { Terminal } from '@xterm/headless'
 import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
-import { DEFAULT_CONFIG, type AgentEventType, type TerminalEvent } from '../src/shared/contracts'
+import {
+  DEFAULT_CONFIG,
+  MAX_TERMINALS,
+  type AgentEventType,
+  type TerminalEvent,
+} from '../src/shared/contracts'
 import { AgentSessionManager } from '../src/main/agents/agent-session-manager'
 import { normalizeHook } from '../src/main/agents/hooks'
 import cotaLifecycle from '../src/main/agents/pi-extension'
@@ -1436,12 +1441,14 @@ describe('single PTY owner', () => {
   it('reserves slots before async validation, enforcing the limit on concurrent creates', async () => {
     const manager = new TerminalManager(vi.fn())
     await Promise.all(
-      Array.from({ length: 10 }, (_, index) =>
+      Array.from({ length: MAX_TERMINALS }, (_, index) =>
         manager.create(index % 2 ? { ...options(), ...agentLaunch() } : options(), settings),
       ),
     )
-    await expect(manager.create(options(), settings)).rejects.toThrow('10')
-    expect(mocks.spawn).toHaveBeenCalledTimes(10)
+    await expect(manager.create(options(), settings)).rejects.toThrow(
+      `最多保留 ${MAX_TERMINALS} 个终端`,
+    )
+    expect(mocks.spawn).toHaveBeenCalledTimes(MAX_TERMINALS)
   })
   it('batches output, pauses at high water, and resumes only after rendering acknowledgements', async () => {
     const events: TerminalEvent[] = []

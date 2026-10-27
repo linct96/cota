@@ -724,7 +724,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       }
     }
     if (get().tabs.length >= MAX_TERMINALS)
-      throw new Error('最多保留 10 个终端，请先关闭一个标签。')
+      throw new Error(`最多保留 ${MAX_TERMINALS} 个终端，请先关闭一个标签。`)
     if (!get().newTerminal(undefined, workspaceId, command))
       throw new Error('当前工作区不可用或正在关闭，请稍后重试。')
     set((state) => ({ recentQuickCommands: { ...state.recentQuickCommands, [workspaceId]: id } }))
@@ -752,7 +752,7 @@ export const useWorkspace = create<Workspace>((set, get) => ({
       return
     }
     if (tabs.length >= MAX_TERMINALS) {
-      console.error('最多保留 10 个终端，请先关闭一个标签。')
+      console.error(`最多保留 ${MAX_TERMINALS} 个终端，请先关闭一个标签。`)
       return
     }
     useSourceControl.getState().showTerminal(workspaceId)

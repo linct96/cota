@@ -287,7 +287,9 @@ describe('Worktree state transactions and recovery', () => {
         id: crypto.randomUUID(),
       })),
     })
-    expect(() => store().runQuickCommand('global', local.id)).toThrow('最多保留 10 个终端')
+    expect(() => store().runQuickCommand('global', local.id)).toThrow(
+      `最多保留 ${MAX_TERMINALS} 个终端`,
+    )
     expect(api.writeTerminal).not.toHaveBeenCalled()
     scan.entries[0].status = 'ready'
     useWorkspace.setState({

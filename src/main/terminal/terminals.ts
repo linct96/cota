@@ -144,7 +144,7 @@ export class TerminalManager {
     )
       return Promise.reject(new Error('该服务已在当前工作区运行，请查看日志或先停止。'))
     if (this.sessions.size >= MAX_TERMINALS)
-      return Promise.reject(new Error('最多保留 10 个终端，请先关闭一个标签。'))
+      return Promise.reject(new Error(`最多保留 ${MAX_TERMINALS} 个终端，请先关闭一个标签。`))
     const screen = new Terminal({
       ...size,
       scrollback: settings.scrollback,
