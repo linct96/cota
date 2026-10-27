@@ -792,17 +792,6 @@ button:not([data-slot='button']):focus-visible {
 .terminal-screen {
   box-sizing: border-box;
 }
-/* 预览不获取焦点，单独展示光标闪烁。 */
-@media (prefers-reduced-motion: no-preference) {
-  .terminal-appearance-preview-screen[data-cursor-blink='true'] .xterm-cursor {
-    animation: terminal-preview-cursor-blink 1s step-end infinite;
-  }
-}
-@keyframes terminal-preview-cursor-blink {
-  50% {
-    opacity: 0;
-  }
-}
 .terminal-screen.terminal-mouse-hidden,
 .terminal-screen.terminal-mouse-hidden * {
   cursor: none !important;
