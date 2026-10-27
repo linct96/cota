@@ -23,6 +23,15 @@ export const worktreeSetupFormSchema = z.object({
 
 const absolutePathPattern = /^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i
 
+export const createBranchFormSchema = z.object({
+  name: z
+    .string()
+    .max(1013, '分支名最多 1,013 字符。')
+    .refine((value) => !!value.trim(), '请输入分支名。')
+    .refine((value) => !value.trim().startsWith('-'), '分支名不能以 - 开头。')
+    .regex(/^[^\0\r\n]*$/, '分支名不能包含换行或空字符。'),
+})
+
 export const commitMessageFormSchema = z.object({
   message: z
     .string()

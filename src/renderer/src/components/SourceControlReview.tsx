@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ChevronRight, GitCommitHorizontal } from 'lucide-react'
+import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
+import { ArrowLeft, ChevronRight, GitCommitHorizontal, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import type { GitComparison, GitHistory, GitReferences } from '../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-store'
 import { buildGitChangeTree } from '../lib/source-control-tree'
+import { createBranchFormSchema } from '../lib/form-schemas'
 import { FileTypeIcon } from './FileTypeIcon'
 import { SourceFileExplorer } from './SourceFileExplorer'
 import { FileTreeFile } from './ui/file-tree'
@@ -11,24 +14,30 @@ import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './ui/empty'
-import { Field, FieldLabel } from './ui/field'
+import { Field, FieldLabel, FieldGroup, FieldDescription, FieldError } from './ui/field'
+import { Separator } from './ui/separator'
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-} from './ui/select'
+  Combobox,
+  ComboboxTrigger,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxEmpty,
+  ComboboxList,
+  ComboboxItem,
+} from './ui/combobox'
 
 export function SourceControlReview({
   workspace,
   active,
   references,
+  pending,
+  onCreateBranch,
 }: {
   workspace: ProjectWorkspace
   active: boolean
   references?: GitReferences
+  pending: boolean
+  onCreateBranch: (name: string, head: string) => Promise<boolean>
 }) {
   const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
   const selectedDiff = session.activePinnedDiff || (session.preview ? session.selection : undefined)
@@ -39,6 +48,8 @@ export function SourceControlReview({
   const [historyError, setHistoryError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const [morePending, setMorePending] = useState(false)
+  const [branchOpen, setBranchOpen] = useState(false)
+  const [createError, setCreateError] = useState<string>()
   const generation = useRef(0)
   const paging = useRef(false)
   const target = useMemo(
@@ -49,11 +60,39 @@ export function SourceControlReview({
   const head = session.status?.head
   const branches = references?.branches || []
   const baseRef =
-    session.baseRef ||
-    branches.find((entry) => entry.ref === 'refs/remotes/origin/main')?.ref ||
-    branches.find((entry) => entry.ref === 'refs/heads/main')?.ref ||
-    branches.find((entry) => entry.ref !== `refs/heads/${session.status?.branch}`)?.ref ||
-    ''
+    session.baseRef ??
+    (branches.find((entry) => entry.ref === 'refs/remotes/origin/main')?.ref ||
+      branches.find((entry) => entry.ref === 'refs/heads/main')?.ref ||
+      branches.find((entry) => entry.ref !== `refs/heads/${session.status?.branch}`)?.ref ||
+      '')
+  const branchForm = useForm({
+    defaultValues: { name: '' },
+    validationLogic: revalidateLogic({ mode: 'submit' }),
+    validators: { onDynamic: createBranchFormSchema },
+    onSubmit: async ({ value }) => {
+      const name = value.name.trim()
+      if (!head || pending || branches.some((branch) => branch.ref === `refs/heads/${name}`)) return
+      setCreateError(undefined)
+      // Freeze even an empty baseline so refreshing refs cannot select the new branch implicitly.
+      useSourceControl.getState().update(workspace.id, { baseRef })
+      try {
+        if (await onCreateBranch(name, head)) {
+          setBranchOpen(false)
+          toast.success(`已创建本地分支「${name}」`)
+        }
+      } catch (error) {
+        setCreateError(error instanceof Error ? error.message : String(error))
+      }
+    },
+  })
+  const branchSearch = useStore(branchForm.store, (state) => state.values.name)
+  const branchName = branchSearch.trim()
+  const creating = useStore(branchForm.store, (state) => state.isSubmitting)
+  const showCreate =
+    !!head &&
+    !!references &&
+    !!branchName &&
+    !branches.some((branch) => branch.ref === `refs/heads/${branchName}`)
   const comparisonKey = mode === 'history' ? `commit:${commit}` : `branch:${baseRef}:${head}`
   const comparison = !error && result?.key === comparisonKey ? result.comparison : undefined
   const nodes = useMemo(() => buildGitChangeTree(comparison?.entries || []), [comparison])
@@ -172,34 +211,149 @@ export function SourceControlReview({
             <FieldLabel className="source-control-base-label" htmlFor={`base-${workspace.id}`}>
               比较基准
             </FieldLabel>
-            <Select
-              items={branches.map(({ ref, label }) => ({ value: ref, label }))}
-              value={baseRef || null}
-              disabled={!branches.length}
-              onValueChange={(value) => {
-                if (value) useSourceControl.getState().update(workspace.id, { baseRef: value })
+            <Combobox
+              items={branches}
+              value={branches.find((branch) => branch.ref === baseRef) || null}
+              itemToStringLabel={(branch) => branch.label}
+              disabled={!references}
+              open={branchOpen}
+              inputValue={branchSearch}
+              onInputValueChange={(value) => {
+                branchForm.setFieldValue('name', value)
+                setCreateError(undefined)
+              }}
+              onOpenChange={(open) => {
+                if (creating) return
+                if (open) {
+                  branchForm.reset()
+                  setCreateError(undefined)
+                }
+                setBranchOpen(open)
+              }}
+              onValueChange={(branch) => {
+                if (branch && !pending && !creating)
+                  useSourceControl.getState().update(workspace.id, { baseRef: branch.ref })
               }}
             >
-              <SelectTrigger
+              <ComboboxTrigger
                 id={`base-${workspace.id}`}
-                className="source-control-base-trigger w-full min-w-0"
+                className="source-control-base-trigger w-full min-w-0 justify-between"
+                render={<Button variant="outline" size="sm" />}
                 aria-label="比较基准分支"
+                disabled={pending || creating}
               >
-                <SelectValue
-                  className="source-control-base-value truncate"
-                  placeholder="选择本地或远端分支"
-                />
-              </SelectTrigger>
-              <SelectContent className="source-control-base-content">
-                <SelectGroup className="source-control-base-options">
-                  {branches.map(({ ref, label }) => (
-                    <SelectItem key={ref} value={ref} className="source-control-base-option">
-                      {ref.startsWith('refs/remotes/') ? `远端 · ${label}` : `本地 · ${label}`}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+                <span className="source-control-base-value min-w-0 flex-1 truncate text-left">
+                  {branches.find((branch) => branch.ref === baseRef)?.label || '选择本地或远端分支'}
+                </span>
+              </ComboboxTrigger>
+              <ComboboxContent className="source-control-base-content flex w-(--anchor-width) flex-col">
+                <form
+                  className="source-control-base-form flex min-h-0 flex-col overflow-hidden"
+                  noValidate
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    if (showCreate && !pending && !creating) void branchForm.handleSubmit()
+                  }}
+                >
+                  <FieldGroup className="source-control-base-search shrink-0 p-1">
+                    <branchForm.Field name="name">
+                      {(field) => {
+                        const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                        return (
+                          <Field
+                            className="source-control-base-search-field"
+                            data-invalid={invalid}
+                          >
+                            <FieldLabel
+                              className="source-control-base-search-label sr-only"
+                              htmlFor={`base-search-${workspace.id}`}
+                            >
+                              搜索分支或输入新分支名
+                            </FieldLabel>
+                            <ComboboxInput
+                              id={`base-search-${workspace.id}`}
+                              className="source-control-base-search-input"
+                              placeholder="搜索分支或输入新分支名…"
+                              disabled={pending || creating}
+                              onBlur={field.handleBlur}
+                              aria-invalid={invalid}
+                              aria-describedby={`base-search-error-${workspace.id}`}
+                            />
+                            <FieldError
+                              id={`base-search-error-${workspace.id}`}
+                              className="source-control-base-search-error"
+                              errors={invalid ? field.state.meta.errors : []}
+                            />
+                          </Field>
+                        )
+                      }}
+                    </branchForm.Field>
+                  </FieldGroup>
+                  <ComboboxEmpty className="source-control-base-empty">
+                    没有匹配的分支
+                  </ComboboxEmpty>
+                  <ComboboxList className="source-control-base-options min-h-0">
+                    {(branch: GitReferences['branches'][number]) => (
+                      <ComboboxItem
+                        key={branch.ref}
+                        value={branch}
+                        className="source-control-base-option"
+                        title={branch.label}
+                        disabled={pending || creating}
+                      >
+                        <span className="source-control-base-option-label min-w-0 truncate">
+                          {branch.ref.startsWith('refs/remotes/') ? '远端' : '本地'} ·{' '}
+                          {branch.label}
+                        </span>
+                      </ComboboxItem>
+                    )}
+                  </ComboboxList>
+                  {showCreate && (
+                    <>
+                      <Separator className="source-control-base-create-separator" />
+                      <Field className="source-control-base-create shrink-0 gap-1 p-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="source-control-base-create-button w-full min-w-0 justify-start"
+                          disabled={pending || creating}
+                          aria-busy={creating}
+                          title={`创建本地分支「${branchName}」`}
+                          aria-describedby={`base-create-help-${workspace.id}`}
+                          onClick={() => void branchForm.handleSubmit()}
+                        >
+                          <Plus
+                            className="source-control-base-create-icon"
+                            data-icon="inline-start"
+                          />
+                          <span className="source-control-base-create-label min-w-0 truncate">
+                            {creating ? '正在创建…' : `创建本地分支「${branchName}」`}
+                          </span>
+                        </Button>
+                        <FieldDescription
+                          id={`base-create-help-${workspace.id}`}
+                          className="source-control-base-create-help px-2"
+                        >
+                          从当前 HEAD 创建，不切换分支或比较基准。
+                        </FieldDescription>
+                      </Field>
+                    </>
+                  )}
+                  {createError && (
+                    <Alert
+                      variant="destructive"
+                      className="source-control-base-create-error shrink-0"
+                    >
+                      <AlertDescription className="source-control-base-create-error-detail max-h-24 overflow-auto whitespace-pre-wrap break-words select-text">
+                        {createError}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </form>
+              </ComboboxContent>
+            </Combobox>
             <p className="source-control-base-help text-xs text-app-muted-foreground">
               仅比较共同祖先到 HEAD 的已提交改动，不含暂存区或工作文件；远端引用以最近一次 Fetch
               为准。

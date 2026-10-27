@@ -41,6 +41,7 @@ export type GitMutation = WorkspaceTarget &
     | { action: 'stage' | 'unstage' | 'discard'; files: GitFileSelection[] }
     | { action: 'commit'; message: string; indexVersion: string }
     | { action: 'switch-branch'; ref: string; branch: string | null; head: string | null }
+    | { action: 'create-branch'; name: string; head: string }
     | GitRemoteMutation
   )
 export interface GitReferences {

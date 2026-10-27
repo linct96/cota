@@ -274,6 +274,7 @@ export function SourceControlPanel({
         })
       return done
     } catch (error) {
+      if (input.action === 'create-branch') throw error
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
       return false
     } finally {
@@ -804,7 +805,15 @@ export function SourceControlPanel({
             value={session.mode}
             className="source-control-review-content flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <SourceControlReview workspace={workspace} active={active} references={references} />
+            <SourceControlReview
+              workspace={workspace}
+              active={active}
+              references={references}
+              pending={pending}
+              onCreateBranch={(name, head) =>
+                mutate({ ...target, action: 'create-branch', name, head })
+              }
+            />
           </TabsContent>
         )}
         {session.mode === 'changes' && (

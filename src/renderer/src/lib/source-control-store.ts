@@ -25,7 +25,7 @@ interface SourceControlSession {
   activePinnedFile?: string
   file?: string
   mode: 'changes' | 'history' | 'compare'
-  baseRef: string
+  baseRef?: string
   preview: boolean
   changesOpen: boolean
   changesActive: boolean
@@ -43,7 +43,6 @@ export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
   changesOpen: false,
   changesActive: false,
   mode: 'changes',
-  baseRef: '',
   draft: '',
   draftRevision: 0,
   refreshed: 0,

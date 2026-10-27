@@ -677,6 +677,58 @@ describe('project branch', () => {
     ).rejects.toThrow('没有共同祖先')
   }, 30000)
 
+  it('creates local branches without switching or changing staged and working files', async () => {
+    await git('init', '--initial-branch=main')
+    const target = { projectPath: directory, workspaceId: 'fixture' }
+    const noConfirmation = vi.fn().mockResolvedValue(false)
+    const create = {
+      ...target,
+      action: 'create-branch' as const,
+      name: 'feature/新分支',
+      head: '0'.repeat(40),
+    }
+    await expect(sourceControl.mutate(directory, create, noConfirmation)).rejects.toThrow(
+      '还没有提交',
+    )
+    await git('config', 'user.name', 'Cota')
+    await git('config', 'user.email', 'cota@example.test')
+    await git('config', 'commit.gpgsign', 'false')
+    await git('config', 'core.hooksPath', '/dev/null')
+    await git('commit', '--allow-empty', '-m', 'initial')
+    await git('config', 'branch.autoSetupMerge', 'always')
+    await writeFile(join(directory, 'staged.txt'), 'staged content\n')
+    await git('add', 'staged.txt')
+    await writeFile(join(directory, 'staged.txt'), 'working content\n')
+    await writeFile(join(directory, 'untracked.txt'), 'untracked content\n')
+    const before = await sourceControl.status(directory)
+    await expect(sourceControl.mutate(directory, create, noConfirmation)).rejects.toThrow(
+      'HEAD 已改变',
+    )
+    const input = { ...create, head: before.head! }
+    for (const name of ['-bad', 'a..b', '@{-1}', 'HEAD', ' bad ', 'bad\nname'])
+      await expect(
+        sourceControl.mutate(directory, { ...input, name }, noConfirmation),
+      ).rejects.toThrow()
+    expect(await sourceControl.mutate(directory, input, noConfirmation)).toBe(true)
+    expect((await git('rev-parse', `refs/heads/${input.name}`)).stdout.trim()).toBe(before.head)
+    await expect(git('config', '--get', `branch.${input.name}.remote`)).rejects.toThrow()
+    await expect(sourceControl.mutate(directory, input, noConfirmation)).rejects.toThrow()
+    expect((await git('rev-parse', `refs/heads/${input.name}`)).stdout.trim()).toBe(before.head)
+    const after = await sourceControl.status(directory)
+    expect(after.head).toBe(before.head)
+    expect(after.branch).toBe(before.branch)
+    expect(after.entries).toEqual(before.entries)
+    expect((await git('show', ':staged.txt')).stdout).toBe('staged content\n')
+    expect(await readFile(join(directory, 'staged.txt'), 'utf8')).toBe('working content\n')
+    expect(await readFile(join(directory, 'untracked.txt'), 'utf8')).toBe('untracked content\n')
+    await git('switch', '--detach', 'HEAD')
+    expect(
+      await sourceControl.mutate(directory, { ...input, name: 'from-detached' }, noConfirmation),
+    ).toBe(true)
+    expect((await sourceControl.status(directory)).branch).toBeNull()
+    expect(noConfirmation).not.toHaveBeenCalled()
+  })
+
   it('watches worktree and shared metadata, filters noise and cleans up races and failures', async () => {
     await git('init', '--initial-branch=main')
     await git('config', 'user.name', 'Cota')
