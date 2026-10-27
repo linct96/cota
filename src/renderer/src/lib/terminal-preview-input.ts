@@ -22,6 +22,7 @@ export function installTerminalPreviewInput(
     const up = buffer.cursorY - row
     // Keep the editable window inside the viewport, even after changing font size or padding.
     const visiblePrompt = terminal.cols >= 16 ? prompt : terminal.cols >= 4 ? '> ' : ''
+    // oxlint-disable-next-line no-control-regex -- Strip ANSI styling before measuring the prompt.
     const promptLength = visiblePrompt.replace(/\x1b\[[\d;]*m/g, '').length
     let budget = Math.max(0, terminal.cols * Math.max(1, terminal.rows - 1) - promptLength - 1)
     let start = cursor
@@ -89,8 +90,10 @@ export function installTerminalPreviewInput(
         default: {
           // Treat pasted content as plain text, never as terminal control sequences.
           const text = data
+            // oxlint-disable-next-line no-control-regex -- Remove pasted ANSI escape sequences, including OSC payloads.
             .replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g, '')
             .replace(/[\r\n\t]+/g, ' ')
+            // oxlint-disable-next-line no-control-regex -- Reject remaining C0 and C1 control characters.
             .replace(/[\x00-\x1f\x7f-\x9f]/g, '')
           if (!text) return
           const prefix = characters.slice(0, cursor).join('') + text
