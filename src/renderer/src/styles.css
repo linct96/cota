@@ -36,8 +36,6 @@
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
   --color-terminal-tab-hover: var(--terminal-tab-hover);
-  --color-workspace-status-idle: var(--workspace-status-idle);
-  --color-workspace-status-active: var(--workspace-status-active);
   --color-overlay: var(--overlay);
   --color-scrollbar-thumb: var(--scrollbar-thumb);
   --color-scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
@@ -102,9 +100,9 @@
   --workspace-tab-transition-short: 320ms;
   --workspace-tab-transition-medium: 210ms;
   --workspace-tab-transition-wide: 120ms;
-  --workspace-status-idle: var(--app-muted-foreground);
-  --workspace-status-active: #16a34a;
   --dot-status-neutral: var(--app-muted-foreground);
+  --dot-status-empty: #929292;
+  --dot-status-idle: #74899c;
   --dot-status-attention: #a16207;
   --dot-status-completed: #299f51;
   --dot-status-working: #38bdf8;
@@ -498,6 +496,12 @@ button:not([data-slot='button']):focus-visible {
 .dot-status-dot {
   border-radius: 50%;
   background: currentColor;
+}
+.dot-status[data-state='empty'] {
+  color: var(--dot-status-empty);
+}
+.dot-status[data-state='idle'] {
+  color: var(--dot-status-idle);
 }
 .dot-status[data-state='running'] {
   color: var(--dot-status-working);
@@ -942,6 +946,8 @@ button:not([data-slot='button']):focus-visible {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --dot-status-empty: #777777;
+  --dot-status-idle: #8499ad;
   --dot-status-attention: #fbbf24;
   --dot-status-completed: #35c264;
   --dot-status-working: #38bdf8;

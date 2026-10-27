@@ -908,18 +908,15 @@ export function App() {
                                         className="project-item-status flex size-3.5 items-center justify-center"
                                         aria-hidden="true"
                                       >
-                                        {terminalSummary && terminalSummary.state !== 'other' ? (
-                                          <DotStatus state={terminalSummary.state} />
-                                        ) : (
-                                          <span
-                                            className={cn(
-                                              'project-item-status-dot size-1.5 rounded-full',
-                                              hasTerminals
-                                                ? 'bg-workspace-status-active'
-                                                : 'bg-workspace-status-idle',
-                                            )}
-                                          />
-                                        )}
+                                        <DotStatus
+                                          state={
+                                            terminalSummary && terminalSummary.state !== 'other'
+                                              ? terminalSummary.state
+                                              : hasTerminals
+                                                ? 'idle'
+                                                : 'empty'
+                                          }
+                                        />
                                       </span>
                                       <span className="project-item-name truncate">
                                         {workspace.name}

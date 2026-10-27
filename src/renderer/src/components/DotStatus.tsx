@@ -8,7 +8,7 @@ function synchronizeBreathing(element: HTMLSpanElement | null) {
   }
 }
 
-export function DotStatus({ state }: { state: TerminalDisplayState }) {
+export function DotStatus({ state }: { state: TerminalDisplayState | 'empty' | 'idle' }) {
   if (state === 'other') return null
   if (state === 'working') {
     return (
