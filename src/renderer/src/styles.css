@@ -41,7 +41,7 @@
   --color-scrollbar-thumb-hover: var(--scrollbar-thumb-hover);
   --color-scrollbar-thumb-active: var(--scrollbar-thumb-active);
   --color-destructive: var(--destructive);
-  --color-warning: var(--dot-status-attention);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-titlebar-separator: var(--titlebar-separator);
   --color-window-control-hover: var(--window-control-hover);
@@ -101,9 +101,10 @@
   --workspace-tab-transition-medium: 210ms;
   --workspace-tab-transition-wide: 120ms;
   --dot-status-neutral: var(--app-muted-foreground);
-  --dot-status-empty: #929292;
-  --dot-status-idle: #74899c;
-  --dot-status-attention: #a16207;
+  --dot-status-empty: var(--dot-status-neutral);
+  --dot-status-idle: var(--dot-status-neutral);
+  --warning: #a16207;
+  --dot-status-attention: #ca8a04;
   --dot-status-completed: #299f51;
   --dot-status-working: #38bdf8;
   --source-control-editor-background: #ffffff;
@@ -139,7 +140,7 @@
   --window-close-hover: #c42b1c;
   --window-close-foreground: #ffffff;
   --destructive: oklch(0.577 0.245 27.325);
-  --terminal-selection: var(--accent);
+  --terminal-selection: color-mix(in oklch, var(--accent), var(--foreground) 15%);
   --terminal-selection-inactive: var(--muted);
   --terminal-black: var(--foreground);
   --terminal-red: #c42b1c;
@@ -484,8 +485,8 @@ button:not([data-slot='button']):focus-visible {
 .dot-status {
   color: var(--dot-status-neutral);
 }
-.dot-status-breath,
-.agent-dot-breath {
+.dot-status-ripple {
+  position: relative;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -493,12 +494,26 @@ button:not([data-slot='button']):focus-visible {
   display: inline-block;
   vertical-align: middle;
 }
+.dot-status-ripple::before,
+.dot-status-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-color: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
 .dot-status-dot {
   border-radius: 50%;
   background: currentColor;
 }
 .dot-status[data-state='empty'] {
   color: var(--dot-status-empty);
+}
+.dot-status[data-state='empty'] .dot-status-dot {
+  border: 1px solid currentColor;
+  background: transparent;
 }
 .dot-status[data-state='idle'] {
   color: var(--dot-status-idle);
@@ -518,25 +533,22 @@ button:not([data-slot='button']):focus-visible {
   color: var(--destructive);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .dot-status-breath,
-  .agent-dot-breath {
-    animation: dot-status-breath 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  .dot-status-ripple::before,
+  .dot-status-ripple::after {
+    animation: dot-status-ripple 1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+  }
+  .dot-status-ripple::after {
+    animation-delay: 0.55s;
   }
 }
-@keyframes dot-status-breath {
-  0%,
-  100% {
-    transform: scale(0.9);
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--dot-status-working) 25%, transparent),
-      0 0 3px color-mix(in srgb, var(--dot-status-working) 45%, transparent);
+@keyframes dot-status-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
   }
-  50% {
-    transform: scale(1.05);
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
-      0 0 8px color-mix(in srgb, var(--dot-status-working) 45%, transparent),
-      0 0 10px color-mix(in srgb, var(--dot-status-working) 8%, transparent);
+  100% {
+    transform: scale(2);
+    opacity: 0;
   }
 }
 .source-control-commit-buttons [data-slot='button']:disabled {
@@ -946,8 +958,7 @@ button:not([data-slot='button']):focus-visible {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
-  --dot-status-empty: #777777;
-  --dot-status-idle: #8499ad;
+  --warning: #fbbf24;
   --dot-status-attention: #fbbf24;
   --dot-status-completed: #35c264;
   --dot-status-working: #38bdf8;

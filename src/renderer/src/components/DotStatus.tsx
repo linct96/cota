@@ -1,6 +1,6 @@
 import type { TerminalDisplayState } from '../lib/agent-status'
 
-function synchronizeBreathing(element: HTMLSpanElement | null) {
+function synchronizeRipples(element: HTMLSpanElement | null) {
   if (!element) return
   // Join the document timeline instead of restarting the pulse on mount or CSS animation restart.
   for (const animation of element.getAnimations()) {
@@ -13,21 +13,21 @@ export function DotStatus({ state }: { state: TerminalDisplayState | 'empty' | '
   if (state === 'working') {
     return (
       <span
-        className="dot-status inline-flex size-3.5 shrink-0 items-center justify-center"
+        className="dot-status inline-flex size-2 shrink-0 items-center justify-center"
         data-state={state}
         aria-hidden="true"
       >
         <span
-          ref={synchronizeBreathing}
-          onAnimationStart={(event) => synchronizeBreathing(event.currentTarget)}
-          className="dot-status-breath size-1.5"
+          ref={synchronizeRipples}
+          onAnimationStart={(event) => synchronizeRipples(event.currentTarget)}
+          className="dot-status-ripple size-1.5"
         />
       </span>
     )
   }
   return (
     <span
-      className="dot-status inline-flex size-3.5 shrink-0 items-center justify-center"
+      className="dot-status inline-flex size-2 shrink-0 items-center justify-center"
       data-state={state}
       aria-hidden="true"
     >

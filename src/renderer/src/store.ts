@@ -264,7 +264,7 @@ function readVisibleTerminal(state: Workspace): void {
       if (current?.agent?.unread) markAgentRead(current.agent)
       else if (current && terminalIndicatorState(current) === 'completed')
         useWorkspace.getState().updateTab(current.id, { shellUnread: false })
-    }, 2000),
+    }, 1000),
   }
 }
 

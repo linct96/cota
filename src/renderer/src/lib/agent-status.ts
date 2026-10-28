@@ -62,13 +62,13 @@ export function workspaceTerminalSummary(tabs: TerminalTab[]) {
       return state === 'failed' && !tab.agent?.unread ? 'other' : state
     })
   const priority: TerminalDisplayState[] = [
-    'needs-input',
-    'error',
-    'failed',
-    'working',
-    'running',
     'succeeded',
     'completed',
+    'error',
+    'failed',
+    'needs-input',
+    'working',
+    'running',
     'interrupted',
     'other',
   ]

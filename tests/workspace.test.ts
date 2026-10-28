@@ -1179,7 +1179,7 @@ describe('workspace state', () => {
       vi.advanceTimersByTime(5000)
       expect(current().shellUnread).toBe(true)
       store().setVisibleTerminal(shell.id)
-      vi.advanceTimersByTime(1999)
+      vi.advanceTimersByTime(999)
       expect(terminalIndicatorState(current())).toBe('completed')
       store().updateTab(shell.id, { title: 'Shell renamed' })
       vi.advanceTimersByTime(1)
@@ -1191,17 +1191,17 @@ describe('workspace state', () => {
       store().updateTab(shell.id, { shellActivity: 'running' })
       expect(current().shellUnread).toBe(false)
       store().updateTab(shell.id, { shellActivity: 'idle' })
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       store().setVisibleTerminal(undefined)
       vi.advanceTimersByTime(3000)
       expect(terminalIndicatorState(current())).toBe('completed')
       store().setVisibleTerminal(shell.id)
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       store().updateTab(shell.id, { shellActivity: 'running' })
       vi.advanceTimersByTime(1000)
       expect(terminalIndicatorState(current())).toBe('running')
       store().updateTab(shell.id, { shellActivity: 'idle' })
-      vi.advanceTimersByTime(1999)
+      vi.advanceTimersByTime(999)
       expect(terminalIndicatorState(current())).toBe('completed')
       vi.advanceTimersByTime(1)
       expect(terminalIndicatorState(current())).toBe('other')
@@ -1374,10 +1374,18 @@ describe('workspace state', () => {
     ).toEqual({ state: 'other', count: 1, description: '1 个其他状态' })
     const succeeded = { ...store().tabs[1], agent: { ...completion, outcome: 'success' as const } }
     expect(agentTabState(succeeded)).toBe('succeeded')
-    expect(workspaceAgentSummary([succeeded])).toEqual({
+    expect(
+      workspaceAgentSummary([
+        working,
+        failed,
+        { ...failed, agent: { ...completion, activityState: 'needs-input' as const } },
+        { ...failed, agent: completion },
+        succeeded,
+      ]),
+    ).toEqual({
       state: 'succeeded',
       count: 1,
-      description: '1 个已完成',
+      description: '1 个已完成 · 1 个本轮结束 · 1 个执行失败 · 1 个待处理 · 1 个执行中',
     })
     const groupIndicator = (background: TerminalTab, focused = store().tabs[0]) =>
       terminalTabs({
@@ -1406,7 +1414,7 @@ describe('workspace state', () => {
       expect(grouped).toMatchObject({ id: 'group', kind: 'shell', cwd: other.cwd })
     }
     const focusedAgent = { ...succeeded, id: other.id }
-    expect(groupIndicator(working, focusedAgent).indicatorTab).toBe(working)
+    expect(groupIndicator(working, focusedAgent).indicatorTab).toBe(focusedAgent)
     expect(groupIndicator(succeeded, focusedAgent).indicatorTab).toBe(focusedAgent)
     expect(groupIndicator(succeeded, { ...store().tabs[0], status: 'error' }).indicatorTab).toBe(
       succeeded,
@@ -1424,18 +1432,18 @@ describe('workspace state', () => {
       vi.advanceTimersByTime(5000)
       expect(api.readAgent).not.toHaveBeenCalled()
       store().setVisibleTerminal(live.id)
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       expect(api.readAgent).not.toHaveBeenCalled()
       store().setVisibleTerminal(undefined)
       vi.advanceTimersByTime(5000)
       expect(api.readAgent).not.toHaveBeenCalled()
       store().setVisibleTerminal(live.id)
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       store().selectTab(other.id)
       vi.advanceTimersByTime(2000)
       expect(api.readAgent).not.toHaveBeenCalled()
       store().selectTab(live.id)
-      vi.advanceTimersByTime(1999)
+      vi.advanceTimersByTime(999)
       expect(api.readAgent).not.toHaveBeenCalled()
       store().updateTab(other.id, { title: 'Shell renamed' })
       vi.advanceTimersByTime(1)
@@ -1475,9 +1483,9 @@ describe('workspace state', () => {
       description: '1 个待处理',
     })
     expect(workspaceAgentSummary([failed, working, store().tabs[1]])).toEqual({
-      state: 'needs-input',
+      state: 'failed',
       count: 1,
-      description: '1 个待处理 · 1 个执行失败 · 1 个执行中',
+      description: '1 个执行失败 · 1 个待处理 · 1 个执行中',
     })
     expect(workspaceAgentSummary([{ ...store().tabs[1], kind: 'shell' }])).toEqual({
       state: 'needs-input',
@@ -1489,15 +1497,15 @@ describe('workspace state', () => {
       store().setVisibleTerminal(live.id)
       const reads = vi.mocked(api.readAgent).mock.calls.length
       store().receiveAgent({ type: 'state', session: { ...completion, revision: 7 } })
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       store().receiveAgent({ type: 'state', session: { ...buffered, revision: 8 } })
       vi.advanceTimersByTime(2000)
       expect(api.readAgent).toHaveBeenCalledTimes(reads)
       expect(agentIndicatorState(store().tabs[1])).toBe('working')
       store().receiveAgent({ type: 'state', session: { ...completion, revision: 9 } })
-      vi.advanceTimersByTime(1000)
+      vi.advanceTimersByTime(500)
       store().receiveAgent({ type: 'state', session: { ...completion, revision: 10 } })
-      vi.advanceTimersByTime(999)
+      vi.advanceTimersByTime(499)
       expect(api.readAgent).toHaveBeenCalledTimes(reads)
       vi.advanceTimersByTime(1)
       expect(api.readAgent).toHaveBeenLastCalledWith(live.id, agent.launchId, 10)
