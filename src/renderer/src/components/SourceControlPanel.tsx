@@ -265,7 +265,11 @@ export function SourceControlPanel({
         })
       return done
     } catch (error) {
-      if (input.action === 'create-branch' || input.action === 'create-and-switch-branch')
+      if (
+        input.action === 'create-branch' ||
+        input.action === 'create-and-switch-branch' ||
+        input.action === 'delete-branch'
+      )
         throw error
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
       return false
@@ -637,11 +641,20 @@ export function SourceControlPanel({
                         head: status.head,
                       })
                     }}
-                    onCreate={(name) =>
+                    onDelete={(ref) =>
+                      mutate({
+                        ...target,
+                        action: 'delete-branch',
+                        ref,
+                        branch: status.branch,
+                        head: status.head,
+                      })
+                    }
+                    onCreate={(name, switchBranch) =>
                       status.head
                         ? mutate({
                             ...target,
-                            action: 'create-and-switch-branch',
+                            action: switchBranch ? 'create-and-switch-branch' : 'create-branch',
                             name,
                             branch: status.branch,
                             head: status.head,

@@ -24,6 +24,9 @@ import {
   ComboboxEmpty,
   ComboboxList,
   ComboboxItem,
+  ComboboxGroup,
+  ComboboxLabel,
+  ComboboxCollection,
 } from './ui/combobox'
 
 export function SourceControlReview({
@@ -59,6 +62,13 @@ export function SourceControlReview({
   const mode = session.mode
   const head = session.status?.head
   const branches = references?.branches || []
+  const branchGroups = [
+    { label: '本地分支', items: branches.filter((branch) => branch.ref.startsWith('refs/heads/')) },
+    {
+      label: '远端分支',
+      items: branches.filter((branch) => branch.ref.startsWith('refs/remotes/')),
+    },
+  ].filter((group) => group.items.length > 0)
   const baseRef =
     session.baseRef ??
     (branches.find((entry) => entry.ref === 'refs/remotes/origin/main')?.ref ||
@@ -212,7 +222,7 @@ export function SourceControlReview({
               比较基准
             </FieldLabel>
             <Combobox
-              items={branches}
+              items={branchGroups}
               value={branches.find((branch) => branch.ref === baseRef) || null}
               itemToStringLabel={(branch) => branch.label}
               disabled={!references}
@@ -294,19 +304,31 @@ export function SourceControlReview({
                     没有匹配的分支
                   </ComboboxEmpty>
                   <ComboboxList className="source-control-base-options min-h-0">
-                    {(branch: GitReferences['branches'][number]) => (
-                      <ComboboxItem
-                        key={branch.ref}
-                        value={branch}
-                        className="source-control-base-option"
-                        title={branch.label}
-                        disabled={pending || creating}
+                    {(group: (typeof branchGroups)[number]) => (
+                      <ComboboxGroup
+                        key={group.label}
+                        items={group.items}
+                        className="source-control-base-group"
                       >
-                        <span className="source-control-base-option-label min-w-0 truncate">
-                          {branch.ref.startsWith('refs/remotes/') ? '远端' : '本地'} ·{' '}
-                          {branch.label}
-                        </span>
-                      </ComboboxItem>
+                        <ComboboxLabel className="source-control-base-group-label">
+                          {group.label}
+                        </ComboboxLabel>
+                        <ComboboxCollection>
+                          {(branch: GitReferences['branches'][number]) => (
+                            <ComboboxItem
+                              key={branch.ref}
+                              value={branch}
+                              className="source-control-base-option"
+                              title={branch.label}
+                              disabled={pending || creating}
+                            >
+                              <span className="source-control-base-option-label min-w-0 truncate">
+                                {branch.label}
+                              </span>
+                            </ComboboxItem>
+                          )}
+                        </ComboboxCollection>
+                      </ComboboxGroup>
                     )}
                   </ComboboxList>
                   {showCreate && (

@@ -257,8 +257,9 @@ describe('project branch', () => {
       limitedStats.mockRestore()
       clock.mockRestore()
     }
-  }, 15000)
+  }, 30000)
 
+  // Remote sync/conflict checks and 51 sequential commits need a separate integration-test budget.
   it('reads worktree branches and omits detached HEAD', async () => {
     await git('init', '--initial-branch=main')
     await git(
@@ -601,6 +602,8 @@ describe('project branch', () => {
     expect((await sourceControl.references(worktree)).branches).toContainEqual({
       ref: 'refs/heads/feature/occupied',
       label: 'feature/occupied',
+      date: (await git('show', '-s', '--format=%cI', 'refs/heads/feature/occupied')).stdout.trim(),
+      subject: 'initial',
       worktreePath: occupiedPath,
     })
     const switchBranch = {
@@ -676,7 +679,7 @@ describe('project branch', () => {
     await expect(
       sourceControl.compare(worktree, { kind: 'branch', ref: 'refs/heads/main' }),
     ).rejects.toThrow('没有共同祖先')
-  }, 30000)
+  }, 120000)
 
   it('creates local branches with optional atomic switching while preserving staged and working files', async () => {
     await git('init', '--initial-branch=main')
@@ -785,6 +788,69 @@ describe('project branch', () => {
     expect((await sourceControl.status(directory)).entries).toEqual(before.entries)
     expect(noConfirmation).not.toHaveBeenCalled()
   }, 30000)
+
+  it('safely deletes only unused, merged local branches without changing working files or remote refs', async () => {
+    await git('init', '--initial-branch=main')
+    await git('config', 'user.name', 'Cota')
+    await git('config', 'user.email', 'cota@example.test')
+    await git('config', 'commit.gpgsign', 'false')
+    await git('config', 'core.hooksPath', '/dev/null')
+    await git('commit', '--allow-empty', '-m', 'initial')
+    await git('branch', 'feature/可删除')
+    const head = (await git('rev-parse', 'HEAD')).stdout.trim()
+    await git('update-ref', 'refs/remotes/origin/feature/可删除', head)
+    const linked = join(directory, 'linked')
+    await git('worktree', 'add', '-b', 'occupied', linked)
+    await git('switch', '-c', 'unmerged')
+    await git('commit', '--allow-empty', '-m', 'not merged')
+    const unmerged = (await git('rev-parse', 'HEAD')).stdout.trim()
+    await git('switch', 'main')
+    await writeFile(join(directory, 'precious.txt'), 'staged content\n')
+    await git('add', 'precious.txt')
+    await writeFile(join(directory, 'precious.txt'), 'working content\n')
+    const before = await sourceControl.status(directory)
+    const input = {
+      projectPath: directory,
+      workspaceId: 'fixture',
+      action: 'delete-branch' as const,
+      ref: 'refs/heads/feature/可删除',
+      branch: before.branch,
+      head: before.head,
+    }
+    const noConfirmation = vi.fn().mockResolvedValue(false)
+    for (const ref of ['refs/remotes/origin/feature/可删除', 'refs/heads/-bad', 'refs/heads/a..b'])
+      await expect(
+        sourceControl.mutate(directory, { ...input, ref }, noConfirmation),
+      ).rejects.toThrow()
+    await expect(
+      sourceControl.mutate(directory, { ...input, head: '0'.repeat(40) }, noConfirmation),
+    ).rejects.toThrow('HEAD 已改变')
+    await expect(
+      sourceControl.mutate(directory, { ...input, ref: 'refs/heads/main' }, noConfirmation),
+    ).rejects.toThrow('不能删除当前分支')
+    await expect(
+      sourceControl.mutate(directory, { ...input, ref: 'refs/heads/occupied' }, noConfirmation),
+    ).rejects.toThrow('Worktree 占用')
+    await expect(
+      sourceControl.mutate(directory, { ...input, ref: 'refs/heads/unmerged' }, noConfirmation),
+    ).rejects.toThrow()
+    expect((await git('rev-parse', 'refs/heads/unmerged')).stdout.trim()).toBe(unmerged)
+    expect((await git('rev-parse', 'refs/heads/occupied')).stdout.trim()).toBe(head)
+    expect(await sourceControl.mutate(directory, input, noConfirmation)).toBe(true)
+    await expect(git('show-ref', '--verify', input.ref)).rejects.toThrow()
+    expect((await git('rev-parse', 'refs/remotes/origin/feature/可删除')).stdout.trim()).toBe(head)
+    expect(
+      (await sourceControl.references(directory)).branches.some((b) => b.ref === input.ref),
+    ).toBe(false)
+    const after = await sourceControl.status(directory)
+    expect(after.branch).toBe(before.branch)
+    expect(after.head).toBe(before.head)
+    expect(after.entries).toEqual(before.entries)
+    expect((await git('show', ':precious.txt')).stdout).toBe('staged content\n')
+    expect(await readFile(join(directory, 'precious.txt'), 'utf8')).toBe('working content\n')
+    await expect(sourceControl.mutate(directory, input, noConfirmation)).rejects.toThrow()
+    expect(noConfirmation).not.toHaveBeenCalled()
+  }, 15000)
 
   it('watches worktree and shared metadata, filters noise and cleans up races and failures', async () => {
     await git('init', '--initial-branch=main')

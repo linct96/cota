@@ -459,11 +459,22 @@ button:not([data-slot='button']):focus-visible {
   box-shadow: var(--shadow-xs);
 }
 .project-folder-row,
+.source-control-branch-option-row,
 .source-control-group-header,
 .source-control-directory-row,
 .source-control-file-row {
   border-radius: var(--radius-md);
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.source-control-branch-option-row:is(:hover, :focus-within, :has([data-highlighted])) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.source-control-branch-option-row > .source-control-branch-option {
+  background: transparent;
+}
+.source-control-branch-delete:is(:hover, [data-highlighted]) {
+  color: var(--destructive);
 }
 .source-control-group-header:hover,
 .source-control-directory-row:hover,

@@ -4,6 +4,7 @@ import { cn } from 'cn'
 import { Input } from './input'
 
 const Combobox = ComboboxPrimitive.Root
+const ComboboxRow = ComboboxPrimitive.Row
 
 function ComboboxTrigger({ className, children, ...props }: ComboboxPrimitive.Trigger.Props) {
   return (
@@ -64,22 +65,54 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
   )
 }
 
-function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
+function ComboboxItem({
+  className,
+  children,
+  showIndicator = true,
+  ...props
+}: ComboboxPrimitive.Item.Props & { showIndicator?: boolean }) {
   return (
     <ComboboxPrimitive.Item
       data-slot="combobox-item"
       className={cn(
-        "ui-combobox-item relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md py-1 pr-7 pl-2 text-xs/relaxed outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "ui-combobox-item relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md py-1 pl-2 text-xs/relaxed outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        showIndicator ? 'pr-7' : 'pr-2',
         className,
       )}
       {...props}
     >
       {children}
-      <ComboboxPrimitive.ItemIndicator className="ui-combobox-item-indicator pointer-events-none absolute right-2 flex items-center justify-center">
-        <CheckIcon className="ui-combobox-item-check" />
-      </ComboboxPrimitive.ItemIndicator>
+      {showIndicator && (
+        <ComboboxPrimitive.ItemIndicator className="ui-combobox-item-indicator pointer-events-none absolute right-2 flex items-center justify-center">
+          <CheckIcon className="ui-combobox-item-check" />
+        </ComboboxPrimitive.ItemIndicator>
+      )}
     </ComboboxPrimitive.Item>
   )
+}
+
+function ComboboxGroup({ className, ...props }: ComboboxPrimitive.Group.Props) {
+  return (
+    <ComboboxPrimitive.Group
+      data-slot="combobox-group"
+      className={cn('ui-combobox-group', className)}
+      {...props}
+    />
+  )
+}
+
+function ComboboxLabel({ className, ...props }: ComboboxPrimitive.GroupLabel.Props) {
+  return (
+    <ComboboxPrimitive.GroupLabel
+      data-slot="combobox-label"
+      className={cn('ui-combobox-label px-2 py-1.5 text-xs text-muted-foreground', className)}
+      {...props}
+    />
+  )
+}
+
+function ComboboxCollection(props: ComboboxPrimitive.Collection.Props) {
+  return <ComboboxPrimitive.Collection data-slot="combobox-collection" {...props} />
 }
 
 function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
@@ -101,6 +134,10 @@ export {
   ComboboxInput,
   ComboboxContent,
   ComboboxList,
+  ComboboxRow,
   ComboboxItem,
+  ComboboxGroup,
+  ComboboxLabel,
+  ComboboxCollection,
   ComboboxEmpty,
 }

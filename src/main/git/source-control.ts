@@ -322,11 +322,11 @@ export class SourceControlService {
       const remotes = (await runGit(rootPath, ['remote'])).split('\n').filter(Boolean)
       const raw = await runGitBytes(rootPath, [
         'for-each-ref',
-        '--format=%(refname)%00%(symref)',
+        '--format=%(refname)%00%(symref)%00%(committerdate:iso-strict)%00%(contents:subject)',
         'refs/heads/',
         'refs/remotes/',
       ])
-      if (!isUtf8(raw)) throw new Error('分支名称不是 UTF-8，请在终端处理。')
+      if (!isUtf8(raw)) throw new Error('分支名称或提交信息不是 UTF-8，请在终端处理。')
       const worktrees = await this.git.listWorktrees(rootPath)
       const branches = raw
         .toString('utf8')
@@ -334,13 +334,19 @@ export class SourceControlService {
         .filter(Boolean)
         .map((record) => record.split('\0'))
         .filter(([, symbolic]) => !symbolic)
-        .map(([ref]) => ({
-          ref,
-          label: ref.replace(/^refs\/(heads|remotes)\//, ''),
-          worktreePath: worktrees.find(
-            (entry) => entry.branch !== null && `refs/heads/${entry.branch}` === ref,
-          )?.path,
-        }))
+        .map(([ref, , date, subject]) => {
+          if (!Number.isFinite(Date.parse(date)) || subject === undefined)
+            throw new Error('分支提交信息格式无效。')
+          return {
+            ref,
+            label: ref.replace(/^refs\/(heads|remotes)\//, ''),
+            date,
+            subject,
+            worktreePath: worktrees.find(
+              (entry) => entry.branch !== null && `refs/heads/${entry.branch}` === ref,
+            )?.path,
+          }
+        })
       if (branches.length > 5000 || remotes.length > 100)
         throw new Error('引用过多，请在终端处理。')
       return { remotes, branches }
@@ -867,7 +873,7 @@ export class SourceControlService {
         }
         return true
       }
-      if (input.action === 'switch-branch') {
+      if (input.action === 'switch-branch' || input.action === 'delete-branch') {
         if (
           typeof input.ref !== 'string' ||
           !input.ref.startsWith('refs/heads/') ||
@@ -881,11 +887,19 @@ export class SourceControlService {
         await runGit(status.rootPath, ['check-ref-format', input.ref])
         await this.resolveCommit(status.rootPath, input.ref)
         const branch = input.ref.slice(11)
-        if (status.branch === branch) return true
+        if (status.branch === branch) {
+          if (input.action === 'delete-branch') throw new Error('不能删除当前分支。')
+          return true
+        }
         const occupied = (await this.git.listWorktrees(status.rootPath)).find(
           (entry) => entry.branch === branch && entry.path !== status.rootPath,
         )
         if (occupied) throw new Error(`分支已被其他 Worktree 占用：${occupied.path}`)
+        if (input.action === 'delete-branch') {
+          // Let Git refuse unmerged or checked-out branches; never force deletion.
+          await runGit(status.rootPath, ['branch', '--delete', '--', branch], true)
+          return true
+        }
         if (status.entries.length)
           throw new Error('切换分支前请提交或自行处理工作区更改；不会自动 stash 或丢弃改动。')
         await runGit(

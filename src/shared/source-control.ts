@@ -40,14 +40,19 @@ export type GitMutation = WorkspaceTarget &
   (
     | { action: 'stage' | 'unstage' | 'discard'; files: GitFileSelection[] }
     | { action: 'commit'; message: string; indexVersion: string }
-    | { action: 'switch-branch'; ref: string; branch: string | null; head: string | null }
+    | {
+        action: 'switch-branch' | 'delete-branch'
+        ref: string
+        branch: string | null
+        head: string | null
+      }
     | { action: 'create-branch'; name: string; head: string }
     | { action: 'create-and-switch-branch'; name: string; branch: string | null; head: string }
     | GitRemoteMutation
   )
 export interface GitReferences {
   remotes: string[]
-  branches: { ref: string; label: string; worktreePath?: string }[]
+  branches: { ref: string; label: string; date: string; subject: string; worktreePath?: string }[]
 }
 export interface GitCommit {
   oid: string
