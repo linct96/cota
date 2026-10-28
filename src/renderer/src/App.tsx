@@ -139,7 +139,6 @@ export function App() {
   const workspaceSavePending = useRef(false)
   const workspaceDialogTrigger = useRef<HTMLElement | null>(null)
   const workspaceNameInput = useRef<HTMLInputElement | null>(null)
-  const [workspaceCheckAttempt, setWorkspaceCheckAttempt] = useState(0)
   const [checkingWorktree, setCheckingWorktree] = useState(false)
   const workspaceForm = useForm({
     defaultValues: { name: '' },
@@ -199,7 +198,7 @@ export function App() {
     return () => {
       disposed = true
     }
-  }, [editingRecord, workspaceCheckAttempt])
+  }, [editingRecord])
 
   useEffect(() => {
     const stopAgents = window.desktop.onAgent((event) =>
@@ -1350,33 +1349,11 @@ export function App() {
                   <p className="workspace-worktree-path break-all text-app-muted-foreground">
                     {editingRecord.path}
                   </p>
-                  <output
-                    className="workspace-worktree-status text-app-muted-foreground"
-                    aria-busy={checkingWorktree}
-                  >
-                    {!checkingWorktree &&
-                      (editingScan?.error ||
-                        (editingScan?.status === 'ready'
-                          ? editingScan.worktree?.locked
-                            ? '工作树已锁定'
-                            : '工作树就绪'
-                          : '工作树状态暂不可用'))}
-                  </output>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="workspace-worktree-recheck self-start"
-                    disabled={
-                      checkingWorktree ||
-                      savingWorkspace ||
-                      !!state.removingWorkspace ||
-                      state.creatingWorktree
-                    }
-                    onClick={() => setWorkspaceCheckAttempt((attempt) => attempt + 1)}
-                  >
-                    重新检查
-                  </Button>
+                  {!checkingWorktree && editingScan?.error && (
+                    <p className="workspace-worktree-scan-error text-destructive" role="alert">
+                      {editingScan.error}
+                    </p>
+                  )}
                   {(editingRecord.origin === 'linked' || editingScan?.status !== 'ready') && (
                     <Button
                       type="button"

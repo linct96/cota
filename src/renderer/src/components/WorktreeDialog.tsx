@@ -7,14 +7,7 @@ import { unwrap, type WorktreePlan, type WorkspaceTarget } from '../../../shared
 import { worktreeBranchSegment } from '../../../shared/worktree-names'
 import { useWorkspace } from '../store'
 import { Button } from './ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from './ui/field'
 import { Input } from './ui/input'
 import { Checkbox } from './ui/checkbox'
@@ -189,9 +182,6 @@ export function WorktreeDialog({
       >
         <DialogHeader className="worktree-create-header">
           <DialogTitle className="worktree-create-title">新建工作树</DialogTitle>
-          <DialogDescription className="worktree-create-description">
-            从本地引用创建新分支和独立目录。
-          </DialogDescription>
         </DialogHeader>
         <form
           className="worktree-create-form flex flex-col gap-5"

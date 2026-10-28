@@ -747,7 +747,8 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         : undefined
     if (workspace.kind === 'git-worktree' && worktree?.status !== 'ready') {
       set({
-        worktreeError: 'Worktree 不可用，请在“编辑”中重新检查或在终端中修复；不会回退到项目目录。',
+        worktreeError:
+          'Worktree 不可用，请在终端中修复后重新打开“编辑工作区”以刷新检查；不会回退到项目目录。',
       })
       return
     }
