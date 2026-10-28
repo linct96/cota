@@ -3,7 +3,7 @@ import { createLoadingIndicator } from '../src/renderer/src/lib/loading-indicato
 
 afterEach(() => vi.useRealTimers())
 
-it('skips fast work, holds visible loading for 500ms, and cancels stale timers across stages and cleanup', () => {
+it('skips fast work, holds visible loading for 300ms, and cancels stale timers across stages and cleanup', () => {
   vi.useFakeTimers()
   const changed = vi.fn()
   const indicator = createLoadingIndicator(changed)
@@ -23,7 +23,7 @@ it('skips fast work, holds visible loading for 500ms, and cancels stale timers a
   vi.advanceTimersByTime(1)
   expect(changed.mock.calls).toEqual([[true]])
   indicator.update(false)
-  vi.advanceTimersByTime(499)
+  vi.advanceTimersByTime(299)
   expect(changed).toHaveBeenCalledTimes(1)
   vi.advanceTimersByTime(1)
   expect(changed.mock.calls).toEqual([[true], [false]])

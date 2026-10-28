@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import {
   AGENT_PROVIDERS,
@@ -21,31 +21,18 @@ const labels: Record<AgentHookStatus['state'], string> = {
   error: '检测失败',
 }
 
-export function AgentHookSettings() {
-  const [statuses, setStatuses] = useState<AgentHookStatus[]>([])
-  const [busy, setBusy] = useState<'detect' | AgentProvider | undefined>('detect')
-  const [error, setError] = useState<string>()
+export function AgentHookSettings({
+  initialStatuses,
+  initialError,
+}: {
+  initialStatuses: AgentHookStatus[]
+  initialError?: string
+}) {
+  const [statuses, setStatuses] = useState(initialStatuses)
+  const [busy, setBusy] = useState<'detect' | AgentProvider | undefined>()
+  const [error, setError] = useState(initialError)
   const [notice, setNotice] = useState<string>()
   const [feedbackProvider, setFeedbackProvider] = useState<AgentProvider>()
-
-  useEffect(() => {
-    let cancelled = false
-    void window.desktop
-      .detectAgentHooks()
-      .then(unwrap)
-      .then((value) => {
-        if (!cancelled) setStatuses(value)
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(undefined)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   async function detect() {
     if (busy) return
@@ -81,7 +68,7 @@ export function AgentHookSettings() {
           ? action === 'uninstall' && status.state === 'missing'
             ? `${AGENT_PROVIDERS[provider].name}：已卸载。已运行的 CLI 请重启后生效。`
             : `${AGENT_PROVIDERS[provider].name}：${status.detail}`
-          : `已取消${action === 'uninstall' ? '卸载' : '安装'}，未修改配置。`,
+          : undefined,
       )
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

@@ -36,6 +36,8 @@ import { FileExplorerSettings } from './FileExplorerSettings'
 import { ShortcutSettings } from './ShortcutSettings'
 import { AgentSettings } from './AgentSettings'
 import { QuickCommandsSettings } from './QuickCommandsSettings'
+import { LoadingContent } from './LoadingContent'
+import { useWorkspace } from '../store'
 
 interface SettingItem {
   id: string
@@ -108,6 +110,7 @@ const SETTING_COMPONENTS: Record<string, React.ComponentType> = {
 
 export function Settings() {
   const { section } = useSearch({ from: '/settings' })
+  const ready = useWorkspace((state) => state.ready)
   const [activeCategory, setActiveCategory] = useState<string>(section || 'general')
   const [search, setSearch] = useState('')
   const titleId = useId()
@@ -227,8 +230,20 @@ export function Settings() {
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
         aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
-        <div className="settings-detail-container mx-auto w-full max-w-4xl p-8 text-sm/relaxed">
-          {SettingContent && <SettingContent />}
+        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-4xl flex-col p-8 text-sm/relaxed">
+          <LoadingContent
+            key={activeCategory}
+            pending={!ready}
+            label={`${activeItem?.label ?? '设置'}配置读取中...`}
+            loadingHeader={
+              <div className="settings-loading-heading typeset mb-6">
+                <h1 className="settings-loading-title">{activeItem?.label ?? '设置'}</h1>
+              </div>
+            }
+            showLabel
+          >
+            {ready && SettingContent && <SettingContent />}
+          </LoadingContent>
         </div>
       </main>
     </SidebarProvider>

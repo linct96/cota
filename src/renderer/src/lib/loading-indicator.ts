@@ -32,7 +32,7 @@ export function createLoadingIndicator(onChange: (visible: boolean) => void) {
               onChange(false)
             }
           },
-          visible ? Math.max(0, 500 - (performance.now() - shownAt)) : 0,
+          visible ? Math.max(0, 300 - (performance.now() - shownAt)) : 0,
         )
       }
     },
