@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePanelCallbackRef } from 'react-resizable-panels'
 import { toast } from 'sonner'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { workspaceFormSchema } from './lib/form-schemas'
@@ -41,6 +42,7 @@ import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
 import { FilePreview } from './components/FilePreview'
 import { useFileExplorer } from './lib/file-explorer-store'
+import { useLeftPanel } from './lib/left-panel-store'
 import { SourceControlChanges } from './components/SourceControlChanges'
 import { FileTypeIcon } from './components/FileTypeIcon'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
@@ -123,7 +125,15 @@ export function App() {
   const [setupProject, setSetupProject] = useState<string>()
   const [setupTarget, setSetupTarget] = useState<{ target: WorkspaceTarget; error?: string }>()
   const [rightTab, setRightTab] = useState('files')
-  const [projectSidebarWidth, setProjectSidebarWidth] = useState(240)
+  const leftPanelOpen = useLeftPanel((state) => state.open)
+  const projectSidebarWidth = useLeftPanel((state) => state.width)
+  const [projectPanel, projectPanelRef] = usePanelCallbackRef()
+
+  useEffect(() => {
+    if (!secondaryPageOpen) {
+      projectPanel?.resize(leftPanelOpen ? useLeftPanel.getState().width : 0)
+    }
+  }, [projectPanel, leftPanelOpen, secondaryPageOpen])
   const activeNavigation = settingsOpen ? 'settings' : cortanaOpen ? 'cortana' : 'home'
   const menuTrigger = useRef<HTMLElement | null>(null)
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)
@@ -351,7 +361,14 @@ export function App() {
         <TopStatusBar
           secondaryPageOpen={secondaryPageOpen}
           gitAvailable={gitAvailable}
-          sidebarWidth={secondaryPageOpen ? 240 : projectSidebarWidth + 1}
+          sidebarWidth={leftPanelOpen ? (secondaryPageOpen ? 240 : projectSidebarWidth + 1) : 0}
+          leftPanelId={
+            settingsOpen
+              ? 'settings-sidebar'
+              : cortanaOpen
+                ? 'cortana-sidebar'
+                : 'workspace-projects'
+          }
           onBack={() => void router.navigate({ to: '/' })}
         >
           {/* 终端标签栏 */}
@@ -664,18 +681,35 @@ export function App() {
             >
               <ResizablePanel
                 id="workspace-projects"
+                panelRef={projectPanelRef}
                 defaultSize={240}
                 minSize={200}
                 maxSize={400}
+                collapsible
+                collapsedSize={0}
                 groupResizeBehavior="preserve-pixel-size"
-                onResize={(size) => {
-                  if (!secondaryPageOpen && size.inPixels > 0) setProjectSidebarWidth(size.inPixels)
+                onResize={(size, _id, previous) => {
+                  if (secondaryPageOpen || !previous) return
+                  if (size.inPixels === 0) {
+                    if (useLeftPanel.getState().open) {
+                      useLeftPanel.setState({ open: false })
+                      requestAnimationFrame(() =>
+                        document.getElementById('left-panel-toggle')?.focus(),
+                      )
+                    }
+                  } else if (useLeftPanel.getState().open) {
+                    useLeftPanel.setState({ width: size.inPixels })
+                  }
                 }}
                 className="project-sidebar-panel flex min-h-0 min-w-0 flex-col"
                 style={{ overflow: 'hidden' }}
               >
                 <aside
-                  className="project-sidebar flex min-h-0 flex-1 flex-col bg-muted/40 text-app-muted-foreground"
+                  className={cn(
+                    'project-sidebar min-h-0 flex-1 flex-col bg-muted/40 text-app-muted-foreground',
+                    leftPanelOpen ? 'flex' : 'hidden',
+                  )}
+                  inert={!leftPanelOpen}
                   aria-label="项目"
                 >
                   <div className="project-header group/header flex h-12 shrink-0 items-center justify-between px-4">
@@ -1120,7 +1154,11 @@ export function App() {
                 </aside>
               </ResizablePanel>
               <ResizableHandle
-                className="workspace-resize-handle project-sidebar-resize-handle"
+                className={cn(
+                  'workspace-resize-handle project-sidebar-resize-handle',
+                  !leftPanelOpen && 'hidden',
+                )}
+                disabled={!leftPanelOpen}
                 aria-label="调整项目面板宽度"
               />
               <ResizablePanel

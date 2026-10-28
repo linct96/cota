@@ -38,6 +38,8 @@ import { AgentSettings } from './AgentSettings'
 import { QuickCommandsSettings } from './QuickCommandsSettings'
 import { LoadingContent } from './LoadingContent'
 import { useWorkspace } from '../store'
+import { useLeftPanel } from '../lib/left-panel-store'
+import { cn } from '../lib/utils'
 
 interface SettingItem {
   id: string
@@ -111,6 +113,7 @@ const SETTING_COMPONENTS: Record<string, React.ComponentType> = {
 export function Settings() {
   const { section } = useSearch({ from: '/settings' })
   const ready = useWorkspace((state) => state.ready)
+  const leftPanelOpen = useLeftPanel((state) => state.open)
   const [activeCategory, setActiveCategory] = useState<string>(section || 'general')
   const [search, setSearch] = useState('')
   const titleId = useId()
@@ -145,8 +148,12 @@ export function Settings() {
       className="settings-layout min-h-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l"
     >
       <Sidebar
+        id="settings-sidebar"
         collapsible="none"
-        className="settings-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none"
+        className={cn(
+          'settings-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none',
+          !leftPanelOpen && 'hidden',
+        )}
         aria-label="设置导航"
       >
         <SidebarHeader className="settings-header">

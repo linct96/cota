@@ -5,6 +5,8 @@ import {
   ArrowRight,
   Files,
   GitBranch,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react'
@@ -12,6 +14,7 @@ import { shortcutBinding } from '../../../shared/shortcuts'
 import { useWorkspace } from '../store'
 import { isWindows } from '../lib/platform'
 import { useRightPanel } from '../lib/right-panel-store'
+import { useLeftPanel } from '../lib/left-panel-store'
 import { cn } from '../lib/utils'
 import { Button } from './ui/button'
 import { Separator } from './ui/separator'
@@ -24,6 +27,7 @@ interface TopStatusBarProps {
   secondaryPageOpen: boolean
   gitAvailable: boolean
   sidebarWidth: number
+  leftPanelId: string
   onBack(): void
   children?: ReactNode
 }
@@ -32,6 +36,7 @@ export function TopStatusBar({
   secondaryPageOpen,
   gitAvailable,
   sidebarWidth,
+  leftPanelId,
   onBack,
   children,
 }: TopStatusBarProps) {
@@ -41,6 +46,9 @@ export function TopStatusBar({
     'toggle-right-panel',
     window.desktop.platform,
   )
+  const leftPanelOpen = useLeftPanel((state) => state.open)
+  const leftPanelLabel = leftPanelOpen ? '收起左侧面板' : '展开左侧面板'
+  const LeftPanelIcon = leftPanelOpen ? PanelLeftClose : PanelLeftOpen
   const rightPanelOpen = useRightPanel((state) => state.open)
   const rightPanelWidth = useRightPanel((state) => state.width)
   const rightPanelLabel = rightPanelOpen ? '收起右侧面板' : '展开右侧面板'
@@ -53,7 +61,7 @@ export function TopStatusBar({
       aria-label="顶部状态栏"
     >
       <div
-        className="top-status-bar-leading flex h-full shrink-0 items-center"
+        className="top-status-bar-leading flex h-full min-w-max shrink-0 items-center"
         style={{ width: `calc(var(--app-navigation-width) + ${sidebarWidth}px + 1px)` }}
       >
         {isWindows && (
@@ -102,6 +110,26 @@ export function TopStatusBar({
               <ArrowRight className="history-forward-icon" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent side="bottom">前进（功能待接入）</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="navigation"
+                  size="icon"
+                  id="left-panel-toggle"
+                  className="left-panel-toggle"
+                  aria-label={leftPanelLabel}
+                  aria-expanded={leftPanelOpen}
+                  aria-controls={leftPanelId}
+                  onClick={() => useLeftPanel.setState({ open: !leftPanelOpen })}
+                />
+              }
+            >
+              <LeftPanelIcon className="left-panel-toggle-icon" aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{leftPanelLabel}</TooltipContent>
           </Tooltip>
         </nav>
       </div>

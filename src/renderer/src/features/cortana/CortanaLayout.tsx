@@ -11,6 +11,8 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu'
 import { useCortana } from './cortana-store'
+import { useLeftPanel } from '../../lib/left-panel-store'
+import { cn } from '../../lib/utils'
 
 const PRODUCT_ORDER: AccountProduct[] = ['claude', 'codex', 'grok', 'pi']
 const PRODUCT_ICONS = {
@@ -23,6 +25,7 @@ const PRODUCT_ICONS = {
 export function CortanaLayout() {
   const { activeProduct, agentSwitchBlocked, selectProduct } = useCortana()
   const navigate = useNavigate()
+  const leftPanelOpen = useLeftPanel((state) => state.open)
   const ActiveIcon = PRODUCT_ICONS[activeProduct]
 
   return (
@@ -31,7 +34,11 @@ export function CortanaLayout() {
       aria-label="Cortana"
     >
       <aside
-        className="cortana-sidebar flex w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground"
+        id="cortana-sidebar"
+        className={cn(
+          'cortana-sidebar w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground',
+          leftPanelOpen ? 'flex' : 'hidden',
+        )}
         aria-label="Cortana 菜单"
       >
         <header className="cortana-sidebar-header flex h-12 shrink-0 items-center gap-2 px-4">
