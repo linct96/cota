@@ -42,6 +42,7 @@ export type GitMutation = WorkspaceTarget &
     | { action: 'commit'; message: string; indexVersion: string }
     | { action: 'switch-branch'; ref: string; branch: string | null; head: string | null }
     | { action: 'create-branch'; name: string; head: string }
+    | { action: 'create-and-switch-branch'; name: string; branch: string | null; head: string }
     | GitRemoteMutation
   )
 export interface GitReferences {

@@ -11,7 +11,6 @@ import {
   Upload,
   CloudDownload,
   FileDiff,
-  GitBranch,
   GitCommitHorizontal,
   Minus,
   Plus,
@@ -51,15 +50,6 @@ import { Button } from './ui/button'
 import { ButtonGroup } from './ui/button-group'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTrigger,
-} from './ui/combobox'
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -72,6 +62,7 @@ import { Alert, AlertDescription } from './ui/alert'
 import { Separator } from './ui/separator'
 import { Textarea } from './ui/textarea'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs'
+import { SourceControlBranchPicker } from './SourceControlBranchPicker'
 import { SourceControlReview } from './SourceControlReview'
 import { SourceFileExplorer } from './SourceFileExplorer'
 import { FileTreeActions, FileTreeFile } from './ui/file-tree'
@@ -266,7 +257,7 @@ export function SourceControlPanel({
           form.reset({ message: '' })
       }
       if (!mounted.current) return false
-      if (done && input.action === 'switch-branch')
+      if (done && (input.action === 'switch-branch' || input.action === 'create-and-switch-branch'))
         update(workspace.id, {
           selection: undefined,
           preview: false,
@@ -274,7 +265,8 @@ export function SourceControlPanel({
         })
       return done
     } catch (error) {
-      if (input.action === 'create-branch') throw error
+      if (input.action === 'create-branch' || input.action === 'create-and-switch-branch')
+        throw error
       if (mounted.current) setError(error instanceof Error ? error.message : String(error))
       return false
     } finally {
@@ -323,9 +315,6 @@ export function SourceControlPanel({
     (hasTracking
       ? !references?.remotes.includes(status.tracking!.remote)
       : !selectedRemote || !!status.upstream)
-  const localBranches =
-    references?.branches.filter((branch) => branch.ref.startsWith('refs/heads/')) || []
-  const branchLabel = status?.branch || `分离 HEAD · ${status?.head?.slice(0, 8) || '无提交'}`
   const hasConflicts = status?.entries.some((entry) => entry.area === 'conflict')
   const commitDisabled =
     disabled || hasConflicts || !status?.entries.some((entry) => entry.area === 'staged')
@@ -635,74 +624,31 @@ export function SourceControlPanel({
             <div className="source-control-branch-row flex min-w-0 items-center justify-between gap-1">
               {status && (
                 <>
-                  <Combobox
-                    items={localBranches}
-                    value={localBranches.find((branch) => branch.label === status.branch) || null}
-                    itemToStringLabel={(branch) => branch.label}
-                    disabled={disabled || !references}
-                    onValueChange={(branch) => {
-                      if (!branch || branch.label === status.branch) return
+                  <SourceControlBranchPicker
+                    status={status}
+                    references={references}
+                    pending={pending}
+                    onSwitch={(ref) => {
                       void mutate({
                         ...target,
                         action: 'switch-branch',
-                        ref: branch.ref,
+                        ref,
                         branch: status.branch,
                         head: status.head,
                       })
                     }}
-                  >
-                    <ComboboxTrigger
-                      className="source-control-branch min-w-0 max-w-[min(13rem,calc(100%-6.5rem))] shrink justify-start gap-1 px-1.5"
-                      render={<Button variant="ghost" size="sm" />}
-                      aria-label={`切换分支，当前${branchLabel}`}
-                      title={`切换本地分支 · ${branchLabel}`}
-                    >
-                      <GitBranch className="source-control-branch-icon shrink-0" />
-                      <span className="source-control-branch-name min-w-0 truncate">
-                        {branchLabel}
-                      </span>
-                    </ComboboxTrigger>
-                    <ComboboxContent className="source-control-branch-picker">
-                      <div className="source-control-branch-search p-1">
-                        <ComboboxInput
-                          className="source-control-branch-search-input"
-                          placeholder="搜索本地分支…"
-                          aria-label="搜索本地分支"
-                        />
-                      </div>
-                      <ComboboxEmpty className="source-control-branch-empty">
-                        没有匹配的本地分支
-                      </ComboboxEmpty>
-                      <ComboboxList className="source-control-branch-list">
-                        {(branch: GitReferences['branches'][number]) => {
-                          const occupied = !!branch.worktreePath && branch.label !== status.branch
-                          return (
-                            <ComboboxItem
-                              className="source-control-branch-option"
-                              key={branch.ref}
-                              value={branch}
-                              disabled={occupied}
-                              title={
-                                occupied
-                                  ? `已被 Worktree 占用：${branch.worktreePath}`
-                                  : branch.label
-                              }
-                            >
-                              <GitBranch className="source-control-branch-option-icon" />
-                              <span className="source-control-branch-option-label min-w-0 flex-1 truncate">
-                                {branch.label}
-                              </span>
-                              {occupied && (
-                                <span className="source-control-branch-occupied shrink-0 text-app-muted-foreground">
-                                  已占用
-                                </span>
-                              )}
-                            </ComboboxItem>
-                          )
-                        }}
-                      </ComboboxList>
-                    </ComboboxContent>
-                  </Combobox>
+                    onCreate={(name) =>
+                      status.head
+                        ? mutate({
+                            ...target,
+                            action: 'create-and-switch-branch',
+                            name,
+                            branch: status.branch,
+                            head: status.head,
+                          })
+                        : Promise.resolve(false)
+                    }
+                  />
                   <ButtonGroup
                     className="source-control-network-buttons shrink-0"
                     aria-label="远端操作"

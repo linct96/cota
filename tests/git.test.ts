@@ -19,6 +19,7 @@ import { projectBranch } from '../src/main/git/project-branch'
 import { SourceControlService, parseGitStatus } from '../src/main/git/source-control'
 import { SourceControlWatches } from '../src/main/git/source-control-watch'
 import * as gitRunner from '../src/main/git/git-runner'
+import { createBranchFormSchema } from '../src/renderer/src/lib/form-schemas'
 
 const sourceControl = new SourceControlService()
 
@@ -677,7 +678,7 @@ describe('project branch', () => {
     ).rejects.toThrow('没有共同祖先')
   }, 30000)
 
-  it('creates local branches without switching or changing staged and working files', async () => {
+  it('creates local branches with optional atomic switching while preserving staged and working files', async () => {
     await git('init', '--initial-branch=main')
     const target = { projectPath: directory, workspaceId: 'fixture' }
     const noConfirmation = vi.fn().mockResolvedValue(false)
@@ -705,10 +706,25 @@ describe('project branch', () => {
       'HEAD 已改变',
     )
     const input = { ...create, head: before.head! }
-    for (const name of ['-bad', 'a..b', '@{-1}', 'HEAD', ' bad ', 'bad\nname'])
+    for (const name of [
+      '-bad',
+      'a..b',
+      '@{-1}',
+      'HEAD',
+      ' bad ',
+      'bad\nname',
+      'a//b',
+      '.hidden',
+      'a.lock',
+      'a b',
+      'a\\b',
+    ]) {
       await expect(
         sourceControl.mutate(directory, { ...input, name }, noConfirmation),
       ).rejects.toThrow()
+      if (name !== ' bad ') expect(createBranchFormSchema.safeParse({ name }).success).toBe(false)
+    }
+    expect(createBranchFormSchema.parse({ name: ` ${input.name} ` }).name).toBe(input.name)
     expect(await sourceControl.mutate(directory, input, noConfirmation)).toBe(true)
     expect((await git('rev-parse', `refs/heads/${input.name}`)).stdout.trim()).toBe(before.head)
     await expect(git('config', '--get', `branch.${input.name}.remote`)).rejects.toThrow()
@@ -721,13 +737,54 @@ describe('project branch', () => {
     expect((await git('show', ':staged.txt')).stdout).toBe('staged content\n')
     expect(await readFile(join(directory, 'staged.txt'), 'utf8')).toBe('working content\n')
     expect(await readFile(join(directory, 'untracked.txt'), 'utf8')).toBe('untracked content\n')
+    const createAndSwitch = {
+      ...input,
+      action: 'create-and-switch-branch' as const,
+      branch: before.branch,
+      name: 'feature/创建并切换',
+    }
+    for (const name of ['-bad', 'a..b', '@{-1}', 'HEAD', ' bad ', 'bad\nname', input.name])
+      await expect(
+        sourceControl.mutate(directory, { ...createAndSwitch, name }, noConfirmation),
+      ).rejects.toThrow()
+    await expect(
+      sourceControl.mutate(directory, { ...createAndSwitch, head: '0'.repeat(40) }, noConfirmation),
+    ).rejects.toThrow('HEAD 已改变')
+    await expect(
+      sourceControl.mutate(directory, { ...createAndSwitch, branch: 'stale' }, noConfirmation),
+    ).rejects.toThrow('分支已改变')
+    await writeFile(join(directory, '.git/index.lock'), '')
+    await expect(sourceControl.mutate(directory, createAndSwitch, noConfirmation)).rejects.toThrow()
+    await rm(join(directory, '.git/index.lock'))
+    await expect(
+      git('show-ref', '--verify', `refs/heads/${createAndSwitch.name}`),
+    ).rejects.toThrow()
+    expect((await sourceControl.status(directory)).branch).toBe(before.branch)
+    expect(await sourceControl.mutate(directory, createAndSwitch, noConfirmation)).toBe(true)
+    const switched = await sourceControl.status(directory)
+    expect(switched.branch).toBe(createAndSwitch.name)
+    expect(switched.head).toBe(before.head)
+    expect(switched.entries).toEqual(before.entries)
+    expect((await git('show', ':staged.txt')).stdout).toBe('staged content\n')
+    expect(await readFile(join(directory, 'staged.txt'), 'utf8')).toBe('working content\n')
+    expect(await readFile(join(directory, 'untracked.txt'), 'utf8')).toBe('untracked content\n')
+    await expect(git('config', '--get', `branch.${createAndSwitch.name}.remote`)).rejects.toThrow()
     await git('switch', '--detach', 'HEAD')
     expect(
       await sourceControl.mutate(directory, { ...input, name: 'from-detached' }, noConfirmation),
     ).toBe(true)
     expect((await sourceControl.status(directory)).branch).toBeNull()
+    expect(
+      await sourceControl.mutate(
+        directory,
+        { ...createAndSwitch, branch: null, name: 'from-detached-and-switch' },
+        noConfirmation,
+      ),
+    ).toBe(true)
+    expect((await sourceControl.status(directory)).branch).toBe('from-detached-and-switch')
+    expect((await sourceControl.status(directory)).entries).toEqual(before.entries)
     expect(noConfirmation).not.toHaveBeenCalled()
-  })
+  }, 30000)
 
   it('watches worktree and shared metadata, filters noise and cleans up races and failures', async () => {
     await git('init', '--initial-branch=main')

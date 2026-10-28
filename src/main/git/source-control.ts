@@ -824,7 +824,7 @@ export class SourceControlService {
         input.action === 'sync'
       )
         return await this.mutateRemote(cwd, status, input)
-      if (input.action === 'create-branch') {
+      if (input.action === 'create-branch' || input.action === 'create-and-switch-branch') {
         if (
           typeof input.name !== 'string' ||
           !input.name ||
@@ -838,8 +838,33 @@ export class SourceControlService {
         if (!status.head) throw new Error('当前分支还没有提交，暂不能创建分支。')
         if (typeof input.head !== 'string' || !OID.test(input.head) || input.head !== status.head)
           throw new Error('HEAD 已改变，请刷新后重试。')
+        if (input.action === 'create-and-switch-branch' && input.branch !== status.branch)
+          throw new Error('分支已改变，请刷新后重试。')
         await runGit(status.rootPath, ['check-ref-format', `refs/heads/${input.name}`])
-        await runGit(status.rootPath, ['branch', '--no-track', '--', input.name, input.head], true)
+        if (input.action === 'create-and-switch-branch') {
+          // Git creates the branch only if switching succeeds; never leave a half-created branch.
+          await runGit(
+            status.rootPath,
+            [
+              'switch',
+              '--no-track',
+              '--no-guess',
+              '--no-overwrite-ignore',
+              '--no-recurse-submodules',
+              '--create',
+              input.name,
+              '--',
+              input.head,
+            ],
+            true,
+          )
+        } else {
+          await runGit(
+            status.rootPath,
+            ['branch', '--no-track', '--', input.name, input.head],
+            true,
+          )
+        }
         return true
       }
       if (input.action === 'switch-branch') {
