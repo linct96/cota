@@ -27,6 +27,7 @@ export class HostClient {
     private readonly socket: Socket,
     private readonly send: (event: TerminalEvent) => void,
     private readonly sendAgent: (event: AgentUpdate) => void = () => {},
+    readonly pid?: number,
   ) {
     socket.on('error', () => socket.destroy())
     socket.on('close', () => {
@@ -163,7 +164,7 @@ async function openClient(
     }
     socket.once('error', fail)
   })
-  const client = new HostClient(socket, send, sendAgent)
+  const client = new HostClient(socket, send, sendAgent, info.pid)
   try {
     await client.request('hello', [info.token, HOST_PROTOCOL])
     return client

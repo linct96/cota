@@ -1,4 +1,5 @@
 import type { WorktreeSetupConfig, WorktreeSetupSnapshot } from './worktree-setup'
+import type { WorkspacePortSnapshot } from './workspace-ports'
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
 import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
@@ -532,6 +533,9 @@ export interface DesktopAPI {
   closeTerminal(id: string): Promise<Result<boolean>>
   stopService(id: string): Promise<Result<void>>
   openService(id: string): Promise<Result<void>>
+  scanWorkspacePorts(target: WorkspaceTarget): Promise<Result<WorkspacePortSnapshot>>
+  stopWorkspacePort(target: WorkspaceTarget, id: string): Promise<Result<boolean>>
+  openWorkspacePort(target: WorkspaceTarget, id: string): Promise<Result<void>>
   minimizeWindow(): void
   toggleMaximizeWindow(): void
   isWindowMaximized(): Promise<Result<boolean>>

@@ -40,11 +40,14 @@ import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from '../host/hos
 import { sameBinding, terminalBinding, validateTerminalBinding } from './terminal-binding'
 import { createTerminalKeyboardState } from '../../shared/terminal-keyboard-state'
 import { claimServicePort } from './service-port'
+import { readProcessSnapshot } from '../system/process-snapshot'
+import type { TerminalProcessRoot } from '../../shared/workspace-ports'
 
 interface Session extends TerminalSession {
   launch: TerminalLaunch
   shellActivityToken?: string
   child?: pty.IPty
+  processStarted?: Promise<string | undefined>
   shell?: string
   managed?: {
     token: string
@@ -256,6 +259,10 @@ export class TerminalManager {
           name: 'xterm-256color',
           env: command.env,
         })
+        const pid = session.child.pid
+        session.processStarted = readProcessSnapshot()
+          .then((rows) => rows.find((row) => row.pid === pid)?.started)
+          .catch(() => undefined)
         if (session.agent) this.agents.runtime(id, 'running')
         if (session.managed) this.observeAgents()
         session.subscriptions.push(
@@ -336,6 +343,31 @@ export class TerminalManager {
       })
       .catch(() => {})
     return operation
+  }
+
+  async processRoots(): Promise<TerminalProcessRoot[]> {
+    const roots = await Promise.all(
+      [...this.sessions.values()].map(async (session) => {
+        const started = await session.processStarted
+        if (
+          !started ||
+          !session.child ||
+          session.exited ||
+          session.closing ||
+          this.sessions.get(session.id) !== session
+        )
+          return
+        return {
+          terminalId: session.id,
+          projectPath: session.projectPath,
+          workspaceId: session.workspaceId,
+          cwd: session.cwd,
+          pid: session.child.pid,
+          started,
+        }
+      }),
+    )
+    return roots.filter((root): root is TerminalProcessRoot => root !== undefined)
   }
 
   async list(): Promise<TerminalSession[]> {

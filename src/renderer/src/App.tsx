@@ -36,6 +36,7 @@ import { ShortcutKbd } from './components/ShortcutKbd'
 import { OpenWorkspaceButton } from './components/OpenWorkspaceButton'
 import { QuickCommandsButton } from './components/QuickCommandsButton'
 import { WorkspaceServicesButton } from './components/WorkspaceServicesButton'
+import { WorkspacePortsButton } from './components/WorkspacePortsButton'
 import { RightPanel } from './components/RightPanel'
 import { SourceControlDiff } from './components/SourceControlDiff'
 import { FilePreview } from './components/FilePreview'
@@ -550,6 +551,10 @@ export function App() {
               <div className="workspace-header-spacer min-w-0 flex-1" />
               {activeWorkspace && (
                 <>
+                  <WorkspacePortsButton
+                    key={`ports-${activeWorkspace.id}`}
+                    workspace={activeWorkspace}
+                  />
                   <WorkspaceServicesButton
                     key={`services-${activeWorkspace.id}`}
                     workspaceId={activeWorkspace.id}

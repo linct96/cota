@@ -64,6 +64,8 @@ export async function startHost(directory: string, token: string, onStopped = ()
       switch (method) {
         case 'list':
           return manager.list()
+        case 'processRoots':
+          return manager.processRoots()
         case 'create':
           return manager.create(args[0] as ResolvedTerminalCreate, args[1] as Preferences)
         case 'attach': {

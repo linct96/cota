@@ -11,7 +11,9 @@ import type {
   WorkspaceTarget,
 } from '../../shared/contracts'
 
-export const HOST_PROTOCOL = 13
+import type { TerminalProcessRoot } from '../../shared/workspace-ports'
+
+export const HOST_PROTOCOL = 14
 
 export type ResolvedTerminalCreate = CreateTerminal & TerminalBinding
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
@@ -20,6 +22,7 @@ export const MAX_FRAME = 64 * 1024 * 1024
 export interface HostMethods {
   hello: { args: [token: string, version: number]; value: void }
   list: { args: []; value: TerminalSession[] }
+  processRoots: { args: []; value: TerminalProcessRoot[] }
   create: { args: [ResolvedTerminalCreate, Preferences]; value: void }
   attach: { args: [ResolvedTerminalAttach]; value: TerminalAttachment }
   detach: { args: [string, string]; value: void }
