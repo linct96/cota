@@ -166,6 +166,11 @@ const api: DesktopAPI = {
     ipcRenderer.on('notifications:sound', wrapped)
     return () => ipcRenderer.removeListener('notifications:sound', wrapped)
   },
+  onWarning: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, message: string) => listener(message)
+    ipcRenderer.on('app:warning', wrapped)
+    return () => ipcRenderer.removeListener('app:warning', wrapped)
+  },
   detectAgents: () => ipcRenderer.invoke('agent:detect'),
   detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),

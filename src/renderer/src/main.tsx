@@ -1,7 +1,9 @@
 import { createRoot } from 'react-dom/client'
+import { toast } from 'sonner'
 import { RouterProvider } from '@tanstack/react-router'
 import { createAppRouter } from './router'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
+import { Toaster } from './components/ui/sonner'
 import './styles.css'
 import { useWorkspace } from './store'
 import { unwrap } from '../../shared/contracts'
@@ -33,7 +35,11 @@ const stopTheme = useWorkspace.subscribe((state, previous) => {
     updateTheme()
 })
 const stopNotificationSound = window.desktop.onNotificationSound(playNotificationSound)
+const stopWarnings = window.desktop.onWarning((message) =>
+  toast.warning(message, { id: `app-warning:${message}` }),
+)
 import.meta.hot?.dispose(() => {
+  stopWarnings()
   stopNotificationSound()
   stopTheme()
   systemTheme.removeEventListener('change', updateTheme)
@@ -70,6 +76,11 @@ createRoot(document.getElementById('root')!).render(
   <>
     {/* Confirmation stays available when a route error replaces the application. */}
     <ConfirmationDialog />
+    <Toaster
+      closeButton
+      containerAriaLabel="操作结果提示"
+      toastOptions={{ duration: 6000, closeButtonAriaLabel: '关闭提示' }}
+    />
     <RouterProvider router={router} />
   </>,
 )

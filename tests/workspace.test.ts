@@ -133,6 +133,7 @@ beforeEach(() => {
     openNotificationSettings: vi.fn().mockResolvedValue({ ok: true }),
     chooseNotificationSound: vi.fn(),
     onNotificationSound: vi.fn(() => vi.fn()),
+    onWarning: vi.fn(() => vi.fn()),
     closeTerminal: vi.fn().mockResolvedValue({ ok: true, value: true }),
     stopService: vi.fn().mockResolvedValue({ ok: true }),
     openService: vi.fn().mockResolvedValue({ ok: true }),

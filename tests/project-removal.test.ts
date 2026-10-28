@@ -714,8 +714,20 @@ describe('Git Worktree IPC boundaries', () => {
     publish({ activityState: 'working', lastTurnId: 'turn-5' })
     expect(() => publish({ activityState: 'completed' })).not.toThrow()
     expect(warning).toHaveBeenCalledOnce()
-    warning.mockRestore()
+    expect(mocks.contents.send).toHaveBeenCalledWith(
+      'app:warning',
+      'Agent 系统通知不可用；终端状态与未读提醒不受影响。',
+    )
     mocks.notificationFails = false
+    mocks.notificationFailedEvent = true
+    publish({ activityState: 'working', lastTurnId: 'turn-permission-denied' })
+    publish({ activityState: 'completed' })
+    expect(mocks.contents.send).toHaveBeenCalledWith(
+      'app:warning',
+      '系统未能显示 Agent 通知；请检查通知权限。',
+    )
+    warning.mockRestore()
+    mocks.notificationFailedEvent = false
     mocks.notify.mockClear()
     mocks.config.preferences.notificationsEnabled = false
     publish({ activityState: 'working', lastTurnId: 'turn-6' })

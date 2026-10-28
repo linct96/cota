@@ -512,6 +512,7 @@ export interface DesktopAPI {
   openNotificationSettings(): Promise<Result<void>>
   chooseNotificationSound(): Promise<Result<{ path: string } | null>>
   onNotificationSound(listener: (source: string) => void): () => void
+  onWarning(listener: (message: string) => void): () => void
   detectAgents(): Promise<Result<AgentAvailability[]>>
   detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
   installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>

@@ -20,6 +20,7 @@ export class AgentNotifications {
       isVisible(id: string): boolean
       describe(session: AgentSession): string
       activate(session: AgentSession): Promise<void>
+      warn(message: string): void
     },
   ) {}
 
@@ -96,12 +97,16 @@ export class AgentNotifications {
       entry.notification = notification
       notification.on('click', () => {
         if (this.entries.get(id)?.session.launchId !== session.launchId) return
-        void this.options.activate(session).catch(() => console.warn('无法定位 Agent 通知目标。'))
+        void this.options
+          .activate(session)
+          .catch(() => this.options.warn('无法定位 Agent 通知目标。'))
       })
-      notification.on('failed', () => console.warn('系统未能显示 Agent 通知；请检查通知权限。'))
+      notification.on('failed', () =>
+        this.options.warn('系统未能显示 Agent 通知；请检查通知权限。'),
+      )
       notification.show()
     } catch {
-      console.warn('Agent 系统通知不可用；终端状态与未读提醒不受影响。')
+      this.options.warn('Agent 系统通知不可用；终端状态与未读提醒不受影响。')
     }
   }
 }

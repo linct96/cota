@@ -121,6 +121,7 @@ let menuShortcuts: ShortcutBindings = {}
 let pendingAgentFocus: { terminalId: string; launchId: string } | undefined
 const notifications = new AgentNotifications({
   createNotification: createDesktopNotification,
+  warn: reportWarning,
   isEnabled: () => config.snapshot().preferences.notificationsEnabled,
   turnCompleteMode: () => config.snapshot().preferences.turnCompleteNotification,
   isVisible: (id) =>
@@ -212,6 +213,12 @@ function createDesktopNotification(options: Electron.NotificationConstructorOpti
     })
   }
   return notification
+}
+
+function reportWarning(message: string): void {
+  console.warn(message)
+  if (rendererReady && window && !window.webContents.isDestroyed())
+    window.webContents.send('app:warning', message)
 }
 
 function sendShortcut(shortcut: Shortcut): void {

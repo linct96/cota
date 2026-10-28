@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { workspaceFormSchema } from './lib/form-schemas'
 import { Outlet, useRouter, useRouterState } from '@tanstack/react-router'
@@ -60,7 +61,6 @@ import { Button } from './components/ui/button'
 import { Tabs } from './components/ui/tabs'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from './components/ui/empty'
 import { Separator } from './components/ui/separator'
-import { Toaster } from './components/ui/sonner'
 import { Input } from './components/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from './components/ui/field'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip'
@@ -216,7 +216,11 @@ export function App() {
           useWorkspace.getState().selectTab(tab.id)
           await router.navigate({ to: '/' })
         })
-        .catch((error) => console.warn('无法定位 Agent 通知目标。', error))
+        .catch((error) => {
+          const message = '无法定位 Agent 通知目标。'
+          console.warn(message, error)
+          toast.warning(message, { id: `app-warning:${message}` })
+        })
     })
     const stopShortcuts = window.desktop.onShortcut((shortcut) => {
       if (useWorkspace.getState().removingWorkspace || useWorkspace.getState().creatingWorktree)
@@ -1266,12 +1270,6 @@ export function App() {
             }}
           />
         )}
-        <Toaster
-          closeButton
-          containerAriaLabel="操作结果提示"
-          toastOptions={{ duration: 6000, closeButtonAriaLabel: '关闭提示' }}
-        />
-
         <Dialog
           open={workspaceDialog !== null}
           onOpenChange={(open, details) => {
