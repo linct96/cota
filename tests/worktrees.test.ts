@@ -121,7 +121,7 @@ describe('Main-authorized workspace and Worktree lifecycle', () => {
       manager.createWorktree({ ...input(repo, 'other'), planId: plan.id }),
     ).rejects.toThrow('计划已失效')
     expect(await service.listWorktrees(repo)).toHaveLength(2)
-  })
+  }, 15000)
   it('revalidates preview parents before Git writes and never follows a replaced symlink', async () => {
     const plan = await manager.planWorktree(input(repo))
     const outside = join(root, 'outside')

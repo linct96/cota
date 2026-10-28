@@ -1819,21 +1819,22 @@ describe('workspace state', () => {
   it('adds a project workspace without exceeding the terminal limit and starts its terminal after capacity is freed', async () => {
     const store = () => useWorkspace.getState()
     await store().openProject()
-    for (let i = store().tabs.length; i < 10; i++) store().newTerminal(i % 2 ? 'pi' : undefined)
+    for (let i = store().tabs.length; i < MAX_TERMINALS; i++)
+      store().newTerminal(i % 2 ? 'pi' : undefined)
     store().newTerminal('codex')
-    expect(store().tabs).toHaveLength(10)
+    expect(store().tabs).toHaveLength(MAX_TERMINALS)
     vi.mocked(api.openProject).mockResolvedValue({ ok: true, value: '/tmp/second' })
     await store().openProject()
     const workspace = currentWorkspace(store())!
     expect(workspace).toMatchObject({ projectPath: '/tmp/second', kind: 'local' })
-    expect(store().tabs).toHaveLength(10)
+    expect(store().tabs).toHaveLength(MAX_TERMINALS)
     expect(store().tabs.some((tab) => tab.workspaceId === workspace.id)).toBe(false)
     const tab = store().tabs[0]
     store().updateTab(tab.id, { status: 'running' })
     await store().closeTab(tab.id)
     await store().openProject()
     expect(store().workspaces).toHaveLength(2)
-    expect(store().tabs).toHaveLength(10)
+    expect(store().tabs).toHaveLength(MAX_TERMINALS)
     expect(store().tabs.filter((tab) => tab.workspaceId === workspace.id)).toMatchObject([
       { title: 'Terminal 1', status: 'starting' },
     ])
@@ -2330,7 +2331,7 @@ describe('workspace state', () => {
     }
     const tabs = store().tabs
     const activeTabs = store().activeTabs
-    while (store().tabs.length < 10) store().newTerminal()
+    while (store().tabs.length < MAX_TERMINALS) store().newTerminal()
     store().shortcut('reopen-tab')
     expect(session().closedTabs).toBe(history)
     useWorkspace.setState({ tabs, activeTabs })
