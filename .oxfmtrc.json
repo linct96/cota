@@ -1,5 +1,13 @@
 {
   "semi": false,
   "singleQuote": true,
-  "ignorePatterns": ["out/**", "release/**", "pnpm-lock.yaml", "docs/需求文档/**", ".*/**"]
+  "ignorePatterns": [
+    "out/**",
+    "release/**",
+    "pnpm-lock.yaml",
+    "docs/需求文档/**",
+    "playwright-report/**",
+    "test-results/**",
+    ".*/**"
+  ]
 }

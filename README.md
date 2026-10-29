@@ -1,5 +1,9 @@
 # Cota
 
+## E2E 测试
+
+macOS 下运行 `pnpm test:e2e`，使用真实 Electron、Git 和 PTY 验证核心闭环。测试使用独立临时目录，不读取真实账号、不写远端。运行方式、覆盖范围及故障排查见 [E2E 测试流程](docs/e2e.md)。
+
 ## Cortana 账号管理
 
 最左侧导航中的 **Cortana → 账号管理** 用于管理 Codex、Claude Code、Pi 和 Grok 的本机账号。支持浏览器授权（Pi 使用本地登录导入）、凭据导入、账号切换、重命名、删除、排序和用量刷新。Codex 与 Claude Code 还支持 API 账号。

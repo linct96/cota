@@ -11,6 +11,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
+    "test:e2e": "electron-vite build && playwright test",
     "test:pty": "node scripts/pty-smoke.cjs",
     "test:host": "pnpm build && node scripts/host-smoke.cjs",
     "lint": "oxlint --deny-warnings",
@@ -59,6 +60,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/proper-lockfile": "^4.1.4",

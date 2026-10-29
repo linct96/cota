@@ -3,5 +3,12 @@
   "plugins": ["typescript", "react", "jsx-a11y"],
   "categories": { "correctness": "error" },
   "rules": { "react/rules-of-hooks": "error", "react/exhaustive-deps": "warn" },
-  "ignorePatterns": ["out/**", "release/**", "node_modules/**", ".*/**"]
+  "ignorePatterns": [
+    "out/**",
+    "release/**",
+    "node_modules/**",
+    "playwright-report/**",
+    "test-results/**",
+    ".*/**"
+  ]
 }
