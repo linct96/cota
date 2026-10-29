@@ -6,7 +6,6 @@ import { QuickCommandDialog } from './QuickCommandDialog'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Separator } from './ui/separator'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
 import {
   AlertDialog,
@@ -76,139 +75,129 @@ export function QuickCommandsSettings() {
 
   return (
     <section
-      className="quick-commands-settings flex flex-col gap-6"
+      className="quick-commands-settings flex flex-col gap-5"
       aria-labelledby="quick-commands-settings-title"
     >
-      <div className="quick-commands-settings-heading typeset">
-        <h1 id="quick-commands-settings-title" className="quick-commands-settings-title">
-          快捷命令
-        </h1>
-      </div>
-      <section
-        className="quick-commands-settings-group flex flex-col gap-3"
-        aria-labelledby="quick-commands-settings-group-title"
-      >
-        <div className="quick-commands-settings-group-header flex flex-wrap items-start justify-between gap-3">
-          <h4
-            id="quick-commands-settings-group-title"
-            className="quick-commands-settings-group-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
+      <header className="quick-commands-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="quick-commands-settings-heading flex flex-col gap-1">
+          <h1
+            id="quick-commands-settings-title"
+            className="quick-commands-settings-title settings-page-title"
           >
-            已保存的命令
-          </h4>
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="quick-commands-settings-add shrink-0"
-            disabled={pending || commands.length >= 50}
-            onClick={() => setEditor({})}
-          >
-            <Plus className="quick-commands-settings-add-icon" data-icon="inline-start" />
-            新增命令
-          </Button>
+            快捷命令
+          </h1>
+          <p className="quick-commands-settings-subtitle text-xs text-muted-foreground">
+            管理工作区常用脚本与长驻服务，支持从顶栏一键启动。
+          </p>
         </div>
-        <Card className="quick-commands-settings-card">
-          {!commands.length ? (
-            <Empty className="quick-commands-empty">
-              <EmptyHeader className="quick-commands-empty-header">
-                <EmptyTitle className="quick-commands-empty-title">尚未保存快捷命令</EmptyTitle>
-                <EmptyDescription className="quick-commands-empty-description">
-                  添加常用命令，例如 pnpm dev。保存后不会自动执行。
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <ul className="quick-commands-list flex flex-col gap-4">
-              {commands.map((entry, index) => (
-                <li key={entry.id} className="quick-commands-list-item flex flex-col gap-4">
-                  {index > 0 && <Separator className="quick-commands-list-separator" />}
-                  <div className="quick-commands-list-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
-                    <div className="quick-commands-list-content flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                      <div className="quick-commands-list-heading flex min-w-0 flex-wrap items-center gap-2">
-                        <span
-                          className="quick-commands-list-name min-w-0 truncate text-sm leading-5 font-medium"
-                          title={entry.name}
+        <Button
+          type="button"
+          variant="outline"
+          className="quick-commands-settings-add shrink-0"
+          disabled={pending || commands.length >= 50}
+          onClick={() => setEditor({})}
+        >
+          <Plus className="quick-commands-settings-add-icon" data-icon="inline-start" />
+          新增命令
+        </Button>
+      </header>
+      <Card size="sm" className="quick-commands-settings-card gap-0 py-0">
+        {!commands.length ? (
+          <Empty className="quick-commands-empty py-8">
+            <EmptyHeader className="quick-commands-empty-header">
+              <EmptyTitle className="quick-commands-empty-title">尚未保存快捷命令</EmptyTitle>
+              <EmptyDescription className="quick-commands-empty-description">
+                添加常用命令，例如 pnpm dev。保存后不会自动执行。
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ul className="quick-commands-list divide-y divide-border">
+            {commands.map((entry) => (
+              <li key={entry.id} className="quick-commands-list-item">
+                <div className="quick-commands-list-row flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30">
+                  <div className="quick-commands-list-content flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                    <div className="quick-commands-list-heading flex min-w-0 flex-wrap items-center gap-2">
+                      <span
+                        className="quick-commands-list-name min-w-0 truncate text-xs leading-5 font-medium text-foreground"
+                        title={entry.name}
+                      >
+                        {entry.name}
+                      </span>
+                      {entry.mode === 'service' && (
+                        <Badge
+                          className="quick-commands-list-service tabular-nums"
+                          variant="secondary"
                         >
-                          {entry.name}
-                        </span>
-                        {entry.mode === 'service' && (
-                          <Badge className="quick-commands-list-service" variant="secondary">
-                            服务
-                            {entry.port === undefined
-                              ? ''
-                              : ` · ${entry.port === 'auto' ? '自动端口' : entry.port}`}
-                          </Badge>
-                        )}
-                        {entry.scope.type === 'project' && (
-                          <Badge
-                            className="quick-commands-list-project max-w-full"
-                            variant="secondary"
-                          >
-                            <span className="quick-commands-list-project-name truncate">
-                              {entry.scope.projectPath.split(/[\\/]/).filter(Boolean).pop() ||
-                                '项目'}
-                            </span>
-                          </Badge>
-                        )}
-                      </div>
-                      <code
-                        className="quick-commands-list-command block truncate"
-                        title={entry.command}
-                      >
-                        {entry.command}
-                      </code>
+                          服务
+                          {entry.port === undefined
+                            ? ''
+                            : ` · ${entry.port === 'auto' ? '自动端口' : entry.port}`}
+                        </Badge>
+                      )}
+                      {entry.scope.type === 'project' && (
+                        <Badge className="quick-commands-list-project max-w-full" variant="outline">
+                          <span className="quick-commands-list-project-name truncate">
+                            {entry.scope.projectPath.split(/[\\/]/).filter(Boolean).pop() || '项目'}
+                          </span>
+                        </Badge>
+                      )}
                     </div>
-                    <div className="quick-commands-list-actions flex min-h-8 shrink-0 items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="quick-commands-list-copy"
-                        aria-label={
-                          copiedId === entry.id ? '已复制命令' : `复制 ${entry.name} 命令`
-                        }
-                        disabled={pending}
-                        onClick={() => void copy(entry)}
-                      >
-                        {copiedId === entry.id ? (
-                          <Check className="quick-commands-list-copied-icon" />
-                        ) : (
-                          <Copy className="quick-commands-list-copy-icon" />
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="quick-commands-list-edit"
-                        aria-label={`编辑 ${entry.name}`}
-                        disabled={pending}
-                        onClick={() => setEditor({ command: entry })}
-                      >
-                        <Pencil className="quick-commands-list-edit-icon" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        className="quick-commands-list-delete"
-                        aria-label={`删除 ${entry.name}`}
-                        disabled={pending}
-                        onClick={() => {
-                          setError(undefined)
-                          setDeleting(entry)
-                        }}
-                      >
-                        <Trash2 className="quick-commands-list-delete-icon" />
-                      </Button>
-                    </div>
+                    <code
+                      className="quick-commands-list-command block truncate font-mono text-xs text-muted-foreground"
+                      title={entry.command}
+                    >
+                      {entry.command}
+                    </code>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </section>
+                  <div className="quick-commands-list-actions flex min-h-7 shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="quick-commands-list-copy text-muted-foreground hover:text-foreground"
+                      aria-label={copiedId === entry.id ? '已复制命令' : `复制 ${entry.name} 命令`}
+                      disabled={pending}
+                      onClick={() => void copy(entry)}
+                    >
+                      {copiedId === entry.id ? (
+                        <Check className="quick-commands-list-copied-icon" />
+                      ) : (
+                        <Copy className="quick-commands-list-copy-icon" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="quick-commands-list-edit text-muted-foreground hover:text-foreground"
+                      aria-label={`编辑 ${entry.name}`}
+                      disabled={pending}
+                      onClick={() => setEditor({ command: entry })}
+                    >
+                      <Pencil className="quick-commands-list-edit-icon" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="quick-commands-list-delete text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label={`删除 ${entry.name}`}
+                      disabled={pending}
+                      onClick={() => {
+                        setError(undefined)
+                        setDeleting(entry)
+                      }}
+                    >
+                      <Trash2 className="quick-commands-list-delete-icon" />
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
       <QuickCommandDialog
         open={!!editor}
         command={editor?.command}

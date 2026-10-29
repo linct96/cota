@@ -10,7 +10,6 @@ import { LoadingContent } from './LoadingContent'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Separator } from './ui/separator'
 import {
   Dialog,
   DialogContent,
@@ -181,11 +180,14 @@ export function TerminalSettings() {
       className="terminal-settings flex min-h-0 flex-1 flex-col gap-6"
       aria-labelledby="terminal-settings-title"
     >
-      <div className="terminal-settings-header flex flex-wrap items-center justify-between gap-3">
-        <div className="terminal-settings-heading typeset">
-          <h1 id="terminal-settings-title" className="terminal-settings-title">
+      <header className="terminal-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="terminal-settings-heading flex flex-col gap-1">
+          <h1 id="terminal-settings-title" className="terminal-settings-title settings-page-title">
             终端
           </h1>
+          <p className="terminal-settings-subtitle text-xs text-muted-foreground">
+            配置默认 Shell 环境、历史输出缓冲区、硬件加速与终端外观。
+          </p>
         </div>
 
         <div
@@ -199,26 +201,30 @@ export function TerminalSettings() {
             </Badge>
           ) : null}
         </div>
-      </div>
+      </header>
 
       <LoadingContent pending={initialPending} label="终端配置读取中..." showLabel>
-        <div className="terminal-settings-groups flex w-full flex-col gap-8">
+        <div className="terminal-settings-groups flex w-full flex-col gap-6">
           <section
-            className="terminal-settings-general flex flex-col gap-3"
+            className="terminal-settings-general flex flex-col gap-2.5"
             aria-labelledby="terminal-settings-general-title"
           >
             <h2
               id="terminal-settings-general-title"
-              className="terminal-settings-general-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
+              className="terminal-settings-general-title settings-section-title"
             >
               常规
             </h2>
-            <Card className="terminal-settings-card" aria-busy={saving}>
-              <div className="terminal-settings-shell-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+            <Card
+              size="sm"
+              className="terminal-settings-card gap-0 divide-y divide-border py-0"
+              aria-busy={saving}
+            >
+              <div className="terminal-settings-shell-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                 <div className="terminal-settings-shell-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                   <span
                     id="terminal-settings-shell-label"
-                    className="terminal-settings-shell-label text-sm leading-5 font-medium"
+                    className="terminal-settings-shell-label text-xs leading-5 font-medium text-foreground"
                   >
                     默认终端 Shell
                   </span>
@@ -227,6 +233,14 @@ export function TerminalSettings() {
                     className="terminal-settings-shell-description text-xs text-muted-foreground"
                   >
                     新建终端时使用的 Shell。
+                    {(preferences.shellPath ?? defaultShellPath) && (
+                      <code
+                        className="terminal-settings-shell-path mt-0.5 block truncate font-mono text-xs text-muted-foreground"
+                        title={preferences.shellPath ?? defaultShellPath}
+                      >
+                        {preferences.shellPath ?? defaultShellPath}
+                      </code>
+                    )}
                   </p>
                   {defaultShellError && (
                     <p
@@ -248,7 +262,7 @@ export function TerminalSettings() {
                   )}
                 </div>
 
-                <div className="terminal-settings-shell-control flex min-h-8 max-w-full flex-wrap items-center gap-2">
+                <div className="terminal-settings-shell-control flex min-h-7 max-w-full flex-wrap items-center gap-2">
                   <Select
                     value={preferences.shellPath === null ? 'default' : 'custom'}
                     disabled={saving}
@@ -307,13 +321,11 @@ export function TerminalSettings() {
                 </div>
               </div>
 
-              <Separator className="terminal-settings-separator" />
-
-              <div className="terminal-settings-scrollback-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+              <div className="terminal-settings-scrollback-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                 <div className="terminal-settings-scrollback-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                   <span
                     id="terminal-settings-scrollback-label"
-                    className="terminal-settings-scrollback-label text-sm leading-5 font-medium"
+                    className="terminal-settings-scrollback-label text-xs leading-5 font-medium text-foreground"
                   >
                     滚动缓冲行数
                   </span>
@@ -349,7 +361,7 @@ export function TerminalSettings() {
                     id="terminal-settings-scrollback"
                     aria-labelledby="terminal-settings-scrollback-label"
                     aria-describedby="terminal-settings-scrollback-description terminal-settings-scrollback-save-error"
-                    className="terminal-settings-select-trigger"
+                    className="terminal-settings-select-trigger tabular-nums"
                   >
                     <SelectValue className="terminal-settings-scrollback-value">
                       {currentScrollbackLabel()}
@@ -362,7 +374,7 @@ export function TerminalSettings() {
                         <SelectItem
                           key={item.value}
                           value={String(item.value)}
-                          className="terminal-settings-menu-item"
+                          className="terminal-settings-menu-item tabular-nums"
                         >
                           {item.label}
                         </SelectItem>
@@ -372,7 +384,7 @@ export function TerminalSettings() {
                       ) && (
                         <SelectItem
                           value={String(preferences.scrollback)}
-                          className="terminal-settings-menu-item"
+                          className="terminal-settings-menu-item tabular-nums"
                         >
                           {`${preferences.scrollback.toLocaleString()} 行`}
                         </SelectItem>
@@ -388,13 +400,11 @@ export function TerminalSettings() {
                 </Select>
               </div>
 
-              <Separator className="terminal-settings-separator" />
-
-              <div className="terminal-gpu-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5">
+              <div className="terminal-gpu-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                 <div className="terminal-gpu-description flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                   <p
                     id="terminal-gpu-label"
-                    className="terminal-gpu-label text-sm leading-5 font-medium"
+                    className="terminal-gpu-label text-xs leading-5 font-medium text-foreground"
                   >
                     GPU 加速
                   </p>
@@ -419,7 +429,6 @@ export function TerminalSettings() {
                   aria-describedby="terminal-gpu-description terminal-rendering-error"
                   className="terminal-gpu-options shrink-0"
                   variant="outline"
-                  size="lg"
                   spacing={0}
                   disabled={saving}
                   value={[preferences.terminalGpuAcceleration]}
@@ -524,6 +533,9 @@ export function TerminalSettings() {
                           name={field.name}
                           required
                           maxLength={4096}
+                          spellCheck={false}
+                          autoCorrect="off"
+                          autoCapitalize="off"
                           value={field.state.value}
                           placeholder={
                             isWindows
@@ -628,7 +640,7 @@ export function TerminalSettings() {
                           required
                           value={field.state.value}
                           placeholder="5000"
-                          className="terminal-settings-scrollback-input font-mono"
+                          className="terminal-settings-scrollback-input font-mono tabular-nums"
                           disabled={saving}
                           onBlur={field.handleBlur}
                           onChange={(event) => field.handleChange(event.target.value)}

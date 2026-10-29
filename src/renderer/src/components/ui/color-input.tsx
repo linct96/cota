@@ -32,7 +32,7 @@ function ColorInput({
 
   return (
     <InputGroup
-      className={cn('color-input h-8 w-auto shrink-0', className)}
+      className={cn('color-input h-7 w-auto shrink-0', className)}
       data-disabled={disabled}
     >
       <InputGroupInput
@@ -42,17 +42,19 @@ function ColorInput({
         value={value}
         maxLength={7}
         spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
         autoComplete="off"
         disabled={disabled}
         readOnly={readOnly}
         onBlur={onBlur}
         onChange={(event) => onValueChange(event.target.value)}
       />
-      <InputGroupAddon className="color-input-addon py-0 pl-1">
+      <InputGroupAddon className="color-input-addon py-0 pl-1.5">
         <input
           type="color"
           data-slot="input-group-control"
-          className="color-input-picker size-6 shrink-0 cursor-pointer appearance-none overflow-hidden rounded-sm border-0 bg-transparent p-0 outline-none disabled:cursor-not-allowed [&::-webkit-color-swatch-wrapper]:p-1 [&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border [&::-webkit-color-swatch]:border-input [&::-moz-color-swatch]:rounded-sm [&::-moz-color-swatch]:border [&::-moz-color-swatch]:border-input"
+          className="color-input-picker size-5 shrink-0 cursor-pointer appearance-none overflow-hidden rounded-sm border-0 bg-transparent p-0 outline-none disabled:cursor-not-allowed [&::-webkit-color-swatch-wrapper]:p-0.5 [&::-webkit-color-swatch]:rounded-xs [&::-webkit-color-swatch]:border [&::-webkit-color-swatch]:border-input [&::-moz-color-swatch]:rounded-xs [&::-moz-color-swatch]:border [&::-moz-color-swatch]:border-input"
           value={previewColor}
           disabled={disabled || readOnly}
           aria-label={pickerLabel}

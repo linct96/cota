@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { Terminal } from '@xterm/xterm'
@@ -18,7 +18,6 @@ import { TERMINAL_THEME_CATALOG } from '../../../shared/terminal-themes'
 import type { Preferences } from '../../../shared/contracts'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { Separator } from './ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import {
   Combobox,
@@ -221,10 +220,10 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
   useEffect(() => apply.current(settings), [settings])
   return (
     <section
-      className="terminal-appearance-preview flex flex-col gap-2"
+      className="terminal-appearance-preview flex flex-col gap-1.5"
       aria-label="终端外观预览：包含示例测试输出、Git Diff、中英文、粗体、斜体、弱化文字、字体连字、易混淆字符、ANSI 十六色和光标示例"
     >
-      <div className="terminal-appearance-preview-frame h-96 overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-ring/50">
+      <div className="terminal-appearance-preview-frame h-52 overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-ring/50">
         <div ref={host} className="terminal-appearance-preview-screen terminal-screen h-full" />
       </div>
       <p
@@ -237,6 +236,8 @@ function TerminalAppearancePreview({ settings }: { settings: TerminalAppearance 
     </section>
   )
 }
+
+const hexSwatchPattern = /^#[\da-f]{6}$/i
 
 export function TerminalAppearanceSettings({
   savePreferences,
@@ -291,14 +292,6 @@ export function TerminalAppearanceSettings({
       className="terminal-appearance-settings flex flex-col gap-3"
       aria-labelledby="terminal-appearance-title"
     >
-      <div className="terminal-appearance-heading flex flex-col gap-3">
-        <h4
-          id="terminal-appearance-title"
-          className="terminal-appearance-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
-        >
-          终端预览
-        </h4>
-      </div>
       <form
         id="terminal-appearance-form"
         className="terminal-appearance-form flex flex-col gap-6"
@@ -311,9 +304,56 @@ export function TerminalAppearanceSettings({
               className="terminal-appearance-controls flex min-w-0 flex-col gap-6"
               aria-busy={saving}
             >
-              <TerminalAppearancePreview settings={values} />
+              <div className="terminal-appearance-preview-section flex flex-col gap-2.5">
+                <div className="terminal-appearance-heading flex flex-wrap items-center justify-between gap-2">
+                  <h2
+                    id="terminal-appearance-title"
+                    className="terminal-appearance-title settings-section-title"
+                  >
+                    实时预览
+                  </h2>
+                  <div className="terminal-appearance-actions flex items-center gap-2">
+                    <output className="terminal-appearance-save-status text-xs text-muted-foreground">
+                      {saving
+                        ? '自动保存中…'
+                        : saved && terminalAppearanceSchema.safeParse(values).success
+                          ? '已自动保存'
+                          : ''}
+                    </output>
+                    {error && (
+                      <Button
+                        className="terminal-appearance-retry"
+                        type="button"
+                        size="sm"
+                        disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
+                        onClick={() => void saveAppearance(form.state.values)}
+                      >
+                        重试保存
+                      </Button>
+                    )}
+                    <Button
+                      className="terminal-appearance-reset"
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        const defaults = structuredClone(DEFAULT_TERMINAL_APPEARANCE)
+                        form.reset(defaults)
+                        void saveAppearance(defaults)
+                      }}
+                    >
+                      恢复默认
+                    </Button>
+                  </div>
+                </div>
+                <TerminalAppearancePreview settings={values} />
+                <FieldError className="terminal-appearance-save-error">{error}</FieldError>
+              </div>
+
               <FieldGroup className="terminal-appearance-groups gap-6">
                 {APPEARANCE_GROUPS.map((group) => {
+                  const isGridNumberGroup =
+                    group.name === 'typography' || group.name === 'background'
                   const numberFields = NUMBER_FIELDS.filter(
                     (field) => field.group === group.name,
                   ).map(({ name, label, min, max, step }) => (
@@ -332,31 +372,32 @@ export function TerminalAppearanceSettings({
                           <Field
                             className={cn(
                               'terminal-appearance-number-field',
-                              group.name !== 'background' &&
-                                'min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5',
+                              isGridNumberGroup
+                                ? 'gap-1.5'
+                                : 'min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3',
                             )}
                             data-invalid={invalid}
                           >
                             <label
                               htmlFor={`terminal-${name}`}
                               className={cn(
-                                'terminal-appearance-number-label text-sm font-medium leading-5',
-                                group.name !== 'background' && 'min-w-0 flex-1 basis-64',
+                                'terminal-appearance-number-label text-xs leading-5 font-medium text-foreground',
+                                !isGridNumberGroup && 'min-w-0 flex-1 basis-64',
                               )}
                             >
                               {label}
                               <span
                                 id={`terminal-${name}-help`}
-                                className="terminal-appearance-number-range text-xs font-normal text-muted-foreground"
+                                className="terminal-appearance-number-range ml-1 text-xs font-normal text-muted-foreground tabular-nums"
                               >
-                                （{min}–{max}）
+                                ({min}–{max})
                               </span>
                             </label>
                             <Input
                               id={`terminal-${name}`}
                               className={cn(
-                                'terminal-appearance-number-input',
-                                group.name !== 'background' && 'w-32 max-w-full shrink-0',
+                                'terminal-appearance-number-input font-mono tabular-nums',
+                                !isGridNumberGroup && 'w-28 max-w-full shrink-0',
                               )}
                               type="number"
                               min={min}
@@ -393,7 +434,7 @@ export function TerminalAppearanceSettings({
                                 id={`terminal-${name}-error`}
                                 className={cn(
                                   'terminal-appearance-number-error text-xs text-destructive',
-                                  group.name !== 'background' && 'basis-full',
+                                  !isGridNumberGroup && 'basis-full',
                                 )}
                                 role="alert"
                               >
@@ -410,17 +451,16 @@ export function TerminalAppearanceSettings({
                   ).map(({ name, label, options }) => (
                     <form.Field key={name} name={name}>
                       {(field) => (
-                        <Field className="terminal-appearance-choice-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                        <Field className="terminal-appearance-choice-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                           <p
                             id={`terminal-${name}-label`}
-                            className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-sm font-medium leading-5"
+                            className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-xs leading-5 font-medium text-foreground"
                           >
                             {label}
                           </p>
                           <ToggleGroup
                             className="terminal-appearance-choices"
                             variant="outline"
-                            size="lg"
                             spacing={0}
                             value={[field.state.value]}
                             aria-labelledby={`terminal-${name}-label`}
@@ -448,28 +488,25 @@ export function TerminalAppearanceSettings({
                   return (
                     <section
                       key={group.name}
-                      className="terminal-appearance-group flex min-w-0 flex-col gap-3"
+                      className="terminal-appearance-group flex min-w-0 flex-col gap-2.5"
                       aria-labelledby={`terminal-appearance-${group.name}-title`}
                     >
-                      <h4
+                      <h3
                         id={`terminal-appearance-${group.name}-title`}
-                        className="terminal-appearance-group-title text-sm font-normal text-muted-foreground"
+                        className="terminal-appearance-group-title settings-section-title"
                       >
                         {group.label}
-                      </h4>
+                      </h3>
                       <Card
-                        className={cn(
-                          'terminal-appearance-card',
-                          group.name === 'cursor' &&
-                            'divide-y divide-border [&>fieldset:not(:last-child)]:pb-(--card-spacing)',
-                        )}
+                        size="sm"
+                        className="terminal-appearance-card gap-0 divide-y divide-border py-0"
                       >
                         {group.name === 'typography' ? (
                           <>
                             <form.Field name="fontFamily">
                               {(field) => (
                                 <Field
-                                  className="terminal-font-family-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
+                                  className="terminal-font-family-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
                                   data-invalid={
                                     field.state.meta.isTouched && !field.state.meta.isValid
                                   }
@@ -477,7 +514,7 @@ export function TerminalAppearanceSettings({
                                   <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                                     <span
                                       id="terminal-font-family-label"
-                                      className="terminal-font-family-label text-sm leading-5 font-medium"
+                                      className="terminal-font-family-label text-xs leading-5 font-medium text-foreground"
                                     >
                                       字体
                                     </span>
@@ -512,7 +549,10 @@ export function TerminalAppearanceSettings({
                                     <ComboboxInput
                                       id="terminal-font-family"
                                       aria-labelledby="terminal-font-family-label"
-                                      className="terminal-font-family-input w-64 min-w-0 max-w-full shrink-0"
+                                      className="terminal-font-family-input w-60 min-w-0 max-w-full shrink-0 font-mono"
+                                      spellCheck={false}
+                                      autoCorrect="off"
+                                      autoCapitalize="off"
                                       onBlur={field.handleBlur}
                                       aria-invalid={
                                         field.state.meta.isTouched && !field.state.meta.isValid
@@ -526,7 +566,7 @@ export function TerminalAppearanceSettings({
                                       <ComboboxList className="terminal-font-suggestions-list">
                                         {(font: string) => (
                                           <ComboboxItem
-                                            className="terminal-font-suggestion"
+                                            className="terminal-font-suggestion font-mono"
                                             key={font}
                                             value={font}
                                           >
@@ -539,22 +579,17 @@ export function TerminalAppearanceSettings({
                                 </Field>
                               )}
                             </form.Field>
-                            {numberFields.map((field) => (
-                              <Fragment key={field.key}>
-                                <Separator className="terminal-appearance-number-separator" />
-                                {field}
-                              </Fragment>
-                            ))}
-                            <Separator className="terminal-appearance-group-separator" />
                             {choiceFields}
-                            <Separator className="terminal-appearance-contrast-separator" />
+                            <FieldGroup className="terminal-appearance-numbers grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-3 lg:grid-cols-5">
+                              {numberFields}
+                            </FieldGroup>
                             <form.Field name="contrastMode">
                               {(field) => (
-                                <Field className="terminal-contrast-mode-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
+                                <Field className="terminal-contrast-mode-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                                   <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                                     <p
                                       id="terminal-contrastMode-label"
-                                      className="terminal-contrast-mode-label text-sm font-medium leading-5"
+                                      className="terminal-contrast-mode-label text-xs leading-5 font-medium text-foreground"
                                     >
                                       文字对比度
                                     </p>
@@ -562,13 +597,12 @@ export function TerminalAppearanceSettings({
                                       id="terminal-contrast-mode-description"
                                       className="terminal-contrast-mode-description"
                                     >
-                                      自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。自定义值越大，文字与背景的区分越明显，但可能改变原有配色。
+                                      自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。
                                     </FieldDescription>
                                   </div>
                                   <ToggleGroup
                                     className="terminal-contrast-mode-options shrink-0"
                                     variant="outline"
-                                    size="lg"
                                     spacing={0}
                                     value={[field.state.value]}
                                     aria-labelledby="terminal-contrastMode-label"
@@ -604,107 +638,100 @@ export function TerminalAppearanceSettings({
                               )}
                             </form.Field>
                             {values.contrastMode === 'custom' && (
-                              <>
-                                <Separator className="terminal-contrast-ratio-separator" />
-                                <form.Field name="minimumContrastRatio">
-                                  {(field) => {
-                                    const invalid =
-                                      field.state.meta.isTouched && !field.state.meta.isValid
+                              <form.Field name="minimumContrastRatio">
+                                {(field) => {
+                                  const invalid =
+                                    field.state.meta.isTouched && !field.state.meta.isValid
 
-                                    return (
-                                      <Field
-                                        className="terminal-contrast-ratio-field min-h-8 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5"
-                                        data-invalid={invalid}
-                                      >
-                                        <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                                          <label
-                                            htmlFor="terminal-minimumContrastRatio"
-                                            className="terminal-contrast-ratio-label text-sm font-medium leading-5"
+                                  return (
+                                    <Field
+                                      className="terminal-contrast-ratio-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
+                                      data-invalid={invalid}
+                                    >
+                                      <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                                        <label
+                                          htmlFor="terminal-minimumContrastRatio"
+                                          className="terminal-contrast-ratio-label text-xs leading-5 font-medium text-foreground"
+                                        >
+                                          最低对比度
+                                          <span
+                                            id="terminal-minimumContrastRatio-help"
+                                            className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground tabular-nums"
                                           >
-                                            最低对比度
-                                            <span
-                                              id="terminal-minimumContrastRatio-help"
-                                              className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground"
-                                            >
-                                              （1–21）
-                                            </span>
-                                          </label>
-                                          <FieldDescription
-                                            id="terminal-minimumContrastRatio-description"
-                                            className="terminal-contrast-ratio-description"
-                                          >
-                                            推荐 4.5（WCAG AA）或 7.0（WCAG
-                                            AAA）。数值越高文字越醒目。
-                                          </FieldDescription>
-                                        </div>
-                                        <Input
-                                          id="terminal-minimumContrastRatio"
-                                          className="terminal-contrast-ratio-input w-32 max-w-full shrink-0"
-                                          type="number"
-                                          min={1}
-                                          max={21}
-                                          step={0.1}
-                                          value={
-                                            Number.isNaN(field.state.value) ? '' : field.state.value
-                                          }
-                                          onBlur={field.handleBlur}
-                                          onChange={(event) => {
-                                            field.handleChange(event.target.valueAsNumber)
-                                            setSaved(false)
-                                          }}
-                                          aria-invalid={invalid}
-                                          aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
-                                        />
-                                        <FieldError
-                                          id="terminal-minimumContrastRatio-error"
-                                          className="terminal-contrast-ratio-error basis-full"
-                                          errors={
-                                            field.state.meta.isTouched
-                                              ? field.state.meta.errors
-                                              : []
-                                          }
-                                        />
-                                      </Field>
-                                    )
-                                  }}
-                                </form.Field>
-                              </>
+                                            (1–21)
+                                          </span>
+                                        </label>
+                                        <FieldDescription
+                                          id="terminal-minimumContrastRatio-description"
+                                          className="terminal-contrast-ratio-description"
+                                        >
+                                          推荐 4.5（WCAG AA）或 7.0（WCAG
+                                          AAA）。数值越高文字越醒目。
+                                        </FieldDescription>
+                                      </div>
+                                      <Input
+                                        id="terminal-minimumContrastRatio"
+                                        className="terminal-contrast-ratio-input w-28 max-w-full shrink-0 font-mono tabular-nums"
+                                        type="number"
+                                        min={1}
+                                        max={21}
+                                        step={0.1}
+                                        value={
+                                          Number.isNaN(field.state.value) ? '' : field.state.value
+                                        }
+                                        onBlur={field.handleBlur}
+                                        onChange={(event) => {
+                                          field.handleChange(event.target.valueAsNumber)
+                                          setSaved(false)
+                                        }}
+                                        aria-invalid={invalid}
+                                        aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
+                                      />
+                                      <FieldError
+                                        id="terminal-minimumContrastRatio-error"
+                                        className="terminal-contrast-ratio-error basis-full"
+                                        errors={
+                                          field.state.meta.isTouched ? field.state.meta.errors : []
+                                        }
+                                      />
+                                    </Field>
+                                  )
+                                }}
+                              </form.Field>
                             )}
                           </>
                         ) : (
                           <>
-                            {numberFields.length > 0 && (
-                              <>
-                                {group.name === 'cursor' ? (
-                                  numberFields
-                                ) : (
-                                  <FieldGroup
-                                    className={cn(
-                                      'terminal-appearance-numbers',
-                                      group.name === 'background' &&
-                                        'grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4 px-5',
-                                    )}
-                                  >
-                                    {numberFields}
-                                  </FieldGroup>
-                                )}
-                                {group.name !== 'cursor' && (
-                                  <Separator className="terminal-appearance-group-separator" />
-                                )}
-                              </>
-                            )}
+                            {numberFields.length > 0 &&
+                              (group.name === 'cursor' ? (
+                                numberFields
+                              ) : (
+                                <FieldGroup className="terminal-appearance-numbers grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-3">
+                                  {numberFields}
+                                </FieldGroup>
+                              ))}
                             {choiceFields}
                             {SWITCH_FIELDS.filter((field) => field.group === group.name).map(
                               ({ name, label }) => (
                                 <form.Field key={name} name={name}>
                                   {(field) => (
-                                    <Field className="terminal-appearance-switch-field min-h-8 flex-row items-center justify-between gap-4 px-5">
-                                      <span
-                                        id={`terminal-${name}-label`}
-                                        className="terminal-appearance-switch-label text-sm font-medium leading-5"
-                                      >
-                                        {label}
-                                      </span>
+                                    <Field className="terminal-appearance-switch-field min-h-7 flex-row items-center justify-between gap-4 px-4 py-3">
+                                      <div className="terminal-appearance-switch-text flex min-w-0 flex-1 flex-col gap-0.5">
+                                        <span
+                                          id={`terminal-${name}-label`}
+                                          className="terminal-appearance-switch-label text-xs leading-5 font-medium text-foreground"
+                                        >
+                                          {label}
+                                        </span>
+                                        {name === 'windowBlur' &&
+                                          values.windowBlur !==
+                                            window.desktop.initialAppearance.windowBlur && (
+                                            <FieldDescription className="terminal-blur-restart-help">
+                                              重启
+                                              Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
+                                            </FieldDescription>
+                                          )}
+                                      </div>
                                       <Switch
                                         id={`terminal-${name}`}
                                         aria-labelledby={`terminal-${name}-label`}
@@ -725,66 +752,169 @@ export function TerminalAppearanceSettings({
                                 </form.Field>
                               ),
                             )}
-                            {group.name === 'theme' &&
-                              (['themeDark', 'themeLight'] as const).map((name) =>
-                                name === 'themeLight' && !values.separateLightTheme ? null : (
-                                  <form.Field key={name} name={name}>
-                                    {(field) => (
-                                      <Field className="terminal-theme-field flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8">
-                                        <span
-                                          id={`terminal-${name}-label`}
-                                          className="terminal-theme-label text-sm font-medium leading-5"
-                                        >
-                                          {name === 'themeDark' ? '深色模式配色' : '浅色模式配色'}
-                                        </span>
-                                        <Select
-                                          value={field.state.value}
-                                          onValueChange={(value) => {
-                                            if (value) {
-                                              field.handleChange(value)
-                                              setSaved(false)
-                                            }
-                                          }}
-                                        >
-                                          <SelectTrigger
-                                            id={`terminal-${name}`}
-                                            aria-labelledby={`terminal-${name}-label`}
-                                            className="terminal-theme-trigger min-w-0 max-w-full"
-                                            onBlur={field.handleBlur}
+                            {group.name === 'theme' && (
+                              <>
+                                {(['themeDark', 'themeLight'] as const).map((name) =>
+                                  name === 'themeLight' && !values.separateLightTheme ? null : (
+                                    <form.Field key={name} name={name}>
+                                      {(field) => (
+                                        <Field className="terminal-theme-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+                                          <span
+                                            id={`terminal-${name}-label`}
+                                            className="terminal-theme-label text-xs leading-5 font-medium text-foreground"
                                           >
-                                            <SelectValue className="terminal-theme-value">
-                                              {field.state.value === 'auto'
-                                                ? '跟随应用主题'
-                                                : field.state.value}
-                                            </SelectValue>
-                                          </SelectTrigger>
-                                          <SelectContent className="terminal-theme-content">
-                                            <SelectGroup className="terminal-theme-items">
-                                              <SelectItem
-                                                className="terminal-theme-item"
-                                                value="auto"
+                                            {name === 'themeDark' ? '深色模式配色' : '浅色模式配色'}
+                                          </span>
+                                          <Select
+                                            value={field.state.value}
+                                            onValueChange={(value) => {
+                                              if (value) {
+                                                field.handleChange(value)
+                                                setSaved(false)
+                                              }
+                                            }}
+                                          >
+                                            <SelectTrigger
+                                              id={`terminal-${name}`}
+                                              aria-labelledby={`terminal-${name}-label`}
+                                              className="terminal-theme-trigger min-w-0 max-w-full"
+                                              onBlur={field.handleBlur}
+                                            >
+                                              <SelectValue className="terminal-theme-value">
+                                                {field.state.value === 'auto'
+                                                  ? '跟随应用主题'
+                                                  : field.state.value}
+                                              </SelectValue>
+                                            </SelectTrigger>
+                                            <SelectContent className="terminal-theme-content">
+                                              <SelectGroup className="terminal-theme-items">
+                                                <SelectItem
+                                                  className="terminal-theme-item"
+                                                  value="auto"
+                                                >
+                                                  跟随应用主题
+                                                </SelectItem>
+                                                {Object.keys(TERMINAL_THEME_CATALOG)
+                                                  .sort()
+                                                  .map((theme) => (
+                                                    <SelectItem
+                                                      className="terminal-theme-item"
+                                                      key={theme}
+                                                      value={theme}
+                                                    >
+                                                      {theme}
+                                                    </SelectItem>
+                                                  ))}
+                                              </SelectGroup>
+                                            </SelectContent>
+                                          </Select>
+                                        </Field>
+                                      )}
+                                    </form.Field>
+                                  ),
+                                )}
+                                <Collapsible className="terminal-color-overrides px-4 py-2">
+                                  <CollapsibleTrigger
+                                    className="terminal-color-overrides-trigger group/terminal-colors w-full justify-between px-1"
+                                    render={<Button type="button" variant="ghost" />}
+                                  >
+                                    自定义颜色与 ANSI 调色板
+                                    <ChevronDown
+                                      className="terminal-color-overrides-chevron transition-transform group-data-panel-open/terminal-colors:rotate-180"
+                                      data-icon="inline-end"
+                                    />
+                                  </CollapsibleTrigger>
+                                  <CollapsibleContent
+                                    keepMounted
+                                    className="terminal-color-overrides-content pb-2"
+                                  >
+                                    <p className="terminal-color-overrides-help mt-2 px-1 text-xs text-muted-foreground">
+                                      留空沿用配色主题；输入 #RRGGBB 覆盖对应颜色。
+                                    </p>
+                                    <FieldGroup className="terminal-color-fields mt-3 grid grid-cols-2 gap-3 px-1 sm:grid-cols-3 md:grid-cols-4">
+                                      {TERMINAL_COLOR_KEYS.map((key, index) => (
+                                        <form.Field key={key} name={`colors.${key}`}>
+                                          {(field) => {
+                                            const invalid =
+                                              field.state.meta.isTouched &&
+                                              !field.state.meta.isValid
+                                            const currentHex = field.state.value || ''
+                                            const validHex = hexSwatchPattern.test(currentHex)
+
+                                            const errorMessage = [
+                                              ...new Set(
+                                                (field.state.meta.isTouched
+                                                  ? field.state.meta.errors
+                                                  : []
+                                                )
+                                                  .map((error) => error?.message)
+                                                  .filter(Boolean),
+                                              ),
+                                            ].join(' ')
+                                            return (
+                                              <Field
+                                                className="terminal-color-field gap-1.5"
+                                                data-invalid={invalid}
                                               >
-                                                跟随应用主题
-                                              </SelectItem>
-                                              {Object.keys(TERMINAL_THEME_CATALOG)
-                                                .sort()
-                                                .map((theme) => (
-                                                  <SelectItem
-                                                    className="terminal-theme-item"
-                                                    key={theme}
-                                                    value={theme}
+                                                <label
+                                                  htmlFor={`terminal-color-${key}`}
+                                                  className="terminal-color-label flex items-center justify-between gap-1.5 text-xs leading-5 font-medium text-foreground"
+                                                >
+                                                  <span className="terminal-color-label-text truncate">
+                                                    {COLOR_LABELS[index]}
+                                                  </span>
+                                                  {validHex && (
+                                                    <span
+                                                      className="terminal-color-swatch size-3 shrink-0 rounded-xs border border-border"
+                                                      style={{ backgroundColor: currentHex }}
+                                                      aria-hidden="true"
+                                                    />
+                                                  )}
+                                                </label>
+                                                <Input
+                                                  id={`terminal-color-${key}`}
+                                                  className="terminal-color-input font-mono"
+                                                  value={currentHex}
+                                                  placeholder="沿用主题"
+                                                  maxLength={7}
+                                                  spellCheck={false}
+                                                  autoCorrect="off"
+                                                  autoCapitalize="off"
+                                                  onBlur={field.handleBlur}
+                                                  onChange={(event) => {
+                                                    const value = event.target.value
+                                                    if (value) field.handleChange(value)
+                                                    else {
+                                                      form.setFieldValue('colors', (colors) => {
+                                                        const next = { ...colors }
+                                                        delete next[key]
+                                                        return next
+                                                      })
+                                                      void saveAppearance(form.state.values)
+                                                    }
+                                                  }}
+                                                  aria-invalid={invalid}
+                                                  aria-describedby={`terminal-color-${key}-error`}
+                                                />
+                                                {errorMessage && (
+                                                  <p
+                                                    id={`terminal-color-${key}-error`}
+                                                    className="terminal-color-error text-xs text-destructive"
+                                                    role="alert"
                                                   >
-                                                    {theme}
-                                                  </SelectItem>
-                                                ))}
-                                            </SelectGroup>
-                                          </SelectContent>
-                                        </Select>
-                                      </Field>
-                                    )}
-                                  </form.Field>
-                                ),
-                              )}
+                                                    {errorMessage}
+                                                  </p>
+                                                )}
+                                              </Field>
+                                            )
+                                          }}
+                                        </form.Field>
+                                      ))}
+                                    </FieldGroup>
+                                  </CollapsibleContent>
+                                </Collapsible>
+                              </>
+                            )}
                           </>
                         )}
                       </Card>
@@ -792,124 +922,6 @@ export function TerminalAppearanceSettings({
                   )
                 })}
               </FieldGroup>
-              <Card className="terminal-color-overrides-card">
-                <Collapsible className="terminal-color-overrides px-5">
-                  <CollapsibleTrigger
-                    className="terminal-color-overrides-trigger group/terminal-colors w-full justify-between"
-                    render={<Button type="button" variant="ghost" size="lg" />}
-                  >
-                    自定义颜色与 ANSI 调色板
-                    <ChevronDown
-                      className="terminal-color-overrides-chevron group-data-panel-open/terminal-colors:rotate-180"
-                      data-icon="inline-end"
-                    />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent keepMounted className="terminal-color-overrides-content">
-                    <p className="terminal-color-overrides-help mt-3 text-xs text-muted-foreground">
-                      留空沿用配色主题；输入 #RRGGBB 覆盖对应颜色。
-                    </p>
-                    <FieldGroup className="terminal-color-fields mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-4">
-                      {TERMINAL_COLOR_KEYS.map((key, index) => (
-                        <form.Field key={key} name={`colors.${key}`}>
-                          {(field) => {
-                            const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-
-                            const errorMessage = [
-                              ...new Set(
-                                (field.state.meta.isTouched ? field.state.meta.errors : [])
-                                  .map((error) => error?.message)
-                                  .filter(Boolean),
-                              ),
-                            ].join(' ')
-                            return (
-                              <Field className="terminal-color-field" data-invalid={invalid}>
-                                <label
-                                  htmlFor={`terminal-color-${key}`}
-                                  className="terminal-color-label text-sm font-medium leading-5"
-                                >
-                                  {COLOR_LABELS[index]}
-                                </label>
-                                <Input
-                                  id={`terminal-color-${key}`}
-                                  className="terminal-color-input"
-                                  value={field.state.value || ''}
-                                  placeholder="沿用主题"
-                                  maxLength={7}
-                                  onBlur={field.handleBlur}
-                                  onChange={(event) => {
-                                    const value = event.target.value
-                                    if (value) field.handleChange(value)
-                                    else {
-                                      form.setFieldValue('colors', (colors) => {
-                                        const next = { ...colors }
-                                        delete next[key]
-                                        return next
-                                      })
-                                      void saveAppearance(form.state.values)
-                                    }
-                                  }}
-                                  aria-invalid={invalid}
-                                  aria-describedby={`terminal-color-${key}-error`}
-                                />
-                                {errorMessage && (
-                                  <p
-                                    id={`terminal-color-${key}-error`}
-                                    className="terminal-color-error text-xs text-destructive"
-                                    role="alert"
-                                  >
-                                    {errorMessage}
-                                  </p>
-                                )}
-                              </Field>
-                            )
-                          }}
-                        </form.Field>
-                      ))}
-                    </FieldGroup>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
-              {values.windowBlur !== window.desktop.initialAppearance.windowBlur && (
-                <FieldDescription className="terminal-blur-restart-help">
-                  重启 Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
-                </FieldDescription>
-              )}
-              <FieldError className="terminal-appearance-save-error">{error}</FieldError>
-              <div className="terminal-appearance-actions flex flex-wrap items-center justify-between gap-3">
-                <Button
-                  className="terminal-appearance-reset"
-                  type="button"
-                  variant="outline"
-                  size="lg"
-                  onClick={() => {
-                    const defaults = structuredClone(DEFAULT_TERMINAL_APPEARANCE)
-                    form.reset(defaults)
-                    void saveAppearance(defaults)
-                  }}
-                >
-                  恢复默认
-                </Button>
-                <div className="terminal-appearance-save-actions ml-auto flex items-center gap-3">
-                  <output className="terminal-appearance-save-status text-xs text-muted-foreground">
-                    {saving
-                      ? '自动保存中…'
-                      : saved && terminalAppearanceSchema.safeParse(values).success
-                        ? '已自动保存'
-                        : ''}
-                  </output>
-                  {error && (
-                    <Button
-                      className="terminal-appearance-retry"
-                      type="button"
-                      size="lg"
-                      disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
-                      onClick={() => void saveAppearance(form.state.values)}
-                    >
-                      重试保存
-                    </Button>
-                  )}
-                </div>
-              </div>
             </fieldset>
           )}
         </form.Subscribe>

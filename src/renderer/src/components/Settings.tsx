@@ -228,6 +228,9 @@ export function Settings() {
               id={`${titleId}-search`}
               ref={searchInput}
               type="search"
+              spellCheck={false}
+              autoCorrect="off"
+              autoCapitalize="off"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               onKeyDown={(event) => {
@@ -380,14 +383,16 @@ export function Settings() {
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
         aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
-        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-4xl flex-col p-8 text-sm/relaxed">
+        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 py-6 text-xs/relaxed">
           <LoadingContent
             key={activeCategory}
             pending={!ready}
             label={`${activeItem?.label ?? '设置'}配置读取中...`}
             loadingHeader={
-              <div className="settings-loading-heading typeset mb-6">
-                <h1 className="settings-loading-title">{activeItem?.label ?? '设置'}</h1>
+              <div className="settings-loading-heading mb-5 border-b pb-4">
+                <h1 className="settings-loading-title settings-page-title">
+                  {activeItem?.label ?? '设置'}
+                </h1>
               </div>
             }
             showLabel

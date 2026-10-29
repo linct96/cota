@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useState, useSyncExternalStore } from 'react'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { Monitor, Moon, Sun } from 'lucide-react'
@@ -10,10 +10,10 @@ import {
   type InterfaceColorRole,
 } from '../../../shared/interface-colors'
 import { observeDocumentTheme, resolveDocumentColor } from '../lib/theme'
+import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { ColorInput } from './ui/color-input'
-import { Separator } from './ui/separator'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 const colorFields: { role: InterfaceColorRole; label: string; description: string }[] = [
@@ -100,17 +100,22 @@ export function AppearanceSettings() {
       className="appearance-settings flex flex-col gap-6"
       aria-labelledby="appearance-settings-title"
     >
-      <header className="appearance-settings-header flex flex-wrap items-start justify-between gap-3">
-        <div className="appearance-settings-heading typeset">
-          <h1 id="appearance-settings-title" className="appearance-settings-title">
+      <header className="appearance-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="appearance-settings-heading flex flex-col gap-1">
+          <h1
+            id="appearance-settings-title"
+            className="appearance-settings-title settings-page-title"
+          >
             外观
           </h1>
+          <p className="appearance-settings-subtitle text-xs text-muted-foreground">
+            自定义应用明暗主题模式与界面核心语义配色。
+          </p>
         </div>
         <Button
           type="button"
           className="appearance-settings-reset"
           variant="ghost"
-          size="lg"
           disabled={!ready || saving}
           aria-describedby={errors.reset ? 'appearance-reset-error' : undefined}
           onClick={() => void resetAppearance()}
@@ -127,15 +132,15 @@ export function AppearanceSettings() {
           {errors.reset}
         </p>
       )}
-      <Card className="appearance-settings-card">
+      <Card size="sm" className="appearance-settings-card">
         <div
-          className="appearance-theme-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 data-[invalid=true]:text-destructive"
+          className="appearance-theme-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 data-[invalid=true]:text-destructive"
           data-invalid={!!errors.theme}
         >
           <div className="appearance-theme-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
             <p
               id="appearance-theme-label"
-              className="appearance-theme-label text-sm leading-5 font-medium"
+              className="appearance-theme-label text-xs leading-5 font-medium text-foreground"
             >
               模式
             </p>
@@ -151,7 +156,6 @@ export function AppearanceSettings() {
               className="appearance-theme-options"
               variant="outline"
               spacing={0}
-              size="lg"
               value={[theme]}
               disabled={!ready || saving}
               aria-labelledby="appearance-theme-label"
@@ -190,15 +194,36 @@ export function AppearanceSettings() {
             )}
           </div>
         </div>
-        {colorFields.map(({ role, label, description }) => (
-          <Fragment key={`${mode}.${role}`}>
-            <Separator className="appearance-color-separator" />
-            <form.Field name={`${mode}.${role}`} validators={{ onChange: colorInputSchema }}>
+      </Card>
+
+      <section
+        className="appearance-colors-section flex flex-col gap-2.5"
+        aria-labelledby="appearance-colors-title"
+      >
+        <div className="appearance-colors-header flex items-center justify-between gap-2">
+          <h2
+            id="appearance-colors-title"
+            className="appearance-colors-title settings-section-title"
+          >
+            界面配色
+          </h2>
+          <Badge variant="secondary" className="appearance-colors-mode-badge">
+            {mode === 'dark' ? '当前：深色模式' : '当前：浅色模式'}
+          </Badge>
+        </div>
+        <div className="appearance-color-grid grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {colorFields.map(({ role, label, description }) => (
+            <form.Field
+              key={`${mode}.${role}`}
+              name={`${mode}.${role}`}
+              validators={{ onChange: colorInputSchema }}
+            >
               {(field) => {
                 const invalid = field.state.meta.errors.length > 0
                 const saveError = errors[`${mode}.${role}`]
                 const errorId = `appearance-${role}-error`
                 const resolvedColor = resolveDocumentColor(role)
+                const isCustom = Boolean(field.state.value)
 
                 const errorMessage =
                   (invalid ? undefined : saveError) ||
@@ -208,17 +233,39 @@ export function AppearanceSettings() {
                     ),
                   ].join(' ')
                 return (
-                  <div
-                    className="appearance-color-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 data-[invalid=true]:text-destructive"
+                  <Card
+                    size="sm"
+                    className="appearance-color-row justify-between px-4 data-[invalid=true]:ring-destructive/40"
                     data-invalid={invalid || !!saveError}
                   >
-                    <div className="appearance-color-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
-                      <label
-                        htmlFor={`appearance-${role}`}
-                        className="appearance-color-label text-sm leading-5 font-medium"
-                      >
-                        {label}
-                      </label>
+                    <div className="appearance-color-text flex min-w-0 flex-col gap-1">
+                      <div className="appearance-color-heading flex items-center justify-between gap-2">
+                        <label
+                          htmlFor={`appearance-${role}`}
+                          className="appearance-color-label text-xs leading-5 font-medium text-foreground"
+                        >
+                          {label}
+                        </label>
+                        {isCustom ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            className="appearance-color-clear text-muted-foreground hover:text-foreground"
+                            disabled={!ready || saving}
+                            onClick={() => {
+                              field.handleChange(undefined)
+                              changeColor(role, undefined)
+                            }}
+                          >
+                            重置
+                          </Button>
+                        ) : (
+                          <span className="appearance-color-default-tag text-xs text-muted-foreground">
+                            默认
+                          </span>
+                        )}
+                      </div>
                       <p
                         id={`appearance-${role}-help`}
                         className="appearance-color-description text-xs text-muted-foreground"
@@ -226,10 +273,10 @@ export function AppearanceSettings() {
                         {description}
                       </p>
                     </div>
-                    <div className="appearance-color-control flex min-w-0 flex-col gap-2">
+                    <div className="appearance-color-control flex min-w-0 flex-col gap-1.5 pt-1">
                       <ColorInput
                         id={`appearance-${role}`}
-                        className="appearance-color-input"
+                        className="appearance-color-input w-full justify-between"
                         value={field.state.value ?? resolvedColor}
                         fallbackColor={resolvedColor}
                         pickerLabel={`选择${label}`}
@@ -255,20 +302,20 @@ export function AppearanceSettings() {
                       {errorMessage && (
                         <p
                           id={errorId}
-                          className="appearance-color-error max-w-60 text-xs text-destructive"
+                          className="appearance-color-error text-xs text-destructive"
                           role="alert"
                         >
                           {errorMessage}
                         </p>
                       )}
                     </div>
-                  </div>
+                  </Card>
                 )
               }}
             </form.Field>
-          </Fragment>
-        ))}
-      </Card>
+          ))}
+        </div>
+      </section>
     </section>
   )
 }

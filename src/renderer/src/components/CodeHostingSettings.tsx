@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm, useStore } from '@tanstack/react-form'
 import { z } from 'zod'
 import { Copy, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
@@ -119,108 +119,94 @@ export function CodeHostingSettings() {
 
   return (
     <section
-      className="code-hosting-settings flex min-h-0 flex-1 flex-col gap-6"
+      className="code-hosting-settings flex min-h-0 flex-1 flex-col gap-5"
       aria-labelledby="code-hosting-settings-title"
     >
-      <div className="code-hosting-settings-heading typeset">
-        <h1 id="code-hosting-settings-title" className="code-hosting-settings-title">
-          代码托管
-        </h1>
-      </div>
+      <header className="code-hosting-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="code-hosting-settings-heading flex flex-col gap-1">
+          <h1
+            id="code-hosting-settings-title"
+            className="code-hosting-settings-title settings-page-title"
+          >
+            代码托管
+          </h1>
+          <p className="code-hosting-settings-subtitle text-xs text-muted-foreground">
+            检测本机 GitHub CLI (gh) 与 GitLab CLI (glab) 授权状态，用于拉取与创建代码评审。
+          </p>
+        </div>
+        <Button
+          className="code-hosting-detect shrink-0"
+          variant="outline"
+          disabled={detecting || detectingVisible || !!configuring || initialPending}
+          onClick={() => void detect()}
+        >
+          <RefreshCw className="code-hosting-detect-icon" data-icon="inline-start" />
+          {detectingVisible ? '检测中…' : hasChecked ? '重新检测' : '检测连接'}
+        </Button>
+      </header>
       <LoadingContent pending={initialPending} label="代码托管配置读取中..." showLabel>
         {!initialPending && (
-          <FieldGroup className="code-hosting-settings-groups gap-8">
-            <section
-              className="code-hosting-settings-group flex flex-col gap-3"
-              aria-labelledby="code-hosting-connection-title"
-              aria-busy={detecting}
-            >
-              <div className="code-hosting-settings-group-header flex flex-wrap items-start justify-between gap-3">
-                <div className="code-hosting-settings-group-heading flex min-w-0 flex-1 basis-64 flex-col gap-1">
-                  <h4
-                    id="code-hosting-connection-title"
-                    className="code-hosting-settings-group-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
-                  >
-                    CLI 连接
-                  </h4>
-                </div>
-                <Button
-                  className="code-hosting-detect"
-                  variant="outline"
-                  size="lg"
-                  disabled={detecting || detectingVisible || !!configuring}
-                  onClick={() => void detect()}
-                >
-                  <RefreshCw className="code-hosting-detect-icon" data-icon="inline-start" />
-                  {detectingVisible ? '检测中…' : hasChecked ? '重新检测' : '检测连接'}
-                </Button>
-              </div>
-              <Card className="code-hosting-settings-card" aria-busy={detecting}>
-                {hostingProviderSchema.options.map((provider, index) => (
-                  <Fragment key={provider}>
-                    {index > 0 && <Separator className="code-hosting-settings-separator" />}
-                    <CodeHostingConnectionRow
-                      provider={provider}
-                      connection={connections[provider]}
-                      disabled={detecting || detectingVisible}
-                      open={configuring === provider}
-                      onOpenChange={(open) => {
-                        if (!pending.current) setConfiguring(open ? provider : undefined)
-                      }}
-                      onConnect={async (host) => {
-                        const result = unwrap(
-                          await window.desktop.codeHosting.connection(provider, host),
-                        )
-                        if (alive.current) {
-                          setConnections((previous) => {
-                            const current = previous[provider]
-                            const accounts = current.status === 'detected' ? current.accounts : []
-                            const updated = accounts.map((account) => {
-                              if (account.host !== host) return account
-                              if (result.status !== 'connected')
-                                return account.active
-                                  ? { ...account, status: 'error' as const }
-                                  : account
-                              return {
-                                ...account,
-                                active: account.account === result.account,
-                                status:
-                                  account.account === result.account
-                                    ? ('connected' as const)
-                                    : account.status,
-                              }
-                            })
-                            if (
-                              result.status === 'connected' &&
-                              !updated.some(
-                                (account) =>
-                                  account.host === host && account.account === result.account,
-                              )
-                            ) {
-                              updated.push({
-                                host,
-                                account: result.account,
-                                active: true,
-                                status: 'connected',
-                              })
-                            }
-                            return {
-                              ...previous,
-                              [provider]:
-                                result.status === 'connected' || updated.length > 0
-                                  ? { status: 'detected', accounts: updated }
-                                  : result,
-                            }
-                          })
+          <Card
+            size="sm"
+            className="code-hosting-settings-card gap-0 divide-y divide-border py-0"
+            aria-busy={detecting}
+          >
+            {hostingProviderSchema.options.map((provider) => (
+              <CodeHostingConnectionRow
+                key={provider}
+                provider={provider}
+                connection={connections[provider]}
+                disabled={detecting || detectingVisible}
+                open={configuring === provider}
+                onOpenChange={(open) => {
+                  if (!pending.current) setConfiguring(open ? provider : undefined)
+                }}
+                onConnect={async (host) => {
+                  const result = unwrap(await window.desktop.codeHosting.connection(provider, host))
+                  if (alive.current) {
+                    setConnections((previous) => {
+                      const current = previous[provider]
+                      const accounts = current.status === 'detected' ? current.accounts : []
+                      const updated = accounts.map((account) => {
+                        if (account.host !== host) return account
+                        if (result.status !== 'connected')
+                          return account.active ? { ...account, status: 'error' as const } : account
+                        return {
+                          ...account,
+                          active: account.account === result.account,
+                          status:
+                            account.account === result.account
+                              ? ('connected' as const)
+                              : account.status,
                         }
-                        return result
-                      }}
-                    />
-                  </Fragment>
-                ))}
-              </Card>
-            </section>
-          </FieldGroup>
+                      })
+                      if (
+                        result.status === 'connected' &&
+                        !updated.some(
+                          (account) => account.host === host && account.account === result.account,
+                        )
+                      ) {
+                        updated.push({
+                          host,
+                          account: result.account,
+                          active: true,
+                          status: 'connected',
+                        })
+                      }
+                      return {
+                        ...previous,
+                        [provider]:
+                          result.status === 'connected' || updated.length > 0
+                            ? { status: 'detected', accounts: updated }
+                            : result,
+                      }
+                    })
+                  }
+                  return result
+                }}
+              />
+            ))}
+          </Card>
         )}
       </LoadingContent>
     </section>
@@ -343,18 +329,21 @@ function CodeHostingConnectionRow({
       }}
     >
       <Field
-        className="code-hosting-connection-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
+        className="code-hosting-connection-row min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30"
         aria-labelledby={`hosting-${provider}-label`}
         aria-busy={!!connection.checking}
       >
         <div className="code-hosting-connection-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
           <div className="code-hosting-connection-identity flex flex-wrap items-center gap-2">
-            <h5
+            <h3
               id={`hosting-${provider}-label`}
-              className="code-hosting-platform-name text-sm leading-5 font-medium"
+              className="code-hosting-platform-name text-xs leading-5 font-medium text-foreground"
             >
               {name}
-            </h5>
+            </h3>
+            <Badge variant="outline" className="code-hosting-cli-badge font-mono">
+              {cli}
+            </Badge>
             {!connection.checking &&
               !checkingVisible &&
               (primaryAccount || connection.status !== 'detected') && (
@@ -367,7 +356,7 @@ function CodeHostingConnectionRow({
                 </Badge>
               )}
           </div>
-          <p className="code-hosting-connection-detail break-all select-text text-xs text-muted-foreground">
+          <p className="code-hosting-connection-detail break-all text-xs text-muted-foreground select-text">
             {primaryAccount
               ? `${primaryAccount.host} · ${primaryAccount.account}${accounts.length > 1 ? ` 等${accounts.length}个远端地址` : ''}`
               : connection.status === 'detected'
@@ -386,7 +375,6 @@ function CodeHostingConnectionRow({
                 <Button
                   className="code-hosting-connect"
                   variant="outline"
-                  size="lg"
                   disabled={blocked}
                   aria-label={`${action} ${name}`}
                 />
@@ -522,8 +510,11 @@ function CodeHostingConnectionRow({
                       </FieldLabel>
                       <Input
                         id={hostId}
-                        className="code-hosting-host-input"
+                        className="code-hosting-host-input font-mono"
                         autoFocus
+                        spellCheck={false}
+                        autoCorrect="off"
+                        autoCapitalize="off"
                         value={field.state.value}
                         maxLength={253}
                         placeholder={defaultHost}

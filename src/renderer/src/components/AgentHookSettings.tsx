@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import {
   AGENT_PROVIDERS,
@@ -11,7 +11,6 @@ import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { Field, FieldDescription, FieldError } from './ui/field'
-import { Separator } from './ui/separator'
 
 const labels: Record<AgentHookStatus['state'], string> = {
   installed: '已安装',
@@ -79,19 +78,19 @@ export function AgentHookSettings({
 
   return (
     <section
-      className="agent-hook-settings flex flex-col gap-3"
+      className="agent-hook-settings flex flex-col gap-2.5"
       aria-labelledby="agent-hook-settings-title"
       aria-describedby="agent-hook-settings-description"
       aria-busy={!!busy}
     >
       <div className="agent-hook-settings-header flex flex-wrap items-start justify-between gap-3">
-        <div className="agent-hook-settings-heading flex min-w-0 flex-1 basis-64 flex-col gap-1">
-          <h4
+        <div className="agent-hook-settings-heading flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+          <h2
             id="agent-hook-settings-title"
-            className="agent-hook-settings-title flex min-h-8 items-center text-sm font-normal text-muted-foreground"
+            className="agent-hook-settings-title settings-section-title"
           >
             Agent 状态集成
-          </h4>
+          </h2>
           <FieldDescription
             id="agent-hook-settings-description"
             className="agent-hook-settings-description"
@@ -100,11 +99,10 @@ export function AgentHookSettings({
             的运行、等待输入、完成或失败状态。安装后请新建终端生效。
           </FieldDescription>
         </div>
-        <div className="agent-hook-detect-control flex min-w-0 flex-col gap-2">
+        <div className="agent-hook-detect-control flex min-w-0 flex-col gap-1.5">
           <Button
             className="agent-hook-detect"
             variant="outline"
-            size="lg"
             disabled={!!busy}
             onClick={() => void detect()}
           >
@@ -116,8 +114,8 @@ export function AgentHookSettings({
           </FieldError>
         </div>
       </div>
-      <Card className="agent-hook-settings-card">
-        {(Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider, index) => {
+      <Card size="sm" className="agent-hook-settings-card gap-0 divide-y divide-border py-0">
+        {(Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) => {
           const status = statuses.find((item) => item.provider === provider)
           const installLabel =
             provider === 'codex'
@@ -128,96 +126,97 @@ export function AgentHookSettings({
                 ? '更新'
                 : '安装'
           const invalidStatus = status?.state === 'error' || status?.state === 'conflict'
+          const badgeVariant =
+            status?.state === 'installed'
+              ? 'success'
+              : invalidStatus
+                ? 'destructive'
+                : status?.state === 'outdated'
+                  ? 'warning'
+                  : 'secondary'
           return (
-            <Fragment key={provider}>
-              {index > 0 && <Separator className="agent-hook-separator" />}
-              <Field
-                className="agent-hook-row flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 min-h-8"
-                aria-labelledby={`agent-hook-${provider}-label`}
-              >
-                <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                  <div className="agent-hook-heading flex flex-wrap items-center gap-2">
-                    <AgentIcon provider={provider} size={18} className="agent-hook-icon" />
-                    <h5
-                      id={`agent-hook-${provider}-label`}
-                      className="agent-hook-name text-sm leading-5 font-medium"
-                    >
-                      {AGENT_PROVIDERS[provider].name}
-                    </h5>
-                    <Badge
-                      className="agent-hook-status"
-                      variant={invalidStatus ? 'destructive' : 'secondary'}
-                    >
-                      {status ? labels[status.state] : '未检测'}
-                    </Badge>
-                  </div>
-                  {status?.state === 'outdated' && (
-                    <p className="agent-hook-status-detail text-xs text-muted-foreground">
-                      {status.detail}
-                    </p>
-                  )}
-                  {status?.state !== 'missing' &&
-                    status?.paths.map((path) => (
-                      <p
-                        key={path}
-                        className="agent-hook-path break-all font-mono select-text text-xs text-muted-foreground"
-                      >
-                        {path}
-                      </p>
-                    ))}
+            <Field
+              key={provider}
+              className="agent-hook-row min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30"
+              aria-labelledby={`agent-hook-${provider}-label`}
+            >
+              <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                <div className="agent-hook-heading flex flex-wrap items-center gap-2">
+                  <AgentIcon provider={provider} size={16} className="agent-hook-icon" />
+                  <h3
+                    id={`agent-hook-${provider}-label`}
+                    className="agent-hook-name text-xs leading-5 font-medium text-foreground"
+                  >
+                    {AGENT_PROVIDERS[provider].name}
+                  </h3>
+                  <Badge className="agent-hook-status" variant={badgeVariant}>
+                    {status ? labels[status.state] : '未检测'}
+                  </Badge>
                 </div>
-                <div className="agent-hook-control flex min-w-0 flex-col gap-2" aria-live="polite">
-                  <div className="agent-hook-actions flex min-h-8 flex-wrap items-center gap-2">
-                    {status?.state !== 'installed' && (
-                      <Button
-                        className="agent-hook-install"
-                        variant="outline"
-                        size="lg"
-                        aria-label={`${installLabel} ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
-                        disabled={
-                          !!busy || (!!status && !['missing', 'outdated'].includes(status.state))
-                        }
-                        onClick={() => void manage(provider, 'install')}
-                      >
-                        {installLabel}
-                      </Button>
-                    )}
-                    {(status?.state === 'installed' || status?.state === 'outdated') && (
-                      <Button
-                        className="agent-hook-uninstall"
-                        variant="destructive"
-                        size="lg"
-                        aria-label={`卸载 ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
-                        disabled={!!busy}
-                        onClick={() => void manage(provider, 'uninstall')}
-                      >
-                        卸载
-                      </Button>
-                    )}
-                  </div>
-                  {invalidStatus && status?.detail && (
+                {status?.state === 'outdated' && (
+                  <p className="agent-hook-status-detail text-xs text-muted-foreground">
+                    {status.detail}
+                  </p>
+                )}
+                {status?.state !== 'missing' &&
+                  status?.paths.map((path) => (
                     <p
-                      className="agent-hook-status-error max-w-60 text-xs text-destructive"
-                      role="alert"
+                      key={path}
+                      className="agent-hook-path break-all font-mono text-xs text-muted-foreground select-text"
                     >
-                      {status?.detail}
+                      {path}
                     </p>
+                  ))}
+              </div>
+              <div className="agent-hook-control flex min-w-0 flex-col gap-1.5" aria-live="polite">
+                <div className="agent-hook-actions flex min-h-7 flex-wrap items-center gap-1.5">
+                  {status?.state !== 'installed' && (
+                    <Button
+                      className="agent-hook-install"
+                      variant="outline"
+                      aria-label={`${installLabel} ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
+                      disabled={
+                        !!busy || (!!status && !['missing', 'outdated'].includes(status.state))
+                      }
+                      onClick={() => void manage(provider, 'install')}
+                    >
+                      {installLabel}
+                    </Button>
                   )}
-                  {feedbackProvider === provider && (notice || error) && (
-                    <div className="agent-hook-feedback max-w-60">
-                      {notice && (
-                        <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>
-                      )}
-                      {error && (
-                        <p className="agent-hook-error text-xs text-destructive" role="alert">
-                          {error}
-                        </p>
-                      )}
-                    </div>
+                  {(status?.state === 'installed' || status?.state === 'outdated') && (
+                    <Button
+                      className="agent-hook-uninstall text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      variant="ghost"
+                      aria-label={`卸载 ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
+                      disabled={!!busy}
+                      onClick={() => void manage(provider, 'uninstall')}
+                    >
+                      卸载
+                    </Button>
                   )}
                 </div>
-              </Field>
-            </Fragment>
+                {invalidStatus && status?.detail && (
+                  <p
+                    className="agent-hook-status-error max-w-60 text-right text-xs text-destructive"
+                    role="alert"
+                  >
+                    {status?.detail}
+                  </p>
+                )}
+                {feedbackProvider === provider && (notice || error) && (
+                  <div className="agent-hook-feedback max-w-60 text-right">
+                    {notice && (
+                      <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>
+                    )}
+                    {error && (
+                      <p className="agent-hook-error text-xs text-destructive" role="alert">
+                        {error}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Field>
           )
         })}
       </Card>

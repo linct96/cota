@@ -24,8 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
-import { Separator } from './ui/separator'
 import { Switch } from './ui/switch'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 const COMPLETION_OPTIONS = [
   { value: 'never', label: '从不' },
@@ -124,19 +124,24 @@ export function NotificationSettings() {
 
   return (
     <section
-      className="notification-settings flex flex-col gap-6"
+      className="notification-settings flex flex-col gap-5"
       aria-labelledby="notification-settings-title"
     >
-      <header className="notification-settings-header flex flex-wrap items-start justify-between gap-3">
-        <div className="notification-settings-heading typeset">
-          <h1 id="notification-settings-title" className="notification-settings-title">
+      <header className="notification-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+        <div className="notification-settings-heading flex flex-col gap-1">
+          <h1
+            id="notification-settings-title"
+            className="notification-settings-title settings-page-title"
+          >
             通知
           </h1>
+          <p className="notification-settings-subtitle text-xs text-muted-foreground">
+            配置 Agent 状态变更与任务完成时的系统提醒方式。
+          </p>
         </div>
         <Button
           className="notification-settings-test-button"
           variant="outline"
-          size="lg"
           disabled={!ready || !enabled || saving || testing}
           aria-busy={testing}
           onClick={() => void sendTestNotification()}
@@ -205,16 +210,16 @@ export function NotificationSettings() {
           </AlertDescription>
         </Alert>
       )}
-      <Card className="notification-settings-card">
+      <Card size="sm" className="notification-settings-card gap-0 divide-y divide-border py-0">
         <div
-          className="notification-settings-enabled-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5"
+          className="notification-settings-enabled-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
           data-disabled={!ready || testing}
           aria-busy={saving}
         >
           <div className="notification-settings-enabled-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
             <span
               id="notification-settings-enabled-label"
-              className="notification-settings-enabled-label text-sm leading-5 font-medium"
+              className="notification-settings-enabled-label text-xs leading-5 font-medium text-foreground"
             >
               启用通知
             </span>
@@ -228,7 +233,7 @@ export function NotificationSettings() {
           <Switch
             id="notification-settings-enabled"
             aria-labelledby="notification-settings-enabled-label"
-            className="notification-settings-enabled-switch my-2"
+            className="notification-settings-enabled-switch"
             checked={enabled}
             disabled={!ready || testing}
             onCheckedChange={(checked) => void savePreferences({ notificationsEnabled: checked })}
@@ -239,16 +244,15 @@ export function NotificationSettings() {
             }
           />
         </div>
-        <Separator className="notification-settings-separator" />
         <div
-          className="notification-settings-completion-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5"
+          className="notification-settings-completion-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-opacity data-[disabled=true]:opacity-50"
           data-disabled={!ready || !enabled || testing}
           aria-busy={saving}
         >
           <div className="notification-settings-completion-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
             <span
               id="notification-settings-completion-label"
-              className="notification-settings-completion-label text-sm leading-5 font-medium"
+              className="notification-settings-completion-label text-xs leading-5 font-medium text-foreground"
             >
               轮次完成通知
             </span>
@@ -259,47 +263,41 @@ export function NotificationSettings() {
               Agent 轮次结束时发送系统通知。「仅在未聚焦」表示对应终端未聚焦时通知。
             </p>
           </div>
-          <Select
-            items={COMPLETION_OPTIONS}
-            value={completionMode}
+          <ToggleGroup
+            id="notification-settings-completion"
+            className="notification-settings-completion-options shrink-0"
+            variant="outline"
+            spacing={0}
+            value={[completionMode]}
             disabled={!ready || !enabled || testing}
-            onValueChange={(value) => {
-              if (value !== null) void savePreferences({ turnCompleteNotification: value })
+            aria-labelledby="notification-settings-completion-label"
+            aria-describedby={`notification-settings-completion-description${error ? ' notification-settings-save-error' : ''}`}
+            onValueChange={([value]) => {
+              if (value === 'never' || value === 'unfocused' || value === 'always') {
+                void savePreferences({ turnCompleteNotification: value })
+              }
             }}
           >
-            <SelectTrigger
-              id="notification-settings-completion"
-              aria-labelledby="notification-settings-completion-label"
-              className="notification-settings-completion-trigger"
-              aria-describedby={`notification-settings-completion-description${error ? ' notification-settings-save-error' : ''}`}
-            >
-              <SelectValue className="notification-settings-completion-value" />
-            </SelectTrigger>
-            <SelectContent className="notification-settings-completion-menu" align="end">
-              <SelectGroup className="notification-settings-completion-options">
-                {COMPLETION_OPTIONS.map((option) => (
-                  <SelectItem
-                    className="notification-settings-completion-option"
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            {COMPLETION_OPTIONS.map((option) => (
+              <ToggleGroupItem
+                className="notification-settings-completion-option"
+                key={option.value}
+                value={option.value}
+              >
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </div>
-        <Separator className="notification-settings-sound-separator" />
         <div
-          className="notification-settings-sound-row flex min-h-8 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5"
+          className="notification-settings-sound-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-opacity data-[disabled=true]:opacity-50"
           data-disabled={!ready || !enabled || testing}
           aria-busy={saving}
         >
           <div className="notification-settings-sound-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
             <span
               id="notification-settings-sound-label"
-              className="notification-settings-sound-label text-sm leading-5 font-medium"
+              className="notification-settings-sound-label text-xs leading-5 font-medium text-foreground"
             >
               提示音
             </span>
@@ -307,15 +305,18 @@ export function NotificationSettings() {
               id="notification-settings-sound-description"
               className="notification-settings-sound-description text-xs text-muted-foreground"
             >
-              支持 MP3、WAV、OGG、M4A 格式，文件不超过 5 MB。可发送测试通知试听；静音仅关闭提示音。
+              支持 MP3、WAV、OGG、M4A 格式，不超过 5 MB；静音仅关闭提示音。
               {typeof sound !== 'string' && (
-                <span className="notification-settings-sound-file mt-1 block break-all">
-                  当前文件：{sound.path}
-                </span>
+                <code
+                  className="notification-settings-sound-file mt-1 block max-w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
+                  title={sound.path}
+                >
+                  {sound.path}
+                </code>
               )}
             </p>
           </div>
-          <div className="notification-settings-sound-control flex min-h-8 flex-wrap items-center gap-2">
+          <div className="notification-settings-sound-control flex min-h-7 flex-wrap items-center gap-2">
             <Select
               items={NOTIFICATION_SOUND_OPTIONS}
               value={typeof sound === 'string' ? sound : 'custom'}
