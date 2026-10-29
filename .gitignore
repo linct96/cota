@@ -1,6 +1,10 @@
 .DS_Store
 release/
 
+# Impeccable local state
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+
 # Logs
 logs
 *.log
