@@ -6,6 +6,20 @@ import { cn } from '@/lib/utils'
 const DropdownMenu = DropdownMenuPrimitive.Root
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 const DropdownMenuGroup = DropdownMenuPrimitive.Group
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+
+function DropdownMenuLabel({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.GroupLabel>) {
+  return (
+    <DropdownMenuPrimitive.GroupLabel
+      data-slot="dropdown-menu-label"
+      className={cn('dropdown-menu-label px-2 py-1.5 text-xs text-muted-foreground', className)}
+      {...props}
+    />
+  )
+}
 
 function DropdownMenuContent({
   className,
@@ -89,6 +103,30 @@ function DropdownMenuCheckboxItem({
   )
 }
 
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        'dropdown-menu-radio-item relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-xs outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+        className,
+      )}
+      {...props}
+    >
+      <span className="dropdown-menu-radio-indicator pointer-events-none absolute right-2 flex items-center justify-center">
+        <DropdownMenuPrimitive.RadioItemIndicator className="dropdown-menu-radio-check">
+          <Check className="dropdown-menu-radio-check-icon" />
+        </DropdownMenuPrimitive.RadioItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  )
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -109,5 +147,8 @@ export {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 }
