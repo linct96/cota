@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-29T17:09:00+08:00",
+  "generatedAt": "2026-10-29T17:34:00+08:00",
   "title": "Design System: Cota",
   "extensions": {
     "colorMeta": {
       "background": {
         "role": "neutral",
-        "displayName": "background (Mira Canvas)",
+        "displayName": "background（主画布白）",
         "canonical": "oklch(1 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -21,7 +21,7 @@
       },
       "foreground": {
         "role": "neutral",
-        "displayName": "foreground (Mira Ink)",
+        "displayName": "foreground（主文本深黑）",
         "canonical": "oklch(0.145 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -36,7 +36,7 @@
       },
       "primary": {
         "role": "primary",
-        "displayName": "primary (Mira Primary)",
+        "displayName": "primary（主操作碳黑）",
         "canonical": "oklch(0.205 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -51,7 +51,7 @@
       },
       "primary-foreground": {
         "role": "neutral",
-        "displayName": "primary-foreground",
+        "displayName": "primary-foreground（主按钮反白字）",
         "canonical": "oklch(0.985 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -66,7 +66,7 @@
       },
       "secondary": {
         "role": "neutral",
-        "displayName": "secondary (Mira Secondary)",
+        "displayName": "secondary（次要控件浅灰）",
         "canonical": "oklch(0.97 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -81,7 +81,7 @@
       },
       "secondary-foreground": {
         "role": "neutral",
-        "displayName": "secondary-foreground",
+        "displayName": "secondary-foreground（次要控件前景色）",
         "canonical": "oklch(0.205 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -96,7 +96,7 @@
       },
       "muted": {
         "role": "neutral",
-        "displayName": "muted (Outer Shell)",
+        "displayName": "muted（外框底座浅灰）",
         "canonical": "oklch(0.97 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -111,7 +111,7 @@
       },
       "muted-foreground": {
         "role": "neutral",
-        "displayName": "muted-foreground",
+        "displayName": "muted-foreground（辅助说明灰）",
         "canonical": "oklch(0.556 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -126,7 +126,7 @@
       },
       "app-muted-foreground": {
         "role": "neutral",
-        "displayName": "app-muted-foreground (App Extension)",
+        "displayName": "app-muted-foreground（图标与次级前景）",
         "canonical": "oklch(0.488 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -141,7 +141,7 @@
       },
       "text-normal": {
         "role": "neutral",
-        "displayName": "text-normal (App Extension)",
+        "displayName": "text-normal（常规列表与路径色）",
         "canonical": "oklch(0.371 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -156,7 +156,7 @@
       },
       "text-subtle": {
         "role": "neutral",
-        "displayName": "text-subtle (App Extension)",
+        "displayName": "text-subtle（弱化与忽略条目色）",
         "canonical": "oklch(0.535 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -171,7 +171,7 @@
       },
       "accent": {
         "role": "neutral",
-        "displayName": "accent (Row Highlight)",
+        "displayName": "accent（列表选中高亮）",
         "canonical": "oklch(0.97 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -186,7 +186,7 @@
       },
       "accent-foreground": {
         "role": "neutral",
-        "displayName": "accent-foreground",
+        "displayName": "accent-foreground（选中项前景色）",
         "canonical": "oklch(0.205 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -201,7 +201,7 @@
       },
       "border": {
         "role": "neutral",
-        "displayName": "border (1px Hairline)",
+        "displayName": "border（1px 结构分割线）",
         "canonical": "oklch(0.922 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -216,7 +216,7 @@
       },
       "input": {
         "role": "neutral",
-        "displayName": "input (Field Stroke)",
+        "displayName": "input（表单边框色）",
         "canonical": "oklch(0.922 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -231,7 +231,7 @@
       },
       "ring": {
         "role": "neutral",
-        "displayName": "ring (Focus Ring)",
+        "displayName": "ring（键盘焦点环）",
         "canonical": "oklch(0.708 0 0)",
         "tonalRamp": [
           "oklch(0.205 0 0)",
@@ -246,7 +246,7 @@
       },
       "sidebar": {
         "role": "neutral",
-        "displayName": "sidebar",
+        "displayName": "sidebar（侧栏表面）",
         "canonical": "oklch(0.985 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -261,7 +261,7 @@
       },
       "sidebar-foreground": {
         "role": "neutral",
-        "displayName": "sidebar-foreground",
+        "displayName": "sidebar-foreground（侧栏标题色）",
         "canonical": "oklch(0.145 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -276,7 +276,7 @@
       },
       "sidebar-accent": {
         "role": "neutral",
-        "displayName": "sidebar-accent",
+        "displayName": "sidebar-accent（侧栏选中高亮）",
         "canonical": "oklch(0.97 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -291,7 +291,7 @@
       },
       "sidebar-accent-foreground": {
         "role": "neutral",
-        "displayName": "sidebar-accent-foreground",
+        "displayName": "sidebar-accent-foreground（侧栏选中前景色）",
         "canonical": "oklch(0.205 0 0)",
         "tonalRamp": [
           "oklch(0.145 0 0)",
@@ -306,7 +306,7 @@
       },
       "destructive": {
         "role": "secondary",
-        "displayName": "destructive",
+        "displayName": "destructive（错误与危险操作红）",
         "canonical": "oklch(0.577 0.245 27.325)",
         "tonalRamp": [
           "oklch(0.25 0.1 27)",
@@ -321,7 +321,7 @@
       },
       "warning": {
         "role": "secondary",
-        "displayName": "warning",
+        "displayName": "warning（警告琥珀色）",
         "canonical": "#a16207",
         "tonalRamp": [
           "oklch(0.28 0.08 80)",
@@ -336,7 +336,7 @@
       },
       "success": {
         "role": "secondary",
-        "displayName": "success",
+        "displayName": "success（成功与新增行翠绿）",
         "canonical": "#166534",
         "tonalRamp": [
           "oklch(0.25 0.08 150)",
@@ -351,7 +351,7 @@
       },
       "dot-status-working": {
         "role": "secondary",
-        "displayName": "dot-status-working (App Extension)",
+        "displayName": "dot-status-working（Agent 运行脉冲天蓝）",
         "canonical": "#38bdf8",
         "tonalRamp": [
           "oklch(0.25 0.08 230)",
@@ -366,7 +366,7 @@
       },
       "dot-status-attention": {
         "role": "secondary",
-        "displayName": "dot-status-attention (App Extension)",
+        "displayName": "dot-status-attention（Agent 待确认琥珀）",
         "canonical": "#ca8a04",
         "tonalRamp": [
           "oklch(0.28 0.08 80)",
@@ -381,7 +381,7 @@
       },
       "dot-status-completed": {
         "role": "secondary",
-        "displayName": "dot-status-completed (App Extension)",
+        "displayName": "dot-status-completed（Agent 完成翠绿）",
         "canonical": "#299f51",
         "tonalRamp": [
           "oklch(0.25 0.08 150)",
@@ -397,57 +397,57 @@
     },
     "typographyMeta": {
       "root": {
-        "displayName": "Root Base",
-        "purpose": "16px document root baseline for rem calculations."
+        "displayName": "Root Base（根字号基准）",
+        "purpose": "16px 根文档基准字号，用于 rem 换算。"
       },
       "headline": {
-        "displayName": "Headline",
-        "purpose": "Section headers inside settings views and typeset documentation blocks."
+        "displayName": "Headline（分节标题）",
+        "purpose": "设置详情页分节标题及 .typeset 文档标题。"
       },
       "title": {
-        "displayName": "Title",
-        "purpose": "Sidebar headers, dialog titles, card titles, and empty state headings."
+        "displayName": "Title（面板与弹窗标题）",
+        "purpose": "侧栏头部、模态框标题、卡片标题与空状态主标题。"
       },
       "body": {
-        "displayName": "Body",
-        "purpose": "Compact 12px operational copy, file tree rows, worktree paths, and descriptions."
+        "displayName": "Body（12px 紧凑正文）",
+        "purpose": "标准 12px 界面正文、文件树条目、工作树路径与说明文案。"
       },
       "label": {
-        "displayName": "Label",
-        "purpose": "Buttons, workspace tabs, form labels, and context menu items."
+        "displayName": "Label（控件与标签文字）",
+        "purpose": "按钮、工作区标签、表单字段标签与菜单项。"
       },
       "caption": {
-        "displayName": "Caption",
-        "purpose": "10px status badges, tabular Git diff counters, and keyboard shortcut hints."
+        "displayName": "Caption（10px 徽章与统计数字）",
+        "purpose": "10px 状态徽章、等宽 Git Diff 行统计与快捷键提示。"
       }
     },
     "shadows": [
       {
         "name": "control-lift-xs",
         "value": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
-        "purpose": "Subtle structural lift on active segmented tabs and active agent quick-jump pills."
+        "purpose": "用于激活态分段标签与激活态 Agent 快捷定位按钮的微结构抬升。"
       },
       {
         "name": "card-hairline-ring",
         "value": "0 0 0 1px color-mix(in oklab, var(--foreground, oklch(0.145 0 0)) 10%, transparent)",
-        "purpose": "1px perimeter ring around base-mira Card components in place of ambient drop shadows."
+        "purpose": "base-mira Card 组件的 1px 10% 前景色细线外环，替代弥散投影。"
       }
     ],
     "motion": [
       {
         "name": "row-transition",
         "value": "150ms cubic-bezier(0.4, 0, 0.2, 1)",
-        "purpose": "Background and color transitions on project folder rows, Git file rows, and scrollbars."
+        "purpose": "项目文件夹行、Git 变更行与滚动条滑块的背景/颜色过渡。"
       },
       {
         "name": "resizable-indicator",
         "value": "120ms ease-out",
-        "purpose": "Resize handle reveal and file-tree chevron 90deg rotation."
+        "purpose": "拖拽分割线显隐与文件树折叠箭头 90 度旋转过渡。"
       },
       {
         "name": "dot-status-ripple",
         "value": "1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite",
-        "purpose": "Dual-ring staggered pulse on running CLI agent status dots."
+        "purpose": "运行中 CLI Agent 状态点的双层错峰脉冲波纹动效。"
       }
     ],
     "breakpoints": [
@@ -471,131 +471,131 @@
   },
   "components": [
     {
-      "name": "Primary Button",
+      "name": "Primary Button（主按钮）",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "Compact 28px high-contrast action button for dialog confirmations and primary submits.",
+      "description": "28px 高度的高对比度主操作按钮，用于弹窗确认与表单提交。",
       "html": "<button class=\"ds-btn-primary\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14\"/><path d=\"M12 5v14\"/></svg><span>新建工作区</span></button>",
       "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 8px; border-radius: 8px; border: 1px solid transparent; background: var(--primary, oklch(0.205 0 0)); color: var(--primary-foreground, oklch(0.985 0 0)); font-family: 'Inter Variable', sans-serif; font-size: 12px; font-weight: 500; line-height: 1.5; cursor: pointer; transition: background-color 150ms ease, opacity 150ms ease, transform 100ms ease; } .ds-btn-primary:hover { opacity: 0.85; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring, oklch(0.708 0 0)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring, oklch(0.708 0 0)) 30%, transparent); }"
     },
     {
-      "name": "Secondary & Outline Button",
+      "name": "Secondary & Outline Button（次要与描边按钮）",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "Recessed neutral button and hairline outline button for secondary toolbar and empty-state actions.",
+      "description": "用于顶栏工具栏与空状态引导的浅灰次要按钮与 1px 描边按钮。",
       "html": "<div class=\"ds-btn-row\"><button class=\"ds-btn-secondary\">收起面板</button><button class=\"ds-btn-outline\">打开项目 (⌘O)</button></div>",
       "css": ".ds-btn-row { display: inline-flex; gap: 8px; align-items: center; } .ds-btn-secondary, .ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 28px; padding: 0 8px; border-radius: 8px; font-family: 'Inter Variable', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 150ms ease, color 150ms ease, transform 100ms ease; } .ds-btn-secondary { border: 1px solid transparent; background: var(--secondary, oklch(0.97 0 0)); color: var(--secondary-foreground, oklch(0.205 0 0)); } .ds-btn-secondary:hover { background: color-mix(in oklch, var(--secondary, oklch(0.97 0 0)), var(--foreground, oklch(0.145 0 0)) 5%); } .ds-btn-outline { border: 1px solid var(--border, oklch(0.922 0 0)); background: transparent; color: var(--foreground, oklch(0.145 0 0)); } .ds-btn-outline:hover { background: color-mix(in oklab, var(--input, oklch(0.922 0 0)) 50%, transparent); } .ds-btn-secondary:active, .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-secondary:focus-visible, .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring, oklch(0.708 0 0)) 30%, transparent); }"
     },
     {
-      "name": "Navigation & Ghost Icon Button",
+      "name": "Navigation & Ghost Icon Button（导航与图标按钮）",
       "kind": "nav",
       "refersTo": "button-ghost",
-      "description": "48px rail navigation button and 28px titlebar icon button with subtle active fill.",
+      "description": "48px 侧导栏与 44px 顶栏专用的透明底导航按钮，支持悬停与激活态高亮。",
       "html": "<div class=\"ds-nav-demo\"><button class=\"ds-nav-btn\" data-active=\"true\" aria-label=\"首页\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 256 256\" fill=\"currentColor\"><path d=\"M224,120v96a8,8,0,0,1-8,8H160a8,8,0,0,1-8-8V164a4,4,0,0,0-4-4H108a4,4,0,0,0-4,4v52a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V120a16,16,0,0,1,4.69-11.31l80-80a16,16,0,0,1,22.62,0l80,80A16,16,0,0,1,224,120Z\"/></svg></button><button class=\"ds-nav-btn\" aria-label=\"设置\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"/></svg></button></div>",
       "css": ".ds-nav-demo { display: inline-flex; gap: 6px; padding: 6px; border-radius: 10px; background: var(--muted, oklch(0.97 0 0)); } .ds-nav-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--app-muted-foreground, oklch(0.488 0 0)); cursor: pointer; transition: background-color 150ms ease, color 150ms ease; } .ds-nav-btn:hover { background: color-mix(in oklch, var(--muted, oklch(0.97 0 0)), var(--foreground, oklch(0.145 0 0)) 5%); color: var(--foreground, oklch(0.145 0 0)); } .ds-nav-btn[data-active='true'] { background: color-mix(in oklab, var(--foreground, oklch(0.145 0 0)) 6%, transparent); color: var(--foreground, oklch(0.145 0 0)); } .ds-nav-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring, oklch(0.708 0 0)) 30%, transparent); }"
     },
     {
-      "name": "Compact Text Input",
+      "name": "Compact Text Input（紧凑输入框）",
       "kind": "input",
       "refersTo": "input-default",
-      "description": "28px height text input with subtle input/20 background fill and focus ring.",
+      "description": "28px 高度紧凑输入框，采用 input/20 浅底填充与 2px 焦点光环。",
       "html": "<input class=\"ds-input\" type=\"text\" value=\"feat/worktree-init\" aria-label=\"工作区名称\" />",
       "css": ".ds-input { height: 28px; width: 220px; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--input, oklch(0.922 0 0)); background: color-mix(in oklab, var(--input, oklch(0.922 0 0)) 20%, transparent); color: var(--foreground, oklch(0.145 0 0)); font-family: 'Inter Variable', sans-serif; font-size: 12px; line-height: 1.5; outline: none; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input:focus-visible { border-color: var(--ring, oklch(0.708 0 0)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring, oklch(0.708 0 0)) 30%, transparent); }"
     },
     {
-      "name": "Status Badges",
+      "name": "Status Badges（状态胶囊徽章）",
       "kind": "chip",
       "refersTo": "badge-pill",
-      "description": "20px pill badges for worktree lock/error telemetry and semantic status tags.",
+      "description": "20px 胶囊徽章，用于展示 Worktree 锁定/错误状态及账号标签。",
       "html": "<div class=\"ds-badge-group\"><span class=\"ds-badge ds-badge-secondary\">Worktree · 已锁定</span><span class=\"ds-badge ds-badge-success\">已就绪</span><span class=\"ds-badge ds-badge-warning\">待确认</span><span class=\"ds-badge ds-badge-destructive\">冲突</span></div>",
       "css": ".ds-badge-group { display: inline-flex; gap: 6px; align-items: center; } .ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 9999px; font-family: 'Inter Variable', sans-serif; font-size: 10px; font-weight: 500; white-space: nowrap; } .ds-badge-secondary { background: var(--secondary, oklch(0.97 0 0)); color: var(--secondary-foreground, oklch(0.205 0 0)); } .ds-badge-success { background: color-mix(in oklab, var(--success, #166534) 12%, transparent); color: var(--success, #166534); } .ds-badge-warning { background: color-mix(in oklab, var(--warning, #a16207) 12%, transparent); color: var(--warning, #a16207); } .ds-badge-destructive { background: color-mix(in oklab, var(--destructive, oklch(0.577 0.245 27.325)) 12%, transparent); color: var(--destructive, oklch(0.577 0.245 27.325)); }"
     },
     {
-      "name": "Surface Card",
+      "name": "Surface Card（扁平细环卡片）",
       "kind": "card",
       "refersTo": "card-surface",
-      "description": "Flat canvas card bounded by a 1px 10%-foreground ring instead of a drop shadow.",
+      "description": "采用 1px 10% 前景色细环边界的扁平画布卡片，无弥散投影。",
       "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">终端渲染加速</div><div class=\"ds-card-desc\">优先启用 WebGL 渲染器以保证高吞吐日志滚动帧率。</div></div>",
       "css": ".ds-card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 10px; background: var(--background, oklch(1 0 0)); color: var(--foreground, oklch(0.145 0 0)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--foreground, oklch(0.145 0 0)) 10%, transparent); font-family: 'Inter Variable', sans-serif; } .ds-card-title { font-size: 13px; font-weight: 600; line-height: 1.4; } .ds-card-desc { font-size: 12px; color: var(--muted-foreground, oklch(0.556 0 0)); line-height: 1.5; }"
     },
     {
-      "name": "DotStatus & Workspace Row (Signature)",
+      "name": "DotStatus & Workspace Row（标志性状态点与工作区行）",
       "kind": "custom",
       "refersTo": "button-ghost",
-      "description": "Project workspace row with live pulsing sky-blue DotStatus, branch subtitle, and tabular diff stats.",
+      "description": "带天蓝色脉冲波纹 DotStatus、分支副标题与等宽 Diff 统计的项目工作区行。",
       "html": "<div class=\"ds-ws-row\" tabindex=\"0\"><span class=\"ds-dot-running\"></span><div class=\"ds-ws-main\"><span class=\"ds-ws-name\">cota-main</span><span class=\"ds-ws-branch\">feat/impeccable-design</span></div><span class=\"ds-ws-stats\"><span class=\"ds-stat-add\">+42</span><span class=\"ds-stat-del\">-8</span></span></div>",
       "css": ".ds-ws-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; background: var(--sidebar-accent, oklch(0.97 0 0)); color: var(--sidebar-accent-foreground, oklch(0.205 0 0)); font-family: 'Inter Variable', sans-serif; cursor: pointer; transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1); } .ds-ws-row:hover { background: color-mix(in oklch, var(--sidebar-accent, oklch(0.97 0 0)), var(--foreground, oklch(0.145 0 0)) 4%); } .ds-ws-row:focus-visible { outline: 2px solid var(--ring, oklch(0.708 0 0)); outline-offset: -2px; } .ds-dot-running { position: relative; width: 6px; height: 6px; border-radius: 50%; background: var(--dot-status-working, #38bdf8); justify-self: center; } .ds-dot-running::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ds-ripple 1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite; } @keyframes ds-ripple { 0% { transform: scale(1); opacity: 0.75; } 100% { transform: scale(2.2); opacity: 0; } } .ds-ws-main { display: flex; flex-direction: column; min-width: 0; } .ds-ws-name { font-size: 12px; font-weight: 500; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-ws-branch { font-size: 11px; color: var(--app-muted-foreground, oklch(0.488 0 0)); line-height: 1.3; } .ds-ws-stats { display: inline-flex; gap: 4px; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 500; } .ds-stat-add { color: var(--source-control-stat-added, #166534); } .ds-stat-del { color: var(--destructive, oklch(0.577 0.245 27.325)); }"
     }
   ],
   "narrative": {
     "northStar": "The Precision Workbench",
-    "overview": "Cota is engineered as an instrument-grade desktop workbench built directly on the shadcn/ui (base-mira style + neutral base color) token architecture. The application chrome recedes into an achromatic structural frame, allowing live PTY terminals, Git diffs, and coding-agent telemetry to command full visual priority. Every surface is calibrated for multi-hour engineering focus: zero-chroma OKLCH grayscale steps establish spatial hierarchy, while compact 28px (h-7) interactive rows and crisp 1px hairlines maximize information density without visual clutter.\n\nRather than relying on decorative gradients, glowing AI borders, or heavy frosted-glass blurs, Cota treats color and motion as scarce operational signals. When a pixel carries chroma or animation—such as a pulsing sky-blue agent indicator (--dot-status-working), an amber input-required dot (--dot-status-attention), or a green/red diff stat—it communicates a concrete machine state that demands developer awareness.",
+    "overview": "Cota 基于 shadcn/ui（base-mira 风格 + neutral 中性灰阶）Token 体系构建，定位为仪器级精度的桌面开发工作台。应用外壳主动退居为无色相的结构底座，将视觉焦点完全让渡给实时 PTY 终端、Git Diff 审阅视图与 Coding Agent 状态信号。每一处界面均针对长达数小时的高强度编码场景调校：通过零饱和度 OKLCH 灰阶明度差建立空间层级，并以紧凑的 28px（h-7）交互行高与利落的 1px 分割线在有限视口内实现高信息密度与低视觉噪点。\n\nCota 明确拒绝霓虹渐变、AI 发光边框、大面积毛玻璃弥散阴影以及无功能意义的装饰色块。色彩与动效在系统中被视作稀缺的机器状态信号——当界面上出现高饱和色彩或脉冲动画（如天蓝色的 Agent 运行波纹 --dot-status-working、琥珀色的待确认圆点 --dot-status-attention、或绿/红 Diff 行统计）时，必然对应着需要开发者感知或介入的真实运行状态。",
     "keyCharacteristics": [
-      "Built on shadcn/ui (style: \"base-mira\", baseColor: \"neutral\") with 1:1 CSS custom property parity in src/renderer/src/styles.css.",
-      "Frame-in-frame desktop shell with a recessed outer frame (bg-muted: oklch(0.97 0 0) light / oklch(0.269 0 0) dark) and an inset top-left rounded canvas (bg-background, 18px radius).",
-      "Zero-chroma OKLCH neutral foundation (oklch(L 0 0)) paired with domain-prefixed semantic status signals (--dot-status-*, --source-control-*, --file-icon-*).",
-      "Instrument-grade compact density (28px standard control and tree-row height, 12px primary UI copy, tabular-nums numeric alignment).",
-      "Progressive disclosure of secondary actions on hover or keyboard focus and focus-aware split-pane dimming (0.8 opacity on unfocused terminal panes)."
+      "基于 shadcn/ui（style: \"base-mira\", baseColor: \"neutral\"），在 src/renderer/src/styles.css 中保持 1:1 原生 CSS 变量命名对齐。",
+      "采用“外框套内嵌画布（Frame-in-Frame）”桌面壳体结构：沉降式外框底座（bg-muted：亮色 oklch(0.97 0 0) / 暗色 oklch(0.269 0 0)）包裹左上大圆角（18px）主画布（bg-background）。",
+      "零色相 OKLCH 中性灰阶基底（oklch(L 0 0)），配合带业务域前缀的语义状态色（--dot-status-*、--source-control-*、--file-icon-*）。",
+      "仪器级紧凑信息密度：标准按钮、输入框与树列表行高统一为 28px，核心界面字号 12px，所有动态数字强制启用 tabular-nums 等宽对齐。",
+      "悬停/聚焦渐进式披露次级操作按钮，并对非聚焦分屏终端施加 0.8 透明度降噪（--terminal-pane-inactive-content-opacity）。"
     ],
     "rules": [
       {
         "name": "The Mira Preset Integrity Rule",
-        "body": "Never repurpose or alter the semantic role of canonical base-mira tokens (background, foreground, primary, secondary, muted, accent, destructive, border, input, ring, sidebar-*). Keep custom domain tokens in the dedicated app-specific block of src/renderer/src/styles.css.",
+        "body": "严禁篡改或重命名 base-mira 原生语义变量（background、foreground、primary、secondary、muted、accent、destructive、border、input、ring、sidebar-*）；当原生变量已覆盖对应语义时，禁止另造同义别名。",
         "section": "colors"
       },
       {
         "name": "The Scoped Token Naming Rule",
-        "body": "New custom CSS variables must follow <domain>-<element>-<role/state> in kebab-case—such as --dot-status-*, --source-control-*, --terminal-*, --file-icon-*, or --window-*—and be registered in @theme inline as --color-<name>: var(--<name>) when needed as Tailwind utility classes.",
+        "body": "所有新增业务自定义 CSS 变量必须遵循 <domain>-<element>-<role/state>（kebab-case）命名规范——如 --dot-status-*、--source-control-*、--terminal-*、--file-icon-*、--window-*——统一放置在 src/renderer/src/styles.css 的业务扩展区块中，并在需要 Tailwind 工具类时注册到 @theme inline。",
         "section": "colors"
       },
       {
         "name": "The Dynamic Mixture Rule",
-        "body": "Hover and active surface states derive from color-mix(in oklab/oklch, ...) against var(--foreground) or var(--input) (e.g., --muted-hover, --accent-hover, --background-hover, --terminal-tab-hover) rather than hardcoded hex steps, ensuring automatic adaptation across light, dark, and custom-tinted themes.",
+        "body": "悬停与叠加表面统一通过 color-mix(in oklab/oklch, ...) 基于 var(--foreground) 或 var(--input) 动态混合生成（如 --muted-hover、--accent-hover、--background-hover、--terminal-tab-hover），避免硬编码固定色阶，确保亮色、暗色及用户自定义主题下对比度自动适配。",
         "section": "colors"
       },
       {
         "name": "The Signal-Only Chroma Rule",
-        "body": "Saturated colors are strictly reserved for operational telemetry: live agent states (--dot-status-*), Git diff additions/deletions (--source-control-*), validation alerts (--destructive, --warning, --success), and file-extension icons (--file-icon-*).",
+        "body": "高饱和色彩仅限用于运行态信号：Agent 状态点（--dot-status-*）、Git Diff 增删统计（--source-control-*）、校验告警（--destructive、--warning、--success）及文件类型图标（--file-icon-*）。",
         "section": "colors"
       },
       {
         "name": "The Compact Scale Rule",
-        "body": "Following shadcn/ui base-mira conventions, primary operational controls, tabs, and tree items default to 12px (text-xs/relaxed) rather than web-marketing 16px, preserving vertical room for terminal scrollback and file trees.",
+        "body": "遵循 shadcn/ui base-mira 桌面规范，高频操作控件、标签与树节点默认采用 12px（text-xs/relaxed），为终端回滚缓冲区与文件树保留最大垂直空间。",
         "section": "typography"
       },
       {
         "name": "The Tabular Telemetry Rule",
-        "body": "All numeric indicators—Git +add / -del counts, port numbers, and quota metrics—must apply font-variant-numeric: tabular-nums so columns never jitter during live updates.",
+        "body": "所有动态数值（Git +add / -del 统计、监听端口号、PID、服务计数、扫描时间、配额百分比）必须声明 font-variant-numeric: tabular-nums，杜绝实时刷新时产生水平抖动。",
         "section": "typography"
       },
       {
         "name": "The Bidirectional Path Rule",
-        "body": "File names, relative paths, and branch refs must apply unicode-bidi: plaintext and truncate to prevent mixed CJK/ASCII/symbol path strings from corrupting layout order.",
+        "body": "所有文件名、相对路径、工作区名与分支名必须设置 unicode-bidi: plaintext 与 truncate，防止中英文、斜杠与特殊符号混排时发生截断顺序错乱。",
         "section": "typography"
       },
       {
         "name": "The Flat-At-Rest Rule",
-        "body": "Structural panels, cards, and list rows cast zero drop shadow at rest; spatial separation is achieved strictly via oklch surface contrast and 1px border-border lines.",
+        "body": "面板、卡片与列表行在静息态下一律保持零阴影（Flat at rest），空间边界完全由 oklch 背景明度差与 1px border-border 界定。",
         "section": "elevation"
       },
       {
         "name": "The Invisible Handle Rule",
-        "body": "Panel resize handles (.ui-resizable-handle) are 1px wide and transparent at rest with an 8px hit target, illuminating into a 2px --panel-separator-hover (var(--accent-hover)) or --panel-separator-active (var(--ring)) line only during pointer hover, drag, or keyboard focus.",
+        "body": "面板拖拽分割线（.ui-resizable-handle）在静息态下透明隐形（拥有 8px 热区），仅在指针悬停、拖拽或键盘聚焦时点亮为 2px 的 --panel-separator-hover（var(--accent-hover)）或 --panel-separator-active（var(--ring)）指示线。",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do use canonical shadcn/ui base-mira tokens (bg-background, bg-muted, text-foreground, text-muted-foreground, border-border, bg-sidebar-accent) for all standard surfaces and controls.",
-      "Do name any new custom CSS token in src/renderer/src/styles.css using <domain>-<element>-<state/role> (e.g., --dot-status-*, --source-control-*, --terminal-*, --file-icon-*), place it under the app-specific comment block, and expose it in @theme inline if utility classes are needed.",
-      "Do reuse shadcn/ui and @base-ui/react primitives (Button, FieldGroup, Field, Dialog, Tabs, Collapsible) and assign semantic, module-descriptive className hooks (e.g., project-folder-row, source-control-file-actions).",
-      "Do keep tree rows and file lists at 28px height with content-visibility: auto and hide row-level action buttons until :hover or :focus-within.",
-      "Do cancel Electron titlebar drag behavior (-webkit-app-region: no-drag) on all interactive controls, open dropdown/context menus, and portaled dialog overlays."
+      "Do 优先使用 shadcn/ui base-mira 原生语义变量（bg-background、bg-muted、text-foreground、text-muted-foreground、border-border、bg-sidebar-accent）构建所有常规界面与控件。",
+      "Do 在 src/renderer/src/styles.css 中新增业务自定义 Token 时，严格遵循 <domain>-<element>-<state/role> 命名（如 --dot-status-*、--source-control-*、--terminal-*、--file-icon-*），并按需在 @theme inline 中映射。",
+      "Do 优先复用 shadcn/ui 与 @base-ui/react 组件（Button、FieldGroup、Field、Dialog、Tabs、Collapsible、Empty），并为 JSX 元素赋予语义清晰的模块级 className（如 project-folder-row、workspace-toolbar-actions）。",
+      "Do 保持文件树与变更列表行高为 28px 且开启 content-visibility: auto，将行内次级操作按钮设为默认隐藏、仅在 :hover 或 :focus-within 时显露。",
+      "Do 在顶栏交互控件、展开的下拉/右键菜单以及 Portal 弹窗遮罩上显式声明 -webkit-app-region: no-drag，避免 Electron 拖拽区吞噬点击事件。"
     ],
     "donts": [
-      "Don't introduce parallel token aliases (such as surface-canvas or recessed-shell) in component classes when a canonical base-mira token (background, muted, secondary) already serves that role.",
-      "Don't introduce decorative gradients, neon AI glows, glassmorphism (backdrop-filter: blur), or multi-layered ambient drop shadows onto workspace panels or cards.",
-      "Don't hardcode hex or Tailwind palette classes (such as bg-slate-100 or text-zinc-500) in component JSX; always bind to semantic tokens (bg-muted, text-app-muted-foreground, text-text-normal).",
-      "Don't unmount the TerminalWorkspace DOM tree when toggling file previews, Git diffs, or secondary pages (/settings, /cortana); toggle visibility via CSS (hidden) to preserve live xterm buffers and WebGL contexts."
+      "Don't 在已有 base-mira 原生变量（如 background、muted、secondary）可满足语义时，重复发明同义变量别名。",
+      "Don't 在工作区面板或卡片上引入装饰性渐变、霓虹发光边框、毛玻璃模糊（backdrop-filter: blur）或多层弥散阴影。",
+      "Don't 在组件 JSX 中硬编码 Hex 色值或 Tailwind 默认色板类（如 bg-slate-100、text-zinc-500），必须绑定语义化 Token。",
+      "Don't 在切换文件预览、Git Diff 或二级路由（/settings、/cortana）时卸载 TerminalWorkspace DOM 树，必须使用 CSS hidden 切换可见性以保留终端缓冲区与 WebGL 上下文。"
     ]
   }
 }
