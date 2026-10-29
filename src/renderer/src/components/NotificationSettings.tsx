@@ -254,13 +254,14 @@ export function NotificationSettings() {
               id="notification-settings-completion-label"
               className="notification-settings-completion-label text-xs leading-5 font-medium text-foreground"
             >
-              轮次完成通知
+              对话轮次完成通知
             </span>
             <p
               id="notification-settings-completion-description"
               className="notification-settings-completion-description text-xs text-muted-foreground"
             >
-              Agent 轮次结束时发送系统通知。「仅在未聚焦」表示对应终端未聚焦时通知。
+              Agent
+              轮次结束时发送系统通知。「仅在未聚焦」表示对应终端处于未聚焦状态下才会发送系统通知。
             </p>
           </div>
           <ToggleGroup
