@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => {
     config: {
       preferences: {
         notificationsEnabled: true,
+        confirmCloseRunningTerminal: true,
         notificationSound: 'system' as NotificationSound,
         turnCompleteNotification: 'unfocused' as TurnCompleteNotification,
         scrollback: 5000,
@@ -350,6 +351,7 @@ beforeEach(() => {
     }),
   )
   mocks.config.recentProjects = []
+  mocks.config.preferences.confirmCloseRunningTerminal = true
   mocks.remember.mockImplementation(async (path: string) => {
     mocks.config.recentProjects.push(path)
   })
@@ -1481,6 +1483,7 @@ describe('renderer confirmation IPC', () => {
   })
 
   it('uses renderer quit confirmation, guards duplicate exits and cancels safely if the renderer disappears', async () => {
+    mocks.config.preferences.confirmCloseRunningTerminal = false
     quit()
     const request = await prompt()
     expect(request).toMatchObject({ title: '退出 Cota？', confirmLabel: '结束终端并退出' })
@@ -1599,6 +1602,26 @@ describe('renderer confirmation IPC', () => {
     mocks.needsCloseConfirmation.mockResolvedValue(false)
     expect(await close()).toEqual({ ok: true, value: true })
     expect(mocks.contents.send).not.toHaveBeenCalled()
+
+    mocks.config.preferences.confirmCloseRunningTerminal = false
+    mocks.needsCloseConfirmation.mockClear().mockResolvedValue(true)
+    mocks.close.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)))
+    const withoutConfirmation = close()
+    try {
+      await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledTimes(3))
+      await checkClosing()
+    } finally {
+      finish()
+      await withoutConfirmation
+    }
+    expect(await withoutConfirmation).toEqual({ ok: true, value: true })
+    expect(mocks.needsCloseConfirmation).not.toHaveBeenCalled()
+    expect(mocks.contents.send).not.toHaveBeenCalled()
+    mocks.config.preferences.confirmCloseRunningTerminal = true
+    const reconfirmed = close()
+    await reply((await prompt()).id, false)
+    expect(await reconfirmed).toEqual({ ok: true, value: false })
+    expect(mocks.close).toHaveBeenCalledTimes(3)
   })
 
   it('still asks before closing when process inspection is unavailable', async () => {

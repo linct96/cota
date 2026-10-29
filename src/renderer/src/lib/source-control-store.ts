@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useWorkspace } from '../store'
 import { unwrap, type AgentProvider, type WorkspaceTarget } from '../../../shared/contracts'
 import type { HostingContext } from '../../../shared/code-hosting'
 import type { TerminalLayout } from '../../../shared/terminal-layout'
@@ -178,7 +179,10 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
     const key = gitFileKey(selection)
     if (get().sessions[id]?.pinnedDiffs.some((file) => gitFileKey(file) === key))
       get().selectPinnedDiff(id, key)
-    else get().update(id, { selection, preview: true })
+    else {
+      get().update(id, { selection, preview: true })
+      if (!useWorkspace.getState().preferences.reusePreviewTabs) get().pinDiff(id)
+    }
   },
   pinDiff(id) {
     const session = get().sessions[id]
@@ -214,7 +218,10 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
   },
   openFile(id, path) {
     if (get().sessions[id]?.pinnedFiles.includes(path)) get().selectPinnedFile(id, path)
-    else get().update(id, { file: path, preview: true })
+    else {
+      get().update(id, { file: path, preview: true })
+      if (!useWorkspace.getState().preferences.reusePreviewTabs) get().pinFile(id)
+    }
   },
   pinFile(id) {
     const session = get().sessions[id]

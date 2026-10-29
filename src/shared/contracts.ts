@@ -63,6 +63,8 @@ export interface Preferences {
   commitMessagePrompt?: string
   terminalGpuAcceleration: TerminalGpuAcceleration
   preventSleep: boolean
+  reusePreviewTabs: boolean
+  confirmCloseRunningTerminal: boolean
   shellName: string | null
   shellPath: string | null
   scrollback: number
@@ -578,6 +580,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     commitMessagePrompt: '',
     terminalGpuAcceleration: 'auto',
     preventSleep: true,
+    reusePreviewTabs: true,
+    confirmCloseRunningTerminal: true,
     shellName: null,
     shellPath: null,
     scrollback: 5000,

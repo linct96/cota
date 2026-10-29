@@ -1341,6 +1341,25 @@ export const useWorkspace = create<Workspace>((set, get) => ({
     const openersChanged =
       JSON.stringify(saved.openWith) !== JSON.stringify(get().preferences.openWith)
     set({ preferences: saved })
+    if (!saved.reusePreviewTabs) {
+      const sourceControl = useSourceControl.getState()
+      for (const [id, session] of Object.entries(sourceControl.sessions)) {
+        const { file, selection } = session
+        if (!file && !selection) continue
+        sourceControl.update(id, {
+          tabOrder: session.tabOrder.map((key) =>
+            key === 'preview' ? (file ? `file:${file}` : `diff:${gitFileKey(selection!)}`) : key,
+          ),
+          pinnedFiles: file ? [...session.pinnedFiles, file] : session.pinnedFiles,
+          pinnedDiffs: selection ? [...session.pinnedDiffs, selection] : session.pinnedDiffs,
+          activePinnedFile: session.preview ? file : session.activePinnedFile,
+          activePinnedDiff: session.preview ? selection : session.activePinnedDiff,
+          file: undefined,
+          selection: undefined,
+          preview: false,
+        })
+      }
+    }
     if (openersChanged) void get().refreshWorkspaceOpeners().catch(console.warn)
   },
   shortcut(value) {

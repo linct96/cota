@@ -2359,6 +2359,60 @@ describe('workspace state', () => {
     expect(session().pinnedFiles).toEqual([first, second])
     expect(store().tabs).toBe(terminals)
     expect(api.closeTerminal).not.toHaveBeenCalled()
+
+    scm.openFile(id, third)
+    scm.openDiff('other-workspace', diff)
+    scm.showTerminal('other-workspace')
+    const order = session().tabOrder
+    const disabled = { ...store().preferences, reusePreviewTabs: false }
+    vi.mocked(api.savePreferences).mockResolvedValueOnce({ ok: false, error: '保存失败' })
+    await expect(store().savePreferences(disabled)).rejects.toThrow('保存失败')
+    expect(store().preferences.reusePreviewTabs).toBe(true)
+    expect(session()).toMatchObject({ file: third, preview: true })
+    await store().savePreferences(disabled)
+    expect(session()).toMatchObject({
+      file: undefined,
+      preview: false,
+      pinnedFiles: [first, second, third],
+      activePinnedFile: third,
+    })
+    expect(session().tabOrder).toEqual(
+      order.map((key) => (key === 'preview' ? `file:${third}` : key)),
+    )
+    expect(useSourceControl.getState().sessions['other-workspace']).toMatchObject({
+      selection: undefined,
+      preview: false,
+      pinnedDiffs: [diff],
+      activePinnedDiff: undefined,
+    })
+    scm.openFile(id, 'fourth.ts')
+    scm.openFile(id, 'fifth.ts')
+    scm.openFile(id, 'fourth.ts')
+    expect(session()).toMatchObject({
+      preview: false,
+      pinnedFiles: [first, second, third, 'fourth.ts', 'fifth.ts'],
+      activePinnedFile: 'fourth.ts',
+    })
+    const staged = { ...diff, area: 'staged' as const }
+    scm.openDiff(id, staged)
+    scm.openDiff(id, diff)
+    scm.openDiff(id, staged)
+    expect(session()).toMatchObject({
+      preview: false,
+      pinnedDiffs: [diff, staged],
+      activePinnedDiff: staged,
+      activePinnedFile: undefined,
+    })
+    expect(session().tabOrder).not.toContain('preview')
+    await store().savePreferences({ ...store().preferences, reusePreviewTabs: true })
+    scm.openFile(id, 'sixth.ts')
+    scm.openFile(id, 'seventh.ts')
+    expect(session()).toMatchObject({
+      preview: true,
+      file: 'seventh.ts',
+      pinnedFiles: [first, second, third, 'fourth.ts', 'fifth.ts'],
+      pinnedDiffs: [diff, staged],
+    })
   })
 
   it('reopens closed tabs in workspace-local reverse order without reviving terminal identity', async () => {

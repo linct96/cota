@@ -96,6 +96,39 @@ describe('local JSON configuration', () => {
         fileIconTheme,
       )
     }
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, reusePreviewTabs: undefined }).reusePreviewTabs,
+    ).toBe(true)
+    for (const reusePreviewTabs of [false, true]) {
+      await store.savePreferences(
+        preferences({ ...store.snapshot().preferences, reusePreviewTabs }),
+      )
+      expect((await new ConfigStore(file).load()).config.preferences.reusePreviewTabs).toBe(
+        reusePreviewTabs,
+      )
+    }
+    for (const reusePreviewTabs of [null, 0, 'false', [], {}]) {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, reusePreviewTabs })).toThrow(
+        '预览标签复用选项无效',
+      )
+    }
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, confirmCloseRunningTerminal: undefined })
+        .confirmCloseRunningTerminal,
+    ).toBe(true)
+    for (const confirmCloseRunningTerminal of [false, true]) {
+      await store.savePreferences(
+        preferences({ ...store.snapshot().preferences, confirmCloseRunningTerminal }),
+      )
+      expect(
+        (await new ConfigStore(file).load()).config.preferences.confirmCloseRunningTerminal,
+      ).toBe(confirmCloseRunningTerminal)
+    }
+    for (const confirmCloseRunningTerminal of [null, 0, 'false', [], {}]) {
+      expect(() =>
+        preferences({ ...DEFAULT_CONFIG.preferences, confirmCloseRunningTerminal }),
+      ).toThrow('终端关闭确认选项无效')
+    }
     for (const notificationsEnabled of [false, true]) {
       await store.savePreferences(
         preferences({ ...store.snapshot().preferences, notificationsEnabled }),
@@ -192,6 +225,8 @@ describe('local JSON configuration', () => {
     delete legacy.preferences.terminalGpuAcceleration
     delete legacy.preferences.quickCommands
     delete legacy.preferences.preventSleep
+    delete legacy.preferences.reusePreviewTabs
+    delete legacy.preferences.confirmCloseRunningTerminal
     delete legacy.preferences.notificationsEnabled
     delete legacy.preferences.turnCompleteNotification
     delete legacy.preferences.notificationSound
@@ -202,6 +237,10 @@ describe('local JSON configuration', () => {
     )
     expect((await new ConfigStore(file).load()).config.preferences.quickCommands).toEqual([])
     expect((await new ConfigStore(file).load()).config.preferences.preventSleep).toBe(true)
+    expect((await new ConfigStore(file).load()).config.preferences.reusePreviewTabs).toBe(true)
+    expect(
+      (await new ConfigStore(file).load()).config.preferences.confirmCloseRunningTerminal,
+    ).toBe(true)
     expect((await new ConfigStore(file).load()).config.preferences.fileIconTheme).toBe('default')
     expect((await new ConfigStore(file).load()).config.preferences.notificationsEnabled).toBe(true)
     expect((await new ConfigStore(file).load()).config.preferences.notificationSound).toBe('system')

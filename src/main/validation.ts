@@ -104,12 +104,16 @@ export function preferences(value: unknown): Preferences {
     preferredOpenerId,
     terminalGpuAcceleration = 'auto',
     preventSleep = true,
+    reusePreviewTabs = true,
+    confirmCloseRunningTerminal = true,
     commitMessagePrompt = '',
   } = value as Partial<Preferences>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
   if (fileIconTheme !== 'default' && fileIconTheme !== 'material')
     throw new Error('文件图标主题选项无效。')
   if (typeof preventSleep !== 'boolean') throw new Error('防休眠选项无效。')
+  if (typeof reusePreviewTabs !== 'boolean') throw new Error('预览标签复用选项无效。')
+  if (typeof confirmCloseRunningTerminal !== 'boolean') throw new Error('终端关闭确认选项无效。')
   if (typeof notificationsEnabled !== 'boolean') throw new Error('通知开关选项无效。')
   const sound = notificationSoundPreference(notificationSound)
   if (
@@ -168,6 +172,8 @@ export function preferences(value: unknown): Preferences {
     ...(preferredOpenerId === undefined ? {} : { preferredOpenerId }),
     terminalGpuAcceleration,
     preventSleep,
+    reusePreviewTabs,
+    confirmCloseRunningTerminal,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: shellPath as string | null,

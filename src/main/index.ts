@@ -1207,9 +1207,9 @@ function installIPC(): void {
     if (closingTabs.has(id) || exitPending || removingWorkspace || worktrees.removing) return false
     closingTabs.add(id)
     try {
-      const needsConfirmation = await manager
-        .request('needsCloseConfirmation', [id])
-        .catch(() => true)
+      const needsConfirmation =
+        config.snapshot().preferences.confirmCloseRunningTerminal &&
+        (await manager.request('needsCloseConfirmation', [id]).catch(() => true))
       if (
         needsConfirmation &&
         !(await requestConfirmation({
