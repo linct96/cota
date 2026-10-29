@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useGitBranches } from '../lib/git-branches-store'
 import { z } from 'zod'
 import type { WorktreeSetupConfig } from '../../../shared/worktree-setup'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
@@ -33,9 +34,14 @@ export function WorktreeDialog({
   const [setupError, setSetupError] = useState<string>()
   const [branchPrefix, setBranchPrefix] = useState('')
   const [suggestionAttempt, setSuggestionAttempt] = useState(0)
-  const [branches, setBranches] = useState<string[]>([])
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null)
-  const [repositoryError, setRepositoryError] = useState<string>()
+  const target = useMemo(() => ({ projectPath }), [projectPath])
+  const resource = useGitBranches(target, true)
+  const branches =
+    resource.references?.branches
+      .filter((branch) => branch.ref.startsWith('refs/heads/'))
+      .map((branch) => branch.label) || []
+  const currentBranch = resource.currentBranch
+  const repositoryError = resource.error
   const [error, setError] = useState<string>()
   const [plan, setPlan] = useState<WorktreePlan>()
   const [checkingPlan, setCheckingPlan] = useState(false)
@@ -104,6 +110,10 @@ export function WorktreeDialog({
       disposed = true
     }
   }, [projectPath, form])
+  useEffect(() => {
+    if (resource.references && !baseEdited.current && !form.state.values.baseRef)
+      form.setFieldValue('baseRef', currentBranch || 'HEAD')
+  }, [resource.references, currentBranch, form])
   const name = useStore(form.store, (state) => state.values.name)
   const baseRef = useStore(form.store, (state) => state.values.baseRef)
   const pending = useStore(form.store, (state) => state.isSubmitting) || checkingPlan
@@ -111,20 +121,7 @@ export function WorktreeDialog({
   const branchName = branchPrefix && branchSegment ? `${branchPrefix}/${branchSegment}` : ''
   useEffect(() => {
     let disposed = false
-    void Promise.all([
-      window.desktop.worktreeBranches(projectPath).then(unwrap),
-      window.desktop.projectBranch(projectPath).then(unwrap),
-    ])
-      .then(([value, currentBranch]) => {
-        if (disposed) return
-        setBranches(value)
-        setCurrentBranch(currentBranch)
-        if (!baseEdited.current) form.setFieldValue('baseRef', currentBranch || 'HEAD')
-        setRepositoryError(undefined)
-      })
-      .catch((failure) => {
-        if (!disposed) setRepositoryError(failure.message)
-      })
+    if (suggestionAttempt) resource.refresh()
     void window.desktop
       .suggestWorktreeName(projectPath)
       .then(unwrap)
@@ -152,7 +149,6 @@ export function WorktreeDialog({
           if (!disposed) {
             setPlan(value)
             setError(undefined)
-            setRepositoryError(undefined)
           }
         })
         .catch((failure) => {
@@ -353,6 +349,7 @@ export function WorktreeDialog({
                   setSuggestionAttempt((attempt) => attempt + 1)
                   return
                 }
+                resource.refresh()
                 setCheckingPlan(true)
                 void window.desktop
                   .planGitWorktree({ projectPath, name, branchName, baseRef })
@@ -360,7 +357,6 @@ export function WorktreeDialog({
                   .then((value) => {
                     setPlan(value)
                     setError(undefined)
-                    setRepositoryError(undefined)
                   })
                   .catch((failure) => setError(failure.message))
                   .finally(() => setCheckingPlan(false))

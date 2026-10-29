@@ -1,3 +1,4 @@
+import type { PendingHostedReview } from './code-hosting'
 import type { WorktreeSetupConfig, WorktreeSetupSnapshot } from './worktree-setup'
 import type { WorkspacePortSnapshot } from './workspace-ports'
 import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
@@ -11,7 +12,6 @@ import type {
   GitDiffSelection,
   GitMutation,
   GitStatus,
-  GitReferences,
   GitHistory,
   GitHistoryRequest,
   GitComparison,
@@ -79,6 +79,7 @@ export interface AppConfig {
   worktreeRecords: WorktreeRecord[]
   worktreeNameHistory?: Record<string, string[]>
   worktreeSetups?: Record<string, WorktreeSetupConfig>
+  codeHostingPendingCreates?: (string | PendingHostedReview)[]
 }
 
 export type WorktreeErrorCode =
@@ -105,7 +106,13 @@ export interface WorktreeFailureDetails {
 
 export type Result<T> =
   | { ok: true; value: T }
-  | { ok: false; error: string; code?: WorktreeErrorCode; details?: WorktreeFailureDetails }
+  | {
+      ok: false
+      error: string
+      code?: WorktreeErrorCode
+      details?: WorktreeFailureDetails
+      hostingFailure?: import('./code-hosting').HostingFailure
+    }
 export type Shortcut =
   | 'open-folder'
   | 'new-terminal'
@@ -451,6 +458,7 @@ export interface DesktopAPI {
     provider: AgentProvider,
   ): Promise<Result<import('./agent-cli').AgentCliInstallResult>>
   readonly accounts: import('./accounts').AccountsAPI
+  readonly codeHosting: import('./code-hosting').CodeHostingAPI
   readonly platform: string
   bootstrap(): Promise<
     Result<{
@@ -463,7 +471,6 @@ export interface DesktopAPI {
   saveLayout(layout: WorkspaceLayout): Promise<Result<void>>
   openProject(): Promise<Result<string | null>>
   selectProject(path: string): Promise<Result<void>>
-  projectBranch(path: string): Promise<Result<string | null>>
   inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
   listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
   listFiles(target: WorkspaceTarget, path: string): Promise<Result<FileEntry[]>>
@@ -477,14 +484,19 @@ export interface DesktopAPI {
   gitStatus(target: WorkspaceTarget): Promise<Result<GitStatus>>
   watchGit(target: WorkspaceTarget, listener: (event: GitWatchEvent) => void): () => void
   gitDiff(target: WorkspaceTarget, file: GitDiffSelection): Promise<Result<GitDiff>>
-  gitReferences(target: WorkspaceTarget): Promise<Result<GitReferences>>
+  gitBranches(
+    target: import('./git-branches').GitBranchTarget,
+    subscriptionId: string,
+    force?: boolean,
+  ): Promise<Result<import('./git-branches').GitBranchView>>
+  releaseGitBranches(subscriptionId: string): Promise<Result<void>>
+  onGitBranchesChanged(listener: (repositoryId: string) => void): () => void
   gitHistory(target: WorkspaceTarget, request?: GitHistoryRequest): Promise<Result<GitHistory>>
   gitCompare(target: WorkspaceTarget, request: GitCompareRequest): Promise<Result<GitComparison>>
   gitMutate(input: GitMutation): Promise<Result<boolean>>
   generateCommitMessage(input: CommitMessageRequest): Promise<Result<CommitMessageResult>>
   cancelCommitMessage(input: WorkspaceTarget & { requestId: string }): Promise<Result<void>>
   planGitWorktree(input: CreateWorktreeInput): Promise<Result<WorktreePlan>>
-  worktreeBranches(path: string): Promise<Result<string[]>>
   suggestWorktreeName(path: string): Promise<Result<WorktreeNameSuggestion>>
   scanWorktrees(path: string): Promise<Result<WorktreeScan>>
   createGitWorktree(

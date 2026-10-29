@@ -61,12 +61,27 @@ const api: DesktopAPI = {
       return () => ipcRenderer.removeListener('accounts:oauth-progress', wrapped)
     },
   },
+  codeHosting: {
+    context: (target) => ipcRenderer.invoke('code-hosting:context', target),
+    accounts: (provider) => ipcRenderer.invoke('code-hosting:accounts', provider),
+    connection: (provider, host) => ipcRenderer.invoke('code-hosting:connection', provider, host),
+    inspect: (target) => ipcRenderer.invoke('code-hosting:inspect', target),
+    creationContext: (target) => ipcRenderer.invoke('code-hosting:creation-context', target),
+    refreshBranches: (target, input) =>
+      ipcRenderer.invoke('code-hosting:refresh-branches', target, input),
+    history: (target, key, page) => ipcRenderer.invoke('code-hosting:history', target, key, page),
+    prepare: (target, input) => ipcRenderer.invoke('code-hosting:prepare', target, input),
+    create: (target, input) => ipcRenderer.invoke('code-hosting:create', target, input),
+    open: (target, number, sourceBranch) =>
+      ipcRenderer.invoke('code-hosting:open', target, number, sourceBranch),
+    clearCreation: (target, key, sourceBranch) =>
+      ipcRenderer.invoke('code-hosting:clear-creation', target, key, sourceBranch),
+  },
   platform: process.platform,
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   saveLayout: (layout) => ipcRenderer.invoke('workspace:save-layout', layout),
   openProject: () => ipcRenderer.invoke('project:open'),
   selectProject: (path) => ipcRenderer.invoke('project:select', path),
-  projectBranch: (path) => ipcRenderer.invoke('project:branch', path),
   inspectRepository: (path) => ipcRenderer.invoke('git:inspect-repository', path),
   listWorktrees: (path) => ipcRenderer.invoke('git:list-worktrees', path),
   listFiles: (target, path) => ipcRenderer.invoke('files:list', target, path),
@@ -131,12 +146,19 @@ const api: DesktopAPI = {
   gitMutate: (input) => ipcRenderer.invoke('git:mutate', input),
   generateCommitMessage: (input) => ipcRenderer.invoke('git:generate-commit-message', input),
   cancelCommitMessage: (input) => ipcRenderer.invoke('git:cancel-commit-message', input),
-  gitReferences: (target) => ipcRenderer.invoke('git:references', target),
+  gitBranches: (target, id, force = false) =>
+    ipcRenderer.invoke('git:branch-snapshot', target, id, force),
+  releaseGitBranches: (id) => ipcRenderer.invoke('git:release-branches', id),
+  onGitBranchesChanged: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, repositoryId: string) =>
+      listener(repositoryId)
+    ipcRenderer.on('git:branches-changed', wrapped)
+    return () => ipcRenderer.removeListener('git:branches-changed', wrapped)
+  },
   gitHistory: (target, request) => ipcRenderer.invoke('git:history', target, request),
   gitCompare: (target, request) => ipcRenderer.invoke('git:compare', target, request),
   createGitWorktree: (input) => ipcRenderer.invoke('git:create-worktree', input),
   planGitWorktree: (input) => ipcRenderer.invoke('git:plan-worktree', input),
-  worktreeBranches: (path) => ipcRenderer.invoke('git:branches', path),
   suggestWorktreeName: (path) => ipcRenderer.invoke('git:suggest-worktree-name', path),
   scanWorktrees: (path) => ipcRenderer.invoke('git:scan-worktrees', path),
   linkGitWorktree: (path, target) => ipcRenderer.invoke('git:link-worktree', path, target),

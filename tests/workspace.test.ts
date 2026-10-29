@@ -25,9 +25,15 @@ import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-sta
 import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-renderer'
 import { createTerminalInputHandler } from '../src/renderer/src/lib/terminal-input'
 import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
+import {
+  retainGitBranches,
+  refreshGitBranches,
+  useGitBranchesStore,
+} from '../src/renderer/src/lib/git-branches-store'
 import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
 import { buildGitChangeTree, gitChangeRows } from '../src/renderer/src/lib/source-control-tree'
-import { gitFileKey, type GitChange } from '../src/shared/source-control'
+import { gitFileKey, type GitChange, type GitStatus } from '../src/shared/source-control'
+import type { HostingContext } from '../src/shared/code-hosting'
 import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
 import { explorerRows, useFileExplorer } from '../src/renderer/src/lib/file-explorer-store'
 import type { FileEntry } from '../src/shared/file-explorer'
@@ -63,6 +69,19 @@ beforeEach(() => {
     setTerminalInputFocused: vi.fn(),
     inspectAgentClis: vi.fn(),
     installAgentCli: vi.fn(),
+    codeHosting: {
+      context: vi.fn(),
+      accounts: vi.fn(),
+      connection: vi.fn(),
+      inspect: vi.fn(),
+      creationContext: vi.fn(),
+      refreshBranches: vi.fn(),
+      history: vi.fn(),
+      prepare: vi.fn(),
+      create: vi.fn(),
+      open: vi.fn(),
+      clearCreation: vi.fn(),
+    },
     accounts: {
       list: vi.fn(),
       add: vi.fn(),
@@ -85,7 +104,6 @@ beforeEach(() => {
     saveLayout: vi.fn().mockResolvedValue({ ok: true }),
     openProject: vi.fn().mockResolvedValue({ ok: true, value: '/tmp/中文 项目' }),
     selectProject: vi.fn().mockResolvedValue({ ok: true }),
-    projectBranch: vi.fn().mockResolvedValue({ ok: true, value: null }),
     inspectRepository: vi.fn(),
     listWorktrees: vi.fn(),
     listFiles: vi.fn(),
@@ -98,13 +116,14 @@ beforeEach(() => {
     gitMutate: vi.fn(),
     generateCommitMessage: vi.fn(),
     cancelCommitMessage: vi.fn(),
-    gitReferences: vi.fn(),
+    gitBranches: vi.fn(),
+    releaseGitBranches: vi.fn().mockResolvedValue({ ok: true }),
+    onGitBranchesChanged: vi.fn(() => vi.fn()),
     gitHistory: vi.fn(),
     gitCompare: vi.fn(),
     createGitWorktree: vi.fn(),
     planGitWorktree: vi.fn(),
     workspacePath: vi.fn(),
-    worktreeBranches: vi.fn(),
     suggestWorktreeName: vi.fn(),
     scanWorktrees: vi.fn().mockResolvedValue({
       ok: true,
@@ -217,6 +236,71 @@ function scanFor(value: CreateWorktreeResult): WorktreeScan {
   }
 }
 describe('Worktree state transactions and recovery', () => {
+  it('retains branch display on refresh failure and discards responses after unsubscribe', async () => {
+    const target = { projectPath: '/tmp/project', workspaceId: 'branch-store' }
+    const snapshot = {
+      repositoryId: 'repo',
+      revision: 0,
+      fetchedAt: 1,
+      branches: [],
+      remoteHeads: [],
+    }
+    const request = vi
+      .fn()
+      .mockResolvedValue({ ok: true, value: { snapshot, remotes: ['origin'], stale: false } })
+    const release = vi.fn().mockResolvedValue({ ok: true, value: undefined })
+    const unwatch = vi.fn()
+    vi.stubGlobal('document', {
+      hidden: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })
+    vi.stubGlobal('window', {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      desktop: {
+        gitBranches: request,
+        releaseGitBranches: release,
+        onGitBranchesChanged: vi.fn(() => unwatch),
+      },
+    })
+    let stop: (() => void) | undefined
+    try {
+      stop = retainGitBranches(target)
+      await vi.waitFor(() =>
+        expect(useGitBranchesStore.getState().repositories.repo).toEqual(snapshot),
+      )
+      request.mockResolvedValueOnce({ ok: false, error: 'read failed' })
+      await refreshGitBranches(target)
+      expect(Object.values(useGitBranchesStore.getState().workspaces)[0]).toMatchObject({
+        error: 'read failed',
+        stale: true,
+      })
+      expect(useGitBranchesStore.getState().repositories.repo).toEqual(snapshot)
+      let finish!: (value: unknown) => void
+      request.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      )
+      const pending = refreshGitBranches(target)
+      stop()
+      stop = undefined
+      finish({
+        ok: true,
+        value: { snapshot: { ...snapshot, revision: 1 }, remotes: [], stale: false },
+      })
+      await pending
+      expect(useGitBranchesStore.getState()).toEqual({ repositories: {}, workspaces: {} })
+      expect(release).toHaveBeenCalledTimes(1)
+      expect(unwatch).toHaveBeenCalledTimes(1)
+    } finally {
+      stop?.()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('runs quick commands only in their scoped workspace and never saves or replays startup text', async () => {
     await useWorkspace.getState().bootstrap()
     const value = managedWorktree()
@@ -2552,6 +2636,82 @@ describe('workspace state', () => {
       'README.md',
     ])
     expect(compactEntries).toEqual(compactOriginal)
+  })
+
+  it('stores workspace hosting context and ignores stale or removed workspace reads', async () => {
+    const scm = useSourceControl.getState()
+    const target = { projectPath: '/tmp/repo', workspaceId: 'hosting-workspace' }
+    const session = () => useSourceControl.getState().sessions[target.workspaceId]
+    const status: GitStatus = {
+      rootPath: target.projectPath,
+      branch: 'main',
+      head: null,
+      ahead: 0,
+      behind: 0,
+      indexVersion: 'fixture',
+      entries: [],
+    }
+    const repository = { provider: 'gitlab' as const, host: 'gitlab.com', path: 'group/repo' }
+    const context: HostingContext = {
+      remotes: [{ name: 'origin', repository }],
+      source: repository,
+      target: repository,
+      branch: 'main',
+      sourceBranch: 'main',
+      head: null,
+      key: 'fixture',
+    }
+    const reads: ((value: Result<HostingContext>) => void)[] = []
+    vi.mocked(api.codeHosting.context).mockImplementation(
+      () => new Promise((resolve) => reads.push(resolve)),
+    )
+    scm.update(target.workspaceId, { status, draft: 'keep draft' })
+    const first = scm.refreshHostingContext(target)
+    expect(session().hosting).toEqual({ loading: true })
+    expect(api.codeHosting.context).toHaveBeenCalledWith(target)
+    reads[0]({ ok: true, value: context })
+    await first
+    expect(session().hosting).toEqual({ loading: false, context })
+    expect(useSourceControl.getState().sessions['other-workspace']).toBeUndefined()
+
+    scm.update(target.workspaceId, { status: { ...status, ahead: 1 } })
+    expect(session().hosting?.context).toBe(context)
+    const old = scm.refreshHostingContext(target)
+    expect(session().hosting).toEqual({ loading: true, context })
+    const latest = scm.refreshHostingContext(target)
+    const unknown = { ...context, source: null, target: null, reason: '无法识别' }
+    reads[2]({ ok: true, value: unknown })
+    await latest
+    reads[1]({ ok: false, error: 'stale failure' })
+    await old
+    expect(session().hosting).toEqual({ loading: false, context: unknown })
+
+    const changed = scm.refreshHostingContext(target)
+    scm.update(target.workspaceId, { status: { ...status, branch: 'feature' } })
+    reads[3]({ ok: true, value: context })
+    await changed
+    expect(session().hosting).toBeUndefined()
+    expect(session().draft).toBe('keep draft')
+
+    const failed = scm.refreshHostingContext(target)
+    reads[4]({ ok: false, error: '读取失败' })
+    await failed
+    expect(session().hosting).toEqual({ loading: false, error: '读取失败' })
+    const retry = scm.refreshHostingContext(target)
+    reads[5]({ ok: true, value: context })
+    await retry
+    expect(session().hosting).toEqual({ loading: false, context })
+
+    const unchanged = scm.refreshHostingContext(target)
+    reads[6]({ ok: true, value: structuredClone(context) })
+    await unchanged
+    expect(session().hosting?.context).toBe(context)
+
+    const removed = scm.refreshHostingContext(target)
+    useSourceControl.setState({ sessions: {} })
+    reads[7]({ ok: true, value: context })
+    await removed
+    expect(session()).toBeUndefined()
   })
 
   it('coalesces Git refreshes and retains trailing signals across reads and writes', async () => {

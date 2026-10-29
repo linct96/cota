@@ -19,6 +19,25 @@ export class WorktreeError extends Error {
   }
 }
 
+export function explainGitError(error: unknown): Error {
+  if (error instanceof WorktreeError && error.cause && typeof error.cause === 'object') {
+    const cause = error.cause as { stderr?: Buffer; stdout?: Buffer; killed?: boolean }
+    if (cause.killed)
+      return new Error('Git 操作超时，结果可能已生效。请刷新核对后再操作，不要直接重复提交。')
+    const detail = (cause.stderr?.toString() || cause.stdout?.toString())?.trim().slice(0, 8000)
+    if (detail) return new Error(`${error.message}\n${detail}`)
+  }
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+export async function resolveGitCommit(root: string, ref: string): Promise<string> {
+  const oid = (
+    await runGit(root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])
+  ).trim()
+  if (!/^[\da-f]{40}([\da-f]{24})?$/.test(oid)) throw new Error('Git 提交标识无效。')
+  return oid
+}
+
 export function gitEnvironment(): NodeJS.ProcessEnv {
   // Git context/config overrides inherited from the launching shell must not redirect operations.
   const env = Object.fromEntries(

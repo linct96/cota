@@ -10,18 +10,26 @@ import type {
   GitFileSelection,
   GitDiffSelection,
   GitReviewSelection,
+  GitReviewFile,
   GitComparison,
   GitCompareRequest,
   GitReferences,
   GitHistory,
   GitHistoryRequest,
-  GitRemoteMutation,
   GitTracking,
   GitMutation,
   GitStatus,
 } from '../../shared/source-control'
+import { branchReferences } from '../../shared/git-branches'
+import { readBranchData, readBranchRemotes, isBranchMutation, mutateBranch } from './branch-service'
 import { GitService } from './git-worktrees'
-import { runGit, runGitBytes, WorktreeError } from './git-runner'
+import {
+  runGit,
+  runGitBytes,
+  WorktreeError,
+  resolveGitCommit,
+  explainGitError as explain,
+} from './git-runner'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const MAX_FILES = 5000
@@ -123,17 +131,6 @@ export function parseGitStatus(output: string): Omit<GitStatus, 'rootPath' | 'in
   return result
 }
 
-function explain(error: unknown): Error {
-  if (error instanceof WorktreeError && error.cause && typeof error.cause === 'object') {
-    const cause = error.cause as { stderr?: Buffer; stdout?: Buffer; killed?: boolean }
-    if (cause.killed)
-      return new Error('Git 操作超时，结果可能已生效。请刷新核对后再操作，不要直接重复提交。')
-    const detail = (cause.stderr?.toString() || cause.stdout?.toString())?.trim().slice(0, 8000)
-    if (detail) return new Error(`${error.message}\n${detail}`)
-  }
-  return error instanceof Error ? error : new Error(String(error))
-}
-
 export class SourceControlService {
   private readonly git = new GitService()
 
@@ -196,6 +193,34 @@ export class SourceControlService {
       throw new Error('暂存区或 HEAD 已改变，请刷新后重新生成提交信息。')
   }
 
+  async repositoryContext(cwd: string): Promise<Pick<GitStatus, 'branch' | 'head' | 'tracking'>> {
+    try {
+      const { rootPath } = await this.git.requireRepository(cwd)
+      const [head, reference] = await Promise.all(
+        [
+          ['rev-parse', '--verify', '--quiet', 'HEAD'],
+          ['symbolic-ref', '--quiet', 'HEAD'],
+        ].map(async (args) => {
+          try {
+            return (await runGit(rootPath, args)).trim()
+          } catch (error) {
+            // Exit 1 means an unborn HEAD or a detached symbolic ref, not a failed repository read.
+            if (
+              error instanceof WorktreeError &&
+              (error.cause as { code?: number } | undefined)?.code === 1
+            )
+              return null
+            throw error
+          }
+        }),
+      )
+      const branch = reference?.startsWith('refs/heads/') ? reference.slice(11) : null
+      return { branch, head, tracking: await this.tracking(rootPath, branch) }
+    } catch (error) {
+      throw explain(error)
+    }
+  }
+
   async status(cwd: string, includeStats = false): Promise<GitStatus> {
     try {
       const repository = await this.git.requireRepository(cwd)
@@ -223,60 +248,72 @@ export class SourceControlService {
     }
   }
 
+  private async diffStats(
+    root: string,
+    entries: GitReviewFile[],
+    args: string[],
+    deadline: number,
+  ): Promise<void> {
+    const files = entries.filter((entry) => !entry.submodule)
+    const timeout = Math.ceil(deadline - performance.now())
+    if (!files.length || timeout <= 0) return
+    try {
+      const raw = await runGitBytes(
+        root,
+        [
+          ...args,
+          '--numstat',
+          '-z',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--ignore-submodules=all',
+          '--find-renames',
+          '--',
+        ],
+        false,
+        timeout,
+      )
+      if (!isUtf8(raw) || (raw.length && raw.at(-1) !== 0))
+        throw new Error('Git 行数统计格式无效。')
+      const records = raw.toString('utf8').split('\0')
+      const stats = new Map<string, GitChange['stats']>()
+      for (let i = 0; i < records.length; i++) {
+        if (performance.now() >= deadline) return
+        if (!records[i]) continue
+        const match = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(records[i])
+        if (!match) throw new Error('Git 行数统计格式无效。')
+        let path = match[3]
+        if (!path) {
+          filePath(records[++i])
+          path = records[++i]
+        }
+        const counts =
+          match[1] === '-' && match[2] === '-'
+            ? null
+            : { additions: Number(match[1]), deletions: Number(match[2]) }
+        if (
+          counts &&
+          !Object.values(counts).every((count) => Number.isSafeInteger(count) && count >= 0)
+        )
+          throw new Error('Git 行数统计格式无效。')
+        stats.set(filePath(path), counts)
+      }
+      for (const entry of files) entry.stats = stats.get(entry.path)
+    } catch {
+      // Counts are optional display data; a failed diff must not hide valid Git results.
+    }
+  }
+
   private async fileStats(root: string, entries: GitChange[]): Promise<void> {
     // Optional counts must not hold the status read lock for slow diffs.
     const deadline = performance.now() + STATS_BUDGET_MS
     for (const area of ['staged', 'unstaged'] as const) {
-      const files = entries.filter((entry) => entry.area === area && !entry.submodule)
-      if (!files.length) continue
-      const timeout = Math.ceil(deadline - performance.now())
-      if (timeout <= 0) return
-      try {
-        const raw = await runGitBytes(
-          root,
-          [
-            'diff',
-            '--numstat',
-            '-z',
-            '--no-ext-diff',
-            '--no-textconv',
-            '--ignore-submodules=all',
-            '--find-renames',
-            ...(area === 'staged' ? ['--cached'] : []),
-            '--',
-          ],
-          false,
-          timeout,
-        )
-        if (!isUtf8(raw) || (raw.length && raw.at(-1) !== 0))
-          throw new Error('Git 行数统计格式无效。')
-        const records = raw.toString('utf8').split('\0')
-        const stats = new Map<string, GitChange['stats']>()
-        for (let i = 0; i < records.length; i++) {
-          if (performance.now() >= deadline) return
-          if (!records[i]) continue
-          const match = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(records[i])
-          if (!match) throw new Error('Git 行数统计格式无效。')
-          let path = match[3]
-          if (!path) {
-            filePath(records[++i])
-            path = records[++i]
-          }
-          const counts =
-            match[1] === '-' && match[2] === '-'
-              ? null
-              : { additions: Number(match[1]), deletions: Number(match[2]) }
-          if (
-            counts &&
-            !Object.values(counts).every((count) => Number.isSafeInteger(count) && count >= 0)
-          )
-            throw new Error('Git 行数统计格式无效。')
-          stats.set(filePath(path), counts)
-        }
-        for (const entry of files) entry.stats = stats.get(entry.path)
-      } catch {
-        // Counts are optional display data; a failed diff must not hide the valid Git status.
-      }
+      await this.diffStats(
+        root,
+        entries.filter((entry) => entry.area === area),
+        ['diff', ...(area === 'staged' ? ['--cached'] : [])],
+        deadline,
+      )
     }
     // shortcut: untracked counts read at most 8 MiB per refresh; use on-demand counts for larger trees.
     let remaining = 8 * 1024 * 1024
@@ -319,48 +356,18 @@ export class SourceControlService {
   async references(cwd: string): Promise<GitReferences> {
     try {
       const { rootPath } = await this.git.requireRepository(cwd)
-      const remotes = (await runGit(rootPath, ['remote'])).split('\n').filter(Boolean)
-      const raw = await runGitBytes(rootPath, [
-        'for-each-ref',
-        '--format=%(refname)%00%(symref)%00%(committerdate:iso-strict)%00%(contents:subject)',
-        'refs/heads/',
-        'refs/remotes/',
-      ])
-      if (!isUtf8(raw)) throw new Error('分支名称或提交信息不是 UTF-8，请在终端处理。')
-      const worktrees = await this.git.listWorktrees(rootPath)
-      const branches = raw
-        .toString('utf8')
-        .split('\n')
-        .filter(Boolean)
-        .map((record) => record.split('\0'))
-        .filter(([, symbolic]) => !symbolic)
-        .map(([ref, , date, subject]) => {
-          if (!Number.isFinite(Date.parse(date)) || subject === undefined)
-            throw new Error('分支提交信息格式无效。')
-          return {
-            ref,
-            label: ref.replace(/^refs\/(heads|remotes)\//, ''),
-            date,
-            subject,
-            worktreePath: worktrees.find(
-              (entry) => entry.branch !== null && `refs/heads/${entry.branch}` === ref,
-            )?.path,
-          }
-        })
-      if (branches.length > 5000 || remotes.length > 100)
-        throw new Error('引用过多，请在终端处理。')
-      return { remotes, branches }
+      // Write preconditions deliberately use uncached Git reads.
+      return branchReferences(
+        await readBranchData(rootPath, this.git),
+        await readBranchRemotes(rootPath),
+      )
     } catch (error) {
       throw explain(error)
     }
   }
 
-  private async resolveCommit(root: string, ref: string): Promise<string> {
-    const oid = (
-      await runGit(root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])
-    ).trim()
-    if (!OID.test(oid)) throw new Error('Git 提交标识无效。')
-    return oid
+  private resolveCommit(root: string, ref: string): Promise<string> {
+    return resolveGitCommit(root, ref)
   }
 
   private async checkedCommit(root: string, value: unknown): Promise<string> {
@@ -371,6 +378,8 @@ export class SourceControlService {
   async history(cwd: string, request: GitHistoryRequest = {}): Promise<GitHistory> {
     try {
       if (!request || typeof request !== 'object') throw new Error('历史查询参数无效。')
+      if (request.base !== undefined && request.head === undefined)
+        throw new Error('比较范围需要明确的起点和终点提交。')
       const offset = request.offset ?? 0
       if (
         !Number.isSafeInteger(offset) ||
@@ -393,6 +402,8 @@ export class SourceControlService {
         if (!current.trim()) return { head: null, commits: [], more: false }
         head = await this.checkedCommit(rootPath, current.trim())
       }
+      const base =
+        request.base === undefined ? undefined : await this.checkedCommit(rootPath, request.base)
       const raw = await runGitBytes(rootPath, [
         'log',
         '-z',
@@ -401,6 +412,7 @@ export class SourceControlService {
         `--max-count=${HISTORY_PAGE + 1}`,
         `--skip=${offset}`,
         head,
+        ...(base ? [`^${base}`] : []),
         '--',
       ])
       if (!isUtf8(raw)) throw new Error('提交信息不是 UTF-8，请在终端查看历史。')
@@ -471,7 +483,7 @@ export class SourceControlService {
       if (!isUtf8(raw)) throw new Error('仓库包含非 UTF-8 文件名，请在终端查看。')
       const records = raw.toString('utf8').split('\0')
       if (records.pop() !== '') throw new Error('Git 比较结果不完整。')
-      const entries = []
+      const entries: GitReviewFile[] = []
       for (let i = 0; i < records.length;) {
         const metadata = /^:(\d{6}) (\d{6}) ([\da-f]+) ([\da-f]+) ([ADMT]|[RC]\d+)$/.exec(
           records[i++],
@@ -489,6 +501,12 @@ export class SourceControlService {
         })
         if (entries.length > MAX_FILES) throw new Error('比较超过 5,000 项，请在终端缩小范围。')
       }
+      await this.diffStats(
+        rootPath,
+        entries,
+        base ? ['diff', base, head] : ['diff-tree', '--root', '--no-commit-id', '-r', head],
+        performance.now() + STATS_BUDGET_MS,
+      )
       return { base, head, label, entries }
     } catch (error) {
       throw explain(error)
@@ -659,263 +677,14 @@ export class SourceControlService {
     }
   }
 
-  private async mutateRemote(
-    cwd: string,
-    status: GitStatus,
-    input: GitRemoteMutation,
-  ): Promise<boolean> {
-    const remote =
-      input.action === 'fetch' || input.action === 'publish' ? input.remote : input.tracking?.remote
-    const references = await this.references(cwd)
-    if (typeof remote !== 'string' || !references.remotes.includes(remote))
-      throw new Error('请选择仓库中已配置的远端；本地上游请使用终端。')
-    const root = status.rootPath
-    await runGit(root, ['check-ref-format', `refs/remotes/${remote}/cota-check`])
-    if (input.action === 'fetch') {
-      // An empty refmap disables Git's implicit updates from configured fetch mappings.
-      await runGit(
-        root,
-        [
-          'fetch',
-          '--refmap=',
-          '--no-tags',
-          '--no-prune',
-          '--no-prune-tags',
-          '--no-recurse-submodules',
-          '--',
-          remote,
-          `+refs/heads/*:refs/remotes/${remote}/*`,
-        ],
-        true,
-      )
-      return true
-    }
-    const verify = (current: GitStatus) => {
-      if (
-        !current.branch ||
-        !current.head ||
-        current.branch !== input.branch ||
-        current.head !== input.head
-      )
-        throw new Error('分支或 HEAD 已改变，请刷新后重试。')
-      if (input.action === 'publish') {
-        if (current.tracking || current.upstream)
-          throw new Error('分支已有上游，请使用推送而非重新发布。')
-      } else if (
-        !current.tracking ||
-        current.tracking.remote !== input.tracking?.remote ||
-        current.tracking.branch !== input.tracking?.branch
-      )
-        throw new Error('上游配置已改变，请刷新后重试。')
-    }
-    verify(status)
-    const branch = input.action === 'publish' ? status.branch! : input.tracking.branch
-    await runGit(root, ['check-ref-format', `refs/heads/${branch}`])
-    if (input.action === 'pull' || input.action === 'sync') {
-      if (status.entries.some((entry) => entry.area === 'conflict'))
-        throw new Error('请先解决现有合并冲突，再拉取或同步；不会自动 stash。')
-      const upstream = `refs/remotes/${remote}/${branch}`
-      await runGit(
-        root,
-        [
-          'fetch',
-          '--refmap=',
-          '--no-tags',
-          '--no-prune',
-          '--no-prune-tags',
-          '--no-recurse-submodules',
-          '--',
-          remote,
-          `+refs/heads/${branch}:${upstream}`,
-        ],
-        true,
-      )
-      const tip = await this.resolveCommit(root, upstream)
-      const current = await this.status(cwd)
-      verify(current)
-      if (current.entries.some((entry) => entry.area === 'conflict'))
-        throw new Error('获取期间出现合并冲突，仅完成 Fetch，未更新工作文件。')
-      try {
-        await runGit(
-          root,
-          [
-            '-c',
-            'merge.autoStash=false',
-            'merge',
-            input.action === 'sync' ? '--ff' : '--ff-only',
-            '--commit',
-            '--no-squash',
-            '--no-autostash',
-            '--no-overwrite-ignore',
-            '--no-edit',
-            tip,
-          ],
-          true,
-        )
-      } catch (error) {
-        if (input.action === 'sync')
-          throw new Error(
-            `拉取合并未完成，未执行推送。如有冲突，请在编辑器或终端解决。\n${explain(error).message}`,
-          )
-        throw error
-      }
-      if (input.action === 'pull') return true
-      try {
-        const merged = await this.status(cwd)
-        if (
-          merged.branch !== status.branch ||
-          merged.tracking?.remote !== input.tracking.remote ||
-          merged.tracking?.branch !== input.tracking.branch
-        )
-          throw new Error('分支或上游已改变，请刷新后重试。')
-        if (!merged.head || merged.entries.some((entry) => entry.area === 'conflict'))
-          throw new Error('合并后 HEAD 无效或仍有冲突，未执行推送。请检查 Git 状态。')
-        if (!merged.ahead) return true
-        return await this.mutateRemote(cwd, merged, { ...input, action: 'push', head: merged.head })
-      } catch (error) {
-        throw new Error(`已完成拉取合并，但同步未完成。\n${explain(error).message}`)
-      }
-    }
-    const urls = await runGit(root, ['remote', 'get-url', '--push', '--all', remote])
-    if (urls.trim().split('\n').length !== 1)
-      throw new Error('此远端有多个推送地址，请在终端明确处理。')
-    verify(await this.status(cwd))
-    if (urls !== (await runGit(root, ['remote', 'get-url', '--push', '--all', remote])))
-      throw new Error('推送前远端推送地址已改变，未执行推送。')
-    // Push the selected commit, not a HEAD that an Agent could advance while Git connects.
-    await runGit(
-      root,
-      [
-        'push',
-        '--porcelain',
-        '--no-force',
-        '--no-mirror',
-        '--no-follow-tags',
-        '--recurse-submodules=no',
-        '--',
-        remote,
-        `${status.head}:refs/heads/${branch}`,
-      ],
-      true,
-    )
-    if (input.action === 'publish') {
-      try {
-        verify(await this.status(cwd))
-        await runGit(
-          root,
-          ['branch', `--set-upstream-to=refs/remotes/${remote}/${branch}`, '--', status.branch!],
-          true,
-        )
-      } catch (error) {
-        throw new Error(
-          `远端推送已完成，但上游未能设置。请刷新并在终端检查，不要直接重复推送。\n${explain(error).message}`,
-        )
-      }
-    }
-    return true
-  }
-
   async mutate(
     cwd: string,
     input: GitMutation,
     confirm: (description: string) => Promise<boolean>,
   ): Promise<boolean> {
     try {
+      if (isBranchMutation(input)) return await mutateBranch(cwd, input, this)
       const status = await this.status(cwd)
-      if (
-        input.action === 'fetch' ||
-        input.action === 'push' ||
-        input.action === 'publish' ||
-        input.action === 'pull' ||
-        input.action === 'sync'
-      )
-        return await this.mutateRemote(cwd, status, input)
-      if (input.action === 'create-branch' || input.action === 'create-and-switch-branch') {
-        if (
-          typeof input.name !== 'string' ||
-          !input.name ||
-          input.name !== input.name.trim() ||
-          input.name.length > 1013 ||
-          input.name.startsWith('-') ||
-          input.name === 'HEAD' ||
-          /[\0\r\n]/.test(input.name)
-        )
-          throw new Error('请输入有效的本地分支名（上限 1,013 字符）。')
-        if (!status.head) throw new Error('当前分支还没有提交，暂不能创建分支。')
-        if (typeof input.head !== 'string' || !OID.test(input.head) || input.head !== status.head)
-          throw new Error('HEAD 已改变，请刷新后重试。')
-        if (input.action === 'create-and-switch-branch' && input.branch !== status.branch)
-          throw new Error('分支已改变，请刷新后重试。')
-        await runGit(status.rootPath, ['check-ref-format', `refs/heads/${input.name}`])
-        if (input.action === 'create-and-switch-branch') {
-          // Git creates the branch only if switching succeeds; never leave a half-created branch.
-          await runGit(
-            status.rootPath,
-            [
-              'switch',
-              '--no-track',
-              '--no-guess',
-              '--no-overwrite-ignore',
-              '--no-recurse-submodules',
-              '--create',
-              input.name,
-              '--',
-              input.head,
-            ],
-            true,
-          )
-        } else {
-          await runGit(
-            status.rootPath,
-            ['branch', '--no-track', '--', input.name, input.head],
-            true,
-          )
-        }
-        return true
-      }
-      if (input.action === 'switch-branch' || input.action === 'delete-branch') {
-        if (
-          typeof input.ref !== 'string' ||
-          !input.ref.startsWith('refs/heads/') ||
-          input.ref.length > 1024 ||
-          /[\0\r\n]/.test(input.ref) ||
-          input.ref.slice(11).startsWith('-')
-        )
-          throw new Error('请选择明确的本地分支。')
-        if (input.branch !== status.branch || input.head !== status.head)
-          throw new Error('分支或 HEAD 已改变，请刷新后重试。')
-        await runGit(status.rootPath, ['check-ref-format', input.ref])
-        await this.resolveCommit(status.rootPath, input.ref)
-        const branch = input.ref.slice(11)
-        if (status.branch === branch) {
-          if (input.action === 'delete-branch') throw new Error('不能删除当前分支。')
-          return true
-        }
-        const occupied = (await this.git.listWorktrees(status.rootPath)).find(
-          (entry) => entry.branch === branch && entry.path !== status.rootPath,
-        )
-        if (occupied) throw new Error(`分支已被其他 Worktree 占用：${occupied.path}`)
-        if (input.action === 'delete-branch') {
-          // Let Git refuse unmerged or checked-out branches; never force deletion.
-          await runGit(status.rootPath, ['branch', '--delete', '--', branch], true)
-          return true
-        }
-        if (status.entries.length)
-          throw new Error('切换分支前请提交或自行处理工作区更改；不会自动 stash 或丢弃改动。')
-        await runGit(
-          status.rootPath,
-          [
-            'switch',
-            '--no-guess',
-            '--no-overwrite-ignore',
-            '--no-recurse-submodules',
-            '--',
-            branch,
-          ],
-          true,
-        )
-        return true
-      }
       if (input.action === 'commit') {
         if (
           typeof input.message !== 'string' ||

@@ -51,6 +51,7 @@ export type GitMutation = WorkspaceTarget &
     | GitRemoteMutation
   )
 export interface GitReferences {
+  defaultBranchRef?: string
   remotes: string[]
   branches: { ref: string; label: string; date: string; subject: string; worktreePath?: string }[]
 }
@@ -63,6 +64,7 @@ export interface GitCommit {
 }
 export interface GitHistoryRequest {
   head?: string
+  base?: string
   offset?: number
 }
 export interface GitHistory {
@@ -76,6 +78,7 @@ export interface GitReviewFile {
   oldPath?: string
   status: string
   submodule: boolean
+  stats?: GitChange['stats']
 }
 export interface GitComparison {
   base: string | null

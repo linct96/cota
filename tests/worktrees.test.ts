@@ -186,6 +186,10 @@ describe('Main-authorized workspace and Worktree lifecycle', () => {
   it('resolves stored bindings, rejects a forged directory and never falls back after path loss', async () => {
     const { record, workspace } = await manager.createWorktree(input(repo))
     const target = { projectPath: repo, workspaceId: workspace.id, cwd: repo }
+    expect(await manager.withProjectTarget(repo, async (value) => value.cwd)).toBe(repo)
+    await expect(manager.withProjectTarget(record.path, async () => {})).rejects.toThrow(
+      '请先打开项目',
+    )
     expect(await manager.withTerminalTarget(target, async (value) => value)).toMatchObject({
       cwd: record.path,
       workspaceKind: 'git-worktree',

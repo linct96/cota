@@ -68,6 +68,25 @@ export class WorktreeManager {
     return path
   }
 
+  async withProjectTarget<T>(
+    value: string,
+    action: (binding: { cwd: string; repoCommonDir: string }) => Promise<T>,
+  ): Promise<T> {
+    await this.config.flush()
+    const path = this.authorizeProject(value)
+    const repository = await this.git.requireRepository(path)
+    return this.withRepositoryLock(repository.repoCommonDir, async () => {
+      this.authorizeProject(path)
+      const current = await this.git.requireRepository(path)
+      if (
+        current.repoCommonDir !== repository.repoCommonDir ||
+        current.rootPath !== repository.rootPath
+      )
+        throw new WorktreeError('REPOSITORY_UNAVAILABLE', '仓库身份已改变，请重新读取。')
+      return action({ cwd: current.rootPath, repoCommonDir: current.repoCommonDir })
+    })
+  }
+
   async withTerminalTarget<T>(
     value: WorkspaceTarget,
     action: (binding: TerminalBinding) => Promise<T>,
@@ -345,10 +364,6 @@ export class WorktreeManager {
       })
       return plan
     })
-  }
-
-  localBranches(path: string): Promise<string[]> {
-    return this.git.localBranches(this.authorizeProject(path))
   }
 
   async suggestName(value: string): Promise<WorktreeNameSuggestion> {

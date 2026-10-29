@@ -29,6 +29,7 @@ import {
 import { GeneralSettings } from './GeneralSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { SourceControlSettings } from './SourceControlSettings'
+import { CodeHostingSettings } from './CodeHostingSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { OpenWithSettings } from './OpenWithSettings'
 import { AppearanceSettings } from './AppearanceSettings'
@@ -93,7 +94,15 @@ const SETTING_GROUPS: SettingGroup[] = [
   {
     id: 'integration',
     label: '集成',
-    items: [{ id: 'open-with', label: '打开方式', icon: AppWindow }],
+    items: [
+      { id: 'open-with', label: '打开方式', icon: AppWindow },
+      {
+        id: 'code-hosting',
+        label: '代码托管',
+        icon: GitBranch,
+        keywords: 'github gitlab gh glab host cli 全局 连接 账号 授权 登录 检测',
+      },
+    ],
   },
 ]
 
@@ -104,6 +113,7 @@ const SETTING_COMPONENTS: Record<string, React.ComponentType> = {
   'quick-commands': QuickCommandsSettings,
   'open-with': OpenWithSettings,
   'source-control': SourceControlSettings,
+  'code-hosting': CodeHostingSettings,
   appearance: AppearanceSettings,
   'file-explorer': FileExplorerSettings,
   shortcuts: ShortcutSettings,

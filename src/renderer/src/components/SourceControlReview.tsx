@@ -1,130 +1,167 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  GitBranch,
-  GitCommitHorizontal,
-  Plus,
-} from 'lucide-react'
-import { toast } from 'sonner'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowLeft, ChevronRight, GitCommitHorizontal } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
-import type { GitComparison, GitHistory, GitReferences } from '../../../shared/source-control'
+import type { GitCommit, GitComparison, GitHistory } from '../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-store'
 import { buildGitChangeTree } from '../lib/source-control-tree'
-import { createBranchFormSchema } from '../lib/form-schemas'
 import { FileTypeIcon } from './FileTypeIcon'
 import { SourceFileExplorer } from './SourceFileExplorer'
+import { SourceControlFileStats } from './SourceControlFileStats'
 import { FileTreeFile } from './ui/file-tree'
 import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from './ui/empty'
-import { Field, FieldLabel, FieldGroup, FieldDescription, FieldError } from './ui/field'
-import { Separator } from './ui/separator'
-import {
-  Combobox,
-  ComboboxTrigger,
-  ComboboxContent,
-  ComboboxInput,
-  ComboboxEmpty,
-  ComboboxList,
-  ComboboxItem,
-  ComboboxGroup,
-  ComboboxLabel,
-  ComboboxCollection,
-} from './ui/combobox'
+import { Badge } from './ui/badge'
+import { SourceControlSection } from './SourceControlSection'
 
-export function SourceControlReview({
+export function CommitList({
+  commits,
+  onSelect,
+}: {
+  commits: GitCommit[]
+  onSelect: (commit: string) => void
+}) {
+  return (
+    <div className="source-control-history-list flex min-w-0 flex-col gap-1">
+      {commits.map((item) => (
+        <Button
+          key={item.oid}
+          variant="ghost"
+          className="source-control-history-commit h-auto w-full min-w-0 items-start justify-start py-1.5"
+          title={item.subject}
+          onClick={() => onSelect(item.oid)}
+        >
+          <span className="source-control-history-commit-icon-container flex h-lh shrink-0 items-center">
+            <GitCommitHorizontal
+              className="source-control-history-commit-icon"
+              data-icon="inline-start"
+            />
+          </span>
+          <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+            <span className="source-control-history-subject truncate">
+              {item.subject || '（无提交标题）'}
+            </span>
+            <span className="source-control-history-metadata truncate text-app-muted-foreground">
+              {item.oid.slice(0, 8)} · {item.author} ·{' '}
+              <time className="source-control-history-date" dateTime={item.date}>
+                {new Date(item.date).toLocaleDateString()}
+              </time>
+            </span>
+          </span>
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+export function ReviewFiles({
+  workspaceId,
+  comparison,
+}: {
+  workspaceId: string
+  comparison: GitComparison
+}) {
+  const session = useSourceControl((state) => state.sessions[workspaceId] || EMPTY_SOURCE_CONTROL)
+  const selectedDiff = session.activePinnedDiff || (session.preview ? session.selection : undefined)
+  const nodes = useMemo(() => buildGitChangeTree(comparison.entries), [comparison])
+  return (
+    <div className="source-control-review-files flex min-w-0 flex-col gap-0.5">
+      <SourceFileExplorer
+        key={`${comparison.base}:${comparison.head}`}
+        nodes={nodes}
+        label={`${comparison.label}文件树`}
+        selectedPath={
+          selectedDiff?.area === 'review' &&
+          selectedDiff.base === comparison.base &&
+          selectedDiff.head === comparison.head
+            ? selectedDiff.path
+            : undefined
+        }
+        renderFile={(entry, name, itemProps) => {
+          const selection = {
+            ...entry,
+            area: 'review' as const,
+            base: comparison.base,
+            head: comparison.head,
+            label: comparison.label,
+          }
+          return (
+            <FileTreeFile
+              {...itemProps}
+              path={entry.path}
+              className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
+              title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
+              onClick={() => useSourceControl.getState().openDiff(workspaceId, selection)}
+            >
+              <ChevronRight
+                className="source-file-explorer-chevron"
+                data-visible="false"
+                aria-hidden="true"
+              />
+              <FileTypeIcon path={entry.path} submodule={entry.submodule} />
+              <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
+                {name}
+              </span>
+              <SourceControlFileStats stats={entry.stats} />
+              <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
+                {entry.status}
+              </span>
+            </FileTreeFile>
+          )
+        }}
+      />
+    </div>
+  )
+}
+
+export function CommitHistoryContent({
   workspace,
   active,
-  references,
-  pending,
-  onCreateBranch,
+  head,
+  base,
+  render,
 }: {
   workspace: ProjectWorkspace
   active: boolean
-  references?: GitReferences
-  pending: boolean
-  onCreateBranch: (name: string, head: string) => Promise<boolean>
+  head?: string | null
+  base?: string
+  render?: (history: GitHistory | undefined, content: ReactNode) => ReactNode
 }) {
-  const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
-  const selectedDiff = session.activePinnedDiff || (session.preview ? session.selection : undefined)
-  const [history, setHistory] = useState<GitHistory>()
-  const [commit, setCommit] = useState('')
-  const [result, setResult] = useState<{ key: string; comparison: GitComparison }>()
-  const [error, setError] = useState<string>()
-  const [historyError, setHistoryError] = useState<string>()
-  const [loading, setLoading] = useState(false)
-  const [morePending, setMorePending] = useState(false)
-  const [branchOpen, setBranchOpen] = useState(false)
-  const [createError, setCreateError] = useState<string>()
-  const generation = useRef(0)
-  const paging = useRef(false)
   const target = useMemo(
     () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
     [workspace.projectPath, workspace.id],
   )
-  const mode = session.mode
-  const head = session.status?.head
-  const currentBranch = session.status?.branch || `分离 HEAD · ${head?.slice(0, 8) || '无提交'}`
-  const branches = references?.branches || []
-  const branchGroups = [
-    { label: '本地分支', items: branches.filter((branch) => branch.ref.startsWith('refs/heads/')) },
-    {
-      label: '远端分支',
-      items: branches.filter((branch) => branch.ref.startsWith('refs/remotes/')),
-    },
-  ].filter((group) => group.items.length > 0)
-  const baseRef =
-    session.baseRef ??
-    (branches.find((entry) => entry.ref === 'refs/remotes/origin/main')?.ref ||
-      branches.find((entry) => entry.ref === 'refs/heads/main')?.ref ||
-      branches.find((entry) => entry.ref !== `refs/heads/${session.status?.branch}`)?.ref ||
-      '')
-  const branchForm = useForm({
-    defaultValues: { name: '' },
-    validationLogic: revalidateLogic({ mode: 'submit' }),
-    validators: { onDynamic: createBranchFormSchema },
-    onSubmit: async ({ value }) => {
-      const name = value.name.trim()
-      if (!head || pending || branches.some((branch) => branch.ref === `refs/heads/${name}`)) return
-      setCreateError(undefined)
-      // Freeze even an empty baseline so refreshing refs cannot select the new branch implicitly.
-      useSourceControl.getState().update(workspace.id, { baseRef })
-      try {
-        if (await onCreateBranch(name, head)) {
-          setBranchOpen(false)
-          toast.success(`已创建本地分支「${name}」`)
-        }
-      } catch (error) {
-        setCreateError(error instanceof Error ? error.message : String(error))
-      }
-    },
-  })
-  const branchSearch = useStore(branchForm.store, (state) => state.values.name)
-  const branchName = branchSearch.trim()
-  const creating = useStore(branchForm.store, (state) => state.isSubmitting)
-  const showCreate =
-    !!head &&
-    !!references &&
-    !!branchName &&
-    !branches.some((branch) => branch.ref === `refs/heads/${branchName}`)
-  const comparisonKey = mode === 'history' ? `commit:${commit}` : `branch:${baseRef}:${head}`
-  const comparison = !error && result?.key === comparisonKey ? result.comparison : undefined
-  const nodes = useMemo(() => buildGitChangeTree(comparison?.entries || []), [comparison])
+  const [history, setHistory] = useState<GitHistory>()
+  const [historyError, setHistoryError] = useState<string>()
+  const [historyRetry, setHistoryRetry] = useState(0)
+  const [morePending, setMorePending] = useState(false)
+  const generation = useRef(0)
+  const paging = useRef<number | undefined>(undefined)
+  const [detailRequest, setDetailRequest] = useState({ commit: '' })
+  const [details, setDetails] = useState<{
+    request: typeof detailRequest
+    comparison?: GitComparison
+    error?: string
+  }>()
+  const commit = detailRequest.commit
+  const detail = details?.request === detailRequest ? details : undefined
+  const comparison = detail?.comparison
+  const error = detail?.error || historyError
+  const busy = active && (morePending || (!history && !historyError) || (!!commit && !detail))
 
   useEffect(() => {
     const currentGeneration = generation
     const version = ++currentGeneration.current
-    // Reset the previous IPC request's state before loading a new history snapshot.
+    // Invalidate old pages before loading a new history or comparison snapshot.
+    paging.current = undefined
     // oxlint-disable-next-line react/set-state-in-effect
+    setMorePending(false)
     setHistoryError(undefined)
-    if (!active || mode !== 'history') return
+    if (!active) return
     setHistory(undefined)
     window.desktop
-      .gitHistory(target, head ? { head } : {})
+      .gitHistory(target, { head: head ?? undefined, base })
       .then(unwrap)
       .then((page) => {
         if (version === generation.current) setHistory(page)
@@ -136,48 +173,40 @@ export function SourceControlReview({
     return () => {
       currentGeneration.current++
     }
-  }, [active, mode, head, target])
+  }, [active, head, base, historyRetry, target])
 
-  const comparisonRefresh = mode === 'compare' ? session.refreshed : 0
   useEffect(() => {
-    if (!active) return
-    // Clear the previous IPC request's loading/error state before starting this comparison.
-    // oxlint-disable-next-line react/set-state-in-effect
-    setError(undefined)
-    setLoading(false)
-    if ((mode === 'history' && !commit) || (mode === 'compare' && (!baseRef || !head))) return
+    if (!active || !commit) return
     let disposed = false
-    setLoading(true)
     window.desktop
-      .gitCompare(
-        target,
-        mode === 'history' ? { kind: 'commit', commit } : { kind: 'branch', ref: baseRef },
-      )
+      .gitCompare(target, { kind: 'commit', commit })
       .then(unwrap)
       .then((next) => {
-        if (!disposed) setResult({ key: comparisonKey, comparison: next })
+        if (!disposed) setDetails({ request: detailRequest, comparison: next })
       })
       .catch((error) => {
-        if (!disposed) setError(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        if (!disposed) setLoading(false)
+        if (!disposed)
+          setDetails({
+            request: detailRequest,
+            error: error instanceof Error ? error.message : String(error),
+          })
       })
     return () => {
       disposed = true
     }
-  }, [active, mode, commit, baseRef, head, comparisonRefresh, comparisonKey, target])
+  }, [active, detailRequest, commit, target])
 
   async function loadMore() {
-    if (!history?.head || paging.current) return
+    if (!active || !history?.head || !history.more || paging.current !== undefined) return
     const version = generation.current
-    paging.current = true
+    paging.current = version
     setMorePending(true)
     setHistoryError(undefined)
     try {
       const page = unwrap(
         await window.desktop.gitHistory(target, {
           head: history.head,
+          base,
           offset: history.commits.length,
         }),
       )
@@ -191,18 +220,19 @@ export function SourceControlReview({
       if (version === generation.current)
         setHistoryError(error instanceof Error ? error.message : String(error))
     } finally {
-      paging.current = false
-      setMorePending(false)
+      if (paging.current === version) {
+        paging.current = undefined
+        setMorePending(false)
+      }
     }
   }
 
-  return (
-    <section
-      className="source-control-review flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-      aria-label={mode === 'history' ? '提交历史' : '比较'}
-      aria-busy={loading || morePending || (mode === 'history' && !history && !historyError)}
+  const content = (
+    <div
+      className="source-control-commit-history flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      aria-busy={busy}
     >
-      {mode === 'history' && commit && (
+      {commit && (
         <nav
           className="source-control-history-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 px-2 py-1.5"
           aria-label="提交详情导航"
@@ -211,7 +241,7 @@ export function SourceControlReview({
             variant="ghost"
             size="sm"
             className="source-control-history-back"
-            onClick={() => setCommit('')}
+            onClick={() => setDetailRequest({ commit: '' })}
           >
             <ArrowLeft className="source-control-history-back-icon" data-icon="inline-start" />
             返回列表
@@ -223,335 +253,122 @@ export function SourceControlReview({
           )}
         </nav>
       )}
-      <div className="source-control-review-body flex min-h-0 flex-1 flex-col gap-3 overflow-auto px-2 py-3">
-        {mode === 'compare' && (
-          <div className="source-control-comparison-refs flex items-center justify-between gap-2 px-1">
-            <div
-              className="source-control-current-branch-value flex h-6 min-w-0 items-center gap-1 px-1.5 text-xs font-medium"
-              title={`当前分支 · ${currentBranch}`}
-            >
-              <GitBranch
-                className="source-control-current-branch-icon size-3 shrink-0"
-                aria-hidden="true"
-              />
-              <span className="source-control-current-branch-name min-w-0 truncate select-text">
-                {currentBranch}
-              </span>
-            </div>
-            <Field className="source-control-base-field w-auto flex-row items-center justify-end gap-1">
-              <ArrowRight
-                className="source-control-comparison-direction size-3 shrink-0 text-app-muted-foreground"
-                aria-hidden="true"
-              />
-              <Combobox
-                items={branchGroups}
-                value={branches.find((branch) => branch.ref === baseRef) || null}
-                itemToStringLabel={(branch) => branch.label}
-                disabled={!references}
-                open={branchOpen}
-                inputValue={branchSearch}
-                onInputValueChange={(value) => {
-                  branchForm.setFieldValue('name', value)
-                  setCreateError(undefined)
-                }}
-                onOpenChange={(open) => {
-                  if (creating) return
-                  if (open) {
-                    branchForm.reset()
-                    setCreateError(undefined)
-                  }
-                  setBranchOpen(open)
-                }}
-                onValueChange={(branch) => {
-                  if (branch && !pending && !creating)
-                    useSourceControl.getState().update(workspace.id, { baseRef: branch.ref })
-                }}
-              >
-                <ComboboxTrigger
-                  id={`base-${workspace.id}`}
-                  className="source-control-base-trigger w-auto min-w-0 max-w-full shrink justify-start gap-1 px-1.5"
-                  render={<Button variant="ghost" size="sm" />}
-                  aria-label="比较目标分支"
-                  disabled={pending || creating}
-                >
-                  <GitBranch
-                    className="source-control-base-icon shrink-0"
-                    data-icon="inline-start"
-                    aria-hidden="true"
-                  />
-                  <span
-                    className="source-control-base-value min-w-0 truncate text-left"
-                    title={branches.find((branch) => branch.ref === baseRef)?.label}
-                  >
-                    {branches.find((branch) => branch.ref === baseRef)?.label ||
-                      '选择本地或远端分支'}
-                  </span>
-                </ComboboxTrigger>
-                <ComboboxContent className="source-control-base-content flex flex-col" align="end">
-                  <form
-                    className="source-control-base-form flex min-h-0 flex-col overflow-hidden"
-                    noValidate
-                    onSubmit={(event) => {
-                      event.preventDefault()
-                      event.stopPropagation()
-                      if (showCreate && !pending && !creating) void branchForm.handleSubmit()
-                    }}
-                  >
-                    <FieldGroup className="source-control-base-search shrink-0 p-1">
-                      <branchForm.Field name="name">
-                        {(field) => {
-                          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-                          return (
-                            <Field
-                              className="source-control-base-search-field"
-                              data-invalid={invalid}
-                            >
-                              <FieldLabel
-                                className="source-control-base-search-label sr-only"
-                                htmlFor={`base-search-${workspace.id}`}
-                              >
-                                搜索分支或输入新分支名
-                              </FieldLabel>
-                              <ComboboxInput
-                                id={`base-search-${workspace.id}`}
-                                className="source-control-base-search-input"
-                                placeholder="搜索分支或输入新分支名…"
-                                disabled={pending || creating}
-                                onBlur={field.handleBlur}
-                                aria-invalid={invalid}
-                                aria-describedby={`base-search-error-${workspace.id}`}
-                              />
-                              <FieldError
-                                id={`base-search-error-${workspace.id}`}
-                                className="source-control-base-search-error"
-                                errors={invalid ? field.state.meta.errors : []}
-                              />
-                            </Field>
-                          )
-                        }}
-                      </branchForm.Field>
-                    </FieldGroup>
-                    <ComboboxEmpty className="source-control-base-empty">
-                      没有匹配的分支
-                    </ComboboxEmpty>
-                    <ComboboxList className="source-control-base-options min-h-0">
-                      {(group: (typeof branchGroups)[number]) => (
-                        <ComboboxGroup
-                          key={group.label}
-                          items={group.items}
-                          className="source-control-base-group"
-                        >
-                          <ComboboxLabel className="source-control-base-group-label">
-                            {group.label}
-                          </ComboboxLabel>
-                          <ComboboxCollection>
-                            {(branch: GitReferences['branches'][number]) => (
-                              <ComboboxItem
-                                key={branch.ref}
-                                value={branch}
-                                className="source-control-base-option"
-                                title={branch.label}
-                                disabled={pending || creating}
-                              >
-                                <span className="source-control-base-option-label min-w-0 truncate">
-                                  {branch.label}
-                                </span>
-                              </ComboboxItem>
-                            )}
-                          </ComboboxCollection>
-                        </ComboboxGroup>
-                      )}
-                    </ComboboxList>
-                    {showCreate && (
-                      <>
-                        <Separator className="source-control-base-create-separator" />
-                        <Field className="source-control-base-create shrink-0 gap-1 p-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="source-control-base-create-button w-full min-w-0 justify-start"
-                            disabled={pending || creating}
-                            aria-busy={creating}
-                            title={`创建本地分支「${branchName}」`}
-                            aria-describedby={`base-create-help-${workspace.id}`}
-                            onClick={() => void branchForm.handleSubmit()}
-                          >
-                            <Plus
-                              className="source-control-base-create-icon"
-                              data-icon="inline-start"
-                            />
-                            <span className="source-control-base-create-label min-w-0 truncate">
-                              {creating ? '正在创建…' : `创建本地分支「${branchName}」`}
-                            </span>
-                          </Button>
-                          <FieldDescription
-                            id={`base-create-help-${workspace.id}`}
-                            className="source-control-base-create-help px-2"
-                          >
-                            从当前 HEAD 创建，不切换分支或比较基准。
-                          </FieldDescription>
-                        </Field>
-                      </>
-                    )}
-                    {createError && (
-                      <Alert
-                        variant="destructive"
-                        className="source-control-base-create-error shrink-0"
-                      >
-                        <AlertDescription className="source-control-base-create-error-detail max-h-24 overflow-auto whitespace-pre-wrap break-words select-text">
-                          {createError}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                  </form>
-                </ComboboxContent>
-              </Combobox>
-            </Field>
-          </div>
-        )}
-        {(error || historyError) && (
+      <div className="source-control-review-body flex min-h-0 flex-1 flex-col gap-3 overflow-auto overscroll-contain px-2 pt-3 pb-2">
+        {error && (
           <Alert variant="destructive" className="source-control-review-error">
             <AlertDescription className="source-control-review-error-detail whitespace-pre-wrap break-words select-text">
-              {error || historyError}
+              {error}
             </AlertDescription>
+            <Button
+              variant="outline"
+              size="sm"
+              className="source-control-history-retry"
+              disabled={busy}
+              onClick={() => {
+                if (detail?.error) setDetailRequest({ ...detailRequest })
+                else if (history) void loadMore()
+                else setHistoryRetry((value) => value + 1)
+              }}
+            >
+              重试
+            </Button>
           </Alert>
         )}
         <LoadingContent
-          pending={loading || (mode === 'history' && !commit && !history && !historyError)}
-          label={mode === 'history' ? '正在加载提交历史' : '正在加载比较'}
+          pending={busy}
+          label={
+            commit ? '正在加载提交改动' : base ? '正在加载比较范围内的提交' : '正在加载提交历史'
+          }
         >
-          {mode === 'history' && !commit && (
+          {!commit && (
             <>
               {history && !history.commits.length && (
                 <Empty className="source-control-history-empty">
                   <EmptyHeader className="source-control-history-empty-header">
-                    <EmptyTitle className="source-control-history-empty-title">暂无提交</EmptyTitle>
+                    <EmptyTitle className="source-control-history-empty-title">
+                      {base ? '暂无提交差异' : '暂无提交'}
+                    </EmptyTitle>
                     <EmptyDescription className="source-control-history-empty-description">
-                      完成首次提交后，历史会显示在这里。
+                      {base ? '当前比较范围内没有新增提交。' : '完成首次提交后，历史会显示在这里。'}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
               )}
               {!!history?.commits.length && (
-                <div className="source-control-history-list flex min-w-0 flex-col gap-1">
-                  {history?.commits.map((item) => (
-                    <Button
-                      key={item.oid}
-                      variant="ghost"
-                      className="source-control-history-commit h-auto w-full min-w-0 items-start justify-start py-1.5"
-                      title={item.subject}
-                      onClick={() => setCommit(item.oid)}
-                    >
-                      <span className="source-control-history-commit-icon-container flex h-lh shrink-0 items-center">
-                        <GitCommitHorizontal
-                          className="source-control-history-commit-icon"
-                          data-icon="inline-start"
-                        />
-                      </span>
-                      <span className="source-control-history-commit-content flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-                        <span className="source-control-history-subject truncate">
-                          {item.subject || '（无提交标题）'}
-                        </span>
-                        <span className="source-control-history-metadata truncate text-app-muted-foreground">
-                          {item.oid.slice(0, 8)} · {item.author} ·{' '}
-                          <time className="source-control-history-date" dateTime={item.date}>
-                            {new Date(item.date).toLocaleDateString()}
-                          </time>
-                        </span>
-                      </span>
-                    </Button>
-                  ))}
-                </div>
+                <CommitList
+                  commits={history.commits}
+                  onSelect={(commit) => setDetailRequest({ commit })}
+                />
               )}
               {history?.more && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="source-control-history-more"
+                  className="source-control-history-more mt-2"
                   disabled={morePending}
                   onClick={() => void loadMore()}
                 >
                   加载更多
                 </Button>
               )}
-              {!!history?.commits.length && (
-                <p className="source-control-history-limit px-2 text-xs text-app-muted-foreground">
-                  当前 HEAD 的历史，每页 50 条，最多 10,000 条。
-                </p>
-              )}
             </>
-          )}
-          {mode === 'compare' && !head && (
-            <p className="source-control-compare-unborn p-2 text-xs text-app-muted-foreground">
-              当前分支还没有提交，暂不能比较。
-            </p>
           )}
           {comparison && (
             <>
-              {mode === 'compare' && (
-                <p className="source-control-comparison-summary truncate px-2 text-xs text-app-muted-foreground select-text">
-                  {comparison.entries.length
-                    ? `${comparison.entries.length} 个文件有差异`
-                    : '无文件差异'}
-                </p>
-              )}
-              {mode === 'history' && !comparison.entries.length && (
+              <p className="source-control-commit-description px-2 py-1 text-xs text-app-muted-foreground">
+                {comparison.label}
+              </p>
+              {!comparison.entries.length && (
                 <p className="source-control-comparison-empty px-2 text-xs text-app-muted-foreground">
-                  没有文件差异。
+                  此提交没有文件改动。
                 </p>
               )}
-              <div className="source-control-review-files flex min-w-0 flex-col gap-0.5">
-                <SourceFileExplorer
-                  key={comparisonKey}
-                  nodes={nodes}
-                  label={`${mode === 'history' ? '提交审阅' : '分支比较'}文件树`}
-                  selectedPath={
-                    selectedDiff?.area === 'review' &&
-                    selectedDiff.base === comparison.base &&
-                    selectedDiff.head === comparison.head
-                      ? selectedDiff.path
-                      : undefined
-                  }
-                  renderFile={(entry, name, itemProps) => {
-                    const selection = {
-                      ...entry,
-                      area: 'review' as const,
-                      base: comparison.base,
-                      head: comparison.head,
-                      label: comparison.label,
-                    }
-                    return (
-                      <FileTreeFile
-                        {...itemProps}
-                        path={entry.path}
-                        className="source-file-explorer-item source-control-review-file w-full min-w-0 justify-start gap-1.5"
-                        title={entry.oldPath ? `${entry.oldPath} → ${entry.path}` : entry.path}
-                        onClick={() =>
-                          useSourceControl.getState().openDiff(workspace.id, selection)
-                        }
-                      >
-                        <ChevronRight
-                          className="source-file-explorer-chevron"
-                          data-visible="false"
-                          aria-hidden="true"
-                        />
-                        <FileTypeIcon path={entry.path} submodule={entry.submodule} />
-                        <span className="source-control-review-path min-w-0 flex-1 truncate text-left">
-                          {name}
-                        </span>
-                        <span className="source-control-review-status shrink-0 font-mono text-app-muted-foreground">
-                          {entry.status}
-                        </span>
-                      </FileTreeFile>
-                    )
-                  }}
-                />
-              </div>
+              <ReviewFiles workspaceId={workspace.id} comparison={comparison} />
             </>
           )}
         </LoadingContent>
       </div>
-    </section>
+    </div>
+  )
+  return render ? render(history, content) : content
+}
+
+export function ComparisonCommits({
+  workspace,
+  comparison,
+  open,
+  onOpenChange,
+}: {
+  workspace: ProjectWorkspace
+  comparison: GitComparison
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <CommitHistoryContent
+      workspace={workspace}
+      active
+      head={comparison.head}
+      base={comparison.base ?? undefined}
+      render={(history, content) => (
+        <SourceControlSection
+          open={open}
+          onOpenChange={onOpenChange}
+          title={
+            <>
+              <span className="source-control-comparison-commits-label">Commit 对比</span>
+              {history && (
+                <Badge variant="secondary" className="source-control-comparison-commits-count">
+                  {history.commits.length}
+                  {history.more ? '+' : ''}
+                </Badge>
+              )}
+            </>
+          }
+        >
+          {content}
+        </SourceControlSection>
+      )}
+    />
   )
 }

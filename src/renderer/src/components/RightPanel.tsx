@@ -76,7 +76,12 @@ export function RightPanel({
               keepMounted
               className="right-panel-git-content flex min-h-0 flex-col overflow-hidden [&[hidden]]:hidden"
             >
-              <SourceControlPanel key={workspace.id} workspace={workspace} active={visible} />
+              <SourceControlPanel
+                key={workspace.id}
+                workspace={workspace}
+                active={visible}
+                selected={!filesActive}
+              />
             </TabsContent>
           )}
           <TabsContent

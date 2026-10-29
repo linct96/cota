@@ -26,8 +26,12 @@ import {
   type ShortcutBindings,
 } from '../shared/shortcuts'
 import { AccountService } from './accounts/service'
-import { projectBranch } from './git/project-branch'
 import { SourceControlService } from './git/source-control'
+import { BranchService, isBranchMutation } from './git/branch-service'
+import type { GitBranchTarget } from '../shared/git-branches'
+import { CodeHostingService } from './code-hosting/service'
+import { HostingError } from './code-hosting/cli-runner'
+import type { HostingContext } from '../shared/code-hosting'
 import { SourceControlWatches } from './git/source-control-watch'
 import { FileExplorerService } from './files/file-explorer'
 import { FileExplorerWatches } from './files/file-explorer-watch'
@@ -101,11 +105,24 @@ let config: ConfigStore
 let accounts: AccountService
 let worktrees: WorktreeManager
 let worktreeSetups: WorktreeSetupService
+let codeHosting: CodeHostingService
+let hostingGeneration = 0
 const sourceControl = new SourceControlService()
 const commitMessages = new CommitMessageService()
 const agentClis = new AgentCliManagement()
 const agentSleep = new AgentSleepPrevention()
-const sourceControlWatches = new SourceControlWatches()
+const sourceControlWatches = new SourceControlWatches(undefined, (_cwd, changes, commonDir) =>
+  branches.invalidateRepository(commonDir, changes),
+)
+const branches = new BranchService(
+  (repositoryId) => {
+    if (window && !window.webContents.isDestroyed())
+      window.webContents.send('git:branches-changed', repositoryId)
+  },
+  undefined,
+  undefined,
+  sourceControlWatches,
+)
 const files = new FileExplorerService(() => config.snapshot().preferences.fileExplorer)
 const fileWatches = new FileExplorerWatches(
   undefined,
@@ -210,6 +227,7 @@ function handle<Args extends unknown[], T>(
           ok: false,
           error: error instanceof Error ? error.message : '操作失败。',
           ...(error instanceof WorktreeError ? { code: error.code, details: error.details } : {}),
+          ...(error instanceof HostingError ? { hostingFailure: error.kind } : {}),
         }
       }
     },
@@ -286,6 +304,109 @@ function requestConfirmation(request: Omit<ConfirmationRequest, 'id'>): Promise<
   })
 }
 
+function pruneBranchSubscriptions(): void {
+  const snapshot = config.snapshot()
+  codeHosting?.prune([
+    ...snapshot.recentProjects,
+    ...(snapshot.layout?.workspaces || [])
+      .filter((workspace) => snapshot.recentProjects.includes(workspace.projectPath))
+      .flatMap((workspace) =>
+        workspace.kind === 'git-worktree'
+          ? snapshot.worktreeRecords
+              .filter((record) => record.id === workspace.worktreeId)
+              .map((record) => record.path)
+          : [workspace.projectPath],
+      ),
+  ])
+  branches.prune([
+    ...(snapshot.layout?.workspaces || [])
+      .filter((workspace) => snapshot.recentProjects.includes(workspace.projectPath))
+      .map((workspace) => ({ projectPath: workspace.projectPath, workspaceId: workspace.id })),
+    ...snapshot.recentProjects.map((projectPath) => ({ projectPath })),
+  ])
+}
+
+async function withBranchInvalidation<T>(
+  action: () => Promise<T>,
+  projectPath?: string,
+): Promise<T> {
+  const repository = projectPath ? await worktrees.inspectRepository(projectPath) : undefined
+  try {
+    return await action()
+  } finally {
+    if (repository?.status === 'ready') branches.invalidateRepository(repository.repoCommonDir)
+    pruneBranchSubscriptions()
+  }
+}
+
+function branchTarget(value: GitBranchTarget): GitBranchTarget {
+  return value?.workspaceId === undefined
+    ? { projectPath: absolutePath(value?.projectPath) }
+    : workspaceTarget(value)
+}
+
+function withBranchTarget<T>(
+  target: GitBranchTarget,
+  read: (binding: { cwd: string }) => Promise<T>,
+): Promise<T> {
+  return target.workspaceId
+    ? worktrees.withTerminalTarget(target as WorkspaceTarget, read)
+    : worktrees.withProjectTarget(target.projectPath, read)
+}
+
+async function readBranches(target: GitBranchTarget, id: string, force = false) {
+  const owner = () =>
+    JSON.stringify(
+      config
+        .snapshot()
+        .layout?.workspaces.find(
+          (workspace) =>
+            workspace.id === target.workspaceId && workspace.projectPath === target.projectPath,
+        ),
+    )
+  const binding = owner()
+  branches.subscribe(id, target)
+  try {
+    const view = await withBranchTarget(target, (binding) => branches.query(binding.cwd, id, force))
+    if (owner() !== binding || !config.snapshot().recentProjects.includes(target.projectPath))
+      throw new WorktreeError('REPOSITORY_UNAVAILABLE', '工作区绑定已改变，请重新读取。')
+    return view
+  } catch (error) {
+    branches.release(id)
+    throw error
+  }
+}
+
+async function readHosting<T>(
+  target: WorkspaceTarget,
+  read: (cwd: string, context: HostingContext) => Promise<T>,
+): Promise<T> {
+  pruneBranchSubscriptions()
+  const generation = hostingGeneration
+  const capture = () =>
+    worktrees.withTerminalTarget(target, async (binding) => ({
+      binding,
+      local: await codeHosting.capture(binding.cwd),
+    }))
+  const initial = await capture()
+  try {
+    const context = await codeHosting.resolveContext(initial.local)
+    const result = await read(initial.binding.cwd, context)
+    const current = await capture()
+    if (generation !== hostingGeneration || JSON.stringify(current) !== JSON.stringify(initial))
+      throw new WorktreeError('REPOSITORY_UNAVAILABLE', '工作区、仓库或分支已改变，请重新读取。')
+    return result
+  } finally {
+    if (generation === hostingGeneration) pruneBranchSubscriptions()
+  }
+}
+
+function closeGitResources(): void {
+  hostingGeneration++
+  codeHosting?.close()
+  branches.close()
+}
+
 async function removeTarget(target: RemovalTarget): Promise<boolean> {
   if (removingWorkspace || worktrees?.removing || exitPending || exiting || closingTabs.size)
     return false
@@ -326,6 +447,7 @@ async function removeTarget(target: RemovalTarget): Promise<boolean> {
       `删除未完成，${target.workspaceId ? '工作区' : '项目'}仍保留；部分终端可能已结束，请重试。${String(error)}`,
     )
   } finally {
+    pruneBranchSubscriptions()
     removingWorkspace = undefined
   }
 }
@@ -408,7 +530,18 @@ function installIPC(): void {
     settleConfirmation(confirmed)
   })
   handle('window:is-maximized', () => window?.isMaximized() ?? false)
-  handle('workspace:save-layout', (value: WorkspaceLayout) => config.saveLayout(value))
+  handle('workspace:save-layout', async (value: WorkspaceLayout) => {
+    const previous = config.snapshot().layout?.workspaces || []
+    await config.saveLayout(value)
+    pruneBranchSubscriptions()
+    const current = config.snapshot().layout?.workspaces || []
+    const changed = [...previous, ...current].filter(
+      (workspace) =>
+        JSON.stringify(previous.find((entry) => entry.id === workspace.id)) !==
+        JSON.stringify(current.find((entry) => entry.id === workspace.id)),
+    )
+    branches.invalidateProjects(changed.map((workspace) => workspace.projectPath))
+  })
   handle('project:open', async () => {
     const currentWindow = window
     if (!currentWindow || currentWindow.isDestroyed()) throw new Error('当前没有可用窗口。')
@@ -431,11 +564,10 @@ function installIPC(): void {
     )
       await config.remember(path)
   })
-  handle('project:branch', projectBranch)
   handle('git:inspect-repository', (path: string) => worktrees.inspectRepository(path))
   handle('git:list-worktrees', (path: string) => worktrees.listWorktrees(path))
   const assertLifecycle = () => {
-    if (removingWorkspace || worktrees.removing || closingTabs.size || exitPending || exiting)
+    if (removingWorkspace || worktrees.removing || exitPending || exiting)
       throw new Error('正在关闭或移除工作区，请稍后重试。')
   }
   const authorizePorts = async (value: unknown) => {
@@ -537,6 +669,71 @@ function installIPC(): void {
     )
   })
   handle('files:unwatch', (id: unknown) => fileWatches.stop(id))
+  handle('code-hosting:context', (target: WorkspaceTarget) => {
+    assertLifecycle()
+    return readHosting(target, async (_cwd, context) => context)
+  })
+  handle('code-hosting:accounts', (provider: unknown) => {
+    assertLifecycle()
+    return codeHosting.accounts(provider)
+  })
+  handle('code-hosting:connection', (provider: unknown, host: unknown) => {
+    assertLifecycle()
+    return codeHosting.connection(provider, host)
+  })
+  handle('code-hosting:inspect', (target: WorkspaceTarget) => {
+    assertLifecycle()
+    return readHosting(target, (cwd, context) => codeHosting.inspect(cwd, context))
+  })
+  handle('code-hosting:creation-context', (target: WorkspaceTarget) => {
+    assertLifecycle()
+    return readHosting(target, (cwd, context) => codeHosting.creationContext(cwd, context))
+  })
+  handle('code-hosting:history', (target: WorkspaceTarget, key: unknown, page: unknown) => {
+    assertLifecycle()
+    return readHosting(target, (cwd, context) => codeHosting.history(cwd, key, page, context))
+  })
+  handle('code-hosting:prepare', (target: WorkspaceTarget, input: unknown) => {
+    assertLifecycle()
+    return readHosting(target, (cwd, context) => codeHosting.prepare(cwd, input, context))
+  })
+  handle('code-hosting:refresh-branches', (target: WorkspaceTarget, input: unknown) => {
+    assertLifecycle()
+    return readHosting(target, (cwd, context) => codeHosting.refreshBranches(cwd, input, context))
+  })
+  handle('code-hosting:create', (target: WorkspaceTarget, input: unknown) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => codeHosting.create(binding.cwd, input))
+  })
+  handle('code-hosting:open', (target: WorkspaceTarget, number: unknown, sourceBranch: unknown) => {
+    assertLifecycle()
+    const url = readHosting(target, (cwd, context) =>
+      codeHosting.reviewUrl(cwd, number, sourceBranch, context),
+    )
+    return url.then(async (value) => {
+      assertLifecycle()
+      await shell.openExternal(value)
+    })
+  })
+  handle(
+    'code-hosting:clear-creation',
+    (target: WorkspaceTarget, key: unknown, sourceBranch: unknown) => {
+      assertLifecycle()
+      return worktrees.withTerminalTarget(target, async (binding) => {
+        if (
+          await requestConfirmation({
+            title: '解除重复创建保护',
+            description:
+              '请先在对应平台网页核对所选来源分支确实没有 PR/MR。解除后再次创建可能产生重复记录。',
+            confirmLabel: '已核对，解除保护',
+          })
+        ) {
+          assertLifecycle()
+          await codeHosting.clearCreation(binding.cwd, key, sourceBranch)
+        }
+      })
+    },
+  )
   handle('git:status', (target: WorkspaceTarget) => {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) =>
@@ -586,10 +783,15 @@ function installIPC(): void {
     )
   })
   handle('git:unwatch', (id: unknown) => sourceControlWatches.stop(id))
-  handle('git:references', (target: WorkspaceTarget) => {
-    assertLifecycle()
-    return worktrees.withTerminalTarget(target, (binding) => sourceControl.references(binding.cwd))
-  })
+  handle(
+    'git:branch-snapshot',
+    (value: GitBranchTarget, subscriptionId: unknown, force = false) => {
+      assertLifecycle()
+      if (typeof force !== 'boolean') throw new Error('分支刷新参数无效。')
+      return readBranches(branchTarget(value), terminalId(subscriptionId), force)
+    },
+  )
+  handle('git:release-branches', (id: unknown) => branches.release(terminalId(id)))
   handle('git:history', (target: WorkspaceTarget, request?: GitHistoryRequest) => {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) =>
@@ -611,13 +813,21 @@ function installIPC(): void {
     if (!input || typeof input !== 'object') throw new Error('Git 操作参数无效。')
     return worktrees.withTerminalTarget(input, (binding) => {
       assertLifecycle()
-      return sourceControl.mutate(binding.cwd, input, (description) =>
-        requestConfirmation({
-          title: '丢弃工作区改动',
-          description,
-          confirmLabel: '丢弃改动',
-        }),
-      )
+      if (isBranchMutation(input))
+        return branches.mutate(binding.cwd, input, sourceControl, (urls) =>
+          codeHosting.invalidateRemoteBranches(urls),
+        )
+      const mutate = () =>
+        sourceControl.mutate(binding.cwd, input, (description) =>
+          requestConfirmation({
+            title: '丢弃工作区改动',
+            description,
+            confirmLabel: '丢弃改动',
+          }),
+        )
+      return ['stage', 'unstage', 'discard'].includes(input.action)
+        ? mutate()
+        : withBranchInvalidation(mutate, binding.projectPath)
     })
   })
   handle('worktree-setup:config', (path: string) => worktreeSetups.definition(path))
@@ -647,7 +857,6 @@ function installIPC(): void {
     assertLifecycle()
     return worktrees.planWorktree(input)
   })
-  handle('git:branches', (path: string) => worktrees.localBranches(path))
   handle('git:suggest-worktree-name', (path: string) => {
     assertLifecycle()
     return worktrees.suggestName(path)
@@ -657,54 +866,69 @@ function installIPC(): void {
   )
   handle('git:create-worktree', (input: unknown) => {
     assertLifecycle()
-    return worktrees.createWorktree(input)
+    return withBranchInvalidation(
+      () => worktrees.createWorktree(input),
+      typeof (input as { projectPath?: unknown })?.projectPath === 'string'
+        ? (input as { projectPath: string }).projectPath
+        : undefined,
+    )
   })
   handle('git:link-worktree', (path: string, target: string) => {
     assertLifecycle()
-    return worktrees.linkWorktree(path, target)
+    return withBranchInvalidation(() => worktrees.linkWorktree(path, target), path)
   })
   handle('git:inspect-removal', async (id: string) =>
     worktrees.inspectRemoval(id, await manager.request('list', [])),
   )
   handle('git:remove-worktree', (id: string, deleteBranch: unknown) => {
     assertLifecycle()
+    if (closingTabs.size) throw new Error('终端正在关闭，请稍后再删除工作树。')
     if (typeof deleteBranch !== 'boolean') throw new Error('删除分支参数无效。')
-    return worktrees.removeWorktree(id, {
-      deleteBranch,
-      sessions: () => manager.request('list', []),
-      close: (id) => manager.request('close', [id]),
-      confirm: (check, force) => {
-        let branchDescription = ''
-        if (check.currentBranch)
-          branchDescription = deleteBranch
-            ? `同时删除本地分支 ${check.currentBranch}。`
-            : '本地分支保留。'
-        const forceBranchDescription =
-          deleteBranch && check.currentBranch
-            ? `同时强制删除本地分支 ${check.currentBranch}，未合并提交可能丢失。`
-            : ''
-        return requestConfirmation({
-          title: force ? '强制删除工作树' : '删除工作树',
-          description: force
-            ? `将永久删除 ${check.worktreePath} 及关联工作区，丢弃未提交、未跟踪和忽略的文件，并结束关联终端。${forceBranchDescription}此操作可能无法恢复。`
-            : `将删除 ${check.worktreePath} 及关联工作区，并结束关联终端。${branchDescription}`,
-          confirmLabel: force ? '强制删除' : '删除',
-        })
-      },
-    })
+    return withBranchInvalidation(
+      () =>
+        worktrees.removeWorktree(id, {
+          deleteBranch,
+          sessions: () => manager.request('list', []),
+          close: (id) => manager.request('close', [id]),
+          confirm: (check, force) => {
+            let branchDescription = ''
+            if (check.currentBranch)
+              branchDescription = deleteBranch
+                ? `同时删除本地分支 ${check.currentBranch}。`
+                : '本地分支保留。'
+            const forceBranchDescription =
+              deleteBranch && check.currentBranch
+                ? `同时强制删除本地分支 ${check.currentBranch}，未合并提交可能丢失。`
+                : ''
+            return requestConfirmation({
+              title: force ? '强制删除工作树' : '删除工作树',
+              description: force
+                ? `将永久删除 ${check.worktreePath} 及关联工作区，丢弃未提交、未跟踪和忽略的文件，并结束关联终端。${forceBranchDescription}此操作可能无法恢复。`
+                : `将删除 ${check.worktreePath} 及关联工作区，并结束关联终端。${branchDescription}`,
+              confirmLabel: force ? '强制删除' : '删除',
+            })
+          },
+        }),
+      config.snapshot().worktreeRecords.find((record) => record.id === id)?.projectPath,
+    )
   })
   handle('git:unlink-worktree', (id: string) => {
     assertLifecycle()
-    return worktrees.unlinkWorktree(id, {
-      sessions: () => manager.request('list', []),
-      close: (id) => manager.request('close', [id]),
-      confirm: () =>
-        requestConfirmation({
-          title: '移除工作区关联',
-          description: '将结束关联终端并移除 Cota 工作区与登记，不删除工作树目录或本地分支。',
-          confirmLabel: '删除',
+    if (closingTabs.size) throw new Error('终端正在关闭，请稍后再移除关联。')
+    return withBranchInvalidation(
+      () =>
+        worktrees.unlinkWorktree(id, {
+          sessions: () => manager.request('list', []),
+          close: (id) => manager.request('close', [id]),
+          confirm: () =>
+            requestConfirmation({
+              title: '移除工作区关联',
+              description: '将结束关联终端并移除 Cota 工作区与登记，不删除工作树目录或本地分支。',
+              confirmLabel: '删除',
+            }),
         }),
-    })
+      config.snapshot().worktreeRecords.find((record) => record.id === id)?.projectPath,
+    )
   })
   handle('workspace:path', (target: WorkspaceTarget) =>
     worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
@@ -1065,6 +1289,7 @@ async function forceExit(): Promise<void> {
     await worktreeSetups?.close()
     await config?.flush()
     sourceControlWatches.close()
+    closeGitResources()
     fileWatches.close()
     await commitMessages.close()
     await forceStopTerminalHost(app.getPath('userData'))
@@ -1113,6 +1338,7 @@ async function requestExit(): Promise<void> {
     await commitMessages.close()
     manager.disconnect()
     sourceControlWatches.close()
+    closeGitResources()
     fileWatches.close()
     await accounts.close()
     agentSleep.dispose()
@@ -1310,6 +1536,7 @@ if (!app.requestSingleInstanceLock()) {
       await app.whenReady()
       app.setName(appName)
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
+      codeHosting = new CodeHostingService(config, sourceControl)
       accounts = new AccountService(
         join(app.getPath('userData'), 'cortana.sqlite3'),
         (progress) => {
@@ -1438,6 +1665,7 @@ if (!app.requestSingleInstanceLock()) {
       const rendererUnavailable = () => {
         void commitMessages.close()
         sourceControlWatches.close()
+        closeGitResources()
         fileWatches.close()
         rendererReady = false
         visibleTerminal = undefined

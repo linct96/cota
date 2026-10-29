@@ -38,10 +38,8 @@ export function useSourceControlWatch(
         }
         clearInterval(poll)
         clearTimeout(retry)
-        if (event === 'ready') {
-          // Renew inode-bound native watches as well as checking for missed events.
-          poll = setInterval(connect, 60_000)
-        } else {
+        if (event === 'ready') poll = setInterval(connect, 60_000)
+        else {
           poll = setInterval(reload, 5000)
           retry = setTimeout(connect, 60_000)
         }

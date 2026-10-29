@@ -42,6 +42,7 @@
   --color-scrollbar-thumb-active: var(--scrollbar-thumb-active);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-border: var(--border);
   --color-titlebar-separator: var(--titlebar-separator);
   --color-window-control-hover: var(--window-control-hover);
@@ -104,6 +105,7 @@
   --dot-status-empty: var(--dot-status-neutral);
   --dot-status-idle: var(--dot-status-neutral);
   --warning: #a16207;
+  --success: #166534;
   --dot-status-attention: #ca8a04;
   --dot-status-completed: #299f51;
   --dot-status-working: #38bdf8;
@@ -605,7 +607,9 @@ button:not([data-slot='button']):focus-visible {
   background: var(--primary);
 }
 .source-control-history-navigation,
-.source-control-changes-navigation {
+.source-control-changes-navigation,
+.source-control-comparison-refs,
+.hosted-review-navigation {
   background: var(--background);
   border-bottom: 1px solid var(--border);
 }
@@ -970,6 +974,7 @@ button:not([data-slot='button']):focus-visible {
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   --warning: #fbbf24;
+  --success: #86efac;
   --dot-status-attention: #fbbf24;
   --dot-status-completed: #35c264;
   --dot-status-working: #38bdf8;

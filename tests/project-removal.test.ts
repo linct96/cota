@@ -103,6 +103,9 @@ const mocks = vi.hoisted(() => {
     gitReferences: vi.fn(),
     gitHistory: vi.fn(),
     gitCompare: vi.fn(),
+    hostingCapture: vi.fn(),
+    hostingResolve: vi.fn(),
+    hostingInspect: vi.fn(),
   }
 })
 vi.mock('../src/main/notification-sound', () => ({ readNotificationSound: mocks.readSound }))
@@ -185,6 +188,47 @@ vi.mock('../src/main/git/worktree-manager', () => ({
     withTerminalTarget = mocks.withTerminalTarget
     initializing = new Set<string>()
     removing = false
+  },
+}))
+vi.mock('../src/main/code-hosting/service', () => ({
+  CodeHostingService: class {
+    capture = mocks.hostingCapture
+    resolveContext = mocks.hostingResolve
+    inspect = mocks.hostingInspect
+    prune = vi.fn()
+    close = vi.fn()
+    invalidateRemoteBranches = vi.fn()
+  },
+}))
+vi.mock('../src/main/git/branch-service', () => ({
+  isBranchMutation: (input: { action: string }) =>
+    [
+      'fetch',
+      'pull',
+      'push',
+      'publish',
+      'sync',
+      'create-branch',
+      'create-and-switch-branch',
+      'switch-branch',
+      'delete-branch',
+    ].includes(input.action),
+  BranchService: class {
+    subscribe = vi.fn()
+    release = vi.fn()
+    prune = vi.fn()
+    invalidate = vi.fn()
+    invalidateRepository = vi.fn()
+    invalidateProjects = vi.fn()
+    mutate = mocks.gitMutate
+    close = vi.fn()
+    async query(path: string) {
+      const references = await mocks.gitReferences(path)
+      return {
+        snapshot: { branches: references?.branches || [], remoteHeads: [] },
+        remotes: references?.remotes || [],
+      }
+    }
   },
 }))
 vi.mock('../src/main/git/source-control', () => ({
@@ -483,7 +527,7 @@ describe('Git Worktree IPC boundaries', () => {
     'git:list-worktrees',
     'git:create-worktree',
     'git:plan-worktree',
-    'git:branches',
+    'git:branch-snapshot',
     'git:suggest-worktree-name',
     'git:scan-worktrees',
     'git:link-worktree',
@@ -498,6 +542,63 @@ describe('Git Worktree IPC boundaries', () => {
     expect(mocks.listWorktrees).not.toHaveBeenCalled()
     expect(mocks.createWorktree).not.toHaveBeenCalled()
   })
+  it('releases the repository gate during hosted reads and rejects a changed publication context', async () => {
+    let locked = false
+    mocks.config.recentProjects = [path]
+    mocks.withTerminalTarget.mockImplementation(async (_target, action) => {
+      locked = true
+      try {
+        return await action({
+          projectPath: path,
+          workspaceId: target.workspaceId,
+          cwd: path,
+          workspaceKind: 'local',
+        })
+      } finally {
+        locked = false
+      }
+    })
+    const original = {
+      cwd: path,
+      identity: 'repository-before',
+      names: [],
+      urls: [],
+      status: {},
+      generation: 0,
+    }
+    let changed = false
+    mocks.hostingCapture.mockImplementation(async () => {
+      expect(locked).toBe(true)
+      return changed ? { ...original, identity: 'repository-after' } : original
+    })
+    mocks.hostingResolve.mockImplementation(async () => {
+      expect(locked).toBe(false)
+      return {}
+    })
+    let started!: () => void
+    let finish!: () => void
+    const entered = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    mocks.hostingInspect.mockImplementation(async () => {
+      expect(locked).toBe(false)
+      started()
+      await gate
+      return { activeReviews: [] }
+    })
+    const pending = mocks.handlers.get('code-hosting:inspect')!(event, target)
+    await entered
+    await mocks.handlers.get('git:status')!(event, target)
+    changed = true
+    finish()
+    expect(await pending).toMatchObject({ ok: false, code: 'REPOSITORY_UNAVAILABLE' })
+    expect(mocks.hostingCapture).toHaveBeenCalledTimes(2)
+    expect(mocks.gitStatus).toHaveBeenCalled()
+  })
+
   it('discards Renderer cwd and identity fields before forwarding a trusted Main binding to Host', async () => {
     const defaultShell = mocks.handlers.get('shell:default')!
     expect(await defaultShell({ ...event, senderFrame: {} })).toMatchObject({ ok: false })
@@ -542,7 +643,7 @@ describe('Git Worktree IPC boundaries', () => {
       'git:status',
       'git:diff',
       'git:mutate',
-      'git:references',
+      'git:branch-snapshot',
       'git:history',
       'git:compare',
     ]) {
@@ -564,7 +665,7 @@ describe('Git Worktree IPC boundaries', () => {
     const mutation = { ...value, action: 'stage', files: [file] }
     await mocks.handlers.get('git:mutate')!(event, mutation)
     expect(mocks.gitMutate).toHaveBeenCalledExactlyOnceWith(path, mutation, expect.any(Function))
-    await mocks.handlers.get('git:references')!(event, value)
+    await mocks.handlers.get('git:branch-snapshot')!(event, value, randomUUID())
     expect(mocks.gitReferences).toHaveBeenCalledExactlyOnceWith(path)
     const historyRequest = { head: 'a'.repeat(40), offset: 50 }
     await mocks.handlers.get('git:history')!(event, value, historyRequest)
@@ -1447,24 +1548,51 @@ describe('renderer confirmation IPC', () => {
     },
   )
 
-  it('confirms busy terminal closure, cancels safely, and skips confirmation for idle or exited sessions', async () => {
+  it('keeps refreshes available during terminal confirmation and cleanup, preserves close guards, and skips idle confirmation', async () => {
     const close = () => mocks.handlers.get('terminal:close')!(event, target.workspaceId)
+    const checkClosing = async () => {
+      mocks.gitStatus.mockResolvedValueOnce({ files: [] })
+      expect(await mocks.handlers.get('git:status')!(event, target)).toEqual({
+        ok: true,
+        value: { files: [] },
+      })
+      mocks.gitReferences.mockRejectedValueOnce(new Error('Git unavailable'))
+      expect(await mocks.handlers.get('git:branch-snapshot')!(event, target, randomUUID())).toEqual(
+        {
+          ok: false,
+          error: 'Git unavailable',
+        },
+      )
+      expect(
+        await mocks.handlers.get('terminal:write')!(event, target.workspaceId, 'sleep 120\r'),
+      ).toMatchObject({ ok: false, error: expect.stringContaining('正在关闭') })
+      expect(await close()).toEqual({ ok: true, value: false })
+      expect(await remove()).toEqual({ ok: true, value: false })
+      for (const channel of ['git:remove-worktree', 'git:unlink-worktree'])
+        expect(await mocks.handlers.get(channel)!(event, target.workspaceId, false)).toMatchObject({
+          ok: false,
+          error: expect.stringContaining('终端正在关闭'),
+        })
+    }
     mocks.needsCloseConfirmation.mockResolvedValue(true)
     const cancelled = close()
     const request = await prompt()
     expect(mocks.close).not.toHaveBeenCalled()
-    expect(
-      await mocks.handlers.get('terminal:write')!(event, target.workspaceId, 'sleep 120\r'),
-    ).toMatchObject({
-      ok: false,
-      error: expect.stringContaining('正在关闭'),
-    })
-    expect(await close()).toEqual({ ok: true, value: false })
+    await checkClosing()
     await reply(request.id, false)
     expect(await cancelled).toEqual({ ok: true, value: false })
     mocks.contents.send.mockClear()
+    let finish!: () => void
+    mocks.close.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)))
     const confirmed = close()
     await reply((await prompt()).id, true)
+    try {
+      await vi.waitFor(() => expect(mocks.close).toHaveBeenCalledOnce())
+      await checkClosing()
+    } finally {
+      finish()
+      await confirmed
+    }
     expect(await confirmed).toEqual({ ok: true, value: true })
     expect(mocks.close).toHaveBeenCalledExactlyOnceWith(target.workspaceId)
     mocks.contents.send.mockClear()

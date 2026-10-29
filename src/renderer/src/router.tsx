@@ -29,8 +29,10 @@ const settingsRoute = createRoute({
   path: '/settings',
   validateSearch: (
     search: Record<string, unknown>,
-  ): { section?: 'open-with' | 'quick-commands' } =>
-    search.section === 'open-with' || search.section === 'quick-commands'
+  ): { section?: 'open-with' | 'quick-commands' | 'code-hosting' } =>
+    search.section === 'open-with' ||
+    search.section === 'quick-commands' ||
+    search.section === 'code-hosting'
       ? { section: search.section }
       : {},
   component: lazyRouteComponent(() => import('./components/Settings'), 'Settings'),

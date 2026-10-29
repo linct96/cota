@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { AgentProvider } from '../../../shared/contracts'
+import { unwrap, type AgentProvider, type WorkspaceTarget } from '../../../shared/contracts'
+import type { HostingContext } from '../../../shared/code-hosting'
 import type { TerminalLayout } from '../../../shared/terminal-layout'
 import { gitFileKey, type GitDiffSelection, type GitStatus } from '../../../shared/source-control'
 
@@ -24,7 +25,7 @@ interface SourceControlSession {
   pinnedFiles: string[]
   activePinnedFile?: string
   file?: string
-  mode: 'changes' | 'history' | 'compare'
+  mode: 'changes' | 'history' | 'compare' | 'review'
   baseRef?: string
   preview: boolean
   changesOpen: boolean
@@ -32,6 +33,11 @@ interface SourceControlSession {
   draft: string
   draftRevision: number
   status?: GitStatus
+  hosting?: {
+    context?: HostingContext
+    loading: boolean
+    error?: string
+  }
   refreshed: number
 }
 export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
@@ -50,6 +56,7 @@ export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
 interface SourceControlState {
   sessions: Record<string, SourceControlSession>
   update(id: string, patch: Partial<SourceControlSession>): void
+  refreshHostingContext(target: WorkspaceTarget): Promise<void>
   syncTerminals(id: string, terminalIds: string[]): void
   openDiff(id: string, selection: GitDiffSelection): void
   pinDiff(id: string): void
@@ -72,6 +79,16 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
     set((state) => {
       const previous = state.sessions[id] || EMPTY_SOURCE_CONTROL
       const session = { ...previous, ...patch }
+      if (
+        'status' in patch &&
+        (!patch.status ||
+          patch.status.rootPath !== previous.status?.rootPath ||
+          patch.status.branch !== previous.status?.branch ||
+          patch.status.head !== previous.status?.head ||
+          patch.status.tracking?.remote !== previous.status?.tracking?.remote ||
+          patch.status.tracking?.branch !== previous.status?.tracking?.branch)
+      )
+        session.hosting = undefined
       if ('draft' in patch && patch.draft !== previous.draft)
         session.draftRevision = previous.draftRevision + 1
       if (patch.file !== undefined) session.selection = undefined
@@ -116,6 +133,33 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
         session.tabOrder = tabOrder
       return { sessions: { ...state.sessions, [id]: session } }
     })
+  },
+  async refreshHostingContext(target) {
+    const id = target.workspaceId
+    const hosting = { context: get().sessions[id]?.hosting?.context, loading: true }
+    get().update(id, { hosting })
+    try {
+      const context = unwrap(await window.desktop.codeHosting.context(target))
+      // A newer request, changed Git status or removed workspace invalidates this read.
+      if (get().sessions[id]?.hosting === hosting)
+        get().update(id, {
+          hosting: {
+            context:
+              JSON.stringify(context) === JSON.stringify(hosting.context)
+                ? hosting.context
+                : context,
+            loading: false,
+          },
+        })
+    } catch (cause) {
+      if (get().sessions[id]?.hosting === hosting)
+        get().update(id, {
+          hosting: {
+            loading: false,
+            error: cause instanceof Error ? cause.message : '代码托管读取失败，请刷新。',
+          },
+        })
+    }
   },
   syncTerminals(id, terminalIds) {
     const session = get().sessions[id] || EMPTY_SOURCE_CONTROL

@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { worktreeSetupSchema } from '../shared/worktree-setup'
+import { pendingHostedReviewSchema, type PendingHostedReview } from '../shared/code-hosting'
+import { z } from 'zod'
 import { pruneTerminalLayouts } from '../shared/terminal-layout'
 import {
   DEFAULT_CONFIG,
@@ -53,6 +55,11 @@ export class ConfigStore {
           ]),
         )
       }
+      if (data.codeHostingPendingCreates !== undefined)
+        next.codeHostingPendingCreates = z
+          .array(z.union([z.string().regex(/^[a-f0-9]{64}$/), pendingHostedReviewSchema]))
+          .max(100)
+          .parse(data.codeHostingPendingCreates)
       if (data.worktreeNameHistory !== undefined)
         next.worktreeNameHistory = worktreeNameHistory(data.worktreeNameHistory)
       if (data.layout !== undefined)
@@ -105,6 +112,17 @@ export class ConfigStore {
   savePreferences(value: Preferences): Promise<void> {
     return this.update((config) => {
       config.preferences = value
+    })
+  }
+
+  saveCodeHostingPending(key: string, pending: PendingHostedReview | null): Promise<void> {
+    return this.update((config) => {
+      const entries = (config.codeHostingPendingCreates || []).filter(
+        (entry) => (typeof entry === 'string' ? entry : entry.key) !== key,
+      )
+      if (pending) entries.push(pendingHostedReviewSchema.parse({ ...pending, key }))
+      if (entries.length > 100) throw new Error('待确认的创建操作过多，请先核对已有 PR/MR。')
+      config.codeHostingPendingCreates = entries
     })
   }
 
