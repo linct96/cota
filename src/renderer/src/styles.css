@@ -427,6 +427,13 @@ input {
 input[type='radio'] {
   accent-color: var(--primary);
 }
+input[type='search']::-webkit-search-decoration,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-results-button,
+input[type='search']::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
 button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
@@ -821,6 +828,12 @@ button:not([data-slot='button']):focus-visible {
   color: var(--sidebar-foreground);
   font-size: var(--text-sm);
   font-weight: 600;
+}
+.settings-title {
+  color: var(--sidebar-foreground);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 .xterm {
   height: 100%;
