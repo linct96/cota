@@ -66,7 +66,7 @@ export function OpenWorkspaceButton({ workspace }: { workspace: ProjectWorkspace
   }
 
   return (
-    <ButtonGroup className="workspace-open-control mr-1 shrink-0" aria-label="打开工作区目录">
+    <ButtonGroup className="workspace-open-control shrink-0" aria-label="打开工作区目录">
       <Button
         variant="outline"
         size="sm"

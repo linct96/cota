@@ -566,7 +566,11 @@ export function App() {
               )}
               <div className="workspace-header-spacer min-w-0 flex-1" />
               {activeWorkspace && (
-                <>
+                <div
+                  className="workspace-toolbar-actions flex shrink-0 items-center gap-1.5 pr-2"
+                  role="toolbar"
+                  aria-label="工作区工具"
+                >
                   <WorkspacePortsButton
                     key={`ports-${activeWorkspace.id}`}
                     workspace={activeWorkspace}
@@ -580,7 +584,7 @@ export function App() {
                     workspace={activeWorkspace}
                   />
                   <OpenWorkspaceButton key={activeWorkspace.id} workspace={activeWorkspace} />
-                </>
+                </div>
               )}
             </div>
           )}
@@ -712,14 +716,14 @@ export function App() {
                   inert={!leftPanelOpen}
                   aria-label="项目"
                 >
-                  <div className="project-header group/header flex h-12 shrink-0 items-center justify-between px-4">
+                  <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
                     <h2 className="project-title">项目</h2>
                     <Tooltip>
                       <TooltipTrigger
                         render={
                           <Button
                             variant="project"
-                            size="icon"
+                            size="icon-sm"
                             className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
                             disabled={!state.ready || !!state.removingWorkspace}
                             aria-label="添加项目"
@@ -1224,51 +1228,61 @@ export function App() {
                       visible={!secondaryPageOpen && !showingDiff && activeNavigation === 'home'}
                     />
                     {!state.selectedProject && (
-                      <div className="workspace-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                        <FolderOpen className="workspace-empty-icon size-6 text-app-muted-foreground" />
-                        <div className="workspace-empty-content">
-                          <h3 className="workspace-empty-title text-sm font-medium text-foreground">
+                      <Empty className="workspace-empty-state col-start-1 row-start-1 size-full rounded-none p-8">
+                        <EmptyHeader className="workspace-empty-content">
+                          <EmptyMedia variant="icon" className="workspace-empty-media">
+                            <FolderOpen
+                              className="workspace-empty-icon text-app-muted-foreground"
+                              aria-hidden="true"
+                            />
+                          </EmptyMedia>
+                          <EmptyTitle className="workspace-empty-title">
                             {projects.length ? '未选择工作区' : '没有打开的项目'}
-                          </h3>
-                          <p className="workspace-empty-desc mt-1 text-xs text-app-muted-foreground">
+                          </EmptyTitle>
+                          <EmptyDescription className="workspace-empty-desc text-app-muted-foreground">
                             {projects.length
                               ? `从左侧选择一个工作区，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`
                               : `从左侧选择最近项目，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`}
-                          </p>
-                        </div>
+                          </EmptyDescription>
+                        </EmptyHeader>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="workspace-empty-action mt-1"
+                          className="workspace-empty-action"
                           onClick={() => {
                             void state.openProject()
                           }}
                         >
                           打开项目 ({shortcutLabel('open-folder')})
                         </Button>
-                      </div>
+                      </Empty>
                     )}
                     {state.selectedProject && !currentTabs.length && (
-                      <div className="terminal-empty-state col-start-1 row-start-1 flex size-full flex-col items-center justify-center gap-3 p-8 text-center">
-                        <TerminalIcon className="terminal-empty-icon size-6 text-app-muted-foreground" />
-                        <div className="terminal-empty-content">
-                          <h3 className="terminal-empty-title text-sm font-medium text-foreground">
+                      <Empty className="terminal-empty-state col-start-1 row-start-1 size-full rounded-none p-8">
+                        <EmptyHeader className="terminal-empty-content">
+                          <EmptyMedia variant="icon" className="terminal-empty-media">
+                            <TerminalIcon
+                              className="terminal-empty-icon text-app-muted-foreground"
+                              aria-hidden="true"
+                            />
+                          </EmptyMedia>
+                          <EmptyTitle className="terminal-empty-title">
                             当前工作区没有运行中的终端
-                          </h3>
-                          <p className="terminal-empty-desc mt-1 text-xs text-app-muted-foreground">
+                          </EmptyTitle>
+                          <EmptyDescription className="terminal-empty-desc text-app-muted-foreground">
                             点击上方 + 按钮，或使用快捷键 {shortcutLabel('new-terminal')} 新建终端。
-                          </p>
-                        </div>
+                          </EmptyDescription>
+                        </EmptyHeader>
                         <Button
                           variant="outline"
                           size="sm"
-                          className="terminal-empty-action mt-1"
+                          className="terminal-empty-action"
                           disabled={!!state.removingWorkspace}
                           onClick={() => state.newTerminal()}
                         >
                           新建终端 ({shortcutLabel('new-terminal')})
                         </Button>
-                      </div>
+                      </Empty>
                     )}
                   </div>
                 </main>

@@ -141,17 +141,22 @@ function WorkspacePortsPanel({
           )
         : undefined
       return (
-        <li className="workspace-port-row flex flex-col gap-2 py-3" key={port.id}>
+        <li className="workspace-port-row flex flex-col gap-2 py-3 text-xs" key={port.id}>
           <div className="workspace-port-summary flex min-w-0 items-baseline gap-3">
-            <span className="workspace-port-number font-mono text-sm font-medium">{port.port}</span>
-            <span className="workspace-port-process truncate" title={port.processName}>
+            <span className="workspace-port-number font-mono text-sm font-medium tabular-nums">
+              {port.port}
+            </span>
+            <span
+              className="workspace-port-process truncate font-medium text-foreground"
+              title={port.processName}
+            >
               {port.processName}
             </span>
-            <span className="workspace-port-pid ml-auto shrink-0 text-muted-foreground">
+            <span className="workspace-port-pid ml-auto shrink-0 tabular-nums text-muted-foreground">
               PID {port.pid}
             </span>
           </div>
-          <span className="workspace-port-address break-all font-mono text-muted-foreground">
+          <span className="workspace-port-address break-all font-mono tabular-nums text-muted-foreground">
             监听 {port.address.includes(':') ? `[${port.address}]` : port.address}:{port.port}
           </span>
           <span className="workspace-port-owner text-muted-foreground">
@@ -221,9 +226,9 @@ function WorkspacePortsPanel({
   const unknown = ports.filter((port) => !port.owner)
 
   return (
-    <div className="workspace-ports-panel flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6">
+    <div className="workspace-ports-panel flex min-h-0 flex-1 flex-col gap-4 px-6 pb-6 text-xs">
       <div className="workspace-ports-toolbar flex flex-wrap items-center justify-between gap-2">
-        <span className="workspace-ports-updated text-muted-foreground">
+        <span className="workspace-ports-updated tabular-nums text-muted-foreground">
           {snapshot
             ? `更新于 ${new Date(snapshot.scannedAt).toLocaleTimeString()}`
             : '尚未完成扫描'}
@@ -267,7 +272,7 @@ function WorkspacePortsPanel({
                 aria-labelledby="workspace-ports-current-title"
               >
                 <h3
-                  className="workspace-ports-current-title font-medium"
+                  className="workspace-ports-current-title text-xs font-medium tabular-nums"
                   id="workspace-ports-current-title"
                 >
                   当前工作区 · {current.length}
@@ -293,7 +298,7 @@ function WorkspacePortsPanel({
               ].map((group) => (
                 <Collapsible className="workspace-ports-other mt-4" key={group.label}>
                   <CollapsibleTrigger
-                    className="workspace-ports-other-trigger group w-full justify-start"
+                    className="workspace-ports-other-trigger group w-full justify-start tabular-nums"
                     render={<Button variant="ghost" />}
                   >
                     <ChevronRight
@@ -333,7 +338,7 @@ export function WorkspacePortsButton({ workspace }: { workspace: ProjectWorkspac
       <SheetTrigger
         render={
           <Button
-            className="workspace-ports-trigger mr-2 shrink-0"
+            className="workspace-ports-trigger shrink-0"
             variant="outline"
             size="sm"
             disabled={unavailable}

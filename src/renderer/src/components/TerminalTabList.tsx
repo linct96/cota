@@ -136,6 +136,7 @@ export function TerminalTabList({
             event.preventDefault()
             next.click()
             next.focus()
+            next.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
           }}
         >
           {children}

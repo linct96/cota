@@ -184,7 +184,7 @@ export function TopStatusBar({
               <TooltipTrigger
                 render={
                   <Button
-                    variant="secondary"
+                    variant="navigation"
                     size="icon"
                     id="right-panel-toggle"
                     className="right-panel-toggle shrink-0"
@@ -208,7 +208,7 @@ export function TopStatusBar({
             <TooltipTrigger
               render={
                 <Button
-                  variant="secondary"
+                  variant="navigation"
                   size="icon"
                   id="right-panel-toggle"
                   className="right-panel-toggle shrink-0"

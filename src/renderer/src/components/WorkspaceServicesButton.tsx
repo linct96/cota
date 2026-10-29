@@ -55,7 +55,7 @@ export function WorkspaceServicesButton({ workspaceId }: { workspaceId: string }
   return (
     <>
       <Button
-        className="workspace-services-trigger mr-2 shrink-0"
+        className="workspace-services-trigger shrink-0 tabular-nums"
         variant="outline"
         size="sm"
         onClick={() => {
@@ -74,17 +74,17 @@ export function WorkspaceServicesButton({ workspaceId }: { workspaceId: string }
               运行中仅表示进程尚未退出，不代表服务已就绪。关闭面板不停止服务；日志保留在原终端中。
             </DialogDescription>
           </DialogHeader>
-          <div className="workspace-services-list flex flex-col gap-4">
+          <div className="workspace-services-list flex flex-col gap-3">
             {services.map((tab) => (
               <div
                 className="workspace-service-row flex flex-wrap items-center justify-between gap-3"
                 key={tab.id}
               >
-                <div className="workspace-service-summary grid min-w-0 flex-1 gap-1">
-                  <span className="workspace-service-name truncate font-medium">
+                <div className="workspace-service-summary grid min-w-0 flex-1 gap-0.5">
+                  <span className="workspace-service-name truncate text-xs font-medium text-foreground">
                     {tab.service!.name}
                   </span>
-                  <span className="workspace-service-status text-sm text-muted-foreground">
+                  <span className="workspace-service-status text-xs tabular-nums text-muted-foreground">
                     {tab.status === 'starting'
                       ? '启动中'
                       : tab.status === 'running'
@@ -161,7 +161,7 @@ export function WorkspaceServicesButton({ workspaceId }: { workspaceId: string }
             ))}
           </div>
           {error && (
-            <p className="workspace-services-error text-sm text-destructive" role="alert">
+            <p className="workspace-services-error text-xs text-destructive" role="alert">
               {error}
             </p>
           )}

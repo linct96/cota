@@ -270,7 +270,7 @@ body:has(
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  mask-image: linear-gradient(to right, transparent, #000 55%);
+  mask-image: linear-gradient(to right, transparent, black 55%);
 }
 .terminal-tab[data-dnd-dragging] {
   -webkit-app-region: no-drag;
@@ -356,7 +356,7 @@ body:has(
 }
 @media (prefers-reduced-motion: reduce) {
   .terminal-tab-status,
-  .terminal-tab-actions::before,
+  .workspace-tab-actions-overlay::before,
   .ui-resizable-handle::before {
     transition: none;
   }
@@ -686,7 +686,12 @@ button:not([data-slot='button']):focus-visible {
 .file-explorer-entry-name,
 .source-file-explorer-name,
 .source-control-review-path,
-.file-preview-path {
+.file-preview-path,
+.project-folder-name,
+.project-item-name,
+.project-item-branch,
+.workspace-tab-title,
+.terminal-pane-title {
   unicode-bidi: plaintext;
 }
 .file-type-icon {
@@ -857,7 +862,7 @@ button:not([data-slot='button']):focus-visible {
 .xterm .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border: 3px solid transparent;
-  border-radius: 7px;
+  border-radius: 9999px;
   background-clip: padding-box;
 }
 .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
@@ -879,7 +884,7 @@ button:not([data-slot='button']):focus-visible {
 }
 
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
-  border-radius: 7px;
+  border-radius: 9999px;
   transition: background-color 150ms ease;
 }
 .terminal-screen .xterm .xterm-scrollable-element > .xterm-visible {

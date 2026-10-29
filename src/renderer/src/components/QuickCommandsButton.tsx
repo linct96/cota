@@ -138,7 +138,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
 
   return (
     <>
-      <ButtonGroup className="quick-commands-control mr-2 shrink-0" aria-label="快捷命令">
+      <ButtonGroup className="quick-commands-control shrink-0" aria-label="快捷命令">
         <Button
           type="button"
           variant="outline"

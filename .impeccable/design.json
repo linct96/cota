@@ -396,6 +396,10 @@
       }
     },
     "typographyMeta": {
+      "root": {
+        "displayName": "Root Base",
+        "purpose": "16px document root baseline for rem calculations."
+      },
       "headline": {
         "displayName": "Headline",
         "purpose": "Section headers inside settings views and typeset documentation blocks."

@@ -29,6 +29,11 @@ colors:
   dot-status-attention: '#ca8a04'
   dot-status-completed: '#299f51'
 typography:
+  root:
+    fontFamily: "'Inter Variable', sans-serif"
+    fontSize: '16px'
+    fontWeight: 400
+    lineHeight: 1.5
   headline:
     fontFamily: "'Inter Variable', sans-serif"
     fontSize: '1.125rem'
