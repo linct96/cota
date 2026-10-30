@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { usePanelRef } from 'react-resizable-panels'
+import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable'
@@ -16,10 +16,9 @@ export function SourceControlSectionLayout({
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const panelRef = usePanelRef()
+  const [panel, setPanel] = usePanelCallbackRef()
 
   function changeOpen(open: boolean) {
-    const panel = panelRef.current
     if (!panel) return
     if (open) panel.expand()
     else panel.collapse()
@@ -46,13 +45,12 @@ export function SourceControlSectionLayout({
         aria-label={resizeLabel}
       />
       <ResizablePanel
-        panelRef={panelRef}
+        panelRef={setPanel}
         defaultSize={defaultOpen ? '40%' : '2rem'}
         minSize="6rem"
         collapsible
         collapsedSize="2rem"
         onResize={() => {
-          const panel = panelRef.current
           if (panel) setOpen(!panel.isCollapsed())
         }}
         className="source-control-section-secondary-panel flex min-h-0 min-w-0 flex-col overflow-hidden"

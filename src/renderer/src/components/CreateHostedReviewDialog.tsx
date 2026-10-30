@@ -40,6 +40,8 @@ export function CreateHostedReviewDialog({
   onCreated: (review: HostedReview) => void
 }) {
   const [defaults] = useState(openingDefaults)
+  const [closing, setClosing] = useState(false)
+  const created = useRef<HostedReview | undefined>(undefined)
   const [creation, setCreation] = useState<HostedReviewCreationContext>()
   const [initializing, setInitializing] = useState(true)
   const [branchRevision, setBranchRevision] = useState(0)
@@ -80,6 +82,8 @@ export function CreateHostedReviewDialog({
     validators: { onDynamic: createHostedReviewSchema },
     onSubmit: async ({ value }) => {
       if (
+        !open ||
+        closing ||
         unlocking ||
         !creation ||
         !creation.sourceBranches.some((branch) => branch.name === value.sourceBranch) ||
@@ -97,8 +101,8 @@ export function CreateHostedReviewDialog({
         if (!mounted.current) return
         invalidateUnavailableBranches(response)
         const review = unwrap(response)
-        onCreated(review)
-        toast.success(`${label} #${review.number} 已就绪`)
+        created.current = review
+        setClosing(true)
       } catch (cause) {
         if (mounted.current) {
           setError(cause instanceof Error ? cause.message : '创建失败，输入已保留，请核对后重试。')
@@ -208,6 +212,8 @@ export function CreateHostedReviewDialog({
   useEffect(() => {
     if (!open || !creationKey || !creationAccount || !branchRevision || document.hidden) return
     let disposed = false
+    // Synchronize the loading indicator with this external branch request.
+    // oxlint-disable-next-line react/set-state-in-effect
     setBranchRefreshing(true)
     setBranchError(undefined)
     window.desktop.codeHosting
@@ -327,13 +333,21 @@ export function CreateHostedReviewDialog({
 
   return (
     <Dialog
-      open={open}
+      open={open && !closing}
       onOpenChange={(next, details) => {
         if (form.state.isSubmitting || unlocking) details.cancel()
-        else {
-          setError(undefined)
-          onOpenChange(next)
-        }
+        else if (!next) setClosing(true)
+      }}
+      onOpenChangeComplete={(next) => {
+        if (next) return
+        const review = created.current
+        created.current = undefined
+        setError(undefined)
+        setClosing(false)
+        if (review) {
+          onCreated(review)
+          toast.success(`${label} #${review.number} 已就绪`)
+        } else onOpenChange(false)
       }}
     >
       <DialogContent
@@ -664,7 +678,7 @@ export function CreateHostedReviewDialog({
               variant="outline"
               className="create-hosted-review-cancel"
               disabled={busy}
-              onClick={() => onOpenChange(false)}
+              onClick={() => setClosing(true)}
             >
               取消
             </Button>

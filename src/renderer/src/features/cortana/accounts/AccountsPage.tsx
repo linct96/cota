@@ -23,6 +23,7 @@ import {
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
 import { cn } from '../../../lib/utils'
+import { useDialogState } from '../../../lib/use-dialog-state'
 import { Alert, AlertDescription } from '../../../components/ui/alert'
 import { Badge } from '../../../components/ui/badge'
 import { Button } from '../../../components/ui/button'
@@ -73,7 +74,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
   const request = useRef(0)
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<AccountProfile>()
-  const [confirmation, setConfirmation] = useState<Confirmation>()
+  const [confirmation, setConfirmation, confirmationDialog] = useDialogState<Confirmation>()
   const cancelButton = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
@@ -156,7 +157,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
   }
 
   async function confirm() {
-    if (!confirmation || busyRef.current) return
+    if (!confirmationDialog.open || !confirmation || busyRef.current) return
     if (confirmation.kind === 'switch') {
       await switchAccount(confirmation.account, true)
       return
@@ -524,7 +525,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
         />
       )}
       <Dialog
-        open={!!confirmation}
+        {...confirmationDialog}
         onOpenChange={(open, details) => {
           if (!open) {
             if (busyRef.current) details.cancel()

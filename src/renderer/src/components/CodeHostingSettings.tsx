@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useForm, useStore } from '@tanstack/react-form'
 import { z } from 'zod'
 import { Copy, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
@@ -72,9 +72,10 @@ export function CodeHostingSettings() {
     (connection) => connection.status !== 'unchecked',
   )
 
+  const detectOnMount = useEffectEvent(detect)
   useEffect(() => {
     alive.current = true
-    void detect()
+    void detectOnMount()
     return () => {
       alive.current = false
     }
@@ -243,6 +244,10 @@ function CodeHostingConnectionRow({
   const [error, setError] = useState<string>()
   const lock = useRef(false)
   const alive = useRef(true)
+  const hostInput = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (adding) hostInput.current?.focus()
+  }, [adding])
   const form = useForm({
     defaultValues: { host: '' },
     validators: { onBlur: schema, onSubmit: schema },
@@ -348,9 +353,8 @@ function CodeHostingConnectionRow({
               !checkingVisible &&
               (primaryAccount || connection.status !== 'detected') && (
                 <Badge
-                  className="code-hosting-connection-status"
+                  render={<output className="code-hosting-connection-status" />}
                   variant={primaryAccount ? 'success' : view.variant}
-                  role="status"
                 >
                   {primaryAccount ? '已连接' : view.label}
                 </Badge>
@@ -511,7 +515,7 @@ function CodeHostingConnectionRow({
                       <Input
                         id={hostId}
                         className="code-hosting-host-input font-mono"
-                        autoFocus
+                        ref={hostInput}
                         spellCheck={false}
                         autoCorrect="off"
                         autoCapitalize="off"
@@ -567,7 +571,12 @@ function CodeHostingConnectionRow({
           </form>
         )}
         {guide && (
-          <Alert className="code-hosting-authorization-guide" role="status">
+          <Alert
+            className="code-hosting-authorization-guide"
+            role="note"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             <AlertTitle className="code-hosting-authorization-title break-all">
               {guide.host}
               {guide.account ? ` · ${guide.account}` : ''} 授权指引
@@ -603,12 +612,9 @@ function CodeHostingConnectionRow({
           </Alert>
         )}
         {notice && (
-          <p
-            className="code-hosting-connection-notice break-all text-sm text-muted-foreground"
-            role="status"
-          >
+          <output className="code-hosting-connection-notice block break-all text-sm text-muted-foreground">
             {notice}
-          </p>
+          </output>
         )}
         <FieldError className="code-hosting-connect-error break-all">{error}</FieldError>
         <DialogFooter className="code-hosting-connect-footer">

@@ -3,6 +3,7 @@ import { Check, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { QuickCommand } from '../../../shared/contracts'
 import { currentWorkspace, useWorkspace } from '../store'
 import { QuickCommandDialog } from './QuickCommandDialog'
+import { useDialogState } from '../lib/use-dialog-state'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
@@ -21,8 +22,8 @@ import {
 export function QuickCommandsSettings() {
   const commands = useWorkspace((state) => state.preferences.quickCommands)
   const projectPath = useWorkspace((state) => currentWorkspace(state)?.projectPath)
-  const [editor, setEditor] = useState<{ command?: QuickCommand }>()
-  const [deleting, setDeleting] = useState<QuickCommand>()
+  const [editor, setEditor, editorDialog] = useDialogState<{ command?: QuickCommand }>()
+  const [deleting, setDeleting, deleteDialog] = useDialogState<QuickCommand>()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const saving = useRef(false)
@@ -54,7 +55,7 @@ export function QuickCommandsSettings() {
   }
 
   async function remove() {
-    if (!deleting || saving.current) return
+    if (!deleteDialog.open || !deleting || saving.current) return
     saving.current = true
     setPending(true)
     setError(undefined)
@@ -199,7 +200,7 @@ export function QuickCommandsSettings() {
         )}
       </Card>
       <QuickCommandDialog
-        open={!!editor}
+        {...editorDialog}
         command={editor?.command}
         projectPath={projectPath}
         onOpenChange={(open) => {
@@ -207,7 +208,7 @@ export function QuickCommandsSettings() {
         }}
       />
       <AlertDialog
-        open={!!deleting}
+        {...deleteDialog}
         onOpenChange={(open, details) => {
           if (saving.current) details.cancel()
           else if (!open) setDeleting(undefined)

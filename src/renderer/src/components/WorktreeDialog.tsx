@@ -30,12 +30,15 @@ export function WorktreeDialog({
   close(): void
   initialized(target: WorkspaceTarget, error?: string): void
 }) {
+  const [open, setOpen] = useState(true)
+  const setupResult = useRef<{ target: WorkspaceTarget; error?: string } | undefined>(undefined)
   const [setupConfig, setSetupConfig] = useState<WorktreeSetupConfig>()
   const [setupError, setSetupError] = useState<string>()
   const [branchPrefix, setBranchPrefix] = useState('')
   const [suggestionAttempt, setSuggestionAttempt] = useState(0)
   const target = useMemo(() => ({ projectPath }), [projectPath])
   const resource = useGitBranches(target, true)
+  const refreshBranches = resource.refresh
   const branches =
     resource.references?.branches
       .filter((branch) => branch.ref.startsWith('refs/heads/'))
@@ -56,6 +59,7 @@ export function WorktreeDialog({
     onSubmit: async ({ value }) => {
       const branchName = `${branchPrefix}/${worktreeBranchSegment(value.name)}`
       if (
+        !open ||
         !plan ||
         plan.name !== value.name.trim() ||
         plan.branchName !== branchName ||
@@ -83,9 +87,9 @@ export function WorktreeDialog({
           } catch (failure) {
             setupFailure = failure instanceof Error ? failure.message : String(failure)
           }
-          initialized(target, setupFailure)
+          setupResult.current = { target, error: setupFailure }
         }
-        close()
+        setOpen(false)
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure))
         setPlan(undefined)
@@ -121,7 +125,7 @@ export function WorktreeDialog({
   const branchName = branchPrefix && branchSegment ? `${branchPrefix}/${branchSegment}` : ''
   useEffect(() => {
     let disposed = false
-    if (suggestionAttempt) resource.refresh()
+    if (suggestionAttempt) refreshBranches()
     void window.desktop
       .suggestWorktreeName(projectPath)
       .then(unwrap)
@@ -137,7 +141,7 @@ export function WorktreeDialog({
     return () => {
       disposed = true
     }
-  }, [projectPath, suggestionAttempt, form])
+  }, [projectPath, suggestionAttempt, form, refreshBranches])
   useEffect(() => {
     let disposed = false
     if (!branchName || !worktreeFormSchema.safeParse({ name, baseRef }).success) return
@@ -164,11 +168,18 @@ export function WorktreeDialog({
     plan && plan.name === name.trim() && plan.branchName === branchName && plan.baseRef === baseRef
   return (
     <Dialog
-      open
+      open={open}
       disablePointerDismissal
-      onOpenChange={(open, details) => {
+      onOpenChange={(next, details) => {
         if (submitting.current) details.cancel()
-        else if (!open) close()
+        else setOpen(next)
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          close()
+          if (setupResult.current)
+            initialized(setupResult.current.target, setupResult.current.error)
+        }
       }}
     >
       <DialogContent
@@ -371,7 +382,7 @@ export function WorktreeDialog({
               type="button"
               variant="outline"
               disabled={pending}
-              onClick={close}
+              onClick={() => setOpen(false)}
             >
               取消
             </Button>

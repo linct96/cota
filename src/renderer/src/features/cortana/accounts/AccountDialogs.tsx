@@ -45,6 +45,8 @@ export function AddAccountDialog({
   onClose(): void
   onSaved(): void
 }) {
+  const [open, setOpen] = useState(true)
+  const saved = useRef(false)
   const [method, setMethod] = useState<'browser' | 'credential' | 'relay'>(
     product === 'pi' ? 'credential' : 'browser',
   )
@@ -64,7 +66,7 @@ export function AddAccountDialog({
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: method === 'browser' ? browserSchema : accountFormSchema },
     onSubmit: async ({ value }) => {
-      if (pendingRef.current || authorizing) return
+      if (!open || pendingRef.current || authorizing) return
       pendingRef.current = true
       setError(undefined)
       try {
@@ -81,7 +83,8 @@ export function AddAccountDialog({
               apiKey: value.apiKey.trim(),
             }),
           )
-          onSaved()
+          saved.current = true
+          setOpen(false)
         }
       } catch (cause) {
         setError(errorText(cause))
@@ -100,17 +103,20 @@ export function AddAccountDialog({
       progressRef.current = next
       setProgress(next)
       if (next.stage === 'error') setError(next.message)
-      if (next.stage === 'success') onSaved()
+      if (next.stage === 'success') {
+        saved.current = true
+        setOpen(false)
+      }
     })
     return () => {
       stop()
       if (['waiting', 'exchanging'].includes(progressRef.current?.stage || ''))
         void window.desktop.accounts.cancelOAuth().catch(() => {})
     }
-  }, [product, onSaved])
+  }, [product])
 
   const close = useCallback(async () => {
-    if (pendingRef.current || progressRef.current?.stage === 'exchanging') return
+    if (!open || pendingRef.current || progressRef.current?.stage === 'exchanging') return
     if (progressRef.current?.stage === 'waiting') {
       try {
         unwrap(await window.desktop.accounts.cancelOAuth())
@@ -119,17 +125,23 @@ export function AddAccountDialog({
         return
       }
     }
-    form.reset()
-    onClose()
-  }, [form, onClose])
+    setOpen(false)
+  }, [open])
 
   return (
     <Dialog
-      open
-      onOpenChange={(open, details) => {
-        if (!open) {
+      open={open}
+      onOpenChange={(next, details) => {
+        if (!next) {
           details.cancel()
           void close()
+        }
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          form.reset()
+          if (saved.current) onSaved()
+          else onClose()
         }
       }}
     >
@@ -420,19 +432,22 @@ export function RenameAccountDialog({
   onClose(): void
   onSaved(): void
 }) {
+  const [open, setOpen] = useState(true)
   const [error, setError] = useState<string>()
+  const saved = useRef(false)
   const saving = useRef(false)
   const form = useForm({
     defaultValues: { alias: account.alias },
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: z.object({ alias: renameAccountSchema.shape.alias }) },
     onSubmit: async ({ value }) => {
-      if (saving.current) return
+      if (!open || saving.current) return
       saving.current = true
       setError(undefined)
       try {
         unwrap(await window.desktop.accounts.rename({ id: account.id, alias: value.alias.trim() }))
-        onSaved()
+        saved.current = true
+        setOpen(false)
       } catch (cause) {
         setError(errorText(cause))
       } finally {
@@ -445,10 +460,16 @@ export function RenameAccountDialog({
   }, [form])
   return (
     <Dialog
-      open
-      onOpenChange={(open, details) => {
-        if (!open) {
+      open={open}
+      onOpenChange={(next, details) => {
+        if (!next) {
           if (saving.current) details.cancel()
+          else setOpen(false)
+        }
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          if (saved.current) onSaved()
           else onClose()
         }
       }}
@@ -509,7 +530,7 @@ export function RenameAccountDialog({
                   type="button"
                   variant="outline"
                   disabled={submitting}
-                  onClick={onClose}
+                  onClick={() => setOpen(false)}
                 >
                   取消
                 </Button>

@@ -21,11 +21,13 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 export function QuickCommandDialog({
   open,
   onOpenChange,
+  onOpenChangeComplete,
   command,
   projectPath,
 }: {
   open: boolean
   onOpenChange(open: boolean): void
+  onOpenChangeComplete(open: boolean): void
   command?: QuickCommand
   projectPath?: string
 }) {
@@ -53,7 +55,7 @@ export function QuickCommandDialog({
     validationLogic: revalidateLogic({ mode: 'change' }),
     validators: { onDynamic: quickCommandFormSchema },
     onSubmit: async ({ value }) => {
-      if (saving.current) return
+      if (!open || saving.current) return
       saving.current = true
       setError(undefined)
       try {
@@ -110,10 +112,11 @@ export function QuickCommandDialog({
       open={open}
       onOpenChange={(next, details) => {
         if (form.state.isSubmitting) details.cancel()
-        else {
-          setError(undefined)
-          onOpenChange(next)
-        }
+        else onOpenChange(next)
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next && !open) setError(undefined)
+        onOpenChangeComplete(next)
       }}
     >
       <DialogContent
@@ -409,10 +412,7 @@ export function QuickCommandDialog({
                   variant="outline"
                   className="quick-command-cancel"
                   disabled={submitting}
-                  onClick={() => {
-                    setError(undefined)
-                    onOpenChange(false)
-                  }}
+                  onClick={() => onOpenChange(false)}
                 >
                   取消
                 </Button>

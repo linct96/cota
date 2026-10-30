@@ -30,6 +30,8 @@ export function WorktreeSetupDialog({
   close(): void
   configure(): void
 }) {
+  const [open, setOpen] = useState(true)
+  const configureAfterClose = useRef(false)
   const [snapshot, setSnapshot] = useState<WorktreeSetupSnapshot>()
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
@@ -58,7 +60,7 @@ export function WorktreeSetupDialog({
   const configured =
     !!snapshot && (!!snapshot.definition.command || snapshot.definition.copyFiles.length > 0)
   const act = async (stop: boolean) => {
-    if (pending.current || !snapshot) return
+    if (!open || pending.current || !snapshot) return
     pending.current = true
     setBusy(true)
     setError(undefined)
@@ -75,10 +77,16 @@ export function WorktreeSetupDialog({
   }
   return (
     <Dialog
-      open
-      onOpenChange={(open, details) => {
+      open={open}
+      onOpenChange={(next, details) => {
         if (pending.current) details.cancel()
-        else if (!open) close()
+        else setOpen(next)
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          if (configureAfterClose.current) configure()
+          else close()
+        }
       }}
     >
       <DialogContent
@@ -129,7 +137,7 @@ export function WorktreeSetupDialog({
             className="worktree-setup-close"
             variant="outline"
             disabled={busy}
-            onClick={close}
+            onClick={() => setOpen(false)}
           >
             关闭
           </Button>
@@ -151,7 +159,10 @@ export function WorktreeSetupDialog({
               className="worktree-setup-configure"
               variant="outline"
               disabled={busy}
-              onClick={configure}
+              onClick={() => {
+                configureAfterClose.current = true
+                setOpen(false)
+              }}
             >
               修改配置
             </Button>

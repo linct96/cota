@@ -6,6 +6,7 @@ import { EMPTY_SOURCE_CONTROL, useSourceControl } from '../lib/source-control-st
 import { createSourceControlRefreshQueue } from '../lib/source-control-refresh'
 import { useSourceControlWatch } from '../lib/use-source-control-watch'
 import { useCommitMessageGeneration } from '../lib/use-commit-message-generation'
+import { useDialogState } from '../lib/use-dialog-state'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -42,13 +43,13 @@ export function SourceControlPanel({
     [workspace.projectPath, workspace.id],
   )
   const { references, error: referencesError } = useGitBranches(target, active)
-  const [dialogError, setDialogError] = useState<string>()
+  const [dialogError, setDialogError, errorDialog] = useDialogState<string>()
   const currentError = error || readError || referencesError
   useEffect(() => {
     // Preserve asynchronous IPC errors in the dismissible dialog until the user closes it.
     // oxlint-disable-next-line react/set-state-in-effect
     if (currentError) setDialogError(currentError)
-  }, [currentError])
+  }, [currentError, setDialogError])
   const readTask = useRef<Promise<void> | undefined>(undefined)
   const writing = useRef(false)
   const mounted = useRef(true)
@@ -249,7 +250,8 @@ export function SourceControlPanel({
         </TabsContent>
       </Tabs>
       <AlertDialog
-        open={active && !!dialogError}
+        {...errorDialog}
+        open={active && errorDialog.open}
         onOpenChange={(open) => {
           if (!open) setDialogError(undefined)
         }}

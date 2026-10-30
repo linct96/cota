@@ -12,7 +12,10 @@ import {
 } from './ui/alert-dialog'
 
 export function ConfirmationDialog() {
-  const [request, setRequest] = useState<ConfirmationRequest | null>(null)
+  const [{ request, open }, setDialog] = useState<{
+    request: ConfirmationRequest | null
+    open: boolean
+  }>({ request: null, open: false })
   const [error, setError] = useState<string>()
   const [responding, setResponding] = useState(false)
   const responsePending = useRef(false)
@@ -22,19 +25,21 @@ export function ConfirmationDialog() {
     () =>
       window.desktop.onConfirmation((request) => {
         setError(undefined)
-        setRequest(request)
+        setDialog({ request, open: true })
       }),
     [],
   )
 
   async function respond(confirmed: boolean) {
-    if (!request || responsePending.current) return
+    if (!open || !request || responsePending.current) return
     responsePending.current = true
     setResponding(true)
     setError(undefined)
     try {
       unwrap(await window.desktop.respondToConfirmation(request.id, confirmed))
-      setRequest((current) => (current?.id === request.id ? null : current))
+      setDialog((current) =>
+        current.request?.id === request.id ? { ...current, open: false } : current,
+      )
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
     } finally {
@@ -45,12 +50,15 @@ export function ConfirmationDialog() {
 
   return (
     <AlertDialog
-      open={request !== null}
+      open={open}
       onOpenChange={(open, details) => {
         if (!open) {
           details.cancel()
           void respond(false)
         }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) setDialog((current) => (current.open ? current : { request: null, open: false }))
       }}
     >
       <AlertDialogContent className="app-confirmation-dialog" initialFocus={cancelButton}>

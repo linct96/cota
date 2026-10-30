@@ -22,6 +22,7 @@ export function WorktreeSetupConfigDialog({
   projectPath: string
   close(): void
 }) {
+  const [open, setOpen] = useState(true)
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
   const [error, setError] = useState<string>()
@@ -31,7 +32,7 @@ export function WorktreeSetupConfigDialog({
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: worktreeSetupFormSchema },
     onSubmit: async ({ value }) => {
-      if (loading || saving.current) return
+      if (!open || loading || saving.current) return
       saving.current = true
       setError(undefined)
       try {
@@ -40,7 +41,7 @@ export function WorktreeSetupConfigDialog({
           copyFiles: setupFileLines(value.copyFiles),
         })
         unwrap(await window.desktop.saveWorktreeSetupConfig(projectPath, definition))
-        close()
+        setOpen(false)
       } catch (failure) {
         setError(failure instanceof Error ? failure.message : String(failure))
       } finally {
@@ -68,11 +69,14 @@ export function WorktreeSetupConfigDialog({
   }, [projectPath, form, attempt])
   return (
     <Dialog
-      open
+      open={open}
       disablePointerDismissal
-      onOpenChange={(open, details) => {
+      onOpenChange={(next, details) => {
         if (saving.current) details.cancel()
-        else if (!open) close()
+        else setOpen(next)
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) close()
       }}
     >
       <DialogContent
@@ -210,7 +214,7 @@ export function WorktreeSetupConfigDialog({
               type="button"
               variant="outline"
               disabled={pending}
-              onClick={close}
+              onClick={() => setOpen(false)}
             >
               取消
             </Button>

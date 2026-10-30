@@ -15,6 +15,7 @@ import type { ProjectWorkspace, QuickCommand } from '../../../shared/contracts'
 import { MAX_TERMINALS } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
 import { QuickCommandDialog } from './QuickCommandDialog'
+import { useDialogState } from '../lib/use-dialog-state'
 import { Button } from './ui/button'
 import { ButtonGroup } from './ui/button-group'
 import {
@@ -52,13 +53,13 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
   )
 
   const [menuOpen, setMenuOpen] = useState(false)
-  const [editor, setEditor] = useState<{ command?: QuickCommand }>()
-  const [deleting, setDeleting] = useState<QuickCommand>()
+  const [editor, setEditor, editorDialog] = useDialogState<{ command?: QuickCommand }>()
+  const [deleting, setDeleting, deleteDialog] = useDialogState<QuickCommand>()
   const [deletePending, setDeletePending] = useState(false)
   const [deleteError, setDeleteError] = useState<string>()
   const deleteSaving = useRef(false)
 
-  const [error, setError] = useState<string>()
+  const [error, setError, errorDialog] = useDialogState<string>()
   const [copiedId, setCopiedId] = useState<string>()
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -117,7 +118,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
   }
 
   async function remove() {
-    if (!deleting || deleteSaving.current) return
+    if (!deleteDialog.open || !deleting || deleteSaving.current) return
     deleteSaving.current = true
     setDeletePending(true)
     setDeleteError(undefined)
@@ -318,7 +319,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
         </DropdownMenu>
       </ButtonGroup>
       <QuickCommandDialog
-        open={!!editor}
+        {...editorDialog}
         onOpenChange={(open) => {
           if (!open) setEditor(undefined)
         }}
@@ -326,7 +327,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
         projectPath={workspace.projectPath}
       />
       <AlertDialog
-        open={!!deleting}
+        {...deleteDialog}
         onOpenChange={(open, details) => {
           if (deleteSaving.current) details.cancel()
           else if (!open) setDeleting(undefined)
@@ -365,7 +366,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog
-        open={!!error}
+        {...errorDialog}
         onOpenChange={(open) => {
           if (!open) setError(undefined)
         }}

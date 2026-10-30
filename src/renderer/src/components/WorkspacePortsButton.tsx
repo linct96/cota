@@ -13,6 +13,7 @@ import type { WorkspacePort, WorkspacePortSnapshot } from '../../../shared/works
 import { useWorkspace } from '../store'
 import { useLoadingIndicator } from '../lib/use-loading-indicator'
 import { cn } from '../lib/utils'
+import { useDialogState } from '../lib/use-dialog-state'
 import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
@@ -29,11 +30,13 @@ import {
 
 function WorkspacePortsPanel({
   workspace,
+  active,
   close,
   actionBusy,
   onActionBusyChange,
 }: {
   workspace: ProjectWorkspace
+  active: boolean
   close(): void
   actionBusy: RefObject<boolean>
   onActionBusyChange(busy: boolean): void
@@ -53,6 +56,7 @@ function WorkspacePortsPanel({
   const target = { projectPath: workspace.projectPath, workspaceId: workspace.id }
 
   useEffect(() => {
+    if (!active) return
     let alive = true
     let busy = false
     const scan = async () => {
@@ -88,10 +92,10 @@ function WorkspacePortsPanel({
       document.removeEventListener('visibilitychange', resume)
       window.removeEventListener('focus', resume)
     }
-  }, [workspace.projectPath, workspace.id, actionBusy])
+  }, [active, workspace.projectPath, workspace.id, actionBusy])
 
   async function act(port: WorkspacePort, action: 'copy' | 'open' | 'terminal' | 'stop') {
-    if (actionBusy.current || unavailable) return
+    if (!active || actionBusy.current || unavailable) return
     onActionBusyChange(true)
     setActing(true)
     setStoppingPid(action === 'stop' ? port.pid : undefined)
@@ -321,18 +325,18 @@ function WorkspacePortsPanel({
 }
 
 export function WorkspacePortsButton({ workspace }: { workspace: ProjectWorkspace }) {
-  const [open, setOpen] = useState(false)
+  const [panelWorkspace, setPanelWorkspace, portsDialog] = useDialogState<ProjectWorkspace>()
   const actionBusy = useRef(false)
   const unavailable = useWorkspace((state) => !!state.removingWorkspace || state.creatingWorktree)
   return (
     <Sheet
-      open={open}
+      {...portsDialog}
       onOpenChange={(next, details) => {
         if (!next && actionBusy.current) {
           details.cancel()
           return
         }
-        setOpen(next)
+        setPanelWorkspace(next ? workspace : undefined)
       }}
     >
       <SheetTrigger
@@ -350,15 +354,18 @@ export function WorkspacePortsButton({ workspace }: { workspace: ProjectWorkspac
       </SheetTrigger>
       <SheetContent className="workspace-ports-sheet sm:max-w-xl">
         <SheetHeader className="workspace-ports-header pr-12">
-          <SheetTitle className="workspace-ports-title">{workspace.name} · 端口</SheetTitle>
+          <SheetTitle className="workspace-ports-title">
+            {(panelWorkspace || workspace).name} · 端口
+          </SheetTitle>
           <SheetDescription className="workspace-ports-description">
             本机 TCP 监听端口，每 5 秒刷新。监听不代表服务就绪或支持 HTTP；关闭面板不停止服务。
           </SheetDescription>
         </SheetHeader>
-        {open && (
+        {panelWorkspace && (
           <WorkspacePortsPanel
-            workspace={workspace}
-            close={() => setOpen(false)}
+            workspace={panelWorkspace}
+            active={portsDialog.open}
+            close={() => setPanelWorkspace(undefined)}
             actionBusy={actionBusy}
             onActionBusyChange={(busy) => {
               actionBusy.current = busy

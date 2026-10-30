@@ -290,10 +290,10 @@ export function OpenWithSettings() {
         open={dialogOpen}
         onOpenChange={(open, details) => {
           if (persisting.current || form.state.isSubmitting) details.cancel()
-          else {
-            setError(undefined)
-            setDialogOpen(open)
-          }
+          else setDialogOpen(open)
+        }}
+        onOpenChangeComplete={(open) => {
+          if (!open && !dialogOpen) setError(undefined)
         }}
       >
         <DialogContent
@@ -469,10 +469,7 @@ export function OpenWithSettings() {
                     variant="outline"
                     className="open-with-dialog-cancel"
                     disabled={dialogPending}
-                    onClick={() => {
-                      setError(undefined)
-                      setDialogOpen(false)
-                    }}
+                    onClick={() => setDialogOpen(false)}
                   >
                     取消
                   </Button>
