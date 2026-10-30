@@ -202,6 +202,7 @@ export class SourceControlWatches {
         'config.worktree',
         'shallow',
         'MERGE_HEAD',
+        'MERGE_MSG',
         'CHERRY_PICK_HEAD',
         'REVERT_HEAD',
         'BISECT_LOG',

@@ -35,8 +35,10 @@ export function SourceControlNetworkActions({
   )
   const hasTracking = !!status?.tracking
   const networkDisabled = disabled || !references
+  const mergePending = !!status?.merge
   const pushDisabled =
     networkDisabled ||
+    mergePending ||
     !status?.branch ||
     (hasTracking
       ? !references?.remotes.includes(status.tracking!.remote)
@@ -98,6 +100,7 @@ export function SourceControlNetworkActions({
                 size="sm"
                 className="source-control-sync"
                 disabled={syncDisabled || syncLoading}
+                title={mergePending ? '请先解决冲突并完成当前合并提交，再同步。' : undefined}
                 aria-busy={syncing || syncLoading}
                 aria-label={syncing || syncLoading ? '正在同步' : undefined}
                 onClick={() => void remoteAction('sync')}
@@ -145,7 +148,9 @@ export function SourceControlNetworkActions({
                       title={
                         hasConflicts
                           ? '请先解决现有合并冲突。'
-                          : '从上游拉取，仅允许快进，不自动 stash；本地更改可能被覆盖时由 Git 拒绝合并。'
+                          : mergePending
+                            ? '请先完成当前合并提交，再拉取。'
+                            : '从上游拉取，仅允许快进，不自动 stash；本地更改可能被覆盖时由 Git 拒绝合并。'
                       }
                       onClick={() => void remoteAction('pull')}
                     >
@@ -156,9 +161,11 @@ export function SourceControlNetworkActions({
                       className="source-control-push"
                       disabled={pushDisabled || !status.head}
                       title={
-                        status.tracking
-                          ? `推送至 ${status.tracking.remote}/${status.tracking.branch}`
-                          : `发布到 ${selectedRemote}/${status.branch || ''}`
+                        mergePending
+                          ? '请先完成当前合并提交，再推送。'
+                          : status.tracking
+                            ? `推送至 ${status.tracking.remote}/${status.tracking.branch}`
+                            : `发布到 ${selectedRemote}/${status.branch || ''}`
                       }
                       onClick={() => void remoteAction(hasTracking ? 'push' : 'publish')}
                     >

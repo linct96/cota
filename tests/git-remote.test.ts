@@ -327,6 +327,83 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         expect(alreadySynced).not.toHaveBeenCalled()
         await rm(join(worktree, 'dirty.txt'))
         await git('-C', worktree, 'restore', '--worktree', '--', 'local.txt')
+
+        // A same-tree merge still needs a merge commit even with no staged files.
+        await git('-C', peer, 'fetch', 'origin')
+        await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
+        await git('-C', peer, 'commit', '--allow-empty', '-m', 'peer pending merge')
+        await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
+        await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local pending merge')
+        await sourceControl.mutate(
+          worktree,
+          { ...target, action: 'fetch', remote: 'review' },
+          noConfirmation,
+        )
+        const beforeMerge = await sourceControl.status(worktree)
+        const pendingRemote = (await git('-C', peer, 'rev-parse', 'HEAD')).stdout.trim()
+        await git('-C', worktree, 'merge', '--no-ff', '--no-commit', pendingRemote)
+        const pendingMerge = await sourceControl.status(worktree)
+        expect(pendingMerge.entries).toEqual([])
+        expect(pendingMerge.merge?.heads).toEqual([pendingRemote])
+        expect(pendingMerge.merge?.message).toContain('Merge')
+        expect(pendingMerge.indexVersion).not.toBe(beforeMerge.indexVersion)
+        for (const action of ['pull', 'sync', 'push'] as const)
+          await expect(
+            sourceControl.mutate(
+              worktree,
+              { ...sync, action, head: pendingMerge.head! },
+              noConfirmation,
+            ),
+          ).rejects.toThrow('当前合并尚未提交')
+        // Recheck after Fetch even if another process started merging after the initial read.
+        const staleRead = vi.spyOn(sourceControl, 'status').mockResolvedValueOnce(beforeMerge)
+        try {
+          await expect(
+            sourceControl.mutate(worktree, { ...sync, head: beforeMerge.head! }, noConfirmation),
+          ).rejects.toThrow('当前合并尚未提交')
+        } finally {
+          staleRead.mockRestore()
+        }
+        await expect(
+          sourceControl.mutate(
+            worktree,
+            {
+              ...target,
+              action: 'commit',
+              message: pendingMerge.merge!.message,
+              indexVersion: beforeMerge.indexVersion,
+            },
+            noConfirmation,
+          ),
+        ).rejects.toThrow('暂存区或 HEAD 已改变')
+        expect(
+          (
+            await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+          ).stdout.trim(),
+        ).toBe(pendingRemote)
+        await sourceControl.mutate(
+          worktree,
+          {
+            ...target,
+            action: 'commit',
+            message: pendingMerge.merge!.message,
+            indexVersion: pendingMerge.indexVersion,
+          },
+          noConfirmation,
+        )
+        const completedMerge = await sourceControl.status(worktree)
+        expect(completedMerge.merge).toBeUndefined()
+        expect((await git('-C', worktree, 'rev-parse', 'HEAD^1')).stdout.trim()).toBe(
+          beforeMerge.head,
+        )
+        expect((await git('-C', worktree, 'rev-parse', 'HEAD^2')).stdout.trim()).toBe(pendingRemote)
+        await sourceControl.mutate(
+          worktree,
+          { ...sync, head: completedMerge.head! },
+          noConfirmation,
+        )
+        expect((await sourceControl.status(worktree)).ahead).toBe(0)
+        expect(noConfirmation).not.toHaveBeenCalled()
       }, 30000)
       it('preserves merge conflicts and never pushes a failed sync', async () => {
         let current
@@ -366,7 +443,62 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           ).stdout.trim(),
         ).toBe(conflictRemote)
         expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
-        await git('-C', worktree, 'merge', '--abort')
+        const conflicted = await sourceControl.status(worktree)
+        expect(conflicted.merge?.heads).toEqual([conflictRemote])
+        expect(conflicted.merge?.message).not.toContain('# Conflicts:')
+        await expect(
+          sourceControl.mutate(
+            worktree,
+            {
+              ...target,
+              action: 'commit',
+              message: conflicted.merge!.message,
+              indexVersion: conflicted.indexVersion,
+            },
+            noPushOnConflict,
+          ),
+        ).rejects.toThrow('请先解决所有合并冲突')
+        await writeFile(join(worktree, 'renamed 空格.txt'), 'resolved conflict\n')
+        await sourceControl.mutate(
+          worktree,
+          { ...target, action: 'stage', files: [{ path: 'renamed 空格.txt', area: 'conflict' }] },
+          noPushOnConflict,
+        )
+        const resolved = await sourceControl.status(worktree)
+        expect(resolved.entries.some((entry) => entry.area === 'conflict')).toBe(false)
+        expect(resolved.merge).toBeDefined()
+        await expect(
+          sourceControl.mutate(worktree, { ...sync, head: resolved.head! }, noPushOnConflict),
+        ).rejects.toThrow('当前合并尚未提交')
+        await sourceControl.mutate(
+          worktree,
+          {
+            ...target,
+            action: 'commit',
+            message: resolved.merge!.message,
+            indexVersion: resolved.indexVersion,
+          },
+          noPushOnConflict,
+        )
+        const committed = await sourceControl.status(worktree)
+        expect(committed.merge).toBeUndefined()
+        expect((await git('-C', worktree, 'rev-parse', 'HEAD^1')).stdout.trim()).toBe(current.head)
+        expect((await git('-C', worktree, 'rev-parse', 'HEAD^2')).stdout.trim()).toBe(
+          conflictRemote,
+        )
+        expect(
+          (
+            await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+          ).stdout.trim(),
+        ).toBe(conflictRemote)
+        await sourceControl.mutate(worktree, { ...sync, head: committed.head! }, noPushOnConflict)
+        expect(
+          (
+            await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+          ).stdout.trim(),
+        ).toBe(committed.head)
+        expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep local changes\n')
+        expect(noPushOnConflict).not.toHaveBeenCalled()
         await rm(join(worktree, 'dirty.txt'))
       }, 30000)
       it('switches local and remote branches only after checking occupancy, HEAD and local files', async () => {

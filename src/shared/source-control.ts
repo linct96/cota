@@ -18,6 +18,7 @@ export interface GitStatus {
   ahead: number
   behind: number
   indexVersion: string
+  merge?: { heads: string[]; message: string }
   entries: GitChange[]
 }
 export interface GitFileSelection {

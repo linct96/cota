@@ -47,7 +47,7 @@ export async function mutate(
         throw new Error('请输入有效的提交信息（上限 20,000 字符）。')
       if (status.entries.some((entry) => entry.area === 'conflict'))
         throw new Error('请先解决所有合并冲突。')
-      if (!status.entries.some((entry) => entry.area === 'staged'))
+      if (!status.merge && !status.entries.some((entry) => entry.area === 'staged'))
         throw new Error('没有已暂存的更改。')
       if (input.indexVersion !== status.indexVersion)
         throw new Error('暂存区或 HEAD 已改变，请刷新审阅后再提交。')

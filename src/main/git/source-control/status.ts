@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import type { GitStatus, GitTracking } from '../../../shared/source-control'
 import { runGit, runGitBytes } from '../git-runner'
 import { filePath, hash, MAX_FILES } from './shared'
@@ -90,10 +92,35 @@ export async function tracking(
   if (!record?.[1] || !record[2]?.startsWith('refs/heads/')) return undefined
   return { remote: record[1], branch: record[2].slice(11) }
 }
-export async function indexVersion(root: string, head: string | null): Promise<string> {
+export async function mergeState(root: string): Promise<GitStatus['merge']> {
+  const path = (
+    await runGit(root, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD'])
+  ).trim()
+  const read = (path: string) =>
+    readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined
+      throw error
+    })
+  const head = await read(path)
+  if (head === undefined) return undefined
+  const message = await read(join(dirname(path), 'MERGE_MSG'))
+  return {
+    heads: head.trim().split('\n'),
+    message:
+      (await runGitBytes(root, ['stripspace', '--strip-comments'], false, 10000, message || ''))
+        .toString('utf8')
+        .trim() || 'Merge commits',
+  }
+}
+
+export async function indexVersion(
+  root: string,
+  head: string | null,
+  merge: GitStatus['merge'],
+): Promise<string> {
   return hash(
     Buffer.concat([
-      Buffer.from(head || 'unborn'),
+      Buffer.from(JSON.stringify([head || 'unborn', merge])),
       await runGitBytes(root, ['ls-files', '--stage', '-z']),
     ]),
   )

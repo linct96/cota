@@ -84,7 +84,11 @@ export async function runGitBytes(
       ? 'Git 不存在或不可执行。'
       : failure.killed
         ? 'Git 操作超时，需重新检查仓库状态。'
-        : 'Git 操作失败，请检查仓库权限与状态。'
+        : /You have not concluded your merge|MERGE_HEAD exists/.test(
+              failure.stderr?.toString() || '',
+            )
+          ? '当前合并尚未提交，请先完成合并提交后再操作。'
+          : 'Git 操作失败，请检查仓库权限与状态。'
     throw Object.assign(
       new WorktreeError(unavailable ? 'GIT_UNAVAILABLE' : 'GIT_COMMAND_FAILED', message),
       { cause: failure },

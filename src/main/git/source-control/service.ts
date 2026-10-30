@@ -16,7 +16,7 @@ import { branchReferences } from '../../../shared/git-branches'
 import { readBranchData, readBranchRemotes } from '../branches/read'
 import { GitService } from '../worktrees/git'
 import { runGit, runGitBytes, WorktreeError, explainGitError as explain } from '../git-runner'
-import { parseGitStatus, tracking, indexVersion } from './status'
+import { parseGitStatus, tracking, mergeState, indexVersion } from './status'
 import { fileStats } from './stats'
 import { blob, workingFile, textDiff } from './files'
 import { checkedCommit, history, compare } from './history'
@@ -127,11 +127,13 @@ export class SourceControlService {
       ])
       if (!isUtf8(raw)) throw new Error('仓库包含非 UTF-8 文件名，请在终端处理这些路径。')
       const status = parseGitStatus(raw.toString('utf8'))
+      const merge = await mergeState(rootPath)
       const result = {
         ...status,
         rootPath,
         tracking: await tracking(rootPath, status.branch),
-        indexVersion: await indexVersion(rootPath, status.head),
+        merge,
+        indexVersion: await indexVersion(rootPath, status.head, merge),
       }
       if (includeStats) await fileStats(rootPath, result.entries)
       return result

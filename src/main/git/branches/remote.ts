@@ -36,6 +36,12 @@ export async function mutateRemote(
     return true
   }
   const verify = (current: GitStatus) => {
+    if (current.merge)
+      throw new Error(
+        current.entries.some((entry) => entry.area === 'conflict')
+          ? '请先解决现有合并冲突并暂存，再完成合并提交；未执行拉取或推送。'
+          : '当前合并尚未提交，请先审阅合并结果并完成合并提交，再拉取、同步或推送。',
+      )
     if (
       !current.branch ||
       !current.head ||
@@ -100,7 +106,7 @@ export async function mutateRemote(
     } catch (error) {
       if (input.action === 'sync')
         throw new Error(
-          `拉取合并未完成，未执行推送。如有冲突，请在编辑器或终端解决。\n${explain(error).message}`,
+          `拉取合并未完成，未执行推送。请检查合并状态；如有冲突，解决并暂存后完成合并提交，再同步。\n${explain(error).message}`,
         )
       throw error
     }
@@ -113,7 +119,7 @@ export async function mutateRemote(
         merged.tracking?.branch !== input.tracking.branch
       )
         throw new Error('分支或上游已改变，请刷新后重试。')
-      if (!merged.head || merged.entries.some((entry) => entry.area === 'conflict'))
+      if (!merged.head || merged.merge || merged.entries.some((entry) => entry.area === 'conflict'))
         throw new Error('合并后 HEAD 无效或仍有冲突，未执行推送。请检查 Git 状态。')
       if (!merged.ahead) return true
       return await mutateRemote(

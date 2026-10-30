@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Upload,
   GitCommitHorizontal,
+  GitMerge,
   Sparkles,
   LoaderCircle,
   Square,
@@ -23,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Textarea } from '@/components/ui/textarea'
 import type { SourceControlChangesPanelProps } from './source-control-changes-types'
 
@@ -42,7 +43,8 @@ export function SourceControlCommitForm({
   const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
   const update = useSourceControl((state) => state.update)
   const status = session.status
-  const [messageExpanded, setMessageExpanded] = useState(false)
+  const [messageExpandedOverride, setMessageExpanded] = useState<boolean>()
+  const messageExpanded = messageExpandedOverride ?? !!status?.merge
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -63,7 +65,7 @@ export function SourceControlCommitForm({
       if (
         !value.message.trim() ||
         !status ||
-        !status.entries.some((entry) => entry.area === 'staged') ||
+        (!status.merge && !status.entries.some((entry) => entry.area === 'staged')) ||
         status.entries.some((entry) => entry.area === 'conflict')
       )
         return
@@ -104,10 +106,18 @@ export function SourceControlCommitForm({
     },
   })
 
+  const mergeKey = status?.merge?.heads.join('\n')
+  const mergeMessage = status?.merge?.message
+  useEffect(() => {
+    if (!mergeKey || !mergeMessage || form.getFieldValue('message').trim()) return
+    form.setFieldValue('message', mergeMessage)
+    update(workspace.id, { draft: mergeMessage })
+  }, [form, mergeKey, mergeMessage, update, workspace.id])
+
   const disabled = pending || !status
   const hasConflicts = status?.entries.some((entry) => entry.area === 'conflict')
-  const commitDisabled =
-    disabled || hasConflicts || !status?.entries.some((entry) => entry.area === 'staged')
+  const hasStaged = status?.entries.some((entry) => entry.area === 'staged')
+  const commitDisabled = disabled || hasConflicts || (!status?.merge && !hasStaged)
   return (
     <Collapsible
       className="source-control-commit flex shrink-0 flex-col gap-2 px-2 py-1.5"
@@ -124,6 +134,19 @@ export function SourceControlCommitForm({
         />
       }
     >
+      {status?.merge && (
+        <Alert className="source-control-merge-status" aria-live="polite">
+          <GitMerge className="source-control-merge-status-icon" />
+          <AlertTitle className="source-control-merge-status-title">
+            {hasConflicts ? '合并存在冲突' : '合并待提交'}
+          </AlertTitle>
+          <AlertDescription className="source-control-merge-status-description">
+            {hasConflicts
+              ? '请在编辑器中解决冲突并暂存，然后完成合并。'
+              : '请审阅合并结果并完成合并提交，再同步。'}
+          </AlertDescription>
+        </Alert>
+      )}
       <CollapsibleContent className="source-control-commit-content" keepMounted>
         <FieldGroup className="source-control-commit-fields">
           <form.Field name="message">
@@ -168,7 +191,9 @@ export function SourceControlCommitForm({
                       ? '正在使用 Pi 生成提交信息…'
                       : generation.state === 'stopping'
                         ? '正在停止生成…'
-                        : '仅提交已暂存的更改。'}
+                        : status?.merge
+                          ? '完成当前合并提交；未暂存的更改不会提交。'
+                          : '仅提交已暂存的更改。'}
                   </FieldDescription>
                   {invalid && (
                     <FieldError
@@ -214,7 +239,8 @@ export function SourceControlCommitForm({
           aria-label={generation.state === 'idle' ? '使用 Pi 生成提交信息' : '停止生成提交信息'}
           title={generation.state === 'idle' ? '使用 Pi 生成提交信息' : '停止生成提交信息'}
           disabled={
-            generation.state === 'stopping' || (generation.state === 'idle' && commitDisabled)
+            generation.state === 'stopping' ||
+            (generation.state === 'idle' && (commitDisabled || !hasStaged))
           }
           onClick={() => {
             setMessageExpanded(true)
@@ -250,7 +276,7 @@ export function SourceControlCommitForm({
                   className="source-control-commit-icon"
                   data-icon="inline-start"
                 />
-                提交
+                {status?.merge ? '完成合并' : '提交'}
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -269,7 +295,7 @@ export function SourceControlCommitForm({
                       onClick={() => void form.handleSubmit({ push: true })}
                     >
                       <Upload className="source-control-commit-and-push-icon" />
-                      提交并推送
+                      {status?.merge ? '完成合并并推送' : '提交并推送'}
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
