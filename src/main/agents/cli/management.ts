@@ -1,6 +1,3 @@
-import { execFile } from 'node:child_process'
-import { homedir } from 'node:os'
-import { promisify } from 'node:util'
 import { AGENT_PROVIDERS, type AgentProvider, type Preferences } from '../../../shared/contracts'
 import type { ConfigStore } from '../../settings/config-store'
 import {
@@ -18,6 +15,7 @@ import {
   resolveCommand,
 } from '../../system/shell'
 import { agentUpdateCommand, detectAgentInstallation } from './installation'
+import type { ExecuteCliInstall } from './install-terminal'
 
 export class AgentCliManagement {
   private installing = new Set<AgentProvider>()
@@ -91,7 +89,7 @@ export class AgentCliManagement {
       } catch (probeError) {
         if (probeError instanceof ExecutableNotFoundError) {
           const message = `${AGENT_PROVIDERS[provider].name} CLI 已不存在，启动失败。请在设置中重新安装或检测。`
-          await this.replaceEntry(cache, provider, { provider, error: message })
+          await this.replaceEntry(cache, provider, { provider })
           throw new Error(message, { cause: error })
         }
       }
@@ -218,6 +216,7 @@ export class AgentCliManagement {
     provider: AgentProvider,
     settings: Preferences,
     assertIdle: () => Promise<void>,
+    execute: ExecuteCliInstall,
   ): Promise<AgentCliInstallResult> {
     if (this.installing.size) throw new Error('已有 CLI 正在安装或更新，请等待完成。')
     if ([...this.running].some((entry) => entry.provider === provider))
@@ -232,7 +231,18 @@ export class AgentCliManagement {
         )?.executable
         let command
         if (installed) {
-          const executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
+          let executable: string
+          try {
+            executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
+          } catch (error) {
+            if (!(error instanceof ExecutableNotFoundError)) throw error
+            const status = { provider }
+            await this.save(
+              this.read().entries.map((entry) => (entry.provider === provider ? status : entry)),
+              env.PATH || '',
+            )
+            return { status, output: '' }
+          }
           const installation = await detectAgentInstallation(provider, executable, env).catch(
             () => undefined,
           )
@@ -251,13 +261,8 @@ export class AgentCliManagement {
             env,
           )
         }
-        const { stdout, stderr } = await promisify(execFile)(command.executable, command.args, {
-          cwd: homedir(),
-          env: command.env,
-          windowsHide: true,
-          timeout: 180000,
-          maxBuffer: 512 * 1024,
-        }).catch((cause: unknown) => {
+        await assertIdle()
+        const { stdout, stderr } = await execute(command).catch((cause: unknown) => {
           const error = cause as Error & { stderr?: string }
           throw new Error(`安装或更新失败：${(error.stderr || error.message).slice(-8000)}`)
         })
@@ -265,10 +270,7 @@ export class AgentCliManagement {
           (entry) => entry.provider === provider,
         )!
         detected.installing = false
-        if (!detected.executable)
-          throw new Error(
-            '更新命令已完成，但 PATH 中仍未检测到 CLI。请检查原安装目录是否已加入 PATH，然后重新检测。',
-          )
+        if (detected.error) throw new Error(detected.error)
         if (detected.updateAvailable)
           throw new Error(
             `更新命令已完成，但当前检测到的 ${detected.version} 仍不是最新版。PATH 可能优先使用了另一安装位置：${detected.executable}。`,

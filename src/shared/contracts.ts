@@ -444,6 +444,9 @@ export interface ConfirmationRequest {
 export type GitWatchEvent = 'ready' | 'change' | 'unavailable'
 
 export interface DesktopAPI {
+  readonly system: {
+    readonly homeDirectory: string
+  }
   readonly initialAppearance: {
     theme: ThemePreference
     windowBlur: boolean
@@ -460,6 +463,29 @@ export interface DesktopAPI {
   installAgentCli(
     provider: AgentProvider,
   ): Promise<Result<import('./agent-cli').AgentCliInstallResult>>
+  listAgentCliInstalls(): Promise<Result<import('./agent-cli').AgentCliInstallRun[]>>
+  readAgentCliInstallTerminal(
+    provider: AgentProvider,
+    attachmentId: string,
+  ): Promise<Result<import('./agent-cli').AgentCliInstallTerminal | undefined>>
+  detachAgentCliInstallTerminal(
+    provider: AgentProvider,
+    attachmentId: string,
+  ): Promise<Result<void>>
+  acknowledgeAgentCliInstallTerminal(
+    provider: AgentProvider,
+    attachmentId: string,
+    length: number,
+  ): Promise<Result<void>>
+  writeAgentCliInstallTerminal(
+    id: string,
+    data: string,
+    encoding?: 'utf8' | 'binary',
+  ): Promise<Result<void>>
+  resizeAgentCliInstallTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
+  onAgentCliInstall(
+    listener: (event: import('./agent-cli').AgentCliInstallEvent) => void,
+  ): () => void
   readonly accounts: import('./accounts').AccountsAPI
   readonly codeHosting: import('./code-hosting').CodeHostingAPI
   readonly platform: string

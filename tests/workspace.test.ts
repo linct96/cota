@@ -62,6 +62,7 @@ beforeEach(() => {
   useRightPanel.setState(useRightPanel.getInitialState(), true)
   useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
+    system: { homeDirectory: '/Users/test' },
     initialAppearance: { theme: 'system', windowBlur: false },
     readClipboard: vi.fn(),
     writeClipboard: vi.fn(),
@@ -69,6 +70,13 @@ beforeEach(() => {
     setTerminalInputFocused: vi.fn(),
     inspectAgentClis: vi.fn(),
     installAgentCli: vi.fn(),
+    listAgentCliInstalls: vi.fn(),
+    readAgentCliInstallTerminal: vi.fn(),
+    detachAgentCliInstallTerminal: vi.fn(),
+    acknowledgeAgentCliInstallTerminal: vi.fn(),
+    writeAgentCliInstallTerminal: vi.fn(),
+    resizeAgentCliInstallTerminal: vi.fn(),
+    onAgentCliInstall: vi.fn(),
     codeHosting: {
       context: vi.fn(),
       accounts: vi.fn(),

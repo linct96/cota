@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import type { Preferences } from '../../shared/contracts'
 import { isTerminalMenuShortcut, type ShortcutBindings } from '../../shared/shortcuts'
@@ -41,6 +41,7 @@ export function createAppWindow(options: {
     autoHideMenuBar: process.platform === 'win32',
     webPreferences: {
       additionalArguments: [
+        `--cota-home-directory=${encodeURIComponent(app.getPath('home'))}`,
         `--cota-theme=${preferences.theme}`,
         `--cota-interface-colors=${JSON.stringify(preferences.interfaceColors)}`,
         ...(windowBlurEnabled ? ['--cota-window-blur'] : []),

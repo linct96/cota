@@ -112,6 +112,7 @@ export async function detectAgents(
         const version = await agentVersion(executable, env)
         return { provider, executable, version }
       } catch (error) {
+        if (error instanceof ExecutableNotFoundError) return { provider }
         return { provider, error: error instanceof Error ? error.message : String(error) }
       }
     }),

@@ -22,6 +22,7 @@ import { AgentSleepPrevention } from './agents/runtime/sleep-prevention'
 import { createDesktopNotifications } from './agents/notifications/desktop'
 import { registerAgentsIPC } from './agents/ipc'
 import { AgentCliManagement } from './agents/cli/management'
+import { AgentCliInstallTerminals } from './agents/cli/install-terminal'
 import { connectTerminalHost, type HostClient } from './host/host-client'
 import { registerTerminalIPC } from './terminal/ipc'
 import { registerSettingsIPC } from './settings/ipc'
@@ -50,6 +51,9 @@ const commitMessages = new CommitMessageService((settings, execute) =>
 const agentSleep = new AgentSleepPrevention()
 const getWindow = () => window
 const renderer = new AppRenderer(getWindow)
+const cliInstallTerminals = new AgentCliInstallTerminals((event) =>
+  renderer.send('agent:cli-install-progress', event),
+)
 const lifecycle = new AppLifecycle({
   getWindow,
   getManager: () => manager,
@@ -65,6 +69,7 @@ const lifecycle = new AppLifecycle({
   renderer,
   agentSleep,
   commitMessages,
+  cliInstallTerminals,
 })
 const appName = app.isPackaged ? 'Cota' : 'Cota Dev'
 const rendererFile = join(__dirname, '../renderer/index.html')
@@ -162,6 +167,7 @@ if (!app.requestSingleInstanceLock()) {
           git?.close()
           fileWatches?.close()
           renderer.reset()
+          cliInstallTerminals.detachAll()
           void manager?.detachAll().catch(() => {})
         },
       })
@@ -177,7 +183,7 @@ if (!app.requestSingleInstanceLock()) {
       workspacePorts = registerPortsIPC(common)
       registerAccountsIPC(handle, accounts)
       registerCodeHostingIPC({ ...common, codeHosting, git })
-      registerAgentsIPC({ ...common, agentClis, getWindow })
+      registerAgentsIPC({ ...common, agentClis, cliInstallTerminals, getWindow })
       registerTerminalIPC({ ...common, agentClis, trusted })
       registerSettingsIPC({
         handle,

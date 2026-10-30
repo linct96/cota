@@ -28,6 +28,13 @@ function initialInterfaceColors(): DesktopAPI['initialAppearance']['interfaceCol
 }
 
 const api: DesktopAPI = {
+  system: {
+    homeDirectory: decodeURIComponent(
+      process.argv
+        .find((value) => value.startsWith('--cota-home-directory='))
+        ?.slice('--cota-home-directory='.length) || '',
+    ),
+  },
   initialAppearance: {
     theme: initialTheme(),
     windowBlur: process.argv.includes('--cota-window-blur'),
@@ -40,6 +47,25 @@ const api: DesktopAPI = {
   inspectAgentClis: (checkUpdates = false, provider) =>
     ipcRenderer.invoke('agent:cli-inspect', checkUpdates, provider),
   installAgentCli: (provider) => ipcRenderer.invoke('agent:cli-install', provider),
+  listAgentCliInstalls: () => ipcRenderer.invoke('agent:cli-install-list'),
+  readAgentCliInstallTerminal: (provider, attachmentId) =>
+    ipcRenderer.invoke('agent:cli-install-terminal', provider, attachmentId),
+  detachAgentCliInstallTerminal: (provider, attachmentId) =>
+    ipcRenderer.invoke('agent:cli-install-detach', provider, attachmentId),
+  acknowledgeAgentCliInstallTerminal: (provider, attachmentId, length) =>
+    ipcRenderer.invoke('agent:cli-install-ack', provider, attachmentId, length),
+  writeAgentCliInstallTerminal: (id, data, encoding) =>
+    ipcRenderer.invoke('agent:cli-install-write', id, data, encoding),
+  resizeAgentCliInstallTerminal: (id, cols, rows) =>
+    ipcRenderer.invoke('agent:cli-install-resize', id, cols, rows),
+  onAgentCliInstall: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      progress: import('../shared/agent-cli').AgentCliInstallEvent,
+    ) => listener(progress)
+    ipcRenderer.on('agent:cli-install-progress', wrapped)
+    return () => ipcRenderer.removeListener('agent:cli-install-progress', wrapped)
+  },
   accounts: {
     list: (product) => ipcRenderer.invoke('accounts:list', product),
     add: (input) => ipcRenderer.invoke('accounts:add', input),

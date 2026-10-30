@@ -5,6 +5,7 @@ import type { WorktreeManager } from '../git/worktrees/manager'
 import type { WorktreeSetupService } from '../git/worktrees/setup'
 import type { AgentSleepPrevention } from '../agents/runtime/sleep-prevention'
 import type { CommitMessageService } from '../git/commit-message/service'
+import type { AgentCliInstallTerminals } from '../agents/cli/install-terminal'
 import { forceStopTerminalHost, type HostClient } from '../host/host-client'
 import type { AppRenderer } from './renderer'
 
@@ -29,6 +30,7 @@ export class AppLifecycle {
       renderer: AppRenderer
       agentSleep: AgentSleepPrevention
       commitMessages: CommitMessageService
+      cliInstallTerminals?: AgentCliInstallTerminals
     },
   ) {}
 
@@ -71,6 +73,7 @@ export class AppLifecycle {
     const deps = this.dependencies
     try {
       deps.renderer.settleConfirmation(false)
+      await deps.cliInstallTerminals?.close()
       await deps.getWorktreeSetups()?.close()
       await deps.getConfig()?.flush()
       deps.closeResources()
@@ -105,7 +108,11 @@ export class AppLifecycle {
       const worktreeSetups = deps.getWorktreeSetups()!
       const manager = deps.getManager()!
       const window = deps.getWindow()
-      if (worktreeSetups.running || (await manager.request('hasLive', []))) {
+      if (
+        deps.cliInstallTerminals?.running ||
+        worktreeSetups.running ||
+        (await manager.request('hasLive', []))
+      ) {
         const title = '退出 Cota？'
         const description = '退出将结束所有终端及运行中的程序，项目设置将会保留。'
         const confirmLabel = '结束终端并退出'
@@ -126,6 +133,7 @@ export class AppLifecycle {
           if (response !== 1) return
         }
       }
+      await deps.cliInstallTerminals?.close()
       await worktreeSetups.close()
       await deps.getConfig()!.flush()
       await manager.request('shutdown', [])

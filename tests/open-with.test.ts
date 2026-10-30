@@ -17,7 +17,8 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import * as shell from '../src/main/system/shell'
 import { promisify } from 'node:util'
-import { DEFAULT_CONFIG } from '../src/shared/contracts'
+import { AGENT_PROVIDERS, DEFAULT_CONFIG } from '../src/shared/contracts'
+import { agentCliCacheSchema } from '../src/shared/agent-cli'
 import {
   parseArguments,
   preferredWorkspaceOpener,
@@ -28,6 +29,7 @@ import { savedQuickCommands, startupCommand, workspaceOpeners } from '../src/mai
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   spawn: vi.fn(),
+  ptySpawn: vi.fn(),
   adapter: vi.fn(),
   applications: new Set<string>(),
 }))
@@ -54,7 +56,9 @@ vi.mock('node:child_process', async () => {
 })
 import { listWorkspaceOpeners, openWorkspaceWith } from '../src/main/system/open-with'
 import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents/cli/registry'
+vi.mock('node-pty', () => ({ spawn: mocks.ptySpawn }))
 import { AgentCliManagement } from '../src/main/agents/cli/management'
+import { AgentCliInstallTerminals } from '../src/main/agents/cli/install-terminal'
 import { ConfigStore } from '../src/main/settings/config-store'
 import {
   hookFiles,
@@ -918,6 +922,39 @@ codex --no-daemon`)
     await expect(openWorkspaceWith(join(root, 'missing'), opener)).rejects.toThrow('不可访问')
     expect(mocks.spawn).not.toHaveBeenCalled()
 
+    const detectionEnv = { PATH: join(root, 'bin') }
+    expect(await detectAgents(DEFAULT_CONFIG.preferences, undefined, detectionEnv)).toEqual([
+      { provider: 'pi' },
+      { provider: 'codex' },
+      { provider: 'claude' },
+    ])
+    await writeFile(join(root, 'bin', 'claude'), '#!/bin/sh\n', { mode: 0o600 })
+    expect(
+      (await detectAgents(DEFAULT_CONFIG.preferences, 'claude', detectionEnv))[0].error,
+    ).toContain('文件权限')
+    await chmod(join(root, 'bin', 'claude'), 0o700)
+    expect(
+      agentCliCacheSchema.parse({
+        checkedAt: 1,
+        pathEnv: detectionEnv.PATH,
+        entries: [
+          {
+            provider: 'claude',
+            error: '找不到 claude。请安装其命令行工具，并检查登录 Shell 的 PATH。',
+          },
+          {
+            provider: 'codex',
+            error: `${AGENT_PROVIDERS.codex.name} CLI 已不存在，启动失败。请在设置中重新安装或检测。`,
+          },
+          { provider: 'pi', error: '无法执行 pi，请检查文件权限和磁盘状态。' },
+        ],
+      }).entries,
+    ).toEqual([
+      { provider: 'claude' },
+      { provider: 'codex' },
+      { provider: 'pi', error: '无法执行 pi，请检查文件权限和磁盘状态。' },
+    ])
+
     for (const provider of ['pi', 'codex', 'claude'])
       await writeFile(join(root, 'bin', provider), '#!/bin/sh\n', { mode: 0o700 })
     mocks.login.mockImplementation(async (_file: string, args: string[]) => ({
@@ -979,9 +1016,9 @@ codex --no-daemon`)
       '未安装',
     )
     expect(launch).not.toHaveBeenCalled()
-    expect(
-      restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable,
-    ).toBeUndefined()
+    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')).toEqual({
+      provider: 'codex',
+    })
     const disk = new ConfigStore(configFile)
     await disk.load()
     expect(disk.snapshot().agentCliCache).toEqual(restarted.read())
@@ -1000,12 +1037,255 @@ codex --no-daemon`)
       }
     })
     const idle = vi.fn().mockResolvedValue(undefined)
-    await restarted.install('codex', DEFAULT_CONFIG.preferences, idle)
-    expect(idle).toHaveBeenCalledOnce()
+    const installChild = new EventEmitter()
+    const write = vi.fn()
+    const resize = vi.fn()
+    const pause = vi.fn()
+    const resume = vi.fn()
+    mocks.ptySpawn.mockReturnValue({
+      pid: 12345,
+      write,
+      resize,
+      pause,
+      resume,
+      onData: (listener: (data: string) => void) => {
+        installChild.on('data', listener)
+        return { dispose: () => installChild.off('data', listener) }
+      },
+      onExit: (listener: (event: { exitCode: number; signal?: number }) => void) => {
+        installChild.on('exit', listener)
+        return { dispose: () => installChild.off('exit', listener) }
+      },
+    })
+    const progress = vi.fn()
+    const terminals = new AgentCliInstallTerminals(progress)
+    const installation = terminals.run('codex', (execute) =>
+      restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+    )
+    await vi.waitFor(() => expect(mocks.ptySpawn).toHaveBeenCalledOnce())
+    expect(mocks.ptySpawn).toHaveBeenCalledWith(
+      join(root, 'bin', 'npm'),
+      ['install', '--global', '@openai/codex@latest'],
+      expect.objectContaining({ cols: 100, rows: 28 }),
+    )
+    expect(terminals.running).toBe(true)
+    await expect(
+      terminals.run('pi', async () => ({ status: { provider: 'pi' }, output: '' })),
+    ).rejects.toThrow('等待完成')
+    await expect(restarted.run('codex', DEFAULT_CONFIG.preferences, launch)).rejects.toThrow(
+      '正在安装或更新',
+    )
+    installChild.emit('data', '\x1b[32mdownloading\x1b[0m\r\n')
+    const firstSnapshot = (await terminals.snapshot('codex'))!
+    expect(firstSnapshot.output).toContain('downloading')
+    expect(progress.mock.calls.some(([event]) => event.data !== undefined)).toBe(false)
+    const attachment = '00000000-0000-0000-0000-000000000001'
+    await terminals.snapshot('codex', attachment)
+    installChild.emit('data', '\x1b[6n')
+    await terminals.snapshot('codex')
+    expect(write).not.toHaveBeenCalled()
+    terminals.detach('codex', '00000000-0000-0000-0000-000000000002')
+    installChild.emit('data', '\x1b[6n')
+    await terminals.snapshot('codex')
+    expect(write).not.toHaveBeenCalled()
+    terminals.detach('codex', attachment)
+    installChild.emit('data', '\x1b[6n')
+    await terminals.snapshot('codex')
+    expect(write).toHaveBeenCalledWith(expect.stringMatching(/\[\d+;\d+R$/))
+    write.mockClear()
+    terminals.write(firstSnapshot.run.id, 'y\r')
+    terminals.resize(firstSnapshot.run.id, 90, 24)
+    expect(write).toHaveBeenCalledWith('y\r')
+    expect(resize).toHaveBeenCalledWith(90, 24)
+    expect(() => terminals.write(firstSnapshot.run.id, 1)).toThrow('输入无效')
+    expect(() => terminals.resize(firstSnapshot.run.id, 0, 24)).toThrow('尺寸无效')
+    // Reopening reads the same terminal; no second command is launched.
+    installChild.emit('data', 'installed\r\n')
+    const reopened = (await terminals.snapshot('codex'))!
+    expect(reopened.run.id).toBe(firstSnapshot.run.id)
+    expect(reopened.output).toContain('downloading')
+    expect(reopened.output).toContain('installed')
+    expect(reopened.revision).toBeGreaterThan(firstSnapshot.revision)
+    expect(mocks.ptySpawn).toHaveBeenCalledOnce()
+    expect(progress.mock.calls.some(([event]) => event.data?.includes('installed'))).toBe(false)
+
+    const activeAttachment = '00000000-0000-0000-0000-000000000003'
+    await terminals.snapshot('codex', activeAttachment)
+    const chunk = 'streamed ' + 'x'.repeat(16 * 1024) + '\r\n'
+    for (let index = 0; index < 4; index++) {
+      installChild.emit('data', chunk)
+      await terminals.snapshot('codex')
+    }
+    // A drained main parser must stay paused until the renderer consumes its output.
+    expect(pause).toHaveBeenCalledOnce()
+    expect(resume).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect(
+        progress.mock.calls
+          .filter(([event]) => event.attachmentId === activeAttachment)
+          .reduce((length, [event]) => length + event.data.length, 0),
+      ).toBe(chunk.length * 4),
+    )
+    terminals.acknowledge('codex', attachment, chunk.length * 4)
+    for (const length of [-1, 0, 0.5, NaN, chunk.length * 4 + 1])
+      terminals.acknowledge('codex', activeAttachment, length)
+    expect(resume).not.toHaveBeenCalled()
+    terminals.acknowledge('codex', activeAttachment, chunk.length * 4)
+    expect(resume).toHaveBeenCalledOnce()
+    installChild.emit('data', 'x'.repeat(64 * 1024))
+    await terminals.snapshot('codex')
+    expect(pause).toHaveBeenCalledTimes(2)
+    terminals.detach('codex', attachment)
+    expect(resume).toHaveBeenCalledOnce()
+    terminals.detach('codex', activeAttachment)
+    expect(resume).toHaveBeenCalledTimes(2)
+    progress.mockClear()
+    installChild.emit('data', '\r\nhistory-start\r\n' + 'recent line\r\n'.repeat(300))
+    const shortHistory = (await terminals.snapshot('codex'))!
+    expect(shortHistory.output).not.toContain('history-start')
+    expect(shortHistory.output).toContain('recent line')
+    expect(progress.mock.calls.some(([event]) => event.data !== undefined)).toBe(false)
+    await terminals.snapshot('codex', '00000000-0000-0000-0000-000000000004')
+    installChild.emit('data', 'live output\r\n')
+    await vi.waitFor(() =>
+      expect(progress.mock.calls.some(([event]) => event.data?.includes('live output'))).toBe(true),
+    )
+    await writeFile(join(root, 'bin', 'codex'), '#!/bin/sh\n', { mode: 0o700 })
+    installChild.emit('exit', { exitCode: 0 })
+    expect((await installation).output.length).toBeLessThanOrEqual(4096)
+    expect(idle).toHaveBeenCalledTimes(2)
+    expect(terminals.running).toBe(false)
+    expect((await terminals.snapshot('codex'))?.run.status).toBe('succeeded')
+
+    const failed = terminals.run('pi', async (execute) => {
+      await execute({ executable: 'npm', args: [], env: {} })
+      return { status: { provider: 'pi' }, output: '' }
+    })
+    const failure = expect(failed).rejects.toThrow('退出码 2')
+    installChild.emit('data', 'network failed\r\n')
+    installChild.emit('exit', { exitCode: 2 })
+    await failure
+    expect((await terminals.snapshot('pi'))?.output).toContain('network failed')
+    expect(terminals.list().find((run) => run.provider === 'pi')?.status).toBe('failed')
+    terminals.write(firstSnapshot.run.id, 'ignored')
+    expect(write).toHaveBeenCalledOnce()
+
+    let release!: () => void
+    const waiting = terminals.run('claude', async (execute) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      await execute({ executable: 'claude', args: ['update'], env: {} })
+      return { status: { provider: 'claude' }, output: '' }
+    })
+    const interrupted = expect(waiting).rejects.toThrow('已中断')
+    const closed = terminals.close()
+    release()
+    await interrupted
+    await closed
+    expect(terminals.running).toBe(false)
+    expect(mocks.ptySpawn).toHaveBeenCalledTimes(2)
+    for (const signal of [2, 15]) {
+      const signalled = terminals.run('claude', async (execute) => {
+        await execute({ executable: 'claude', args: ['update'], env: {} })
+        return { status: { provider: 'claude', executable: '/fake/claude' }, output: '' }
+      })
+      const rejected = expect(signalled).rejects.toThrow(`信号 ${signal}`)
+      installChild.emit('exit', { exitCode: 0, signal })
+      await rejected
+      expect((await terminals.snapshot('claude'))?.run.status).toBe('failed')
+    }
     await restarted.inspect(DEFAULT_CONFIG.preferences, false)
     expect(restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable).toBe(
       join(root, 'bin', 'codex'),
     )
+
+    const findProgram = shell.findExecutable
+    const missingCodex = new shell.ExecutableNotFoundError(
+      '找不到 codex。请安装其命令行工具，并检查登录 Shell 的 PATH。',
+    )
+    const lookup = vi
+      .spyOn(shell, 'findExecutable')
+      .mockImplementation((command, env) =>
+        command === 'codex' ? Promise.reject(missingCodex) : findProgram(command, env),
+      )
+    const beforeMissing = mocks.ptySpawn.mock.calls.length
+    const missing = await terminals.run('codex', (execute) =>
+      restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+    )
+    expect(missing.status).toEqual({ provider: 'codex' })
+    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')).toEqual({
+      provider: 'codex',
+    })
+    expect((await terminals.snapshot('codex'))?.run).toMatchObject({ status: 'not-installed' })
+    expect((await terminals.snapshot('codex'))?.run.error).toBeUndefined()
+    expect((await terminals.snapshot('codex'))?.output).not.toContain('找不到 codex')
+    expect(mocks.ptySpawn).toHaveBeenCalledTimes(beforeMissing)
+
+    await restored.saveAgentClis({
+      ...restarted.read(),
+      entries: restarted
+        .read()
+        .entries.map((entry) =>
+          entry.provider === 'codex'
+            ? { provider: 'codex', executable: join(root, 'bin', 'codex') }
+            : entry,
+        ),
+    })
+    const permission = new Error('无法执行 codex，请检查文件权限和磁盘状态。')
+    lookup.mockImplementation((command, env) =>
+      command === 'codex' ? Promise.reject(permission) : findProgram(command, env),
+    )
+    await expect(
+      terminals.run('codex', (execute) =>
+        restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+      ),
+    ).rejects.toBe(permission)
+    expect((await terminals.snapshot('codex'))?.run.error).toContain('文件权限')
+    expect(mocks.ptySpawn).toHaveBeenCalledTimes(beforeMissing)
+
+    lookup.mockImplementation((command, env) =>
+      command === 'codex' ? Promise.reject(missingCodex) : findProgram(command, env),
+    )
+    const undetected = terminals.run('codex', (execute) =>
+      restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+    )
+    await vi.waitFor(() => expect(mocks.ptySpawn).toHaveBeenCalledTimes(beforeMissing + 1))
+    installChild.emit('exit', { exitCode: 0 })
+    expect((await undetected).status.executable).toBeUndefined()
+    expect((await terminals.snapshot('codex'))?.run.status).toBe('not-installed')
+    expect((await terminals.snapshot('codex'))?.run.error).toBeUndefined()
+
+    const commandFailure = terminals.run('codex', (execute) =>
+      restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+    )
+    const failedCommand = expect(commandFailure).rejects.toThrow('退出码 2')
+    await vi.waitFor(() => expect(mocks.ptySpawn).toHaveBeenCalledTimes(beforeMissing + 2))
+    installChild.emit('exit', { exitCode: 2 })
+    await failedCommand
+    expect(
+      restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable,
+    ).toBeUndefined()
+    expect((await terminals.snapshot('codex'))?.run.status).toBe('failed')
+    expect((await terminals.snapshot('codex'))?.run.error).toContain('退出码 2')
+
+    lookup.mockImplementation((command, env) =>
+      command === 'npm'
+        ? Promise.reject(
+            new shell.ExecutableNotFoundError(
+              '找不到 npm。请安装其命令行工具，并检查登录 Shell 的 PATH。',
+            ),
+          )
+        : findProgram(command, env),
+    )
+    await expect(
+      terminals.run('codex', (execute) =>
+        restarted.install('codex', DEFAULT_CONFIG.preferences, idle, execute),
+      ),
+    ).rejects.toThrow('找不到 npm')
+    expect((await terminals.snapshot('codex'))?.run.status).toBe('failed')
+    expect(mocks.ptySpawn).toHaveBeenCalledTimes(beforeMissing + 2)
+    lookup.mockRestore()
   })
   it('reports commands that launch but exit unsuccessfully', async () => {
     mocks.spawn.mockImplementationOnce(() => {

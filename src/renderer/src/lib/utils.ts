@@ -1,5 +1,16 @@
 export { cn } from 'cn'
 
+export function abbreviateHomePath(path: string): string {
+  const normalize = (value: string) =>
+    window.desktop.platform === 'win32' ? value.replace(/\\/g, '/').toLowerCase() : value
+  const home = window.desktop.system.homeDirectory.replace(/[\\/]+$/, '')
+  if (!home) return path
+  const normalizedHome = normalize(home)
+  const normalizedPath = normalize(path)
+  if (normalizedPath === normalizedHome) return '~'
+  return normalizedPath.startsWith(`${normalizedHome}/`) ? `~${path.slice(home.length)}` : path
+}
+
 export function shortenPath(path: string): string {
   const parts = path.replace(/^\/(?:Users|home)\/[^/]+/, '~').split('/')
   const last = parts.reduce((last, part, index) => (part ? index : last), -1)

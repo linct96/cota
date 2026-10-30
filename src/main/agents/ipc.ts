@@ -8,6 +8,7 @@ import type { IpcHandler } from '../app/ipc'
 import { agentProvider, terminalId } from '../validation'
 import { loginShellEnvironment, shellEnvironment } from '../system/shell'
 import type { AgentCliManagement } from './cli/management'
+import type { AgentCliInstallTerminals } from './cli/install-terminal'
 import { hookFiles, inspectAgentHook, installAgentHook, uninstallAgentHook } from './hooks/managed'
 
 export function registerAgentsIPC(deps: {
@@ -15,11 +16,12 @@ export function registerAgentsIPC(deps: {
   config: ConfigStore
   manager: HostClient
   agentClis: AgentCliManagement
+  cliInstallTerminals: AgentCliInstallTerminals
   lifecycle: AppLifecycle
   renderer: AppRenderer
   getWindow(): BrowserWindow | undefined
 }): void {
-  const { handle, config, manager, lifecycle, renderer, agentClis } = deps
+  const { handle, config, manager, lifecycle, renderer, agentClis, cliInstallTerminals } = deps
   handle('agent:cli-read', () => agentClis.read())
   handle('agent:cli-inspect', (checkUpdates: unknown = false, value?: unknown) => {
     if (typeof checkUpdates !== 'boolean') throw new Error('版本检查选项无效。')
@@ -29,16 +31,39 @@ export function registerAgentsIPC(deps: {
   handle('agent:cli-install', async (value: unknown) => {
     lifecycle.assertAvailable()
     const provider = agentProvider(value)
-    return agentClis.install(provider, config.snapshot().preferences, async () => {
-      lifecycle.assertAvailable()
-      if (
-        (await manager.request('list', [])).some(
-          (session) => session.provider === provider && !session.exited,
-        )
-      )
-        throw new Error('请先关闭 Cota 中正在运行的该智能体终端，再安装或更新。')
-    })
+    return cliInstallTerminals.run(provider, (execute) =>
+      agentClis.install(
+        provider,
+        config.snapshot().preferences,
+        async () => {
+          lifecycle.assertAvailable()
+          if (
+            (await manager.request('list', [])).some(
+              (session) => session.provider === provider && !session.exited,
+            )
+          )
+            throw new Error('请先关闭 Cota 中正在运行的该智能体终端，再安装或更新。')
+        },
+        execute,
+      ),
+    )
   })
+  handle('agent:cli-install-list', () => cliInstallTerminals.list())
+  handle('agent:cli-install-terminal', (value: unknown, attachment: unknown) =>
+    cliInstallTerminals.snapshot(agentProvider(value), terminalId(attachment)),
+  )
+  handle('agent:cli-install-detach', (value: unknown, attachment: unknown) =>
+    cliInstallTerminals.detach(agentProvider(value), terminalId(attachment)),
+  )
+  handle('agent:cli-install-ack', (value: unknown, attachment: unknown, length: unknown) =>
+    cliInstallTerminals.acknowledge(agentProvider(value), terminalId(attachment), length),
+  )
+  handle('agent:cli-install-write', (id: unknown, data: unknown, encoding: unknown = 'utf8') =>
+    cliInstallTerminals.write(terminalId(id), data, encoding),
+  )
+  handle('agent:cli-install-resize', (id: unknown, cols: unknown, rows: unknown) =>
+    cliInstallTerminals.resize(terminalId(id), cols, rows),
+  )
   handle('agent:hooks-detect', async () => {
     const env = shellEnvironment()
     const agents = agentClis.read().entries
