@@ -24,7 +24,7 @@ export class FileExplorerWatches {
   ): Promise<boolean> {
     const id = terminalId(value)
     if (!Array.isArray(values) || !values.length || values.length > 128)
-      throw new Error('最多监听 128 个已展开目录，请折叠部分目录后刷新。')
+      throw new Error('最多监听 128 个目录（含空目录），请折叠部分目录后刷新。')
     const paths = [...new Set(values.map(explorerPath))]
     if (this.subscriptions.has(id) || this.subscriptions.size >= 4)
       throw new Error('文件监听请求过多。')

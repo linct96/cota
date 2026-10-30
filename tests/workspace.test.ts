@@ -3009,6 +3009,17 @@ describe('workspace state', () => {
       ['src', 0],
       ['src/child.ts', 1],
     ])
+    const loadedDirectories = useFileExplorer.getState().sessions.a.directories
+    useFileExplorer.getState().update('a', {
+      directories: {
+        ...loadedDirectories,
+        '': { entries: [{ ...files[0], empty: true }] },
+      },
+    })
+    expect(explorerRows(useFileExplorer.getState().sessions.a).map((entry) => entry.path)).toEqual([
+      'src',
+    ])
+    useFileExplorer.getState().update('a', { directories: loadedDirectories })
     listFiles.mockRejectedValueOnce(new Error('permission denied'))
     await useFileExplorer.getState().load(a, '')
     expect(useFileExplorer.getState().sessions.a).toMatchObject({

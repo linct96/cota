@@ -181,6 +181,7 @@ function FileTreeFolder({
   path,
   name,
   defaultOpen = false,
+  expandable = true,
   icon,
   actions,
   rowClassName,
@@ -193,6 +194,7 @@ function FileTreeFolder({
 }: ItemProps & {
   name: string
   defaultOpen?: boolean
+  expandable?: boolean
   icon?: ReactNode | ((open: boolean) => ReactNode)
   actions?: ReactNode
   rowClassName?: string
@@ -202,46 +204,55 @@ function FileTreeFolder({
   const generatedId = useId()
   const id = providedId ?? generatedId
   const contentId = `${id}-children`
-  const open = tree.expanded[path] ?? defaultOpen
+  const open = expandable && (tree.expanded[path] ?? defaultOpen)
+  const trigger = (
+    <Button
+      {...props}
+      variant="ghost"
+      size="sm"
+      render={render}
+      id={id}
+      role="treeitem"
+      aria-level={depth + 1}
+      aria-selected={tree.selectedPath === path}
+      aria-owns={open ? contentId : undefined}
+      data-file-tree-item="folder"
+      data-file-tree-parent={parent}
+      data-path={path}
+      tabIndex={-1}
+      className={cn(
+        'file-tree-folder-trigger w-full min-w-0 flex-1 justify-start font-normal aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50',
+        className,
+      )}
+      style={{ paddingLeft: 6 + depth * 12, ...style }}
+    >
+      <ChevronRight
+        className={cn(
+          'file-tree-chevron transition-transform group-data-panel-open/button:rotate-90',
+          !expandable && 'invisible',
+        )}
+        aria-hidden="true"
+      />
+      <FileTreeIcon>
+        {(typeof icon === 'function' ? icon(open) : icon) ?? (open ? <FolderOpen /> : <Folder />)}
+      </FileTreeIcon>
+      <FileTreeName>{name}</FileTreeName>
+    </Button>
+  )
   return (
     <Collapsible
       className="file-tree-folder min-w-0"
       role="none"
       open={open}
-      onOpenChange={(next) => tree.expand(path, next)}
+      onOpenChange={(next) => {
+        if (expandable) tree.expand(path, next)
+      }}
     >
       <div
         role="none"
         className={cn('file-tree-folder-row flex min-w-0 items-center gap-1', rowClassName)}
       >
-        <CollapsibleTrigger
-          {...props}
-          id={id}
-          role="treeitem"
-          aria-level={depth + 1}
-          aria-selected={tree.selectedPath === path}
-          aria-owns={open ? contentId : undefined}
-          data-file-tree-item="folder"
-          data-file-tree-parent={parent}
-          data-path={path}
-          tabIndex={-1}
-          className={cn(
-            'file-tree-folder-trigger w-full min-w-0 flex-1 justify-start font-normal aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50',
-            className,
-          )}
-          style={{ paddingLeft: 6 + depth * 12, ...style }}
-          render={<Button variant="ghost" size="sm" render={render} />}
-        >
-          <ChevronRight
-            className="file-tree-chevron transition-transform group-data-panel-open/button:rotate-90"
-            aria-hidden="true"
-          />
-          <FileTreeIcon>
-            {(typeof icon === 'function' ? icon(open) : icon) ??
-              (open ? <FolderOpen /> : <Folder />)}
-          </FileTreeIcon>
-          <FileTreeName>{name}</FileTreeName>
-        </CollapsibleTrigger>
+        {expandable ? <CollapsibleTrigger render={trigger} /> : trigger}
         {actions}
       </div>
       {/* oxlint-disable jsx-a11y/prefer-tag-over-role -- ARIA 树的子节点须使用 group 而非表单元素。 */}

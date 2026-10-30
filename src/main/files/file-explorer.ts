@@ -66,6 +66,37 @@ export class FileExplorerService {
   }
 
   async list(root: string, value: unknown): Promise<FileEntry[]> {
+    const entries = await this.listEntries(root, value)
+    for (const entry of entries) {
+      if (entry.kind !== 'directory') continue
+      try {
+        entry.empty = await this.isEmpty(root, entry.path)
+      } catch {
+        // Unreadable or changing directories must retain their expand/retry action.
+      }
+    }
+    return entries
+  }
+
+  private async isEmpty(root: string, path: string): Promise<boolean> {
+    if (!this.options().showIgnored) return (await this.listEntries(root, path)).length === 0
+    const target = await this.location(root, path, false)
+    const before = await lstat(target)
+    const directory = await opendir(target)
+    let empty = true
+    for await (const entry of directory) {
+      if (entry.name.toLowerCase() === '.git') continue
+      empty = false
+      break
+    }
+    await this.location(root, path, false)
+    const after = await lstat(target)
+    if (before.ino !== after.ino || before.dev !== after.dev)
+      throw new Error('目录在读取期间被替换，请刷新。')
+    return empty
+  }
+
+  private async listEntries(root: string, value: unknown): Promise<FileEntry[]> {
     const path = explorerPath(value)
     const target = await this.location(root, path, false)
     const before = await lstat(target)

@@ -9,7 +9,7 @@ import {
 } from 'react'
 import { ChevronRight, ChevronsDownUp, Link, RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import type { FileAction } from '../../../../../shared/file-explorer'
+import { fileParent, type FileAction } from '../../../../../shared/file-explorer'
 import { EMPTY_EXPLORER, explorerRows, useFileExplorer } from '@/state/file-explorer-store'
 import { useSourceControl } from '@/state/source-control-store'
 import { useFileWatch } from '@/features/files/hooks/use-file-watch'
@@ -77,7 +77,7 @@ export function FileExplorer({
   const directories = [
     '',
     ...rows
-      .filter((row) => row.kind === 'directory' && session.expanded[row.path])
+      .filter((row) => row.kind === 'directory' && (row.empty || session.expanded[row.path]))
       .map((row) => row.path),
   ]
   const directoryKey = JSON.stringify(directories)
@@ -96,7 +96,8 @@ export function FileExplorer({
   )
 
   function refresh(paths = directories) {
-    for (const path of paths) void useFileExplorer.getState().load(target, path)
+    const changed = new Set(paths.flatMap((path) => (path ? [path, fileParent(path)] : [''])))
+    for (const path of changed) void useFileExplorer.getState().load(target, path)
   }
   const refreshActive = useEffectEvent(() => refresh())
   useEffect(() => {
@@ -132,7 +133,7 @@ export function FileExplorer({
   function renderEntries(parent = '', depth = 0): ReactNode {
     const entries = visibleSession.directories[parent]?.entries || []
     return entries.map((entry, index) => {
-      const expanded = entry.kind === 'directory' && !!session.expanded[entry.path]
+      const expanded = entry.kind === 'directory' && !entry.empty && !!session.expanded[entry.path]
       const directory = session.directories[entry.path]
       const itemProps = {
         'aria-posinset': index + 1,
@@ -153,6 +154,7 @@ export function FileExplorer({
               {...itemProps}
               path={entry.path}
               name={entry.name}
+              expandable={!entry.empty}
               icon={(open) => <FileTypeIcon path={entry.path} directory open={open} />}
               render={
                 <ContextMenuTrigger
@@ -163,29 +165,27 @@ export function FileExplorer({
               }
             >
               {expanded && renderEntries(entry.path, depth + 1)}
-              {expanded && (directory?.error || directory?.entries?.length === 0) && (
+              {expanded && directory?.error && (
                 <div
                   role="none"
                   className="file-explorer-directory-status flex min-w-0 items-center gap-1 pr-1 text-xs text-app-muted-foreground"
                   style={{ paddingLeft: 24 + depth * 12 }}
                 >
                   <span
-                    role={directory?.error ? 'alert' : 'status'}
+                    role="alert"
                     className="file-explorer-directory-message min-w-0 flex-1 break-words"
                   >
-                    {directory?.error || '空目录'}
+                    {directory.error}
                   </span>
-                  {directory?.error && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="file-explorer-directory-retry"
-                      aria-label={`重新读取 ${abbreviateHomePath(entry.path)}`}
-                      onClick={() => refresh([entry.path])}
-                    >
-                      <RefreshCw className="file-explorer-directory-retry-icon" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="file-explorer-directory-retry"
+                    aria-label={`重新读取 ${abbreviateHomePath(entry.path)}`}
+                    onClick={() => refresh([entry.path])}
+                  >
+                    <RefreshCw className="file-explorer-directory-retry-icon" />
+                  </Button>
                 </div>
               )}
             </FileTreeFolder>

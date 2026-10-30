@@ -4,6 +4,7 @@ export interface FileEntry {
   kind: 'directory' | 'file' | 'link' | 'other'
   ignored?: boolean
   symlink?: boolean
+  empty?: boolean
 }
 
 export type FilePreview =

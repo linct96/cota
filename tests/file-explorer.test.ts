@@ -36,6 +36,12 @@ describe('file explorer', () => {
     const files = new FileExplorerService()
     expect(await files.list(root, '')).toEqual([])
     await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src', '.git'), 'gitdir: elsewhere')
+    expect((await files.list(root, '')).find((entry) => entry.path === 'src')).toMatchObject({
+      kind: 'directory',
+      empty: true,
+    })
+    await rm(join(root, 'src', '.git'))
     await writeFile(join(root, '.git'), 'gitdir: elsewhere')
     await writeFile(join(root, '.env'), 'TOKEN=fixture')
     await writeFile(join(root, 'file10.txt'), 'ten')
@@ -60,6 +66,10 @@ describe('file explorer', () => {
       expect(await files.read(root, name)).toMatchObject({ kind: 'unavailable' })
     }
     await symlink('src', join(root, 'linked-src'))
+    expect((await files.list(root, '')).filter((entry) => entry.kind === 'directory')).toEqual([
+      { name: 'linked-src', path: 'linked-src', kind: 'directory', symlink: true, empty: false },
+      { name: 'src', path: 'src', kind: 'directory', empty: false },
+    ])
     expect(await files.list(root, 'linked-src')).toEqual([
       { name: '中文 空格.txt', path: 'linked-src/中文 空格.txt', kind: 'file' },
     ])
@@ -134,6 +144,24 @@ describe('file explorer', () => {
     expect((await files.list(root, 'src')).filter((entry) => entry.ignored)).toEqual([
       { name: 'ignored.tmp', path: 'src/ignored.tmp', kind: 'file', ignored: true },
     ])
+    await mkdir(join(root, 'only-ignored'))
+    await writeFile(join(root, 'only-ignored', 'output.log'), 'ignored')
+    const filtered = new FileExplorerService(() => ({ showIgnored: false, followSymlinks: true }))
+    expect((await files.list(root, '')).find((entry) => entry.path === 'only-ignored')?.empty).toBe(
+      false,
+    )
+    expect(
+      (await filtered.list(root, '')).find((entry) => entry.path === 'only-ignored')?.empty,
+    ).toBe(true)
+    await writeFile(join(root, 'only-ignored', 'visible.txt'), 'visible')
+    expect(
+      (await filtered.list(root, '')).find((entry) => entry.path === 'only-ignored')?.empty,
+    ).toBe(false)
+    await rm(join(root, 'only-ignored', 'visible.txt'))
+    await rm(join(root, 'only-ignored', 'output.log'))
+    expect((await files.list(root, '')).find((entry) => entry.path === 'only-ignored')?.empty).toBe(
+      true,
+    )
     await writeFile(join(root, '.gitignore'), '')
     expect((await files.list(root, '')).some((entry) => entry.ignored)).toBe(false)
   })

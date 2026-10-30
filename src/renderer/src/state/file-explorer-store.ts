@@ -90,7 +90,8 @@ export function explorerRows(session: ExplorerSession): ExplorerRow[] {
     const entries = session.directories[path]?.entries || []
     for (const [index, entry] of entries.entries()) {
       rows.push({ ...entry, depth, parent: path, position: index + 1, siblings: entries.length })
-      if (entry.kind === 'directory' && session.expanded[entry.path]) visit(entry.path, depth + 1)
+      if (entry.kind === 'directory' && !entry.empty && session.expanded[entry.path])
+        visit(entry.path, depth + 1)
     }
   }
   visit('', 0)
