@@ -1,7 +1,7 @@
 import { Suspense, useLayoutEffect, useState, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
-import { useLoadingIndicator } from '../lib/use-loading-indicator'
-import { cn } from '../lib/utils'
+import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
+import { cn } from '@/lib/utils'
 
 function SuspendedContent({ onChange }: { onChange: (pending: boolean) => void }) {
   useLayoutEffect(() => {

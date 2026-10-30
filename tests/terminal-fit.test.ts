@@ -1,6 +1,6 @@
 import type { Terminal } from '@xterm/xterm'
 import { expect, it, vi } from 'vitest'
-import { StableCellFitAddon } from '../src/renderer/src/lib/terminal-stable-cell-fit-addon'
+import { StableCellFitAddon } from '../src/renderer/src/features/terminal/lib/terminal-stable-cell-fit-addon'
 
 it('fits from stable device cells regardless of the previous grid, respecting padding and scrollbars', () => {
   const charWidth = 8.4287109375

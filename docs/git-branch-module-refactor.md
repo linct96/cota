@@ -32,20 +32,20 @@
 
 ## 2. 现有实现与迁移来源
 
-| 现有文件                                                    | 当前职责                                            | 重构方向                                                 |
-| ----------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| `src/main/git/source-control.ts`                            | 文件状态、分支引用、分支操作、远端同步、提交和 Diff | 分支查询及操作逐步迁出，保留文件、暂存、提交和 Diff 职责 |
-| `src/main/git/source-control-watch.ts`                      | 工作目录和 Git 元数据监听                           | 扩展变更分类，保留监听恢复和降级机制                     |
-| `src/main/git/worktree-manager.ts`                          | 工作区授权、生命周期和仓库锁                        | 保留职责，向分支模块提供明确的变更通知                   |
-| `src/renderer/src/components/SourceControlPanel.tsx`        | 分支列表局部状态、读取与操作调度                    | 消费统一分支资源，不再自行维护分支数组                   |
-| `src/renderer/src/lib/source-control-store.ts`              | 工作区 Git 状态及界面会话                           | 继续作为工作区状态来源，与分支资源组合                   |
-| `src/renderer/src/lib/source-control-refresh.ts`            | 状态刷新合并及节流                                  | 保留文件状态刷新职责，与分支刷新解耦                     |
-| `src/renderer/src/lib/use-source-control-watch.ts`          | 监听订阅、轮询降级和窗口恢复刷新                    | 接入分类变更，不再一律触发全量分支读取                   |
-| `src/renderer/src/lib/use-project-branches.ts`              | 侧栏当前分支及 Worktree 定期刷新                    | 分支展示接入统一来源，保留不同职责的健康检查             |
-| `src/renderer/src/components/WorktreeDialog.tsx`            | 单独读取本地分支和项目当前分支                      | 接入统一查询，保留创建预检及安全流程                     |
-| `src/renderer/src/components/BranchPicker.tsx`              | 共用选择、搜索、筛选和键盘交互                      | 保持纯 UI 职责                                           |
-| `src/renderer/src/components/SourceControlBranchPicker.tsx` | Git 分支选择及操作交互                              | 消费统一资源和操作入口                                   |
-| `src/main/code-hosting/service.ts`                          | 平台识别、MR 初始化、预检和创建                     | 使用平台分支缓存，保留业务与安全职责                     |
+| 现有文件                                                                            | 当前职责                                            | 重构方向                                                 |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| `src/main/git/source-control.ts`                                                    | 文件状态、分支引用、分支操作、远端同步、提交和 Diff | 分支查询及操作逐步迁出，保留文件、暂存、提交和 Diff 职责 |
+| `src/main/git/source-control-watch.ts`                                              | 工作目录和 Git 元数据监听                           | 扩展变更分类，保留监听恢复和降级机制                     |
+| `src/main/git/worktree-manager.ts`                                                  | 工作区授权、生命周期和仓库锁                        | 保留职责，向分支模块提供明确的变更通知                   |
+| `src/renderer/src/features/source-control/components/SourceControlPanel.tsx`        | 分支列表局部状态、读取与操作调度                    | 消费统一分支资源，不再自行维护分支数组                   |
+| `src/renderer/src/state/source-control-store.ts`                                    | 工作区 Git 状态及界面会话                           | 继续作为工作区状态来源，与分支资源组合                   |
+| `src/renderer/src/features/source-control/lib/source-control-refresh.ts`            | 状态刷新合并及节流                                  | 保留文件状态刷新职责，与分支刷新解耦                     |
+| `src/renderer/src/features/source-control/hooks/use-source-control-watch.ts`        | 监听订阅、轮询降级和窗口恢复刷新                    | 接入分类变更，不再一律触发全量分支读取                   |
+| `src/renderer/src/features/workspace/hooks/use-project-branches.ts`                 | 侧栏当前分支及 Worktree 定期刷新                    | 分支展示接入统一来源，保留不同职责的健康检查             |
+| `src/renderer/src/features/workspace/worktree/WorktreeDialog.tsx`                   | 单独读取本地分支和项目当前分支                      | 接入统一查询，保留创建预检及安全流程                     |
+| `src/renderer/src/features/source-control/components/BranchPicker.tsx`              | 共用选择、搜索、筛选和键盘交互                      | 保持纯 UI 职责                                           |
+| `src/renderer/src/features/source-control/components/SourceControlBranchPicker.tsx` | Git 分支选择及操作交互                              | 消费统一资源和操作入口                                   |
+| `src/main/code-hosting/service.ts`                                                  | 平台识别、MR 初始化、预检和创建                     | 使用平台分支缓存，保留业务与安全职责                     |
 
 此前 MR 初始化优化已经落在现有实现中，包括端点发现缓存、轻量 Git 元数据读取、首次预检短时复用项目信息和独立请求并行。这些不等同于本文设计的完整分支资源模块，迁移时应保留其有效行为。
 
@@ -126,7 +126,7 @@ src/shared/git-branches.ts
 src/main/git/branch-service.ts
   分支查询、缓存、请求合并、失效及分支/同步操作
 
-src/renderer/src/lib/git-branches-store.ts
+src/renderer/src/state/git-branches-store.ts
   展示快照、订阅、请求状态及工作区视图
 ```
 
@@ -354,7 +354,7 @@ Git 写操作和 MR 创建不随之放开。它们涉及本地变更、工作区
 
 已落地：
 
-- 新增 `src/shared/git-branches.ts`、`src/main/git/branch-service.ts` 和 `src/renderer/src/lib/git-branches-store.ts`。按真实公共 Git 目录及目录身份共享引用、OID 和占用快照，远端配置仍按工作区读取；当前分支、HEAD 和上游继续复用原工作区状态。
+- 新增 `src/shared/git-branches.ts`、`src/main/git/branch-service.ts` 和 `src/renderer/src/state/git-branches-store.ts`。按真实公共 Git 目录及目录身份共享引用、OID 和占用快照，远端配置仍按工作区读取；当前分支、HEAD 和上游继续复用原工作区状态。
 - 更改与比较通过 `SourceControlPanel` 消费分支 Store，不再由 `session.refreshed` 触发分支数组读取。旧 `git:references` IPC 转发到同一资源；`SourceControlService.references()` 仍是写操作校验使用的实时读取。
 - 监听元数据失效与普通文件通知分开；补充公共 `worktrees` 元数据监听。窗口恢复、监听重建及降级轮询只重读本地数据，不执行 Fetch。
 - Git 分支/提交/同步和 Worktree 生命周期操作的收尾先保守失效全部活跃仓库；普通暂存、取消暂存和丢弃不主动失效分支列表。细分到目标仓库及共享监听去重留在阶段二。

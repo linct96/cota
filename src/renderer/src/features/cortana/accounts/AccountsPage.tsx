@@ -22,12 +22,12 @@ import {
   type AccountUsageWindow,
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
-import { abbreviateHomePath, cn } from '../../../lib/utils'
-import { useDialogState } from '../../../lib/use-dialog-state'
-import { Alert, AlertDescription } from '../../../components/ui/alert'
-import { Badge } from '../../../components/ui/badge'
-import { Button } from '../../../components/ui/button'
-import { Card } from '../../../components/ui/card'
+import { abbreviateHomePath, cn } from '@/lib/utils'
+import { useDialogState } from '@/hooks/use-dialog-state'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -35,23 +35,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../../components/ui/dialog'
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../../components/ui/dropdown-menu'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '../../../components/ui/empty'
-import { Input } from '../../../components/ui/input'
-import { useCortana } from '../cortana-store'
+} from '@/components/ui/dropdown-menu'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Input } from '@/components/ui/input'
+import { useCortana } from '@/features/cortana/cortana-store'
 import { AddAccountDialog, RenameAccountDialog } from './AccountDialogs'
 
 type Confirmation = { kind: 'switch' | 'delete'; account: AccountProfile } | { kind: 'import' }

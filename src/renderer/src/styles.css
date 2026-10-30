@@ -127,7 +127,7 @@
   --file-icon-pink: #a05f88;
   --file-icon-red: #a45656;
   --overlay: rgba(0, 0, 0, 0.2);
-  --scrollbar-thumb: rgba(121, 121, 121, 0.4);
+  --scrollbar-thumb: rgba(121, 121, 121, 0.3);
   --scrollbar-thumb-hover: rgba(121, 121, 121, 0.7);
   --scrollbar-thumb-active: rgba(121, 121, 121, 0.9);
   --border: oklch(0.922 0 0);
@@ -219,6 +219,18 @@ body:has(
   )
   .title-bar {
   -webkit-app-region: no-drag;
+}
+:is(.project-list-scroll-area, .file-explorer-scroll) [data-slot='scroll-area-thumb'] {
+  width: 4px;
+  flex: none;
+  margin-inline: auto;
+}
+:is(.project-list-scroll-area, .file-explorer-scroll)
+  [data-slot='scroll-area-scrollbar']:is(:hover, :active)
+  [data-slot='scroll-area-thumb'] {
+  width: auto;
+  flex: 1;
+  margin-inline: 0;
 }
 .terminal-tab-scroll-area {
   -webkit-app-region: no-drag;
@@ -677,10 +689,6 @@ button:not([data-slot='button']):focus-visible {
 .file-explorer-row[data-ignored='true'] .file-tree-name {
   font-style: italic;
 }
-.file-explorer-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
 .file-explorer-entry-name,
 .source-file-explorer-name,
 .source-control-review-path,
@@ -970,7 +978,7 @@ button:not([data-slot='button']):focus-visible {
   --dot-status-attention: #fbbf24;
   --dot-status-completed: #35c264;
   --dot-status-working: #38bdf8;
-  --scrollbar-thumb: rgba(180, 180, 185, 0.4);
+  --scrollbar-thumb: rgba(180, 180, 185, 0.3);
   --scrollbar-thumb-hover: rgba(180, 180, 185, 0.6);
   --scrollbar-thumb-active: rgba(180, 180, 185, 0.8);
   --overlay: rgba(0, 0, 0, 0.5);

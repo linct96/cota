@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { DiffEditorResources } from '../src/renderer/src/lib/diff-editor-resources'
-import { scheduleGitDiff } from '../src/renderer/src/lib/git-diff-loader'
+import { DiffEditorResources } from '../src/renderer/src/features/source-control/lib/diff-editor-resources'
+import { scheduleGitDiff } from '../src/renderer/src/features/source-control/lib/git-diff-loader'
 import { errorDetails } from '../src/renderer/src/lib/error-details'
 
 afterEach(() => vi.useRealTimers())

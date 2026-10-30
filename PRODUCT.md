@@ -44,7 +44,7 @@ Cota 是一款本地优先、终端优先的桌面工作区应用，将项目与
 
 ## Evidence on Hand
 
-- 生产级应用外壳与路由实现位于 `src/renderer/src/App.tsx` 与 `src/renderer/src/router.tsx`（`/`、`/settings`、`/cortana/accounts`）。
+- 生产级应用外壳与路由实现位于 `src/renderer/src/app/App.tsx` 与 `src/renderer/src/app/router.tsx`（`/`、`/settings`、`/cortana/accounts`）。
 - 跨进程 IPC 契约与领域模型定义位于 `src/shared/contracts.ts`。
 - 功能说明与研发规范记录于 `README.md` 与 `AGENTS.md`。
 - 不存在任何外部营销数据、客户背书或付费套餐信息，后续设计不得虚构此类内容。

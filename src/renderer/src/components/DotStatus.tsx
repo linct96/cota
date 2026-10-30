@@ -1,4 +1,4 @@
-import type { TerminalDisplayState } from '../lib/agent-status'
+import type { TerminalDisplayState } from '@/features/agents/lib/agent-status'
 
 function synchronizeRipples(element: HTMLSpanElement | null) {
   if (!element) return

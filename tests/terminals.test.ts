@@ -75,7 +75,7 @@ vi.mock('../src/main/agents/hooks/event-client', () => ({
 import { TerminalManager } from '../src/main/terminal/manager'
 import { claimServicePort } from '../src/main/terminal/service-port'
 import { savedQuickCommands } from '../src/main/validation'
-import { quickCommandFormSchema } from '../src/renderer/src/lib/form-schemas'
+import { quickCommandFormSchema } from '../src/renderer/src/features/workspace/quick-commands/schemas'
 
 function child() {
   const listeners = {

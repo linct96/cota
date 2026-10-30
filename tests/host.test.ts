@@ -30,7 +30,7 @@ import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-pr
 import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { Terminal } from '@xterm/xterm'
-import { installTerminalInput } from '../src/renderer/src/lib/terminal-input'
+import { installTerminalInput } from '../src/renderer/src/features/terminal/lib/terminal-input'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),

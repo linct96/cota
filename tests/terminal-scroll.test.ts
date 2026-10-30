@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { Terminal } from '@xterm/xterm'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { installTerminalInput } from '../src/renderer/src/lib/terminal-input'
-import { installTerminalScroll } from '../src/renderer/src/lib/terminal-scroll'
-import { installTerminalWheel, isTerminalWheelReplay } from '../src/renderer/src/lib/terminal-wheel'
+import { installTerminalInput } from '../src/renderer/src/features/terminal/lib/terminal-input'
+import { installTerminalScroll } from '../src/renderer/src/features/terminal/lib/terminal-scroll'
+import {
+  installTerminalWheel,
+  isTerminalWheelReplay,
+} from '../src/renderer/src/features/terminal/lib/terminal-wheel'
 
 const cleanup: (() => void)[] = []
 beforeEach(() => vi.useFakeTimers())

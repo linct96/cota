@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 // @ts-expect-error Monaco's internal token parser has no declaration file.
 import { TokenTheme } from 'monaco-editor/esm/vs/editor/common/languages/supports/tokenization.js'
-import { monacoColor } from '../src/renderer/src/lib/monaco-color'
+import { monacoColor } from '../src/renderer/src/lib/editor/monaco-color'
 
 it('expands minified CSS colors into colors accepted by the Monaco token parser', () => {
   expect(() => TokenTheme.createFromRawTokenTheme([{ token: '', background: '#fff' }], [])).toThrow(

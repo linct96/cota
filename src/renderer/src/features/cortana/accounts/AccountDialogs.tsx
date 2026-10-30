@@ -11,8 +11,8 @@ import {
   type AccountProfile,
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
-import { Alert, AlertDescription } from '../../../components/ui/alert'
-import { Button } from '../../../components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -20,17 +20,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../../components/ui/dialog'
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from '../../../components/ui/field'
-import { Input } from '../../../components/ui/input'
-import { Tabs, TabsList, TabsTrigger } from '../../../components/ui/tabs'
-import { Textarea } from '../../../components/ui/textarea'
+} from '@/components/ui/dialog'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 
 const browserSchema = z.object(accountFormSchema.shape)
 const errorText = (error: unknown) =>

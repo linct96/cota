@@ -18,31 +18,34 @@ import {
   terminalTabs,
   useWorkspace,
   type TerminalTab,
-} from '../src/renderer/src/store'
+} from '../src/renderer/src/state/workspace'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { Terminal } from '@xterm/headless'
 import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
-import { createTerminalRenderer } from '../src/renderer/src/lib/terminal-renderer'
-import { createTerminalInputHandler } from '../src/renderer/src/lib/terminal-input'
-import { useSourceControl } from '../src/renderer/src/lib/source-control-store'
+import { createTerminalRenderer } from '../src/renderer/src/features/terminal/lib/terminal-renderer'
+import { createTerminalInputHandler } from '../src/renderer/src/features/terminal/lib/terminal-input'
+import { useSourceControl } from '../src/renderer/src/state/source-control-store'
 import {
   retainGitBranches,
   refreshGitBranches,
   useGitBranchesStore,
-} from '../src/renderer/src/lib/git-branches-store'
-import { createSourceControlRefreshQueue } from '../src/renderer/src/lib/source-control-refresh'
-import { buildGitChangeTree, gitChangeRows } from '../src/renderer/src/lib/source-control-tree'
+} from '../src/renderer/src/state/git-branches-store'
+import { createSourceControlRefreshQueue } from '../src/renderer/src/features/source-control/lib/source-control-refresh'
+import {
+  buildGitChangeTree,
+  gitChangeRows,
+} from '../src/renderer/src/features/source-control/lib/source-control-tree'
 import { gitFileKey, type GitChange, type GitStatus } from '../src/shared/source-control'
 import type { HostingContext } from '../src/shared/code-hosting'
-import { useRightPanel } from '../src/renderer/src/lib/right-panel-store'
-import { explorerRows, useFileExplorer } from '../src/renderer/src/lib/file-explorer-store'
+import { useRightPanel } from '../src/renderer/src/state/right-panel-store'
+import { explorerRows, useFileExplorer } from '../src/renderer/src/state/file-explorer-store'
 import type { FileEntry } from '../src/shared/file-explorer'
 import {
   agentIndicatorState,
   agentTabState,
   workspaceTerminalSummary as workspaceAgentSummary,
   terminalIndicatorState,
-} from '../src/renderer/src/lib/agent-status'
+} from '../src/renderer/src/features/agents/lib/agent-status'
 
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: vi.fn(
@@ -2212,8 +2215,8 @@ describe('workspace state', () => {
     const staged = { ...second, area: 'staged' as const }
     const terminals = store().tabs
     scm.update(id, { draft: 'keep draft' })
-    scm.openDiff(id, first)
-    scm.openDiff(id, second)
+    store().openDiff(id, first)
+    store().openDiff(id, second)
     expect(session()).toMatchObject({ selection: second, preview: true, pinnedDiffs: [] })
     scm.pinDiff(id)
     scm.pinDiff(id)
@@ -2223,18 +2226,18 @@ describe('workspace state', () => {
       activePinnedDiff: second,
       pinnedDiffs: [second],
     })
-    scm.openDiff(id, first)
+    store().openDiff(id, first)
     expect(session()).toMatchObject({
       selection: first,
       preview: true,
       activePinnedDiff: undefined,
     })
-    scm.openDiff(id, second)
+    store().openDiff(id, second)
     expect(session()).toMatchObject({ selection: first, preview: false, activePinnedDiff: second })
-    scm.openDiff(id, staged)
+    store().openDiff(id, staged)
     scm.pinDiff(id)
     expect(session().pinnedDiffs).toEqual([second, staged])
-    scm.openDiff(id, first)
+    store().openDiff(id, first)
     scm.openChanges(id)
     expect(session().tabOrder).toEqual([
       `terminal:${terminals[0].id}`,
@@ -2274,10 +2277,10 @@ describe('workspace state', () => {
     })
     scm.pinDiff(id)
     expect(session().pinnedDiffs).toEqual([second])
-    scm.openDiff(id, second)
+    store().openDiff(id, second)
     scm.showTerminal(id)
     expect(session()).toMatchObject({ activePinnedDiff: undefined, pinnedDiffs: [second] })
-    scm.openDiff(id, second)
+    store().openDiff(id, second)
     scm.update(id, {
       status: {
         rootPath: '/tmp/repo',
@@ -2294,7 +2297,7 @@ describe('workspace state', () => {
       pinnedDiffs: [second],
       draft: 'keep draft',
     })
-    scm.openDiff('other-workspace', first)
+    store().openDiff('other-workspace', first)
     scm.pinDiff('other-workspace')
     scm.closePinnedDiff('other-workspace', gitFileKey(first))
     expect(session().pinnedDiffs).toEqual([second])
@@ -2328,11 +2331,11 @@ describe('workspace state', () => {
     expect(store().tabs.map((tab) => tab.id)).toEqual([added.id, terminals[0].id])
     store().shortcut('tab-3')
     expect(session().preview).toBe(true)
-    scm.openDiff(id, first)
+    store().openDiff(id, first)
     scm.pinDiff(id)
     expect(session().tabOrder).toEqual([order[3], order[0], `diff:${gitFileKey(first)}`, 'changes'])
     scm.closePinnedDiff(id, gitFileKey(first))
-    scm.openDiff(id, first)
+    store().openDiff(id, first)
     scm.pinDiff(id)
     expect(session().tabOrder.at(-1)).toBe(`diff:${gitFileKey(first)}`)
     scm.update(id, { file: 'new-preview.ts', preview: true })
@@ -2359,8 +2362,8 @@ describe('workspace state', () => {
     const third = 'src/third.ts'
     const diff = { path: first, area: 'unstaged' as const }
 
-    scm.openFile(id, first)
-    scm.openFile(id, second)
+    store().openFile(id, first)
+    store().openFile(id, second)
     expect(session()).toMatchObject({ file: second, preview: true, pinnedFiles: [] })
     scm.pinFile(id)
     scm.pinFile(id)
@@ -2371,10 +2374,10 @@ describe('workspace state', () => {
       activePinnedFile: second,
     })
     expect(session().tabOrder).toEqual([`terminal:${terminals[0].id}`, `file:${second}`])
-    scm.openFile(id, first)
+    store().openFile(id, first)
     scm.pinFile(id)
-    scm.openFile(id, third)
-    scm.openFile(id, second)
+    store().openFile(id, third)
+    store().openFile(id, second)
     scm.pinFile(id)
     expect(session()).toMatchObject({
       file: third,
@@ -2393,10 +2396,10 @@ describe('workspace state', () => {
     expect(session()).toMatchObject({ file: third, preview: true, activePinnedFile: undefined })
     store().shortcut('tab-3')
     expect(session()).toMatchObject({ preview: false, activePinnedFile: first })
-    scm.openDiff(id, diff)
+    store().openDiff(id, diff)
     scm.pinDiff(id)
     expect(session()).toMatchObject({ activePinnedFile: undefined, activePinnedDiff: diff })
-    scm.openFile(id, first)
+    store().openFile(id, first)
     expect(session()).toMatchObject({ activePinnedFile: first, activePinnedDiff: undefined })
     scm.openChanges(id)
     expect(session()).toMatchObject({ changesActive: true, activePinnedFile: undefined })
@@ -2413,21 +2416,21 @@ describe('workspace state', () => {
     expect(session()).toMatchObject({ pinnedFiles: [first, second], activePinnedFile: second })
     expect(session().tabOrder.at(-1)).toBe(`file:${second}`)
     store().shortcut('close-terminal')
-    scm.openFile(id, second)
+    store().openFile(id, second)
     scm.pinFile(id)
     store().shortcut('reopen-tab')
     expect(session().pinnedFiles).toEqual([first, second])
     expect(session().closedTabs).toEqual([])
 
-    scm.openFile('other-workspace', first)
+    store().openFile('other-workspace', first)
     scm.pinFile('other-workspace')
     scm.closePinnedFile('other-workspace', first)
     expect(session().pinnedFiles).toEqual([first, second])
     expect(store().tabs).toBe(terminals)
     expect(api.closeTerminal).not.toHaveBeenCalled()
 
-    scm.openFile(id, third)
-    scm.openDiff('other-workspace', diff)
+    store().openFile(id, third)
+    store().openDiff('other-workspace', diff)
     scm.showTerminal('other-workspace')
     const order = session().tabOrder
     const disabled = { ...store().preferences, reusePreviewTabs: false }
@@ -2451,18 +2454,18 @@ describe('workspace state', () => {
       pinnedDiffs: [diff],
       activePinnedDiff: undefined,
     })
-    scm.openFile(id, 'fourth.ts')
-    scm.openFile(id, 'fifth.ts')
-    scm.openFile(id, 'fourth.ts')
+    store().openFile(id, 'fourth.ts')
+    store().openFile(id, 'fifth.ts')
+    store().openFile(id, 'fourth.ts')
     expect(session()).toMatchObject({
       preview: false,
       pinnedFiles: [first, second, third, 'fourth.ts', 'fifth.ts'],
       activePinnedFile: 'fourth.ts',
     })
     const staged = { ...diff, area: 'staged' as const }
-    scm.openDiff(id, staged)
-    scm.openDiff(id, diff)
-    scm.openDiff(id, staged)
+    store().openDiff(id, staged)
+    store().openDiff(id, diff)
+    store().openDiff(id, staged)
     expect(session()).toMatchObject({
       preview: false,
       pinnedDiffs: [diff, staged],
@@ -2471,8 +2474,8 @@ describe('workspace state', () => {
     })
     expect(session().tabOrder).not.toContain('preview')
     await store().savePreferences({ ...store().preferences, reusePreviewTabs: true })
-    scm.openFile(id, 'sixth.ts')
-    scm.openFile(id, 'seventh.ts')
+    store().openFile(id, 'sixth.ts')
+    store().openFile(id, 'seventh.ts')
     expect(session()).toMatchObject({
       preview: true,
       file: 'seventh.ts',
@@ -2501,10 +2504,10 @@ describe('workspace state', () => {
     }
     scm.update(id, { file: 'plain.ts', preview: true, draft: 'keep draft' })
     scm.closePreview(id)
-    scm.openDiff(id, diff)
+    store().openDiff(id, diff)
     scm.pinDiff(id)
     scm.closePinnedDiff(id, gitFileKey(diff))
-    scm.openDiff(id, preview)
+    store().openDiff(id, preview)
     store().shortcut('close-terminal')
     scm.openChanges(id)
     scm.closeChanges(id)
@@ -3302,7 +3305,7 @@ describe('workspace state', () => {
     expect(store().activeTabs[id]).toBe(middle.id)
 
     const diff = { path: 'neighbor.ts', area: 'unstaged' as const }
-    scm.openDiff(id, diff)
+    store().openDiff(id, diff)
     scm.pinDiff(id)
     scm.openChanges(id)
     scm.update(id, { file: 'preview.ts', preview: true })

@@ -12,7 +12,7 @@ import { GitLabAdapter } from '../src/main/code-hosting/gitlab'
 import { hostingBranchesExpired, type HostingRepository } from '../src/shared/code-hosting'
 import { projectBranch } from '../src/main/git/branches/project-branch'
 import { parseGitStatus } from '../src/main/git/source-control/status'
-import { createBranchFormSchema } from '../src/renderer/src/lib/form-schemas'
+import { createBranchFormSchema } from '../src/renderer/src/features/source-control/lib/form-schemas'
 
 let directory: string
 beforeEach(async () => {

@@ -2,17 +2,17 @@ import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { ClaudeCode, Grok, OpenAI, Pi } from '@lobehub/icons'
 import { Check, ChevronDown, UsersRound } from 'lucide-react'
 import { ACCOUNT_PRODUCTS, type AccountProduct } from '../../../../shared/accounts'
-import { Button } from '../../components/ui/button'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu'
+} from '@/components/ui/dropdown-menu'
 import { useCortana } from './cortana-store'
-import { useLeftPanel } from '../../lib/left-panel-store'
-import { cn } from '../../lib/utils'
+import { useLeftPanel } from '@/state/left-panel-store'
+import { cn } from '@/lib/utils'
 
 const PRODUCT_ORDER: AccountProduct[] = ['claude', 'codex', 'grok', 'pi']
 const PRODUCT_ICONS = {

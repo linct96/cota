@@ -1,5 +1,9 @@
 export { cn } from 'cn'
 
+export function folderName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path
+}
+
 export function abbreviateHomePath(path: string): string {
   const normalize = (value: string) =>
     window.desktop.platform === 'win32' ? value.replace(/\\/g, '/').toLowerCase() : value

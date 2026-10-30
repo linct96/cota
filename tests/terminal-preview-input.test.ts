@@ -1,6 +1,6 @@
 import { Terminal } from '@xterm/headless'
 import { expect, it, vi } from 'vitest'
-import { installTerminalPreviewInput } from '../src/renderer/src/lib/terminal-preview-input'
+import { installTerminalPreviewInput } from '../src/renderer/src/features/terminal/lib/terminal-preview-input'
 
 it('edits preview text locally across Unicode, wrapping and resizing without parsing pasted controls', async () => {
   vi.useFakeTimers()

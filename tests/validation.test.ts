@@ -16,10 +16,10 @@ import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import {
   shellFormSchema,
   scrollbackFormSchema,
-  openerFormSchema,
-  workspaceFormSchema,
-  worktreeFormSchema,
-} from '../src/renderer/src/lib/form-schemas'
+} from '../src/renderer/src/features/settings/schemas'
+import { openerFormSchema } from '../src/renderer/src/features/workspace/open-with/schemas'
+import { workspaceFormSchema } from '../src/renderer/src/features/workspace/dialogs/schemas'
+import { worktreeFormSchema } from '../src/renderer/src/features/workspace/worktree/schemas'
 
 afterEach(() => vi.unstubAllEnvs())
 
