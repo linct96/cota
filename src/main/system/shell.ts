@@ -80,6 +80,8 @@ export async function loginShellEnvironment(
   return env
 }
 
+export class ExecutableNotFoundError extends Error {}
+
 export async function findExecutable(
   command: string,
   env: Record<string, string>,
@@ -97,16 +99,22 @@ export async function findExecutable(
               )
             : [join(entry, command)],
         )
+  let failure: unknown
   for (const candidate of candidates) {
     try {
       if (!(await stat(candidate)).isFile()) continue
       await access(candidate, constants.X_OK)
       return candidate
-    } catch {
-      // Try the next PATH entry.
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') failure ??= error
     }
   }
-  throw new Error(`找不到或无法执行 ${command}。请安装其命令行工具，并检查登录 Shell 的 PATH。`)
+  if (failure)
+    throw new Error(`无法执行 ${command}，请检查文件权限和磁盘状态。`, { cause: failure })
+  throw new ExecutableNotFoundError(
+    `找不到 ${command}。请安装其命令行工具，并检查登录 Shell 的 PATH。`,
+  )
 }
 
 export function shellArguments(path: string): string[] {

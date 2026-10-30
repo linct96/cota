@@ -50,6 +50,8 @@ export interface TerminalTab {
   shellUnread?: boolean
   exitCode?: number
   error?: string
+  // shortcut: 连接失败已读仅保留在 Renderer；需要跨应用重启恢复时再迁移到 Host。
+  errorRead?: boolean
   startupCommand?: string
   service?: import('../../shared/contracts').TerminalService
   closingStatus?: TerminalTab['status']
@@ -234,9 +236,13 @@ function readVisibleTerminal(state: Workspace): void {
   )
   const agent = !state.agentConnectionLost ? tab?.agent : undefined
   const shellCompleted = !!tab && !tab.agent && terminalIndicatorState(tab) === 'completed'
+  const errorUnread = !!tab && terminalIndicatorState(tab) === 'error'
   const completed =
-    (agent?.runtimeState === 'running' && agent.activityState === 'completed') || shellCompleted
-  const unread = agent?.unread || shellCompleted
+    (agent?.runtimeState === 'running' &&
+      (agent.activityState === 'completed' || agent.activityState === 'failed')) ||
+    shellCompleted ||
+    errorUnread
+  const unread = agent?.unread || shellCompleted || errorUnread
   if (
     completionRead &&
     (!completed ||
@@ -261,7 +267,9 @@ function readVisibleTerminal(state: Workspace): void {
     timer: setTimeout(() => {
       completionRead = undefined
       const current = useWorkspace.getState().tabs.find((item) => item.id === tab.id)
-      if (current?.agent?.unread) markAgentRead(current.agent)
+      if (current && terminalIndicatorState(current) === 'error')
+        useWorkspace.getState().updateTab(current.id, { errorRead: true })
+      else if (current?.agent?.unread) markAgentRead(current.agent)
       else if (current && terminalIndicatorState(current) === 'completed')
         useWorkspace.getState().updateTab(current.id, { shellUnread: false })
     }, 1000),
@@ -1030,6 +1038,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
         return {
           ...tab,
           ...rest,
+          ...((fields.status && fields.status !== tab.status) ||
+          (fields.error && fields.error !== tab.error)
+            ? { errorRead: false }
+            : {}),
           ...(fields.shellActivity && fields.shellActivity !== tab.shellActivity
             ? {
                 shellUnread:
@@ -1114,6 +1126,10 @@ export const useWorkspace = create<Workspace>((set, get) => ({
           ...tab,
           agent,
           shellUnread: false,
+          ...(tab.agent?.runtimeState !== agent.runtimeState ||
+          tab.agent?.launchId !== agent.launchId
+            ? { errorRead: false }
+            : {}),
           agentRevision: agent.revision,
           cwd: agent.cwd,
           ...(tab.kind === 'agent'

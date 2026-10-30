@@ -26,7 +26,13 @@ import {
   terminalTabs,
   useWorkspace,
 } from './store'
-import { unwrap, type WorkspaceTarget } from '../../shared/contracts'
+import {
+  unwrap,
+  type ProjectWorkspace,
+  type WorkspaceTarget,
+  type WorktreeRecord,
+  type WorktreeState,
+} from '../../shared/contracts'
 import { gitFileKey } from '../../shared/source-control'
 import { TerminalTabList } from './components/TerminalTabList'
 import { TerminalTab } from './components/TerminalTab'
@@ -48,6 +54,7 @@ import { FileTypeIcon } from './components/FileTypeIcon'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './components/ui/resizable'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from './lib/source-control-store'
 import { AgentMenu } from './components/AgentMenu'
+import { useAgentClis } from './lib/agent-cli-store'
 import { DotStatus } from './components/DotStatus'
 import { AgentIcon } from './components/AgentIcon'
 import {
@@ -102,6 +109,7 @@ import {
 } from './components/ui/context-menu'
 import { cn, shortenPath } from './lib/utils'
 import { useProjectBranches } from './lib/use-project-branches'
+import { useDialogState } from './lib/use-dialog-state'
 import { formatShortcut, shortcutBinding } from '../../shared/shortcuts'
 
 function folderName(path: string): string {
@@ -137,13 +145,19 @@ export function App() {
   const activeNavigation = settingsOpen ? 'settings' : cortanaOpen ? 'cortana' : 'home'
   const menuTrigger = useRef<HTMLElement | null>(null)
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)
-  const [workspaceToRemove, setWorkspaceToRemove] = useState<string | null>(null)
-  const [projectToRemove, setProjectToRemove] = useState<string | null>(null)
+  const [removal, setRemoval, removalDialog] = useDialogState<{
+    projectPath: string
+    workspace?: ProjectWorkspace
+  }>()
+  const projectToRemove = removal && !removal.workspace ? removal.projectPath : undefined
+  const workspaceToRemove = removal?.workspace?.id
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({})
-  const [workspaceDialog, setWorkspaceDialog] = useState<{
+  const [workspaceDialog, setWorkspaceDialog, workspaceNameDialog] = useDialogState<{
     projectPath: string
     id?: string
-  } | null>(null)
+    worktree?: WorktreeRecord
+    scan?: WorktreeState
+  }>()
   const [savingWorkspace, setSavingWorkspace] = useState(false)
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string>()
   const workspaceSavePending = useRef(false)
@@ -155,7 +169,13 @@ export function App() {
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: workspaceFormSchema },
     onSubmit: async ({ value }) => {
-      if (!workspaceDialog || workspaceSavePending.current || state.removingWorkspace) return
+      if (
+        !workspaceNameDialog.open ||
+        !workspaceDialog ||
+        workspaceSavePending.current ||
+        state.removingWorkspace
+      )
+        return
       workspaceSavePending.current = true
       setSavingWorkspace(true)
       setWorkspaceSaveError(undefined)
@@ -167,7 +187,7 @@ export function App() {
         if (saved) {
           if (!workspaceDialog.id)
             setOpenProjects((current) => ({ ...current, [workspaceDialog.projectPath]: true }))
-          setWorkspaceDialog(null)
+          setWorkspaceDialog(undefined)
         } else setWorkspaceSaveError('无法保存工作区，请检查名称或稍后重试。')
       } catch (cause) {
         setWorkspaceSaveError(cause instanceof Error ? cause.message : String(cause))
@@ -177,16 +197,13 @@ export function App() {
       }
     },
   })
-  const editingWorkspace = state.workspaces.find((entry) => entry.id === workspaceDialog?.id)
-  const editingRecord =
-    editingWorkspace?.kind === 'git-worktree'
-      ? state.worktreeRecords.find((entry) => entry.id === editingWorkspace.worktreeId)
-      : undefined
-  const editingScan = editingRecord
-    ? state.worktreeScans[editingRecord.projectPath]?.entries.find(
+  const editingRecord = workspaceDialog?.worktree
+  const editingScan =
+    (editingRecord &&
+      state.worktreeScans[editingRecord.projectPath]?.entries.find(
         (entry) => entry.record.id === editingRecord.id,
-      )
-    : undefined
+      )) ||
+    workspaceDialog?.scan
 
   useEffect(() => {
     if (!editingRecord) return
@@ -214,6 +231,10 @@ export function App() {
     const stopAgents = window.desktop.onAgent((event) =>
       useWorkspace.getState().receiveAgent(event),
     )
+    const stopAgentClis = window.desktop.onAgentClis((cache) =>
+      useAgentClis.getState().receive(cache),
+    )
+    void useAgentClis.getState().load()
     const bootstrapped = useWorkspace.getState().bootstrap()
     const stopAgentFocus = window.desktop.onAgentFocus((target) => {
       void bootstrapped
@@ -243,6 +264,7 @@ export function App() {
     })
     return () => {
       stopAgents()
+      stopAgentClis()
       stopAgentFocus()
       stopShortcuts()
     }
@@ -336,7 +358,7 @@ export function App() {
       useWorkspace.getState().setVisibleTerminal(undefined)
     }
   }, [activeId, activeNavigation, showingDiff])
-  const pendingWorkspace = state.workspaces.find((workspace) => workspace.id === workspaceToRemove)
+  const pendingWorkspace = removal?.workspace
   // Keep projects with workspaces or terminals reachable outside the recent 20.
   const projects = [
     ...new Set([
@@ -884,7 +906,7 @@ export function App() {
                                     variant="destructive"
                                     className="project-delete-item"
                                     disabled={!!state.removingWorkspace}
-                                    onClick={() => setProjectToRemove(path)}
+                                    onClick={() => setRemoval({ projectPath: path })}
                                   >
                                     <Trash2 className="project-delete-icon" />
                                     <span className="project-delete-label">删除项目</span>
@@ -1102,6 +1124,10 @@ export function App() {
                                           setWorkspaceDialog({
                                             projectPath: path,
                                             id: workspace.id,
+                                            worktree: state.worktreeRecords.find(
+                                              (entry) => entry.id === workspace.worktreeId,
+                                            ),
+                                            scan: scanEntry,
                                           })
                                         }}
                                       >
@@ -1122,7 +1148,7 @@ export function App() {
                                         onClick={() => {
                                           if (workspace.kind === 'git-worktree')
                                             void state.removeWorkspace(workspace.id)
-                                          else setWorkspaceToRemove(workspace.id)
+                                          else setRemoval({ projectPath: path, workspace })
                                         }}
                                       >
                                         <Trash2 className="workspace-delete-icon" />
@@ -1327,13 +1353,13 @@ export function App() {
           />
         )}
         <Dialog
-          open={workspaceDialog !== null}
+          {...workspaceNameDialog}
           onOpenChange={(open, details) => {
             if (workspaceSavePending.current) {
               details.cancel()
               return
             }
-            if (!open) setWorkspaceDialog(null)
+            if (!open) setWorkspaceDialog(undefined)
           }}
         >
           <DialogContent
@@ -1430,7 +1456,7 @@ export function App() {
                               .getState()
                               .worktreeRecords.some((entry) => entry.id === editingRecord.id)
                           )
-                            setWorkspaceDialog(null)
+                            setWorkspaceDialog(undefined)
                         } catch (error) {
                           setWorkspaceSaveError((error as Error).message)
                         } finally {
@@ -1520,15 +1546,14 @@ export function App() {
         </Dialog>
 
         <AlertDialog
-          open={pendingWorkspace !== undefined || projectToRemove !== null}
+          {...removalDialog}
           onOpenChange={(open, details) => {
             if (state.removingWorkspace) {
               details.cancel()
               return
             }
             if (!open) {
-              setWorkspaceToRemove(null)
-              setProjectToRemove(null)
+              setRemoval(undefined)
             }
           }}
         >
@@ -1569,11 +1594,10 @@ export function App() {
                 className="workspace-removal-confirm"
                 disabled={!!state.removingWorkspace}
                 onClick={async () => {
-                  if (state.removingWorkspace) return
+                  if (!removalDialog.open || state.removingWorkspace) return
                   if (projectToRemove) await state.removeProject(projectToRemove)
                   else if (workspaceToRemove) await state.removeWorkspace(workspaceToRemove)
-                  setWorkspaceToRemove(null)
-                  setProjectToRemove(null)
+                  setRemoval(undefined)
                 }}
               >
                 {projectToRemove ? '删除项目' : '删除工作区'}

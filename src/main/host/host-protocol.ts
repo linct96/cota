@@ -13,9 +13,10 @@ import type {
 
 import type { TerminalProcessRoot } from '../../shared/workspace-ports'
 
-export const HOST_PROTOCOL = 14
+export const HOST_PROTOCOL = 15
 
-export type ResolvedTerminalCreate = CreateTerminal & TerminalBinding
+export type ResolvedTerminalCreate = CreateTerminal &
+  TerminalBinding & { agentCliCache?: import('../../shared/agent-cli').AgentCliCache }
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
 export const MAX_FRAME = 64 * 1024 * 1024
 

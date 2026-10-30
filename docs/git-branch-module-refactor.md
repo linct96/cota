@@ -4,6 +4,7 @@
 - 状态：阶段一至四已实施，定向回归与 TypeScript 检查通过
 - 所属项目：Cota
 - 说明：本文同时记录目标设计和实施进度；已完成范围见第 11 节，其余阶段不代表已经实现。
+- 目录更新：主进程后续已按职责重新归类；下文旧路径保留为迁移记录。当前分支实现位于 `src/main/git/branches/`，状态与监听位于 `src/main/git/source-control/`，Worktree 位于 `src/main/git/worktrees/`。完整职责说明见 [主进程模块](../src/main/README.md)。
 
 ## 1. 背景与目标
 

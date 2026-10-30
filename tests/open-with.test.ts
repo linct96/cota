@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough, Writable } from 'node:stream'
 import {
   mkdir,
+  chmod,
   mkdtemp,
   realpath,
   rm,
@@ -52,14 +53,16 @@ vi.mock('node:child_process', async () => {
   }
 })
 import { listWorkspaceOpeners, openWorkspaceWith } from '../src/main/system/open-with'
-import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents/registry'
+import { agentCapability, detectAgents, resolveAgent } from '../src/main/agents/cli/registry'
+import { AgentCliManagement } from '../src/main/agents/cli/management'
+import { ConfigStore } from '../src/main/settings/config-store'
 import {
   hookFiles,
   inspectAgentHook,
   installAgentHook,
   uninstallAgentHook,
-} from '../src/main/agents/managed-hooks'
-import { codexShellFunction, prepareAgentShell } from '../src/main/agents/shell-integration'
+} from '../src/main/agents/hooks/managed'
+import { codexShellFunction, prepareAgentShell } from '../src/main/agents/hooks/shell-integration'
 
 const opener = { id: 'editor', name: 'Editor', command: 'editor', arguments: '{path}' }
 let root: string
@@ -914,6 +917,95 @@ codex --no-daemon`)
     ).rejects.toThrow('无法执行')
     await expect(openWorkspaceWith(join(root, 'missing'), opener)).rejects.toThrow('不可访问')
     expect(mocks.spawn).not.toHaveBeenCalled()
+
+    for (const provider of ['pi', 'codex', 'claude'])
+      await writeFile(join(root, 'bin', provider), '#!/bin/sh\n', { mode: 0o700 })
+    mocks.login.mockImplementation(async (_file: string, args: string[]) => ({
+      stdout: args[0] === '--version' ? '0.159.0' : `\0${join(root, 'bin')}\0`,
+    }))
+    const configFile = join(root, 'config.json')
+    const config = new ConfigStore(configFile)
+    await config.load()
+    const publish = vi.fn()
+    const agents = new AgentCliManagement(config, publish)
+    await agents.initialize()
+    expect(agents.read().entries).toHaveLength(3)
+    expect(
+      agents
+        .read()
+        .entries.every((entry) => entry.version === '0.159.0' && entry.installMethod === 'unknown'),
+    ).toBe(true)
+    // Keep absence deterministic even on a developer machine with other installed copies.
+    await config.saveAgentClis({ ...agents.read(), pathEnv: join(root, 'bin') })
+    const probes = mocks.login.mock.calls.length
+    const restored = new ConfigStore(configFile)
+    await restored.load()
+    const restarted = new AgentCliManagement(restored, publish)
+    await restarted.initialize()
+    expect(restarted.read()).toEqual(agents.read())
+    const launch = vi.fn(async (command) => command.args)
+    expect(await restarted.run('codex', DEFAULT_CONFIG.preferences, launch)).toEqual([
+      '--no-daemon',
+    ])
+    expect(mocks.login).toHaveBeenCalledTimes(probes)
+    const saved = restarted.read()
+    for (const failure of [
+      new Error('CLI exited 1'),
+      Object.assign(new Error('cwd missing'), { code: 'ENOENT' }),
+      Object.assign(new Error('interpreter missing'), {
+        code: 'ENOENT',
+        path: join(root, 'bin', 'codex'),
+      }),
+    ]) {
+      await expect(
+        restarted.run('codex', DEFAULT_CONFIG.preferences, async () => {
+          throw failure
+        }),
+      ).rejects.toBe(failure)
+      expect(restarted.read()).toEqual(saved)
+    }
+    await chmod(join(root, 'bin', 'codex'), 0o600)
+    await expect(restarted.run('codex', DEFAULT_CONFIG.preferences, launch)).rejects.toThrow('权限')
+    expect(restarted.read()).toEqual(saved)
+    await chmod(join(root, 'bin', 'codex'), 0o700)
+    await expect(
+      restarted.run('codex', DEFAULT_CONFIG.preferences, async () => {
+        await rm(join(root, 'bin', 'codex'))
+        throw new Error('Host spawn failed')
+      }),
+    ).rejects.toThrow('CLI 已不存在')
+    launch.mockClear()
+    await expect(restarted.run('codex', DEFAULT_CONFIG.preferences, launch)).rejects.toThrow(
+      '未安装',
+    )
+    expect(launch).not.toHaveBeenCalled()
+    expect(
+      restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable,
+    ).toBeUndefined()
+    const disk = new ConfigStore(configFile)
+    await disk.load()
+    expect(disk.snapshot().agentCliCache).toEqual(restarted.read())
+    expect(publish).toHaveBeenLastCalledWith(restarted.read())
+    expect(mocks.login).toHaveBeenCalledTimes(probes)
+    await writeFile(join(root, 'bin', 'npm'), '#!/bin/sh\n', { mode: 0o700 })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ version: '0.159.0' }))
+    mocks.login.mockImplementation(async (_file: string, args: string[]) => {
+      if (args[0] === 'install') {
+        expect(args).toEqual(['install', '--global', '@openai/codex@latest'])
+        await writeFile(join(root, 'bin', 'codex'), '#!/bin/sh\n', { mode: 0o700 })
+      }
+      return {
+        stdout: args[0] === '--version' ? '0.159.0' : `\0${join(root, 'bin')}\0`,
+        stderr: '',
+      }
+    })
+    const idle = vi.fn().mockResolvedValue(undefined)
+    await restarted.install('codex', DEFAULT_CONFIG.preferences, idle)
+    expect(idle).toHaveBeenCalledOnce()
+    await restarted.inspect(DEFAULT_CONFIG.preferences, false)
+    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable).toBe(
+      join(root, 'bin', 'codex'),
+    )
   })
   it('reports commands that launch but exit unsuccessfully', async () => {
     mocks.spawn.mockImplementationOnce(() => {

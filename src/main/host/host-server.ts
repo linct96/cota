@@ -1,8 +1,8 @@
 import { createServer, type Socket } from 'node:net'
 import { hostEndpoint, protectEndpoint, removeEndpoint } from '../system/platform'
 import { timingSafeEqual } from 'node:crypto'
-import { TerminalManager } from '../terminal/terminals'
-import { startAgentEventServer } from '../agents/agent-event-server'
+import { TerminalManager } from '../terminal/manager'
+import { startAgentEventServer } from '../agents/runtime/event-server'
 import {
   HOST_PROTOCOL,
   readMessages,

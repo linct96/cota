@@ -8,15 +8,15 @@ import {
   type AgentEventType,
   type TerminalEvent,
 } from '../src/shared/contracts'
-import { AgentSessionManager } from '../src/main/agents/agent-session-manager'
-import { normalizeHook } from '../src/main/agents/hooks'
-import cotaLifecycle from '../src/main/agents/pi-extension'
+import { AgentSessionManager } from '../src/main/agents/runtime/session-manager'
+import { normalizeHook } from '../src/main/agents/hooks/normalize'
+import cotaLifecycle from '../src/main/agents/hooks/pi-extension'
 import {
   parseAgentProcesses,
   agentOwner,
   foregroundAgent,
   recognizeNodeAgent,
-} from '../src/main/agents/process-observation'
+} from '../src/main/agents/runtime/process-observation'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -57,22 +57,22 @@ vi.mock('../src/main/system/shell', async (original) => ({
   resolveShell: mocks.shell,
   shellEnvironment: () => ({ TERM: 'xterm-256color' }),
 }))
-vi.mock('../src/main/agents/registry', () => ({
+vi.mock('../src/main/agents/cli/registry', () => ({
   resolveAgent: mocks.agent,
   agentCapability: mocks.capability,
 }))
-vi.mock('../src/main/agents/shell-integration', () => ({
+vi.mock('../src/main/agents/hooks/shell-integration', () => ({
   prepareAgentShell: mocks.prepareShell,
 }))
-vi.mock('../src/main/agents/process-observation', async (original) => ({
+vi.mock('../src/main/agents/runtime/process-observation', async (original) => ({
   ...(await original<object>()),
   agentProcesses: mocks.processes,
 }))
-vi.mock('../src/main/agents/event-client', () => ({
+vi.mock('../src/main/agents/hooks/event-client', () => ({
   eventConnection: () => ({ destroyed: false, writableLength: 0, write: mocks.eventWrite }),
   lifecycleEvent: (type: string, turnId?: string) => ({ type, turnId }),
 }))
-import { TerminalManager } from '../src/main/terminal/terminals'
+import { TerminalManager } from '../src/main/terminal/manager'
 import { claimServicePort } from '../src/main/terminal/service-port'
 import { savedQuickCommands } from '../src/main/validation'
 import { quickCommandFormSchema } from '../src/renderer/src/lib/form-schemas'
@@ -465,8 +465,8 @@ describe('single PTY owner', () => {
     ] as const)
       expect(recognizeNodeAgent(command)).toBe(provider)
     const { agentProcesses: readProcesses } = await vi.importActual<
-      typeof import('../src/main/agents/process-observation')
-    >('../src/main/agents/process-observation')
+      typeof import('../src/main/agents/runtime/process-observation')
+    >('../src/main/agents/runtime/process-observation')
     const nodeSnapshot =
       '98765 1 98765 60000 S Mon Oct 19 10:00:00 2026 /bin/fish\n60000 98765 60000 60000 S Mon Oct 19 10:01:00 2026 /usr/bin/node\n60001 60000 60000 60000 S Mon Oct 19 10:01:01 2026 Electron\n60002 60001 60000 60000 S Mon Oct 19 10:01:02 2026 /usr/bin/node\n70000 1 70000 70000 S Mon Oct 19 10:01:00 2026 /usr/bin/node'
     const nodeArgs =
@@ -1353,8 +1353,8 @@ describe('single PTY owner', () => {
     let manager: TerminalManager | undefined
     try {
       const observation = await vi.importActual<
-        typeof import('../src/main/agents/process-observation')
-      >('../src/main/agents/process-observation')
+        typeof import('../src/main/agents/runtime/process-observation')
+      >('../src/main/agents/runtime/process-observation')
       expect(observation.foregroundAgent(background, root.pid)).toBeUndefined()
       mocks.exec.mockResolvedValueOnce({
         stdout: JSON.stringify([
@@ -1371,11 +1371,11 @@ describe('single PTY owner', () => {
         owner: { pid: shim.pid },
         process: { pid: cli.pid },
       })
-      vi.doMock('../src/main/agents/process-observation', () => ({
+      vi.doMock('../src/main/agents/runtime/process-observation', () => ({
         ...observation,
         agentProcesses: mocks.processes,
       }))
-      const { TerminalManager: WindowsManager } = await import('../src/main/terminal/terminals')
+      const { TerminalManager: WindowsManager } = await import('../src/main/terminal/manager')
       manager = new WindowsManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
       const entry = options()
       mocks.processes.mockResolvedValue(background)
@@ -1393,7 +1393,7 @@ describe('single PTY owner', () => {
       await manager?.shutdown()
       vi.doUnmock('../src/main/system/platform')
       vi.doUnmock('../src/main/system/windows-processes')
-      vi.doMock('../src/main/agents/process-observation', async (original) => ({
+      vi.doMock('../src/main/agents/runtime/process-observation', async (original) => ({
         ...(await original<object>()),
         agentProcesses: mocks.processes,
       }))

@@ -2,10 +2,10 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { realpath } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { AgentSleepPrevention } from '../src/main/agents/agent-sleep-prevention'
+import { AgentSleepPrevention } from '../src/main/agents/runtime/sleep-prevention'
 import type { NotificationSound } from '../src/shared/notification-sounds'
-import { WorktreeError } from '../src/main/git/git-worktrees'
-import { hookFiles } from '../src/main/agents/managed-hooks'
+import { WorktreeError } from '../src/main/git/worktrees/git'
+import { hookFiles } from '../src/main/agents/hooks/managed'
 import {
   DEFAULT_CONFIG,
   type AgentSession,
@@ -60,6 +60,15 @@ const mocks = vi.hoisted(() => {
     stopBlocker: vi.fn(),
     isBlockerStarted: vi.fn().mockReturnValue(true),
     config: {
+      agentCliCache: {
+        checkedAt: 1,
+        pathEnv: '/tmp',
+        entries: [
+          { provider: 'pi', executable: '/tmp/pi-fixture', version: '1.3.0' },
+          { provider: 'codex', executable: '/tmp/codex-fixture', version: '0.159.0' },
+          { provider: 'claude', executable: '/tmp/claude-fixture', version: '2.1.196' },
+        ],
+      } as import('../src/shared/agent-cli').AgentCliCache,
       preferences: {
         notificationsEnabled: true,
         confirmCloseRunningTerminal: true,
@@ -109,7 +118,9 @@ const mocks = vi.hoisted(() => {
     hostingInspect: vi.fn(),
   }
 })
-vi.mock('../src/main/notification-sound', () => ({ readNotificationSound: mocks.readSound }))
+vi.mock('../src/main/settings/notification-sound', () => ({
+  readNotificationSound: mocks.readSound,
+}))
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs')>()),
   mkdirSync: vi.fn(),
@@ -180,7 +191,7 @@ vi.mock('electron', () => ({
   shell: { openPath: mocks.openPath, openExternal: mocks.openExternal },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
 }))
-vi.mock('../src/main/git/worktree-manager', () => ({
+vi.mock('../src/main/git/worktrees/manager', () => ({
   WorktreeManager: class {
     inspectRepository = mocks.inspectRepository
     listWorktrees = mocks.listWorktrees
@@ -201,7 +212,7 @@ vi.mock('../src/main/code-hosting/service', () => ({
     invalidateRemoteBranches = vi.fn()
   },
 }))
-vi.mock('../src/main/git/branch-service', () => ({
+vi.mock('../src/main/git/branches/service', () => ({
   isBranchMutation: (input: { action: string }) =>
     [
       'fetch',
@@ -232,7 +243,7 @@ vi.mock('../src/main/git/branch-service', () => ({
     }
   },
 }))
-vi.mock('../src/main/git/source-control', () => ({
+vi.mock('../src/main/git/source-control/service', () => ({
   SourceControlService: class {
     status = mocks.gitStatus
     diff = mocks.gitDiff
@@ -246,14 +257,27 @@ vi.mock('../src/main/system/open-with', () => ({
   openWorkspaceWith: mocks.openWorkspaceWith,
   listWorkspaceOpeners: mocks.listWorkspaceOpeners,
 }))
-vi.mock('../src/main/agents/registry', () => ({ detectAgents: mocks.detectAgents }))
-vi.mock('../src/main/agents/managed-hooks', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/main/agents/managed-hooks')>()),
+vi.mock('../src/main/agents/cli/registry', () => ({
+  detectAgents: mocks.detectAgents,
+  resolveAgent: async (
+    provider: string,
+    _settings: unknown,
+    cache: import('../src/shared/agent-cli').AgentCliCache,
+  ) => ({
+    executable: cache.entries.find((entry) => entry.provider === provider)?.executable,
+    cliExecutable: cache.entries.find((entry) => entry.provider === provider)?.executable,
+    args: [],
+    env: {},
+  }),
+}))
+vi.mock('../src/main/agents/hooks/managed', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/agents/hooks/managed')>()),
   inspectAgentHook: mocks.inspectHook,
   installAgentHook: mocks.installHook,
   uninstallAgentHook: mocks.uninstallHook,
 }))
-vi.mock('../src/main/system/shell', () => ({
+vi.mock('../src/main/system/shell', async (original) => ({
+  ...(await original<typeof import('../src/main/system/shell')>()),
   resolveShell: mocks.resolveShell,
   loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
   shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
@@ -263,13 +287,16 @@ vi.mock('../src/main/accounts/service', () => ({
     close = vi.fn().mockResolvedValue(undefined)
   },
 }))
-vi.mock('../src/main/config', () => ({
+vi.mock('../src/main/settings/config-store', () => ({
   ConfigStore: class {
     load = async () => ({})
     forget = mocks.forget
     closeWorkspace = mocks.saveWorkspaceClosure
     flush = mocks.flush
     snapshot = () => structuredClone(mocks.config)
+    saveAgentClis = async (cache: import('../src/shared/agent-cli').AgentCliCache) => {
+      mocks.config.agentCliCache = structuredClone(cache)
+    }
     remember = mocks.remember
   },
 }))
@@ -302,6 +329,7 @@ vi.mock('../src/main/host/host-client', () => ({
   },
 }))
 
+const initialAgentCliCache = structuredClone(mocks.config.agentCliCache)
 const event = { sender: mocks.contents, senderFrame: mocks.contents.mainFrame }
 const path = '/missing/中文 项目'
 const target = {
@@ -350,6 +378,7 @@ beforeEach(() => {
       workspaceKind: 'local',
     }),
   )
+  mocks.config.agentCliCache = structuredClone(initialAgentCliCache)
   mocks.config.recentProjects = []
   mocks.config.preferences.confirmCloseRunningTerminal = true
   mocks.remember.mockImplementation(async (path: string) => {
@@ -683,6 +712,7 @@ describe('Git Worktree IPC boundaries', () => {
         executable: '/bin/sh',
         args: ['-c', 'touch nope'],
         env: { COTA_HOST_TOKEN: 'forged' },
+        agentCliCache: { entries: [{ provider: 'codex', executable: '/bin/sh' }] },
       }),
     ).toMatchObject({ ok: true })
     expect(mocks.create).toHaveBeenLastCalledWith(
@@ -695,6 +725,7 @@ describe('Git Worktree IPC boundaries', () => {
         cwd: path,
         workspaceKind: 'local',
         ...launch,
+        agentCliCache: mocks.config.agentCliCache,
       },
       mocks.config.preferences,
     )
@@ -703,7 +734,9 @@ describe('Git Worktree IPC boundaries', () => {
       expect(
         await mocks.handlers.get('terminal:create')!(event, { ...value, ...launch, provider }),
       ).toMatchObject({ ok: false })
-    expect(await mocks.handlers.get('agent:detect')!({ ...event, senderFrame: {} })).toMatchObject({
+    expect(
+      await mocks.handlers.get('agent:cli-read')!({ ...event, senderFrame: {} }),
+    ).toMatchObject({
       ok: false,
       error: '拒绝未授权的窗口请求。',
     })

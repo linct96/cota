@@ -3,7 +3,7 @@ import { connect } from 'node:net'
 import { execFile } from 'node:child_process'
 import * as childProcess from 'node:child_process'
 import { promisify } from 'node:util'
-import { GitService, gitEnvironment } from '../src/main/git/git-worktrees'
+import { GitService, gitEnvironment } from '../src/main/git/worktrees/git'
 import { once } from 'node:events'
 import {
   chmod,
@@ -43,7 +43,7 @@ vi.mock('node:child_process', async (importOriginal) => ({
   spawn: mocks.hostSpawn,
 }))
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
-vi.mock('../src/main/agents/registry', () => ({
+vi.mock('../src/main/agents/cli/registry', () => ({
   resolveAgent: async (provider: string) => ({
     executable: `/fake/${provider}`,
     args: [],
@@ -51,7 +51,7 @@ vi.mock('../src/main/agents/registry', () => ({
   }),
   agentCapability: async () => 'partial',
 }))
-vi.mock('../src/main/agents/process-observation', async (original) => ({
+vi.mock('../src/main/agents/runtime/process-observation', async (original) => ({
   ...(await original<object>()),
   agentProcesses: async () => [
     { pid: 12345, parent: 1, group: 12345, foreground: 12345, stat: 'S', started: 'pty-root' },
@@ -264,6 +264,15 @@ describe('local terminal Host', () => {
       kind: 'agent' as const,
       provider: 'codex' as const,
       launchId: randomUUID(),
+      agentCliCache: {
+        checkedAt: 1,
+        pathEnv: '/fake',
+        entries: [
+          { provider: 'pi' as const },
+          { provider: 'codex' as const, executable: '/fake/codex', version: '0.159.0' },
+          { provider: 'claude' as const },
+        ],
+      },
     }
     await second.request('create', [agent, DEFAULT_CONFIG.preferences])
     await second.request('create', [agent, DEFAULT_CONFIG.preferences])

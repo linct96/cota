@@ -82,6 +82,7 @@ export interface AppConfig {
   worktreeNameHistory?: Record<string, string[]>
   worktreeSetups?: Record<string, WorktreeSetupConfig>
   codeHostingPendingCreates?: (string | PendingHostedReview)[]
+  agentCliCache?: import('./agent-cli').AgentCliCache
 }
 
 export type WorktreeErrorCode =
@@ -528,7 +529,8 @@ export interface DesktopAPI {
   chooseNotificationSound(): Promise<Result<{ path: string } | null>>
   onNotificationSound(listener: (source: string) => void): () => void
   onWarning(listener: (message: string) => void): () => void
-  detectAgents(): Promise<Result<AgentAvailability[]>>
+  readAgentClis(): Promise<Result<import('./agent-cli').AgentCliCache>>
+  onAgentClis(listener: (cache: import('./agent-cli').AgentCliCache) => void): () => void
   detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
   installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
   uninstallAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>

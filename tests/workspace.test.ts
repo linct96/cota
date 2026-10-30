@@ -169,7 +169,8 @@ beforeEach(() => {
     onConfirmation: vi.fn(() => vi.fn()),
     onShortcut: vi.fn(() => vi.fn()),
     onTerminal: vi.fn(() => vi.fn()),
-    detectAgents: vi.fn(),
+    readAgentClis: vi.fn(),
+    onAgentClis: vi.fn(() => vi.fn()),
     detectAgentHooks: vi.fn(),
     installAgentHook: vi.fn(),
     uninstallAgentHook: vi.fn(),
@@ -1445,6 +1446,10 @@ describe('workspace state', () => {
       ...store().tabs[1],
       agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
     }
+    expect(agentIndicatorState(failed)).toBe('failed')
+    expect(agentIndicatorState({ ...failed, agent: { ...failed.agent, unread: false } })).toBe(
+      'other',
+    )
     expect(workspaceAgentSummary([failed])).toEqual({
       state: 'failed',
       count: 1,
@@ -1470,9 +1475,9 @@ describe('workspace state', () => {
         succeeded,
       ]),
     ).toEqual({
-      state: 'succeeded',
+      state: 'failed',
       count: 1,
-      description: '1 个已完成 · 1 个本轮结束 · 1 个执行失败 · 1 个待处理 · 1 个执行中',
+      description: '1 个执行失败 · 1 个已完成 · 1 个本轮结束 · 1 个待处理 · 1 个执行中',
     })
     const groupIndicator = (background: TerminalTab, focused = store().tabs[0]) =>
       terminalTabs({
@@ -1503,11 +1508,16 @@ describe('workspace state', () => {
     const focusedAgent = { ...succeeded, id: other.id }
     expect(groupIndicator(working, focusedAgent).indicatorTab).toBe(focusedAgent)
     expect(groupIndicator(succeeded, focusedAgent).indicatorTab).toBe(focusedAgent)
+    expect(groupIndicator(failed, focusedAgent).indicatorTab).toBe(failed)
+    const connectionError = { ...focusedAgent, status: 'error' as const }
+    expect(groupIndicator(succeeded, connectionError).indicatorTab).toBe(connectionError)
     expect(groupIndicator(succeeded, { ...store().tabs[0], status: 'error' }).indicatorTab).toBe(
       succeeded,
     )
     for (const background of [
       { ...succeeded, agent: { ...succeeded.agent, unread: false } },
+      { ...failed, agent: { ...failed.agent, unread: false } },
+      { ...failed, status: 'error' as const, errorRead: true },
       { ...working, closingStatus: 'running' as const },
       { ...working, agent: { ...buffered, runtimeState: 'exited' as const } },
       { ...working, agent: { ...buffered, activityState: 'idle' as const } },
@@ -1666,6 +1676,54 @@ describe('workspace state', () => {
     expect(store().tabs[0].agent).toEqual(restarted)
     store().updateTab(other.id, { agent: manual })
     expect(store().tabs[0].agent).toEqual(restarted)
+    vi.useFakeTimers()
+    try {
+      store().setVisibleTerminal(undefined)
+      const reads = vi.mocked(api.readAgent).mock.calls.length
+      store().receiveAgent({ type: 'state', session: { ...failed.agent, revision: 14 } })
+      vi.advanceTimersByTime(2000)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads)
+      store().setVisibleTerminal(live.id)
+      vi.advanceTimersByTime(500)
+      store().setVisibleTerminal(undefined)
+      vi.advanceTimersByTime(1000)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads)
+      store().setVisibleTerminal(live.id)
+      vi.advanceTimersByTime(999)
+      expect(api.readAgent).toHaveBeenCalledTimes(reads)
+      expect(agentIndicatorState(store().tabs[1])).toBe('failed')
+      vi.advanceTimersByTime(1)
+      expect(api.readAgent).toHaveBeenLastCalledWith(live.id, agent.launchId, 14)
+      store().receiveAgent({
+        type: 'state',
+        session: { ...failed.agent, revision: 15, unread: false },
+      })
+      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+      expect(agentTabState(store().tabs[1])).toBe('failed')
+      store().receiveAgent({
+        type: 'state',
+        session: { ...read, revision: 16, runtimeState: 'error' },
+      })
+      expect(agentIndicatorState(store().tabs[1])).toBe('error')
+      vi.advanceTimersByTime(999)
+      expect(agentIndicatorState(store().tabs[1])).toBe('error')
+      vi.advanceTimersByTime(1)
+      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+      expect(agentTabState(store().tabs[1])).toBe('error')
+      expect(store().tabs[1].status).toBe('error')
+      store().updateTab(live.id, { title: 'Codex renamed' })
+      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+      store().receiveAgent({ type: 'state', session: { ...read, revision: 17 } })
+      store().updateTab(live.id, { status: 'error', error: '连接失败' })
+      expect(agentIndicatorState(store().tabs[1])).toBe('error')
+      vi.advanceTimersByTime(1000)
+      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+      expect(store().tabs[1].error).toBe('连接失败')
+      expect(api.readAgent).toHaveBeenCalledTimes(reads + 1)
+    } finally {
+      store().setVisibleTerminal(undefined)
+      vi.useRealTimers()
+    }
     store().receiveAgent({ type: 'disconnected' })
     expect(store().tabs[1].agent).toMatchObject({
       activityState: 'unknown',

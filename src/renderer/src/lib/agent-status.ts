@@ -32,7 +32,11 @@ export function agentTabState(tab: TerminalTab): AgentDisplayState {
 
 export function agentIndicatorState(tab: TerminalTab): AgentDisplayState {
   const state = agentTabState(tab)
-  return (state === 'completed' || state === 'succeeded') && !tab.agent?.unread ? 'other' : state
+  if (state === 'error') return tab.errorRead ? 'other' : state
+  return (state === 'completed' || state === 'succeeded' || state === 'failed') &&
+    !tab.agent?.unread
+    ? 'other'
+    : state
 }
 
 export type TerminalDisplayState = AgentDisplayState | 'running'
@@ -57,15 +61,12 @@ export function workspaceTerminalSummary(tabs: TerminalTab[]) {
         tab.agent ||
         terminalIndicatorState(tab) !== 'other',
     )
-    .map((tab) => {
-      const state = terminalIndicatorState(tab)
-      return state === 'failed' && !tab.agent?.unread ? 'other' : state
-    })
+    .map(terminalIndicatorState)
   const priority: TerminalDisplayState[] = [
-    'succeeded',
-    'completed',
     'error',
     'failed',
+    'succeeded',
+    'completed',
     'needs-input',
     'working',
     'running',

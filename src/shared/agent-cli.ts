@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { AgentAvailability, AgentProvider } from './contracts'
 
 export const AGENT_CLI_PACKAGES: Record<AgentProvider, string> = {
@@ -20,6 +21,34 @@ export interface AgentCliStatus extends AgentAvailability {
   updateError?: string
   installing?: boolean
 }
+const agentCliStatusSchema = z.object({
+  provider: z.enum(['pi', 'codex', 'claude']),
+  executable: z
+    .string()
+    .max(32768)
+    .refine((value) => /^(?:\/|[a-z]:[\\/]|\\\\)/i.test(value) && !value.includes('\0'))
+    .optional(),
+  version: z.string().max(100).optional(),
+  error: z.string().max(8000).optional(),
+  installMethod: z.enum(['brew', 'npm', 'scoop', 'native', 'unknown']).optional(),
+  latestVersion: z.string().max(100).optional(),
+  updateAvailable: z.boolean().optional(),
+  updateError: z.string().max(8000).optional(),
+})
+
+export const agentCliCacheSchema = z.object({
+  checkedAt: z.number().int().nonnegative(),
+  pathEnv: z
+    .string()
+    .max(131072)
+    .refine((value) => !value.includes('\0')),
+  entries: z
+    .array(agentCliStatusSchema)
+    .length(3)
+    .refine((entries) => new Set(entries.map((entry) => entry.provider)).size === 3),
+})
+export type AgentCliCache = z.infer<typeof agentCliCacheSchema>
+
 export interface AgentCliInstallResult {
   status: AgentCliStatus
   output: string

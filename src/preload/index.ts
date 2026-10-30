@@ -193,7 +193,15 @@ const api: DesktopAPI = {
     ipcRenderer.on('app:warning', wrapped)
     return () => ipcRenderer.removeListener('app:warning', wrapped)
   },
-  detectAgents: () => ipcRenderer.invoke('agent:detect'),
+  readAgentClis: () => ipcRenderer.invoke('agent:cli-read'),
+  onAgentClis: (listener) => {
+    const wrapped = (
+      _event: Electron.IpcRendererEvent,
+      cache: import('../shared/agent-cli').AgentCliCache,
+    ) => listener(cache)
+    ipcRenderer.on('agent:clis-changed', wrapped)
+    return () => ipcRenderer.removeListener('agent:clis-changed', wrapped)
+  },
   detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
   uninstallAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-uninstall', provider),
