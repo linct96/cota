@@ -1,5 +1,11 @@
 # Cota
 
+## Git / worktree 测试
+
+- 无需安装 Git：`pnpm exec vitest run tests/git-unit.test.ts tests/worktrees-unit.test.ts`，覆盖解析、表单校验、缓存、mock 托管 API 及缺少 Git 的降级行为。
+- 真实 Git 集成：`pnpm exec vitest run --project git`，使用独立临时仓库及本地 bare 远端，不访问真实托管平台。Git 测试文件逐个运行，避免大量 Git 子进程争抢资源；用例内部仍验证并发操作。
+- 本机缺少 Git 时，上述集成测试会明确提示并跳过；CI 缺少或无法执行 Git 时直接失败，不视为验证通过。各场景独立初始化，不依赖前一个测试的执行顺序。
+
 ## E2E 测试
 
 macOS 下运行 `pnpm test:e2e`，使用真实 Electron、Git 和 PTY 验证核心闭环。测试使用独立临时目录，不读取真实账号、不写远端。运行方式、覆盖范围及故障排查见 [E2E 测试流程](docs/e2e.md)。
