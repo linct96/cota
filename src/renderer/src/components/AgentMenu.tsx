@@ -3,6 +3,7 @@ import { AgentIcon } from './AgentIcon'
 import { AGENT_PROVIDERS, MAX_TERMINALS } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
 import { useAgentClis } from '../lib/agent-cli-store'
+import { abbreviateHomePath } from '../lib/utils'
 import {
   ContextMenuContent,
   ContextMenuGroup,
@@ -29,7 +30,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
               key={provider}
               className="workspace-agent-provider-item gap-2"
               disabled={disabled || atLimit}
-              title={executable}
+              title={executable ? abbreviateHomePath(executable) : undefined}
               onClick={() => useWorkspace.getState().newTerminal(provider, workspaceId)}
             >
               <AgentIcon

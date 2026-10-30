@@ -95,8 +95,7 @@ export function ReviewFiles({
               onClick={() => useSourceControl.getState().openDiff(workspaceId, selection)}
             >
               <ChevronRight
-                className="source-file-explorer-chevron"
-                data-visible="false"
+                className="source-file-explorer-chevron invisible size-3"
                 aria-hidden="true"
               />
               <FileTypeIcon path={entry.path} submodule={entry.submodule} />
@@ -234,7 +233,7 @@ export function CommitHistoryContent({
     >
       {commit && (
         <nav
-          className="source-control-history-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 px-2 py-1.5"
+          className="source-control-history-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5"
           aria-label="提交详情导航"
         >
           <Button

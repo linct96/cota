@@ -85,7 +85,7 @@ export function SourceControlComparePanel({
       aria-label="比较"
       aria-busy={loading}
     >
-      <div className="source-control-comparison-refs flex min-w-0 shrink-0 items-center gap-2 px-2 py-1.5">
+      <div className="source-control-comparison-refs flex min-w-0 shrink-0 items-center gap-2 border-b border-border bg-background px-2 py-1.5">
         <Field className="source-control-base-field w-auto min-w-0 flex-row items-center gap-1">
           <ArrowRight
             className="source-control-comparison-direction size-3 shrink-0 text-app-muted-foreground"

@@ -7,7 +7,7 @@ import { createTerminalRenderer } from '../lib/terminal-renderer'
 import { installTerminalInput } from '../lib/terminal-input'
 import { installTerminalScroll } from '../lib/terminal-scroll'
 import { installTerminalWheel } from '../lib/terminal-wheel'
-import { shortenPath } from '../lib/utils'
+import { compactPath } from '../lib/utils'
 import { installTerminalAppearance, terminalAppearanceOptions } from '../lib/terminal-appearance'
 import { observeDocumentTheme } from '../lib/theme'
 
@@ -310,7 +310,7 @@ export function TerminalView({
 
   return (
     <section
-      aria-label={shortenPath(tab.cwd || tab.projectPath)}
+      aria-label={compactPath(tab.cwd || tab.projectPath)}
       onPointerDownCapture={focusPane}
       onFocusCapture={focusPane}
       hidden={!active}

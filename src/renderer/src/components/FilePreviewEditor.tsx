@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from 'react'
 import { configureMonacoTheme, languageForPath, monaco } from '../lib/monaco'
+import { abbreviateHomePath } from '../lib/utils'
 
 const views = new Map<string, monaco.editor.ICodeEditorViewState>()
 
@@ -30,7 +31,7 @@ export default function FilePreviewEditor({
       scrollBeyondLastLine: false,
       links: false,
       padding: { top: 12 },
-      ariaLabel: `${path}，只读文件预览`,
+      ariaLabel: `${abbreviateHomePath(path)}，只读文件预览`,
     })
     const saved = views.get(identity)
     if (saved) editor.restoreViewState(saved)

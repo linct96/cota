@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { openerFormSchema } from '../lib/form-schemas'
+import { abbreviateHomePath } from '../lib/utils'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { WorkspaceOpener } from '../../../shared/contracts'
 import { preferredWorkspaceOpener, withSystemFileManager } from '../../../shared/open-with'
@@ -226,9 +227,9 @@ export function OpenWithSettings() {
                   {opener.id !== 'system-file-manager' && (
                     <p
                       className="open-with-item-command truncate font-mono text-xs text-muted-foreground"
-                      title={opener.command}
+                      title={abbreviateHomePath(opener.command)}
                     >
-                      {opener.command}
+                      {abbreviateHomePath(opener.command)}
                     </p>
                   )}
                 </div>

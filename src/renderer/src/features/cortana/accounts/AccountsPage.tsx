@@ -22,7 +22,7 @@ import {
   type AccountUsageWindow,
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
-import { cn } from '../../../lib/utils'
+import { abbreviateHomePath, cn } from '../../../lib/utils'
 import { useDialogState } from '../../../lib/use-dialog-state'
 import { Alert, AlertDescription } from '../../../components/ui/alert'
 import { Badge } from '../../../components/ui/badge'
@@ -310,9 +310,9 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                 </p>
                 <p
                   className="accounts-auth-path break-all text-xs text-app-muted-foreground"
-                  title={status.authPath}
+                  title={abbreviateHomePath(status.authPath)}
                 >
-                  {status.authPath}
+                  {abbreviateHomePath(status.authPath)}
                 </p>
               </Card>
               <div className="accounts-list-toolbar flex flex-wrap items-center justify-between gap-2">

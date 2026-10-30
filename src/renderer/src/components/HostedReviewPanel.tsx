@@ -159,7 +159,7 @@ export function HostedReviewPanel({
       aria-busy={loading || action}
     >
       <nav
-        className="hosted-review-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 px-2 py-1.5"
+        className="hosted-review-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5"
         aria-label="代码评审操作"
       >
         <Button

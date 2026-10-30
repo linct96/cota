@@ -11,7 +11,7 @@ import { Button } from './ui/button'
 import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './ui/empty'
-import { cn } from '../lib/utils'
+import { abbreviateHomePath, cn } from '../lib/utils'
 import { scheduleGitDiff } from '../lib/git-diff-loader'
 import { errorDetails } from '../lib/error-details'
 import {
@@ -186,16 +186,23 @@ export function SourceControlDiff({
       {!embedded && (
         <header className="source-control-diff-header flex min-w-0 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
           <div className="source-control-diff-heading flex min-w-0 flex-1 items-center gap-2">
-            <h2 className="source-control-diff-path truncate text-xs font-medium" title={fullPath}>
-              {fullPath}
+            <h2
+              className="source-control-diff-path truncate text-xs font-medium"
+              title={abbreviateHomePath(fullPath)}
+            >
+              {abbreviateHomePath(fullPath)}
             </h2>
             {!error && current?.kind === 'text' && stats?.key === key && (
               <span
                 className="source-control-diff-stats flex shrink-0 items-center gap-1.5 text-xs tabular-nums"
                 aria-label={`新增 ${stats.additions} 行，删除 ${stats.deletions} 行`}
               >
-                <span className="source-control-file-additions">+{stats.additions}</span>
-                <span className="source-control-file-deletions">-{stats.deletions}</span>
+                <span className="source-control-file-additions text-source-control-stat-added">
+                  +{stats.additions}
+                </span>
+                <span className="source-control-file-deletions text-source-control-stat-removed">
+                  -{stats.deletions}
+                </span>
               </span>
             )}
           </div>

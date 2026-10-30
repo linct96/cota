@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { shellFormSchema, scrollbackFormSchema } from '../lib/form-schemas'
 import { isWindows } from '../lib/platform'
+import { abbreviateHomePath } from '../lib/utils'
 import { Check, SquareTerminal } from 'lucide-react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { useWorkspace } from '../store'
@@ -57,7 +58,7 @@ export function TerminalSettings() {
   const [defaultShellPath, setDefaultShellPath] = useState<string>()
   const [defaultShellError, setDefaultShellError] = useState<string>()
   const defaultShellLabel = defaultShellPath
-    ? `系统默认（${defaultShellPath}）`
+    ? `系统默认（${abbreviateHomePath(defaultShellPath)}）`
     : defaultShellError
       ? '系统默认（读取失败）'
       : '系统默认'
@@ -236,9 +237,9 @@ export function TerminalSettings() {
                     {(preferences.shellPath ?? defaultShellPath) && (
                       <code
                         className="terminal-settings-shell-path mt-0.5 block truncate font-mono text-xs text-muted-foreground"
-                        title={preferences.shellPath ?? defaultShellPath}
+                        title={abbreviateHomePath(preferences.shellPath ?? defaultShellPath ?? '')}
                       >
-                        {preferences.shellPath ?? defaultShellPath}
+                        {abbreviateHomePath(preferences.shellPath ?? defaultShellPath ?? '')}
                       </code>
                     )}
                   </p>
@@ -285,7 +286,9 @@ export function TerminalSettings() {
                       <SelectValue className="terminal-settings-shell-value min-w-0">
                         <span
                           className="terminal-settings-shell-label truncate"
-                          title={preferences.shellPath ?? defaultShellPath}
+                          title={abbreviateHomePath(
+                            preferences.shellPath ?? defaultShellPath ?? '',
+                          )}
                         >
                           {preferences.shellPath === null
                             ? defaultShellLabel

@@ -2,6 +2,7 @@ import { Fragment, useRef, useState } from 'react'
 import { unwrap, type Preferences } from '../../../shared/contracts'
 import { NOTIFICATION_SOUND_OPTIONS } from '../../../shared/notification-sounds'
 import { useWorkspace } from '../store'
+import { abbreviateHomePath } from '../lib/utils'
 import { Alert, AlertDescription } from './ui/alert'
 import {
   AlertDialog,
@@ -310,9 +311,9 @@ export function NotificationSettings() {
               {typeof sound !== 'string' && (
                 <code
                   className="notification-settings-sound-file mt-1 block max-w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
-                  title={sound.path}
+                  title={abbreviateHomePath(sound.path)}
                 >
-                  {sound.path}
+                  {abbreviateHomePath(sound.path)}
                 </code>
               )}
             </p>

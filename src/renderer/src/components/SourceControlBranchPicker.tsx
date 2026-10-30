@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import type { GitReferences, GitStatus } from '../../../shared/source-control'
 import { createBranchFormSchema } from '../lib/form-schemas'
 import { formatRelativeTime } from '../lib/format-relative-time'
+import { abbreviateHomePath } from '../lib/utils'
 import { Alert, AlertDescription } from './ui/alert'
 import { Button } from './ui/button'
 import { ComboboxItem, ComboboxRow } from './ui/combobox'
@@ -208,7 +209,7 @@ export function SourceControlBranchPicker({
                     disabled={occupied || pending || busy}
                     title={
                       occupied
-                        ? `已被 Worktree 占用：${branch.worktreePath}`
+                        ? `已被 Worktree 占用：${abbreviateHomePath(branch.worktreePath || '')}`
                         : switching && remote
                           ? `签出远端分支「${branch.label}」并创建本地跟踪分支`
                           : branch.label

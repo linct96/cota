@@ -85,7 +85,7 @@ export function FileTypeIcon({
     const Glyph = open ? FolderOpen : Folder
     return (
       <Glyph
-        className="file-type-icon file-type-folder-icon"
+        className="file-type-icon file-type-folder-icon size-3.5 shrink-0"
         data-theme={theme}
         aria-hidden="true"
         focusable="false"
@@ -98,7 +98,7 @@ export function FileTypeIcon({
   if ('path' in icon) {
     return (
       <svg
-        className="file-type-icon"
+        className="file-type-icon size-3.5 shrink-0"
         data-kind={kind}
         data-theme={theme}
         viewBox="0 0 24 24"
@@ -113,7 +113,7 @@ export function FileTypeIcon({
   const Glyph = icon
   return (
     <Glyph
-      className="file-type-icon"
+      className="file-type-icon size-3.5 shrink-0"
       data-kind={kind}
       data-theme={theme}
       aria-hidden="true"

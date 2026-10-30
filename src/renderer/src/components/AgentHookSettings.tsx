@@ -6,6 +6,7 @@ import {
   type AgentHookStatus,
   type AgentProvider,
 } from '../../../shared/contracts'
+import { abbreviateHomePath } from '../lib/utils'
 import { AgentIcon } from './AgentIcon'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
@@ -95,8 +96,7 @@ export function AgentHookSettings({
             id="agent-hook-settings-description"
             className="agent-hook-settings-description"
           >
-            安装 Hooks 或 Extension 后，可在终端标签上查看 Agent
-            的运行、等待输入、完成或失败状态。安装后请新建终端生效。
+            安装 Hooks 或 Extension 后，可在终端标签上查看 Agent 的运行、等待输入、完成或失败状态。
           </FieldDescription>
         </div>
         <div className="agent-hook-detect-control flex min-w-0 flex-col gap-1.5">
@@ -164,7 +164,7 @@ export function AgentHookSettings({
                       key={path}
                       className="agent-hook-path break-all font-mono text-xs text-muted-foreground select-text"
                     >
-                      {path}
+                      {abbreviateHomePath(path)}
                     </p>
                   ))}
               </div>

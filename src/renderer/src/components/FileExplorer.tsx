@@ -13,6 +13,7 @@ import type { FileAction } from '../../../shared/file-explorer'
 import { EMPTY_EXPLORER, explorerRows, useFileExplorer } from '../lib/file-explorer-store'
 import { useSourceControl } from '../lib/source-control-store'
 import { useFileWatch } from '../lib/use-file-watch'
+import { abbreviateHomePath } from '../lib/utils'
 import { useWorkspace } from '../store'
 import { FileTypeIcon } from './FileTypeIcon'
 import { Alert, AlertDescription } from './ui/alert'
@@ -132,7 +133,10 @@ export function FileExplorer({
         'aria-busy': expanded && !directory?.entries && !directory?.error,
         'data-ignored': entry.ignored || undefined,
         className: 'file-explorer-row gap-1.5',
-        title: entry.kind === 'link' ? `${entry.path}（符号链接，不跟随）` : entry.path,
+        title:
+          entry.kind === 'link'
+            ? `${abbreviateHomePath(entry.path)}（符号链接，不跟随）`
+            : abbreviateHomePath(entry.path),
         onFocus: () => useFileExplorer.getState().update(workspace.id, { selected: entry.path }),
       }
       return (
@@ -169,7 +173,7 @@ export function FileExplorer({
                       variant="ghost"
                       size="icon-sm"
                       className="file-explorer-directory-retry"
-                      aria-label={`重新读取 ${entry.path}`}
+                      aria-label={`重新读取 ${abbreviateHomePath(entry.path)}`}
                       onClick={() => refresh([entry.path])}
                     >
                       <RefreshCw className="file-explorer-directory-retry-icon" />
@@ -189,11 +193,7 @@ export function FileExplorer({
                 sourceControl.pinFile(workspace.id)
               }}
             >
-              <ChevronRight
-                className="file-explorer-chevron"
-                data-visible="false"
-                aria-hidden="true"
-              />
+              <ChevronRight className="file-explorer-chevron invisible size-3" aria-hidden="true" />
               <FileTreeIcon>
                 {entry.kind === 'link' ? (
                   <Link className="file-explorer-link-icon" />
@@ -244,7 +244,7 @@ export function FileExplorer({
       <header className="file-explorer-header flex h-9 shrink-0 items-center gap-1 border-b px-2">
         <h2
           className="file-explorer-title min-w-0 flex-1 truncate px-1 text-xs font-medium"
-          title={folderPath || workspace.name}
+          title={folderPath ? abbreviateHomePath(folderPath) : workspace.name}
         >
           {folderName}
         </h2>

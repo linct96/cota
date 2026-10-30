@@ -9,12 +9,12 @@ import {
   type TerminalLayout,
 } from '../../../shared/terminal-layout'
 import { terminalTabId, useWorkspace, type TerminalTab } from '../store'
-import { cn } from '../lib/utils'
+import { abbreviateHomePath, cn } from '../lib/utils'
 import { TerminalView } from './TerminalView'
 import { Button } from './ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from './ui/resizable'
 
-function PaneLayout({ node, split }: { node: TerminalPane; split: boolean }) {
+function PaneLayout({ node }: { node: TerminalPane }) {
   const tabs = useWorkspace((state) => state.tabs)
   const activeTabs = useWorkspace((state) => state.activeTabs)
   const removing = useWorkspace((state) => state.removingWorkspace)
@@ -38,52 +38,50 @@ function PaneLayout({ node, split }: { node: TerminalPane; split: boolean }) {
           if (!focused && !removing) useWorkspace.getState().selectTab(tab.id)
         }}
       >
-        {split && (
-          <div className="terminal-pane-header flex h-8 shrink-0 items-center gap-1 border-b px-2">
-            <span
-              className="terminal-pane-title min-w-0 flex-1 truncate text-xs"
-              title={tab.cwd || tab.projectPath}
-            >
-              {tab.cwd || tab.projectPath}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="terminal-pane-split-button"
-              aria-label={`向右拆分 ${tab.title}`}
-              title="向右拆分"
-              disabled={disabled || tabs.length >= MAX_TERMINALS}
-              onClick={() => useWorkspace.getState().splitTerminal(tab.id)}
-            >
-              <Columns2 className="terminal-pane-split-icon" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="terminal-pane-split-down-button"
-              aria-label={`向下拆分 ${tab.title}`}
-              title="向下拆分"
-              disabled={disabled || tabs.length >= MAX_TERMINALS}
-              onClick={() => useWorkspace.getState().splitTerminal(tab.id, 'vertical')}
-            >
-              <Rows2 className="terminal-pane-split-down-icon" data-icon="inline-start" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="terminal-pane-close-button"
-              aria-label={`关闭 ${tab.title} 面板`}
-              title="关闭面板"
-              disabled={disabled}
-              onClick={() => void useWorkspace.getState().closePane(tab.id)}
-            >
-              <X className="terminal-pane-close-icon" />
-            </Button>
-          </div>
-        )}
+        <div className="terminal-pane-header flex h-8 shrink-0 items-center gap-1 border-b px-2">
+          <span
+            className="terminal-pane-title min-w-0 flex-1 truncate text-xs"
+            title={abbreviateHomePath(tab.cwd || tab.projectPath)}
+          >
+            {abbreviateHomePath(tab.cwd || tab.projectPath)}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="terminal-pane-split-button"
+            aria-label={`向右拆分 ${tab.title}`}
+            title="向右拆分"
+            disabled={disabled || tabs.length >= MAX_TERMINALS}
+            onClick={() => useWorkspace.getState().splitTerminal(tab.id)}
+          >
+            <Columns2 className="terminal-pane-split-icon" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="terminal-pane-split-down-button"
+            aria-label={`向下拆分 ${tab.title}`}
+            title="向下拆分"
+            disabled={disabled || tabs.length >= MAX_TERMINALS}
+            onClick={() => useWorkspace.getState().splitTerminal(tab.id, 'vertical')}
+          >
+            <Rows2 className="terminal-pane-split-down-icon" data-icon="inline-start" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="terminal-pane-close-button"
+            aria-label={`关闭 ${tab.title} 面板`}
+            title="关闭面板"
+            disabled={disabled}
+            onClick={() => void useWorkspace.getState().closePane(tab.id)}
+          >
+            <X className="terminal-pane-close-icon" />
+          </Button>
+        </div>
         <div
           id={`terminal-slot-${node.id}`}
-          className="terminal-pane-slot min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="terminal-pane-slot isolate min-h-0 min-w-0 flex-1 overflow-hidden"
         />
       </div>
     )
@@ -117,7 +115,7 @@ function PaneLayout({ node, split }: { node: TerminalPane; split: boolean }) {
             minSize="5%"
             className="terminal-split-panel min-h-0 min-w-0 overflow-hidden"
           >
-            <PaneLayout node={child} split />
+            <PaneLayout node={child} />
           </ResizablePanel>
         </Fragment>
       ))}
@@ -176,11 +174,11 @@ export function TerminalWorkspace({ activeId, visible }: { activeId?: string; vi
           role="tabpanel"
           aria-labelledby={`terminal-tab-${group.id}`}
           className={cn(
-            'terminal-pane-group col-start-1 row-start-1 min-h-0 min-w-0 overflow-hidden',
+            'terminal-pane-group col-start-1 row-start-1 min-h-0 min-w-0 overflow-hidden p-2',
             !terminalPaneIds(group.root).includes(activeId || '') && 'hidden',
           )}
         >
-          <PaneLayout node={group.root} split={group.root.type === 'split'} />
+          <PaneLayout node={group.root} />
         </div>
       ))}
       {tabs.map((tab) => (

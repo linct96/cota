@@ -109,8 +109,12 @@ const ChangeFile = memo(function ChangeFile({
             className="source-control-all-file-stats flex shrink-0 gap-1.5 tabular-nums"
             aria-label={`新增 ${stats.additions} 行，删除 ${stats.deletions} 行`}
           >
-            <span className="source-control-file-additions">+{stats.additions}</span>
-            <span className="source-control-file-deletions">-{stats.deletions}</span>
+            <span className="source-control-file-additions text-source-control-stat-added">
+              +{stats.additions}
+            </span>
+            <span className="source-control-file-deletions text-source-control-stat-removed">
+              -{stats.deletions}
+            </span>
           </span>
         )}
         <span
@@ -214,11 +218,11 @@ export function SourceControlChanges({
     <section className="source-control-all-changes relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {loading && (
         <output
-          className="source-control-all-loading absolute inset-0 z-20 flex items-center justify-center"
+          className="source-control-all-loading absolute inset-0 z-20 flex items-center justify-center bg-background"
           aria-label="正在加载全部变更"
         >
           <LoaderCircle
-            className="source-control-all-loading-icon size-5 motion-safe:animate-spin"
+            className="source-control-all-loading-icon size-5 text-muted-foreground motion-safe:animate-spin"
             aria-hidden="true"
           />
         </output>
@@ -235,8 +239,12 @@ export function SourceControlChanges({
               aria-label={`共新增 ${stats.additions} 行，删除 ${stats.deletions} 行`}
               title="汇总各项变更的文本行数，不含二进制及未提供统计的文件"
             >
-              <span className="source-control-file-additions">+{stats.additions}</span>
-              <span className="source-control-file-deletions">-{stats.deletions}</span>
+              <span className="source-control-file-additions text-source-control-stat-added">
+                +{stats.additions}
+              </span>
+              <span className="source-control-file-deletions text-source-control-stat-removed">
+                -{stats.deletions}
+              </span>
             </span>
           )}
         </span>

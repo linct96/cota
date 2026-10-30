@@ -107,7 +107,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from './components/ui/context-menu'
-import { cn, shortenPath } from './lib/utils'
+import { abbreviateHomePath, cn, compactPath } from './lib/utils'
 import { useProjectBranches } from './lib/use-project-branches'
 import { useDialogState } from './lib/use-dialog-state'
 import { formatShortcut, shortcutBinding } from '../../shared/shortcuts'
@@ -501,8 +501,8 @@ export function App() {
                                 key={key}
                                 id={`file-pinned-tab-${workspaceId}-${encodeURIComponent(file)}`}
                                 aria-controls={`file-pinned-panel-${workspaceId}-${encodeURIComponent(file)}`}
-                                aria-label={file}
-                                title={file}
+                                aria-label={abbreviateHomePath(file)}
+                                title={abbreviateHomePath(file)}
                                 label={folderName(file)}
                                 active={active}
                                 className="file-pinned-tab"
@@ -511,7 +511,7 @@ export function App() {
                                 }
                                 onClose={() => closeWorkspaceTab(key, active)}
                                 closeDisabled={!!state.removingWorkspace}
-                                closeLabel={`关闭 ${file}`}
+                                closeLabel={`关闭 ${abbreviateHomePath(file)}`}
                                 icon={<FileTypeIcon path={file} />}
                               />
                             )
@@ -522,8 +522,8 @@ export function App() {
                                 key={key}
                                 id={`source-control-tab-${workspaceId}`}
                                 aria-controls={`source-control-panel-${workspaceId}`}
-                                aria-label={`${previewPath}${previewSelection ? '（Diff）' : ''} 预览`}
-                                title={`${previewPath}${previewSelection ? '（Diff）' : ''} · 双击或 Enter 固定`}
+                                aria-label={`${abbreviateHomePath(previewPath)}${previewSelection ? '（Diff）' : ''} 预览`}
+                                title={`${abbreviateHomePath(previewPath)}${previewSelection ? '（Diff）' : ''} · 双击或 Enter 固定`}
                                 label={previewTitle}
                                 active={showingPreview}
                                 className="source-control-preview-tab"
@@ -557,7 +557,7 @@ export function App() {
                                       .update(workspaceId, { preview: true })
                                 }}
                                 onClose={() => closeWorkspaceTab(key, showingPreview)}
-                                closeLabel={`关闭 ${previewPath}${previewSelection ? '（Diff）' : ''} 预览`}
+                                closeLabel={`关闭 ${abbreviateHomePath(previewPath)}${previewSelection ? '（Diff）' : ''} 预览`}
                                 closeDisabled={!!state.removingWorkspace}
                                 icon={<FileTypeIcon path={previewPath} />}
                               />
@@ -809,7 +809,7 @@ export function App() {
                                   </Button>
                                 )}
                                 className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent text-inherit hover:bg-transparent hover:text-inherit"
-                                title={path}
+                                title={abbreviateHomePath(path)}
                                 disabled={!!state.removingWorkspace}
                               />
                             </h3>
@@ -1028,7 +1028,7 @@ export function App() {
                                             isSelected &&
                                             activeNavigation === 'home' &&
                                             state.activeTabs[workspace.id] === tab.id
-                                          const label = `${shortenPath(tab.cwd || tab.projectPath)} · ${AGENT_STATE_LABELS[agentState]}`
+                                          const label = `${compactPath(tab.cwd || tab.projectPath)} · ${AGENT_STATE_LABELS[agentState]}`
                                           return (
                                             <Button
                                               key={tab.id}
@@ -1425,7 +1425,7 @@ export function App() {
                   aria-label="工作树信息"
                 >
                   <p className="workspace-worktree-path break-all text-app-muted-foreground">
-                    {editingRecord.path}
+                    {abbreviateHomePath(editingRecord.path)}
                   </p>
                   {!checkingWorktree && editingScan?.error && (
                     <p className="workspace-worktree-scan-error text-destructive" role="alert">
@@ -1486,7 +1486,7 @@ export function App() {
                     className="workspace-orphan-session flex flex-col gap-2 text-xs"
                   >
                     <p className="workspace-orphan-description text-destructive break-all">
-                      终端身份与工作区登记不一致，不会自动连接：{session.cwd}
+                      终端身份与工作区登记不一致，不会自动连接：{abbreviateHomePath(session.cwd)}
                     </p>
                     <Button
                       type="button"

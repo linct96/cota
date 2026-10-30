@@ -3,7 +3,7 @@ import { Terminal as TerminalIcon } from 'lucide-react'
 import { AgentIcon } from './AgentIcon'
 import { DotStatus } from './DotStatus'
 import { terminalIndicatorState, TERMINAL_STATE_LABELS } from '../lib/agent-status'
-import { cn, shortenPath } from '../lib/utils'
+import { abbreviateHomePath, cn, compactPath } from '../lib/utils'
 import { WorkspaceTab } from './WorkspaceTab'
 import type { TerminalTab as TerminalTabData } from '../store'
 
@@ -29,7 +29,7 @@ export function TerminalTab({
   className,
 }: TerminalTabProps) {
   const path = tab.cwd || tab.projectPath
-  const title = shortenPath(path)
+  const title = compactPath(path)
   const { ref } = useSortable({
     id: tab.id,
     index,
@@ -50,7 +50,7 @@ export function TerminalTab({
       aria-label={
         indicatorState === 'other' ? title : `${title}，${TERMINAL_STATE_LABELS[indicatorState]}`
       }
-      title={path}
+      title={abbreviateHomePath(path)}
       label={title}
       active={active}
       closeDisabled={closeDisabled}

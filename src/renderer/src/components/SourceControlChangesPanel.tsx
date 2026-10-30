@@ -203,7 +203,7 @@ export function SourceControlChangesPanel({
   return (
     <>
       <nav
-        className="source-control-changes-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 px-2 py-1.5"
+        className="source-control-changes-navigation flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-2 py-1.5"
         aria-label="更改操作"
       >
         <Button
@@ -362,8 +362,7 @@ export function SourceControlChangesPanel({
                           }
                         >
                           <ChevronRight
-                            className="source-file-explorer-chevron"
-                            data-visible="false"
+                            className="source-file-explorer-chevron invisible size-3"
                             aria-hidden="true"
                           />
                           <FileTypeIcon path={entry.path} submodule={entry.submodule} />
@@ -377,7 +376,7 @@ export function SourceControlChangesPanel({
                           )}
                         </FileTreeFile>
                         <FileTreeActions className="source-control-file-trailing grid items-center">
-                          <div className="source-control-file-summary flex items-center justify-end gap-1.5">
+                          <div className="source-control-file-summary col-start-1 row-start-1 flex items-center justify-end gap-1.5">
                             <SourceControlFileStats stats={entry.stats} />
                             <span
                               className="source-control-file-status shrink-0 font-mono text-app-muted-foreground"
@@ -387,7 +386,7 @@ export function SourceControlChangesPanel({
                               {entry.status === '?' ? 'U' : entry.status}
                             </span>
                           </div>
-                          <div className="source-control-file-actions flex items-center gap-0.5">
+                          <div className="source-control-file-actions col-start-1 row-start-1 flex items-center justify-self-end gap-0.5">
                             {(area === 'unstaged' || area === 'untracked') && (
                               <Button
                                 variant="ghost"
@@ -429,7 +428,7 @@ export function SourceControlChangesPanel({
           )
         })}
       </div>
-      <div className="source-control-context">
+      <div className="source-control-context min-w-0 flex-none px-2 py-1.5">
         <div className="source-control-branch-row flex min-w-0 items-center justify-between gap-1">
           {status && (
             <>

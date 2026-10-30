@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import type { QuickCommand } from '../../../shared/contracts'
 import { quickCommandFormSchema } from '../lib/form-schemas'
+import { abbreviateHomePath } from '../lib/utils'
 import { useWorkspace } from '../store'
 import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog'
@@ -374,7 +375,7 @@ export function QuickCommandDialog({
                                     className="quick-command-project-option"
                                     key={path}
                                     value={path}
-                                    title={path}
+                                    title={abbreviateHomePath(path)}
                                   >
                                     <span className="quick-command-project-name truncate">
                                       {path.split(/[\\/]/).filter(Boolean).pop() || path}

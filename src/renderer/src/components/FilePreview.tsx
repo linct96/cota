@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../shared/contracts'
 import { fileParent, type FilePreview as Preview } from '../../../shared/file-explorer'
 import { useFileWatch } from '../lib/use-file-watch'
+import { abbreviateHomePath } from '../lib/utils'
 import { FileTypeIcon } from './FileTypeIcon'
 import { LoadingContent } from './LoadingContent'
 import { Alert, AlertDescription } from './ui/alert'
@@ -91,8 +92,11 @@ export function FilePreview({
     >
       <header className="file-preview-header flex min-w-0 shrink-0 items-center gap-2 border-b px-3 py-2">
         <FileTypeIcon path={path} />
-        <h2 className="file-preview-path min-w-0 flex-1 truncate text-xs font-medium" title={path}>
-          {path}
+        <h2
+          className="file-preview-path min-w-0 flex-1 truncate text-xs font-medium"
+          title={abbreviateHomePath(path)}
+        >
+          {abbreviateHomePath(path)}
         </h2>
         <span className="file-preview-readonly shrink-0 text-xs text-app-muted-foreground">
           只读
