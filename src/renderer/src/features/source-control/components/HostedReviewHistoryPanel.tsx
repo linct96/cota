@@ -91,47 +91,49 @@ export function HostedReviewHistoryPanel({
         </>
       }
     >
-      <div className="hosted-review-history-content flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-2 py-3 text-xs">
-        <p className="hosted-review-history-note px-2 text-muted-foreground">
-          包含同仓库、同名来源分支的已合并与已关闭记录；同名重建的分支也可能包含在内。
-        </p>
-        <LoadingContent pending={loading} label="评审历史读取中..." showLabel>
-          <div className="hosted-review-history-list flex flex-col gap-1">
-            {history?.items.map((review) => (
-              <HostedReviewItem
-                key={review.number}
-                review={review}
-                label={label}
-                disabled={disabled || loading}
-                onOpen={() => onOpen(review.number)}
-              />
-            ))}
-            {history && !history.items.length && (
-              <p className="hosted-review-history-empty px-2 text-muted-foreground">
-                {history.nextPage ? '本页没有匹配记录，可继续加载。' : '暂无匹配的历史记录。'}
-              </p>
-            )}
-          </div>
-        </LoadingContent>
-        {error && (
-          <Alert variant="destructive" className="hosted-review-history-error">
-            <AlertDescription className="hosted-review-history-error-description">
-              {error.message}
-            </AlertDescription>
-          </Alert>
-        )}
-        {(error || history?.nextPage) && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="hosted-review-history-more self-start"
-            disabled={loading || !active}
-            onClick={() => void load.current(error?.page || history?.nextPage || 1)}
-          >
-            {error ? '重试读取历史' : '加载更多'}
-          </Button>
-        )}
+      <div className="hosted-review-history-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 text-xs">
+        <div className="hosted-review-history-flow flex flex-col gap-2">
+          <p className="hosted-review-history-note px-2 text-muted-foreground">
+            包含同仓库、同名来源分支的已合并与已关闭记录；同名重建的分支也可能包含在内。
+          </p>
+          <LoadingContent pending={loading} label="评审历史读取中..." showLabel>
+            <div className="hosted-review-history-list flex flex-col gap-1">
+              {history?.items.map((review) => (
+                <HostedReviewItem
+                  key={review.number}
+                  review={review}
+                  label={label}
+                  disabled={disabled || loading}
+                  onOpen={() => onOpen(review.number)}
+                />
+              ))}
+              {history && !history.items.length && (
+                <p className="hosted-review-history-empty px-2 text-muted-foreground">
+                  {history.nextPage ? '本页没有匹配记录，可继续加载。' : '暂无匹配的历史记录。'}
+                </p>
+              )}
+            </div>
+          </LoadingContent>
+          {error && (
+            <Alert variant="destructive" className="hosted-review-history-error">
+              <AlertDescription className="hosted-review-history-error-description">
+                {error.message}
+              </AlertDescription>
+            </Alert>
+          )}
+          {(error || history?.nextPage) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="hosted-review-history-more self-start"
+              disabled={loading || !active}
+              onClick={() => void load.current(error?.page || history?.nextPage || 1)}
+            >
+              {error ? '重试读取历史' : '加载更多'}
+            </Button>
+          )}
+        </div>
       </div>
     </SourceControlSection>
   )

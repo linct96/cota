@@ -117,6 +117,7 @@ export function HostedReviewPanel({
       </nav>
       <SourceControlSectionLayout
         defaultOpen={false}
+        defaultExpandedSize="50%"
         resizeLabel="调整开放评审与同名来源分支历史区域高度"
         section={
           snapshot

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -9,18 +9,22 @@ export function SourceControlSectionLayout({
   section,
   resizeLabel,
   defaultOpen = true,
+  defaultExpandedSize = '40%',
 }: {
   children: ReactNode
   section?: (open: boolean, onOpenChange: (open: boolean) => void) => ReactNode
   resizeLabel: string
   defaultOpen?: boolean
+  defaultExpandedSize?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  const hasExpanded = useRef(defaultOpen)
   const [panel, setPanel] = usePanelCallbackRef()
 
   function changeOpen(open: boolean) {
     if (!panel) return
-    if (open) panel.expand()
+    if (open && !hasExpanded.current) panel.resize(defaultExpandedSize)
+    else if (open) panel.expand()
     else panel.collapse()
     setOpen(!panel.isCollapsed())
   }
@@ -33,7 +37,6 @@ export function SourceControlSectionLayout({
       className="source-control-section-layout min-h-0 min-w-0 flex-1"
     >
       <ResizablePanel
-        defaultSize={defaultOpen ? '60%' : undefined}
         minSize="20%"
         className="source-control-section-primary-panel flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
@@ -46,12 +49,16 @@ export function SourceControlSectionLayout({
       />
       <ResizablePanel
         panelRef={setPanel}
-        defaultSize={defaultOpen ? '40%' : '2rem'}
+        defaultSize={defaultOpen ? defaultExpandedSize : '2rem'}
         minSize="6rem"
         collapsible
         collapsedSize="2rem"
         onResize={() => {
-          if (panel) setOpen(!panel.isCollapsed())
+          if (panel) {
+            const expanded = !panel.isCollapsed()
+            if (expanded) hasExpanded.current = true
+            setOpen(expanded)
+          }
         }}
         className="source-control-section-secondary-panel flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
