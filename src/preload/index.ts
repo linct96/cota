@@ -98,6 +98,7 @@ const api: DesktopAPI = {
     history: (target, key, page) => ipcRenderer.invoke('code-hosting:history', target, key, page),
     prepare: (target, input) => ipcRenderer.invoke('code-hosting:prepare', target, input),
     create: (target, input) => ipcRenderer.invoke('code-hosting:create', target, input),
+    merge: (target, input) => ipcRenderer.invoke('code-hosting:merge', target, input),
     open: (target, number, sourceBranch) =>
       ipcRenderer.invoke('code-hosting:open', target, number, sourceBranch),
     clearCreation: (target, key, sourceBranch) =>

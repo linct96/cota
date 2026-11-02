@@ -81,6 +81,10 @@ async function hostingFixture() {
       fetchedAt: Date.now(),
     })),
     get: vi.fn(async (_scope: ReviewScope, number: number) => review(number, 'main', 'merged')),
+    merge: vi.fn(async (_scope: ReviewScope, current: HostedReview): Promise<HostedReview> => ({
+      ...current,
+      state: 'merged',
+    })),
     compare: vi.fn(async (): Promise<HostingComparison> => ({ status: 'changes' })),
     branchHead: vi.fn(async (_repository: HostingRepository, _branch: string) => 'not-pushed'),
     checks: vi.fn(async () => 'success' as const),
@@ -177,6 +181,85 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
     let current: Awaited<ReturnType<typeof configured>>
     beforeEach(async () => {
       current = await configured()
+    })
+    it('merges only the confirmed review, account, context and remote head', async () => {
+      const { service, adapter, prepareInput, review, head } = current
+      const input = { ...prepareInput, number: 1, head }
+      adapter.get.mockResolvedValue(review())
+      for (const patch of [
+        { number: 2 },
+        { sourceBranch: 'other' },
+        { targetBranch: 'release' },
+        { head: 'b'.repeat(40) },
+        { draft: true },
+        { state: 'closed' as const },
+      ]) {
+        adapter.get.mockResolvedValueOnce({ ...review(), ...patch })
+        await expect(service.merge(directory, input)).rejects.toThrow()
+      }
+      await expect(service.merge(directory, { ...input, head: 'invalid' })).rejects.toThrow()
+      await expect(service.merge(directory, { ...input, key: 'b'.repeat(64) })).rejects.toThrow(
+        '改变',
+      )
+      await expect(service.merge(directory, { ...input, account: 'other' })).rejects.toThrow('账号')
+      adapter.account.mockResolvedValueOnce('fixture-user').mockResolvedValueOnce('other')
+      await expect(service.merge(directory, input)).rejects.toThrow('账号')
+      const context = await service.context(directory)
+      const contextSpy = vi
+        .spyOn(service, 'context')
+        .mockResolvedValueOnce(context)
+        .mockResolvedValueOnce({ ...context, key: 'b'.repeat(64) })
+      await expect(service.merge(directory, input)).rejects.toThrow('改变')
+      contextSpy.mockRestore()
+      expect(adapter.merge).not.toHaveBeenCalled()
+      await expect(service.merge(directory, input)).resolves.toMatchObject({
+        state: 'merged',
+        head,
+      })
+      expect(adapter.merge).toHaveBeenCalledExactlyOnceWith(expect.anything(), review())
+      adapter.get.mockResolvedValue(review(1, 'main', 'merged'))
+      await expect(service.merge(directory, input)).resolves.toMatchObject({ state: 'merged' })
+      expect(adapter.merge).toHaveBeenCalledTimes(1)
+    })
+    it('reconciles uncertain merge outcomes without repeating the write', async () => {
+      const { service, adapter, prepareInput, review, head } = current
+      const input = { ...prepareInput, number: 1, head }
+      adapter.get.mockResolvedValueOnce(review()).mockResolvedValueOnce(review(1, 'main', 'merged'))
+      adapter.merge.mockRejectedValueOnce(new Error('timeout'))
+      await expect(service.merge(directory, input)).resolves.toMatchObject({ state: 'merged' })
+      expect(adapter.merge).toHaveBeenCalledTimes(1)
+      adapter.get.mockResolvedValue(review())
+      adapter.merge.mockRejectedValueOnce(new Error('timeout'))
+      await expect(service.merge(directory, input)).rejects.toThrow('结果未确认')
+      expect(adapter.merge).toHaveBeenCalledTimes(2)
+      adapter.merge.mockRejectedValueOnce(new HostingError('rejected', '审批未通过'))
+      await expect(service.merge(directory, input)).rejects.toThrow('审批未通过')
+      expect(adapter.merge).toHaveBeenCalledTimes(3)
+    })
+    it('merges a review at most once while the request is in flight', async () => {
+      const { service, adapter, prepareInput, review, head } = current
+      const input = { ...prepareInput, number: 1, head }
+      adapter.get.mockResolvedValue(review())
+      let finish!: (value: HostedReview) => void
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      adapter.merge.mockImplementationOnce(() => {
+        entered()
+        return new Promise<HostedReview>((resolve) => {
+          finish = resolve
+        })
+      })
+      const first = service.merge(directory, input)
+      await started
+      try {
+        await expect(service.merge(directory, input)).rejects.toThrow('正在合并')
+        expect(adapter.merge).toHaveBeenCalledTimes(1)
+      } finally {
+        finish(review(1, 'main', 'merged'))
+        await first
+      }
     })
     it('caches creation reads but revalidates account, context and selected branches', async () => {
       const { context, input, prepareInput, service, adapter, remoteBranches } = current

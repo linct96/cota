@@ -20,6 +20,7 @@ export type HostingRequest = (
   repository: Pick<HostingRepository, 'provider' | 'host'>,
   endpoint: string,
   body?: Record<string, unknown>,
+  method?: 'GET' | 'POST' | 'PUT',
 ) => Promise<unknown>
 const execute = promisify(execFile)
 const cooldowns = new Map<string, number>()
@@ -45,7 +46,7 @@ export async function hostingCLI(providerValue: unknown) {
   return { executable, env }
 }
 
-export const hostingRequest: HostingRequest = async (repository, endpoint, body) => {
+export const hostingRequest: HostingRequest = async (repository, endpoint, body, method) => {
   const provider = hostingProviderSchema.parse(repository.provider)
   const host = hostingHostSchema.parse(repository.host)
   const bucket = `${provider}:${host}`
@@ -55,7 +56,14 @@ export const hostingRequest: HostingRequest = async (repository, endpoint, body)
   const cli = await hostingCLI(provider)
   const env = { ...cli.env, GH_HOST: host, GITLAB_HOST: host }
   try {
-    const args = ['api', '--hostname', host, '--method', body ? 'POST' : 'GET', endpoint]
+    const args = [
+      'api',
+      '--hostname',
+      host,
+      '--method',
+      method ?? (body ? 'POST' : 'GET'),
+      endpoint,
+    ]
     if (body) args.push('--input', '-')
     const child = execute(cli.executable, args, {
       cwd: homedir(),
@@ -92,10 +100,10 @@ export const hostingRequest: HostingRequest = async (repository, endpoint, body)
       throw new HostingError('forbidden', '无权访问，请检查账号权限、Token 范围和组织 SSO。')
     if (/HTTP 404|not found/i.test(text))
       throw new HostingError('not-found', '仓库或分支不存在，或当前账号无权访问。')
-    if (/HTTP (400|409|422)\b/i.test(text))
+    if (/HTTP (400|405|406|409|422)\b/i.test(text))
       throw new HostingError(
         'rejected',
-        '平台拒绝创建，请检查目标分支、差异或已有评审；必要时在网页处理。',
+        '平台拒绝操作，请检查分支、提交版本、审批、检查及合并规则；必要时在网页处理。',
       )
     if (failure.code === 'ENOENT' || failure.code === 'EACCES')
       throw new HostingError('cli', `${command} 不可执行，请检查 CLI 安装。`)

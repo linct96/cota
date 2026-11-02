@@ -1,4 +1,4 @@
-import { ExternalLink, GitPullRequest } from 'lucide-react'
+import { ExternalLink, GitMerge, GitPullRequest } from 'lucide-react'
 import { type HostedReview } from '../../../../../shared/code-hosting'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,11 +17,13 @@ export function HostedReviewItem({
   label,
   disabled,
   onOpen,
+  onMerge,
 }: {
   review: HostedReview
   label: string
   disabled: boolean
   onOpen: () => void
+  onMerge?: () => void
 }) {
   return (
     <div className="hosted-review-item flex min-w-0 flex-col gap-1">
@@ -82,6 +84,26 @@ export function HostedReviewItem({
           )}
         </span>
       </Button>
+      {onMerge && review.state === 'open' && !review.draft && (
+        <div className="hosted-review-item-actions flex justify-end px-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="hosted-review-merge"
+            disabled={disabled || !review.head}
+            aria-label={`合并 ${label} #${review.number}`}
+            onClick={onMerge}
+          >
+            <GitMerge
+              className="hosted-review-merge-icon"
+              data-icon="inline-start"
+              aria-hidden="true"
+            />
+            合并
+          </Button>
+        </div>
+      )}
       {review.checksError && (
         <output className="hosted-review-checks-error px-2 text-muted-foreground">
           {review.checksError}

@@ -90,6 +90,7 @@ beforeEach(() => {
       history: vi.fn(),
       prepare: vi.fn(),
       create: vi.fn(),
+      merge: vi.fn(),
       open: vi.fn(),
       clearCreation: vi.fn(),
     },

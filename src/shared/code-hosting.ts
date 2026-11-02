@@ -149,6 +149,13 @@ export const prepareHostedReviewSchema = z
   })
   .strict()
 export type PrepareHostedReview = z.infer<typeof prepareHostedReviewSchema>
+export const mergeHostedReviewSchema = prepareHostedReviewSchema
+  .extend({
+    number: z.number().int().positive(),
+    head: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
+  })
+  .strict()
+export type MergeHostedReview = z.infer<typeof mergeHostedReviewSchema>
 export interface HostingSnapshot {
   context: HostingContext
   account: string
@@ -203,6 +210,7 @@ export interface CodeHostingAPI {
     input: PrepareHostedReview,
   ): Promise<Result<HostedReviewPreparation>>
   create(target: WorkspaceTarget, input: CreateHostedReview): Promise<Result<HostedReview>>
+  merge(target: WorkspaceTarget, input: MergeHostedReview): Promise<Result<HostedReview>>
   open(target: WorkspaceTarget, number: number, sourceBranch?: string): Promise<Result<void>>
   clearCreation(target: WorkspaceTarget, key: string, sourceBranch?: string): Promise<Result<void>>
 }

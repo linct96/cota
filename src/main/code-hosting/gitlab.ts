@@ -145,6 +145,19 @@ export class GitLabAdapter implements HostingAdapter {
       ),
     )
   }
+  async merge(scope: ReviewScope, current: HostedReview): Promise<HostedReview> {
+    return review(
+      scope,
+      mergeSchema.parse(
+        await this.request(
+          scope.target,
+          `${endpoint(scope.target)}/merge_requests/${current.number}/merge`,
+          { sha: current.head, squash: false, should_remove_source_branch: false },
+          'PUT',
+        ),
+      ),
+    )
+  }
   async compare(
     scope: ReviewScope,
     sourceHead: string,

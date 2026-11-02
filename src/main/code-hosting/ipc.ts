@@ -54,6 +54,10 @@ export function registerCodeHostingIPC(deps: {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) => codeHosting.create(binding.cwd, input))
   })
+  handle('code-hosting:merge', (target: WorkspaceTarget, input: unknown) => {
+    assertLifecycle()
+    return worktrees.withTerminalTarget(target, (binding) => codeHosting.merge(binding.cwd, input))
+  })
   handle('code-hosting:open', (target: WorkspaceTarget, number: unknown, sourceBranch: unknown) => {
     assertLifecycle()
     const url = readHosting(target, (cwd, context) =>

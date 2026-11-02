@@ -166,7 +166,7 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
   })
 
   it.each(['github', 'gitlab'] as const)(
-    'reads %s hosting review history with pagination and identity checks',
+    'reads %s hosting review history and merges with identity checks',
     async (provider) => {
       const request = vi.fn<HostingRequest>()
       const adapter =
@@ -264,6 +264,32 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
         status: 'unknown',
       })
+      request.mockResolvedValueOnce(payload(12, 'open'))
+      const openReview = await adapter.get(scope, 12)
+      const mergeCall = request.mock.calls.length
+      if (provider === 'github') {
+        request.mockResolvedValueOnce({ merged: true }).mockResolvedValueOnce(payload(12, 'merged'))
+      } else {
+        request.mockResolvedValueOnce(payload(12, 'merged'))
+      }
+      expect(await adapter.merge(scope, openReview)).toMatchObject({
+        state: 'merged',
+        head: openReview.head,
+      })
+      expect(request.mock.calls[mergeCall]).toEqual([
+        repository,
+        provider === 'github'
+          ? 'repos/team/repo/pulls/12/merge'
+          : 'projects/team%2Frepo/merge_requests/12/merge',
+        provider === 'github'
+          ? { sha: openReview.head, merge_method: 'merge' }
+          : { sha: openReview.head, squash: false, should_remove_source_branch: false },
+        'PUT',
+      ])
+      if (provider === 'github') {
+        request.mockResolvedValueOnce({ merged: false })
+        await expect(adapter.merge(scope, openReview)).rejects.toThrow('未合并')
+      }
       if (provider === 'gitlab') {
         const account = {
           username: 'me',

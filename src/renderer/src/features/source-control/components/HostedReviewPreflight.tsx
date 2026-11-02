@@ -68,7 +68,7 @@ export function HostedReviewPreflight({
           disabled={busy}
           onClick={() => void unlockCreation()}
         >
-          已在网页核对，解除保护…
+          已在网页核对，解除保护
         </Button>
       )}
       {preflight?.result?.existingReviews.map((review) => (

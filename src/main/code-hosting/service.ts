@@ -4,6 +4,7 @@ import {
   hostingHostSchema,
   hostingBranchSchema,
   hostingProviderSchema,
+  mergeHostedReviewSchema,
   prepareHostedReviewSchema,
   type PrepareHostedReview,
   type HostedReviewPreparation,
@@ -27,6 +28,7 @@ import { prepareReview } from './review-preparation'
 
 export class CodeHostingService {
   private readonly creating = new Set<string>()
+  private readonly merging = new Set<string>()
   private readonly branches = new HostingBranches()
   private readonly creationScopes = new Map<
     string,
@@ -441,6 +443,54 @@ export class CodeHostingService {
       return created
     } finally {
       this.creating.delete(key)
+    }
+  }
+
+  async merge(cwd: string, value: unknown): Promise<HostedReview> {
+    const input = mergeHostedReviewSchema.parse(value)
+    const initial = await this.context(cwd)
+    if (initial.key !== input.key || initial.sourceBranch !== input.sourceBranch)
+      throw new Error('仓库、远端或来源分支已改变，请刷新后重新确认合并。')
+    const { adapter, scope, account } = await this.scope(initial)
+    if (account !== input.account) throw new Error('CLI 账号已改变，请刷新后重新确认合并。')
+    const key = JSON.stringify([
+      scope.target.provider,
+      scope.target.host,
+      scope.targetInfo.id,
+      input.number,
+    ])
+    if (this.merging.has(key)) throw new Error('该评审正在合并，请稍后刷新。')
+    this.merging.add(key)
+    const matches = (review: HostedReview) =>
+      review.number === input.number &&
+      review.sourceBranch === input.sourceBranch &&
+      review.targetBranch === input.targetBranch &&
+      review.head === input.head
+    try {
+      const current = await adapter.get(scope, input.number)
+      if (!matches(current)) throw new Error('评审分支或远端提交已改变，请刷新后重新确认合并。')
+      if (current.state === 'merged') return current
+      if (current.state !== 'open' || current.draft)
+        throw new Error('只能合并开放且非草稿的评审，请刷新或在网页处理。')
+      if ((await this.context(cwd)).key !== input.key)
+        throw new Error('合并前仓库或远端已改变，请刷新后重试。')
+      if ((await adapter.account(scope.source)) !== account)
+        throw new Error('CLI 账号已改变，请刷新后重新确认合并。')
+      try {
+        const merged = await adapter.merge(scope, current)
+        if (!matches(merged) || merged.state !== 'merged')
+          throw new Error('平台未返回已确认的合并结果。')
+        return merged
+      } catch (error) {
+        // A timed-out merge may have succeeded; only read back, never repeat the write.
+        const reconciled = await adapter.get(scope, input.number).catch(() => undefined)
+        if (reconciled && matches(reconciled) && reconciled.state === 'merged') return reconciled
+        if (error instanceof HostingError && error.kind !== 'network' && error.kind !== 'response')
+          throw error
+        throw new Error('合并结果未确认，请刷新或在平台网页核对，不要直接重试。')
+      }
+    } finally {
+      this.merging.delete(key)
     }
   }
 

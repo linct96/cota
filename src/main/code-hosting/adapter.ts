@@ -31,6 +31,7 @@ export interface HostingAdapter {
   branchHead(repository: HostingRepository, branch: string): Promise<string>
   checks(scope: ReviewScope, review: HostedReview): Promise<HostingCheckState>
   create(scope: ReviewScope, input: CreateHostedReview): Promise<HostedReview>
+  merge(scope: ReviewScope, review: HostedReview): Promise<HostedReview>
 }
 export function reviewUrl(repository: HostingRepository, number: number): string {
   return `https://${repository.host}/${repository.path}/${repository.provider === 'github' ? 'pull' : '-/merge_requests'}/${number}`

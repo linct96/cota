@@ -182,6 +182,21 @@ export class GitHubAdapter implements HostingAdapter {
       ),
     )
   }
+  async merge(scope: ReviewScope, current: HostedReview): Promise<HostedReview> {
+    const result = z
+      .object({ merged: z.boolean() })
+      .parse(
+        await this.request(
+          scope.target,
+          `${endpoint(scope.target)}/pulls/${current.number}/merge`,
+          { sha: current.head, merge_method: 'merge' },
+          'PUT',
+        ),
+      )
+    if (!result.merged)
+      throw new HostingError('rejected', '平台未合并 PR，请检查审批、检查及仓库合并规则。')
+    return this.get(scope, current.number)
+  }
   async compare(
     scope: ReviewScope,
     sourceHead: string,

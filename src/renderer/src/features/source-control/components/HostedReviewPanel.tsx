@@ -6,13 +6,28 @@ import {
   type ProjectWorkspace,
   type WorkspaceTarget,
 } from '../../../../../shared/contracts'
-import { resolveTargetBranchRef } from '../../../../../shared/code-hosting'
+import {
+  resolveTargetBranchRef,
+  type HostedReview,
+  type MergeHostedReview,
+} from '../../../../../shared/code-hosting'
 import type { GitReferences, GitStatus } from '../../../../../shared/source-control'
 import { useSourceControl } from '@/state/source-control-store'
 import { cn } from '@/lib/utils'
+import { useDialogState } from '@/hooks/use-dialog-state'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { CreateHostedReviewDialog } from './CreateHostedReviewDialog'
 import {
   Empty,
@@ -57,6 +72,25 @@ export function HostedReviewPanel({
     run,
   } = useHostedReview({ workspace, active, status, pending })
   const [creating, setCreating] = useState<WorkspaceTarget>()
+  const [merging, setMerging, mergeDialog] = useDialogState<{
+    target: WorkspaceTarget
+    review: HostedReview
+    input: MergeHostedReview
+  }>()
+  const [mergeError, setMergeError] = useState<string>()
+  async function confirmMerge() {
+    if (!merging || merging.target !== target) return
+    setMergeError(undefined)
+    await run(async () => {
+      try {
+        unwrap(await window.desktop.codeHosting.merge(merging.target, merging.input))
+        setMerging(undefined)
+      } catch (cause) {
+        setMergeError(cause instanceof Error ? cause.message : '合并失败，请刷新或在网页核对。')
+      }
+    })
+    await refresh.current()
+  }
   function openCreate() {
     if (!disabled) setCreating(target)
   }
@@ -80,7 +114,7 @@ export function HostedReviewPanel({
           onClick={() => void openCreate()}
         >
           <Plus className="hosted-review-create-icon" data-icon="inline-start" aria-hidden="true" />
-          创建 {label}…
+          创建 {label}
         </Button>
         <div className="hosted-review-actions flex items-center gap-1">
           <Button
@@ -202,7 +236,7 @@ export function HostedReviewPanel({
                             }).then(() => refresh.current())
                           }
                         >
-                          已在网页核对，解除保护…
+                          已在网页核对，解除保护
                         </Button>
                       </AlertDescription>
                     </Alert>
@@ -224,6 +258,21 @@ export function HostedReviewPanel({
                               review={review}
                               label={label}
                               disabled={disabled}
+                              onMerge={() => {
+                                setMergeError(undefined)
+                                setMerging({
+                                  target,
+                                  review,
+                                  input: {
+                                    key: snapshot.context.key,
+                                    account: snapshot.account,
+                                    number: review.number,
+                                    sourceBranch: review.sourceBranch,
+                                    targetBranch: review.targetBranch,
+                                    head: review.head,
+                                  },
+                                })
+                              }}
                               onOpen={() =>
                                 void run(async () => {
                                   unwrap(
@@ -293,7 +342,7 @@ export function HostedReviewPanel({
                               data-icon="inline-start"
                               aria-hidden="true"
                             />
-                            创建 {label}…
+                            创建 {label}
                           </Button>
                         </EmptyContent>
                       )}
@@ -305,6 +354,57 @@ export function HostedReviewPanel({
           </LoadingContent>
         </div>
       </SourceControlSectionLayout>
+      <AlertDialog
+        {...mergeDialog}
+        onOpenChange={(open) => {
+          if (!open && !action) setMerging(undefined)
+        }}
+      >
+        <AlertDialogContent className="hosted-review-merge-dialog" aria-busy={action}>
+          <AlertDialogHeader className="hosted-review-merge-header">
+            <AlertDialogTitle className="hosted-review-merge-title">
+              合并 {merging?.input ? `#${merging.input.number}` : '评审'}？
+            </AlertDialogTitle>
+            <AlertDialogDescription className="hosted-review-merge-description">
+              将远端来源分支合并到目标分支。此操作会修改远端仓库，不包含本地未推送的修改。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {merging && (
+            <div className="hosted-review-merge-details flex min-w-0 flex-col gap-2">
+              <p className="hosted-review-merge-review break-words">{merging.review.title}</p>
+              <p className="hosted-review-merge-branches break-all font-mono">
+                {merging.input.sourceBranch} → {merging.input.targetBranch}
+              </p>
+              <p className="hosted-review-merge-head break-all font-mono">
+                远端提交：{merging.input.head}
+              </p>
+              <p className="hosted-review-merge-policy text-muted-foreground">
+                GitHub 使用普通合并；GitLab 遵循项目合并规则，不主动压缩提交或删除来源分支。
+                平台仍会校验权限、审批和检查；分支自动清理由仓库设置决定。本地分支不变。
+              </p>
+            </div>
+          )}
+          {mergeError && (
+            <Alert variant="destructive" className="hosted-review-merge-error">
+              <AlertDescription className="hosted-review-merge-error-description">
+                {mergeError}
+              </AlertDescription>
+            </Alert>
+          )}
+          <AlertDialogFooter className="hosted-review-merge-footer">
+            <AlertDialogCancel className="hosted-review-merge-cancel" disabled={action}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="hosted-review-merge-confirm"
+              disabled={disabled || !merging || merging.target !== target || !!mergeError}
+              onClick={() => void confirmMerge()}
+            >
+              {action ? '合并中…' : '确认合并'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {creating === target && (
         <CreateHostedReviewDialog
           key={JSON.stringify(target)}
