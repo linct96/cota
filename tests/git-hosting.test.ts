@@ -182,36 +182,17 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
     beforeEach(async () => {
       current = await configured()
     })
-    it('merges only the confirmed review, account, context and remote head', async () => {
+    it('revalidates real Git context before merging and does not repeat a confirmed merge', async () => {
       const { service, adapter, prepareInput, review, head } = current
       const input = { ...prepareInput, number: 1, head }
-      adapter.get.mockResolvedValue(review())
-      for (const patch of [
-        { number: 2 },
-        { sourceBranch: 'other' },
-        { targetBranch: 'release' },
-        { head: 'b'.repeat(40) },
-        { draft: true },
-        { state: 'closed' as const },
-      ]) {
-        adapter.get.mockResolvedValueOnce({ ...review(), ...patch })
-        await expect(service.merge(directory, input)).rejects.toThrow()
-      }
-      await expect(service.merge(directory, { ...input, head: 'invalid' })).rejects.toThrow()
-      await expect(service.merge(directory, { ...input, key: 'b'.repeat(64) })).rejects.toThrow(
-        '改变',
-      )
-      await expect(service.merge(directory, { ...input, account: 'other' })).rejects.toThrow('账号')
-      adapter.account.mockResolvedValueOnce('fixture-user').mockResolvedValueOnce('other')
-      await expect(service.merge(directory, input)).rejects.toThrow('账号')
-      const context = await service.context(directory)
-      const contextSpy = vi
-        .spyOn(service, 'context')
-        .mockResolvedValueOnce(context)
-        .mockResolvedValueOnce({ ...context, key: 'b'.repeat(64) })
-      await expect(service.merge(directory, input)).rejects.toThrow('改变')
-      contextSpy.mockRestore()
+      adapter.get.mockImplementationOnce(async () => {
+        await git('remote', 'set-url', 'origin', 'git@github.com:team/changed.git')
+        return review()
+      })
+      await expect(service.merge(directory, input)).rejects.toThrow('合并前仓库或远端已改变')
       expect(adapter.merge).not.toHaveBeenCalled()
+      await git('remote', 'set-url', 'origin', 'git@github.com:team/repo.git')
+      adapter.get.mockResolvedValue(review())
       await expect(service.merge(directory, input)).resolves.toMatchObject({
         state: 'merged',
         head,

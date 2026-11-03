@@ -9,7 +9,15 @@ import { HostingError, type HostingRequest } from '../src/main/code-hosting/cli-
 import type { ReviewScope } from '../src/main/code-hosting/adapter'
 import { GitHubAdapter } from '../src/main/code-hosting/github'
 import { GitLabAdapter } from '../src/main/code-hosting/gitlab'
-import { hostingBranchesExpired, type HostingRepository } from '../src/shared/code-hosting'
+import { CodeHostingService } from '../src/main/code-hosting/service'
+import { ConfigStore } from '../src/main/settings/config-store'
+import { SourceControlService } from '../src/main/git/source-control/service'
+import {
+  hostingBranchesExpired,
+  type HostedReview,
+  type HostingContext,
+  type HostingRepository,
+} from '../src/shared/code-hosting'
 import { projectBranch } from '../src/main/git/branches/project-branch'
 import { parseGitStatus } from '../src/main/git/source-control/status'
 import { createBranchFormSchema } from '../src/renderer/src/features/source-control/lib/form-schemas'
@@ -453,6 +461,119 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       }
     },
   )
+
+  describe('hosting merge guards (no Git required)', () => {
+    function mergeFixture() {
+      const repository: HostingRepository = {
+        provider: 'github',
+        host: 'github.com',
+        path: 'team/repo',
+      }
+      const review: HostedReview = {
+        number: 1,
+        title: 'Review fixture',
+        draft: false,
+        state: 'open',
+        sourceBranch: 'feature/review',
+        targetBranch: 'main',
+        head: 'a'.repeat(40),
+        url: 'https://github.com/team/repo/pull/1',
+        checks: 'unknown',
+        createdAt: '2026-10-28T00:00:00Z',
+        updatedAt: '2026-10-28T01:00:00Z',
+        mergedAt: null,
+        closedAt: null,
+      }
+      const context: HostingContext = {
+        remotes: [{ name: 'origin', repository }],
+        source: repository,
+        target: repository,
+        branch: review.sourceBranch,
+        sourceBranch: review.sourceBranch,
+        head: review.head,
+        key: 'a'.repeat(64),
+      }
+      const request = vi.fn<HostingRequest>()
+      const adapter = new GitHubAdapter(request)
+      const account = vi.spyOn(adapter, 'account').mockResolvedValue('fixture-user')
+      vi.spyOn(adapter, 'repository').mockResolvedValue({
+        id: 1,
+        path: repository.path,
+        defaultBranch: 'main',
+      })
+      const get = vi.spyOn(adapter, 'get').mockResolvedValue(review)
+      const merge = vi.spyOn(adapter, 'merge').mockResolvedValue({ ...review, state: 'merged' })
+      const service = new CodeHostingService(
+        new ConfigStore(join(directory, 'hosting-config.json')),
+        new SourceControlService(),
+        { github: adapter, gitlab: adapter },
+      )
+      const readContext = vi.spyOn(service, 'context').mockResolvedValue(context)
+      const input = {
+        key: context.key,
+        account: 'fixture-user',
+        sourceBranch: review.sourceBranch,
+        targetBranch: review.targetBranch,
+        number: review.number,
+        head: review.head,
+      }
+      return { service, request, review, input, get, merge, account, readContext }
+    }
+    let current: ReturnType<typeof mergeFixture>
+    beforeEach(() => {
+      vi.stubEnv('PATH', directory)
+      current = mergeFixture()
+    })
+    afterEach(() => {
+      current.service.close()
+      expect(current.request).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['number', { number: 2 }, '评审分支或远端提交已改变'],
+      ['source branch', { sourceBranch: 'other' }, '评审分支或远端提交已改变'],
+      ['target branch', { targetBranch: 'release' }, '评审分支或远端提交已改变'],
+      ['head', { head: 'b'.repeat(40) }, '评审分支或远端提交已改变'],
+      ['draft', { draft: true }, '只能合并开放且非草稿的评审'],
+      ['state', { state: 'closed' }, '只能合并开放且非草稿的评审'],
+    ] as const)('rejects mismatched review %s before merging', async (_field, patch, error) => {
+      const { service, input, review, get, merge } = current
+      get.mockResolvedValueOnce({ ...review, ...patch })
+      await expect(service.merge(directory, input)).rejects.toThrow(error)
+      expect(get).toHaveBeenCalledOnce()
+      expect(merge).not.toHaveBeenCalled()
+    })
+
+    it('rejects an invalid merge head before reading context', async () => {
+      const { service, input, readContext, get, merge } = current
+      await expect(service.merge(directory, { ...input, head: 'invalid' })).rejects.toThrow()
+      expect(readContext).not.toHaveBeenCalled()
+      expect(get).not.toHaveBeenCalled()
+      expect(merge).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['key', { key: 'b'.repeat(64) }, '仓库、远端或来源分支已改变'],
+      ['account', { account: 'other' }, 'CLI 账号已改变'],
+    ] as const)(
+      'rejects a changed confirmed %s before reading the review',
+      async (_field, patch, error) => {
+        const { service, input, get, merge } = current
+        await expect(service.merge(directory, { ...input, ...patch })).rejects.toThrow(error)
+        expect(get).not.toHaveBeenCalled()
+        expect(merge).not.toHaveBeenCalled()
+      },
+    )
+
+    it('rechecks the account immediately before merging', async () => {
+      const { service, input, account, readContext, merge } = current
+      account.mockResolvedValueOnce('fixture-user').mockResolvedValueOnce('other')
+      await expect(service.merge(directory, input)).rejects.toThrow('CLI 账号已改变')
+      expect(account).toHaveBeenCalledTimes(2)
+      expect(readContext).toHaveBeenCalledTimes(2)
+      expect(merge).not.toHaveBeenCalled()
+    })
+  })
 
   it('validates hosting remote syntax without running Git', () => {
     expect(parseHostingRemote('git@gitlab.com:group/sub/project.git')).toEqual({
