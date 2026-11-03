@@ -31,7 +31,7 @@ export function HostedReviewDetailsFields({
             }
             return (
               <Field
-                className={`create-hosted-review-${name}-field sm:col-span-2`}
+                className={`create-hosted-review-${name}-field`}
                 data-invalid={invalid}
                 data-disabled={fieldsDisabled}
               >
@@ -41,7 +41,7 @@ export function HostedReviewDetailsFields({
                 {name === 'description' ? (
                   <Textarea
                     {...props}
-                    className="create-hosted-review-description-input h-28 field-sizing-fixed"
+                    className="create-hosted-review-description-input h-36 min-h-24 resize-y field-sizing-fixed"
                     maxLength={65000}
                   />
                 ) : (
@@ -68,7 +68,7 @@ export function HostedReviewDetailsFields({
       <form.Field name="draft">
         {(field) => (
           <Field
-            className="create-hosted-review-draft-field flex-row items-center sm:col-span-2"
+            className="create-hosted-review-draft-field flex-row items-center gap-2"
             data-disabled={fieldsDisabled}
           >
             <Checkbox

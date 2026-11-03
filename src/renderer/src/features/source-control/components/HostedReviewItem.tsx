@@ -1,4 +1,4 @@
-import { ExternalLink, GitMerge, GitPullRequest } from 'lucide-react'
+import { GitMerge, GitPullRequest } from 'lucide-react'
 import { type HostedReview } from '../../../../../shared/code-hosting'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,26 +26,28 @@ export function HostedReviewItem({
   onMerge?: () => void
 }) {
   return (
-    <div className="hosted-review-item flex min-w-0 flex-col gap-1">
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={disabled}
-        onClick={onOpen}
-        title={`${label} #${review.number} · ${review.title}`}
-        className="hosted-review-open group/hosted-review-item h-auto w-full min-w-0 flex-col items-stretch justify-start gap-1 px-2 py-1.5 text-left"
-      >
-        <span className="hosted-review-summary flex min-w-0 items-center gap-1.5">
+    <div
+      className="hosted-review-item flex min-w-0 flex-col gap-1.5 px-2 py-2"
+      data-disabled={disabled}
+    >
+      <div className="hosted-review-header flex min-w-0 items-start justify-between gap-2">
+        <div className="hosted-review-summary flex min-w-0 flex-wrap items-center gap-1.5">
           <GitPullRequest
             className="hosted-review-item-icon size-3.5 shrink-0 text-app-muted-foreground"
             aria-hidden="true"
           />
-          <span className="hosted-review-number shrink-0 font-mono text-app-muted-foreground">
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="hosted-review-number min-w-0 px-0 font-mono tabular-nums"
+            disabled={disabled}
+            aria-label={`在网页打开 ${label} #${review.number}`}
+            title={`在网页打开 ${label} #${review.number}`}
+            onClick={onOpen}
+          >
             #{review.number}
-          </span>
-          <span className="hosted-review-title min-w-0 flex-1 truncate font-medium">
-            {review.title}
-          </span>
+          </Button>
           <Badge variant="secondary" className="hosted-review-state shrink-0">
             {review.state === 'merged'
               ? '已合并'
@@ -55,57 +57,52 @@ export function HostedReviewItem({
                   ? '草稿'
                   : '开放'}
           </Badge>
-          <ExternalLink
-            className="hosted-review-open-icon size-3 shrink-0 text-app-muted-foreground opacity-60 transition-opacity group-hover/hosted-review-item:opacity-100"
-            aria-hidden="true"
-          />
-        </span>
-        <span className="hosted-review-meta flex min-w-0 items-center justify-between gap-2 pl-5 text-app-muted-foreground">
-          <span
-            className="hosted-review-branches min-w-0 truncate font-mono"
-            title={`${review.sourceBranch} → ${review.targetBranch}`}
-          >
-            {review.sourceBranch} → {review.targetBranch}
-          </span>
-          {review.state === 'open' ? (
-            <Badge
-              variant={review.checks === 'failure' ? 'destructive' : 'outline'}
-              className="hosted-review-checks shrink-0"
-            >
+          {review.state === 'open' && (
+            <Badge variant="secondary" className="hosted-review-checks shrink-0">
               {checkLabels[review.checks]}
             </Badge>
-          ) : (
-            <span className="hosted-review-ended shrink-0 tabular-nums">
-              {review.state === 'merged' ? '合并于' : '关闭于'}{' '}
-              {new Date(
-                review.mergedAt || review.closedAt || review.updatedAt,
-              ).toLocaleDateString()}
-            </span>
           )}
-        </span>
-      </Button>
-      {onMerge && review.state === 'open' && !review.draft && (
-        <div className="hosted-review-item-actions flex justify-end px-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            className="hosted-review-merge"
-            disabled={disabled || !review.head}
-            aria-label={`合并 ${label} #${review.number}`}
-            onClick={onMerge}
-          >
-            <GitMerge
-              className="hosted-review-merge-icon"
-              data-icon="inline-start"
-              aria-hidden="true"
-            />
-            合并
-          </Button>
         </div>
-      )}
+        <div className="hosted-review-item-actions flex h-6 shrink-0 items-center gap-1">
+          {onMerge && review.state === 'open' && !review.draft && (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              className="hosted-review-merge"
+              disabled={disabled || !review.head}
+              aria-label={`合并 ${label} #${review.number}`}
+              onClick={onMerge}
+            >
+              <GitMerge
+                className="hosted-review-merge-icon"
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+              合并
+            </Button>
+          )}
+        </div>
+      </div>
+      <div className="hosted-review-title min-w-0 truncate font-medium" title={review.title}>
+        {review.title}
+      </div>
+      <div className="hosted-review-meta flex min-w-0 items-center justify-between gap-2 text-app-muted-foreground">
+        <span
+          className="hosted-review-branches min-w-0 truncate font-mono [unicode-bidi:plaintext]"
+          title={`${review.sourceBranch} → ${review.targetBranch}`}
+        >
+          {review.sourceBranch} → {review.targetBranch}
+        </span>
+        {review.state !== 'open' && (
+          <span className="hosted-review-ended shrink-0 tabular-nums">
+            {review.state === 'merged' ? '合并于' : '关闭于'}{' '}
+            {new Date(review.mergedAt || review.closedAt || review.updatedAt).toLocaleDateString()}
+          </span>
+        )}
+      </div>
       {review.checksError && (
-        <output className="hosted-review-checks-error px-2 text-muted-foreground">
+        <output className="hosted-review-checks-error text-muted-foreground">
           {review.checksError}
         </output>
       )}

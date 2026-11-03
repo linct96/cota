@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { GitPullRequest, Plus, RefreshCw, Settings as SettingsIcon } from 'lucide-react'
+import { ArrowRight, GitPullRequest, RefreshCw } from 'lucide-react'
 import {
   unwrap,
   type ProjectWorkspace,
@@ -113,7 +113,11 @@ export function HostedReviewPanel({
           disabled={disabled || !snapshot}
           onClick={() => void openCreate()}
         >
-          <Plus className="hosted-review-create-icon" data-icon="inline-start" aria-hidden="true" />
+          <GitPullRequest
+            className="hosted-review-create-icon"
+            data-icon="inline-start"
+            aria-hidden="true"
+          />
           创建 {label}
         </Button>
         <div className="hosted-review-actions flex items-center gap-1">
@@ -134,18 +138,6 @@ export function HostedReviewPanel({
               )}
               aria-hidden="true"
             />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="hosted-review-settings"
-            aria-label="代码托管设置"
-            title="代码托管设置"
-            disabled={action}
-            onClick={() => void navigate({ to: '/settings', search: { section: 'code-hosting' } })}
-          >
-            <SettingsIcon className="hosted-review-settings-icon" aria-hidden="true" />
           </Button>
         </div>
       </nav>
@@ -337,7 +329,7 @@ export function HostedReviewPanel({
                             disabled={disabled}
                             onClick={() => void openCreate()}
                           >
-                            <Plus
+                            <GitPullRequest
                               className="hosted-review-empty-create-icon"
                               data-icon="inline-start"
                               aria-hidden="true"
@@ -361,33 +353,47 @@ export function HostedReviewPanel({
           if (!open && !action) setMerging(undefined)
         }}
       >
-        <AlertDialogContent className="hosted-review-merge-dialog" aria-busy={action}>
-          <AlertDialogHeader className="hosted-review-merge-header">
+        <AlertDialogContent
+          className="hosted-review-merge-dialog max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] overflow-y-auto"
+          aria-busy={action}
+        >
+          <AlertDialogHeader className="hosted-review-merge-header min-w-0 place-items-start text-left">
             <AlertDialogTitle className="hosted-review-merge-title">
-              合并 {merging?.input ? `#${merging.input.number}` : '评审'}？
+              合并 {label}
+              {merging ? ` #${merging.input.number}` : ''}？
             </AlertDialogTitle>
             <AlertDialogDescription className="hosted-review-merge-description">
-              将远端来源分支合并到目标分支。此操作会修改远端仓库，不包含本地未推送的修改。
+              仅合并远端已推送的提交，本地分支不变。
             </AlertDialogDescription>
           </AlertDialogHeader>
           {merging && (
-            <div className="hosted-review-merge-details flex min-w-0 flex-col gap-2">
-              <p className="hosted-review-merge-review break-words">{merging.review.title}</p>
-              <p className="hosted-review-merge-branches break-all font-mono">
-                {merging.input.sourceBranch} → {merging.input.targetBranch}
+            <div className="hosted-review-merge-details flex min-w-0 flex-col gap-2 text-xs/relaxed">
+              <p className="hosted-review-merge-review font-medium wrap-anywhere">
+                {merging.review.title}
               </p>
-              <p className="hosted-review-merge-head break-all font-mono">
-                远端提交：{merging.input.head}
+              <p
+                className="hosted-review-merge-branches flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                aria-label={`将 ${merging.input.sourceBranch} 合并到 ${merging.input.targetBranch}`}
+              >
+                <span className="hosted-review-merge-source min-w-0 break-all font-mono text-muted-foreground [unicode-bidi:plaintext]">
+                  {merging.input.sourceBranch}
+                </span>
+                <ArrowRight
+                  className="hosted-review-merge-direction size-3.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="hosted-review-merge-target min-w-0 break-all font-mono [unicode-bidi:plaintext]">
+                  {merging.input.targetBranch}
+                </span>
               </p>
               <p className="hosted-review-merge-policy text-muted-foreground">
-                GitHub 使用普通合并；GitLab 遵循项目合并规则，不主动压缩提交或删除来源分支。
-                平台仍会校验权限、审批和检查；分支自动清理由仓库设置决定。本地分支不变。
+                远端来源分支可能按仓库设置自动删除。
               </p>
             </div>
           )}
           {mergeError && (
             <Alert variant="destructive" className="hosted-review-merge-error">
-              <AlertDescription className="hosted-review-merge-error-description">
+              <AlertDescription className="hosted-review-merge-error-description whitespace-pre-wrap wrap-anywhere">
                 {mergeError}
               </AlertDescription>
             </Alert>
@@ -401,7 +407,7 @@ export function HostedReviewPanel({
               disabled={disabled || !merging || merging.target !== target || !!mergeError}
               onClick={() => void confirmMerge()}
             >
-              {action ? '合并中…' : '确认合并'}
+              {action ? '合并中' : '确认合并'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

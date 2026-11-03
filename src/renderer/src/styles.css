@@ -518,6 +518,17 @@ button:not([data-slot='button']):focus-visible {
   border-radius: var(--radius-md);
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+.hosted-review-item {
+  border-radius: var(--radius-md);
+}
+.hosted-review-item:not([data-disabled='true']):is(:hover, :focus-within) {
+  background-color: var(--background-hover);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hosted-review-item {
+    transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
 .source-control-branch-option-row:is(:hover, :focus-within, :has([data-highlighted])) {
   background: var(--accent);
   color: var(--accent-foreground);
