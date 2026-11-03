@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -18,12 +18,12 @@ export function SourceControlSectionLayout({
   defaultExpandedSize?: string
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const hasExpanded = useRef(defaultOpen)
+  const [hasExpanded, setHasExpanded] = useState(defaultOpen)
   const [panel, setPanel] = usePanelCallbackRef()
 
   function changeOpen(open: boolean) {
     if (!panel) return
-    if (open && !hasExpanded.current) panel.resize(defaultExpandedSize)
+    if (open && !hasExpanded) panel.resize(defaultExpandedSize)
     else if (open) panel.expand()
     else panel.collapse()
     setOpen(!panel.isCollapsed())
@@ -56,7 +56,7 @@ export function SourceControlSectionLayout({
         onResize={() => {
           if (panel) {
             const expanded = !panel.isCollapsed()
-            if (expanded) hasExpanded.current = true
+            if (expanded) setHasExpanded(true)
             setOpen(expanded)
           }
         }}
