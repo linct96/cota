@@ -238,6 +238,7 @@ export function useGitBranches(target: GitBranchTarget, active: boolean) {
   )
   return {
     references,
+    snapshot,
     currentBranch: target.workspaceId ? currentBranch : workspace?.currentBranch,
     refresh,
     error: workspace?.error,

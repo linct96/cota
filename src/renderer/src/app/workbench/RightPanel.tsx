@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import type { ProjectWorkspace } from '../../../../shared/contracts'
 import { useRightPanel } from '@/state/right-panel-store'
+import { useWorkspace } from '@/state/workspace'
 import { cn } from '@/lib/utils'
 import { SourceControlPanel } from '@/features/source-control/components/SourceControlPanel'
 import { FileExplorer } from '@/features/files/components/FileExplorer'
@@ -23,6 +24,19 @@ export function RightPanel({
   const open = useRightPanel((state) => state.open)
   const [panel, panelRef] = usePanelCallbackRef()
   const visible = active && open
+  const workspaces = useWorkspace((state) => state.workspaces)
+  const [visited, setVisited] = useState<string[]>([])
+  const currentGitId = gitAvailable ? workspace?.id : undefined
+  const gitWorkspaces = workspaces.filter(
+    (entry) => entry.id === currentGitId || visited.includes(entry.id),
+  )
+  const nextVisited = gitWorkspaces.map((entry) => entry.id)
+  // Retain visited views and prune removed workspaces before rendering their children.
+  if (
+    nextVisited.length !== visited.length ||
+    nextVisited.some((id, index) => id !== visited[index])
+  )
+    setVisited(nextVisited)
 
   // The parent Group registers in a layout effect, so resizing must wait until after it.
   useEffect(() => {
@@ -70,18 +84,28 @@ export function RightPanel({
           aria-label="右侧工具面板"
           inert={!visible}
         >
-          {gitAvailable && workspace && (
+          {(currentGitId || visited.length > 0) && (
             <TabsContent
               value="git"
               keepMounted
               className="right-panel-git-content flex min-h-0 flex-col overflow-hidden [&[hidden]]:hidden"
             >
-              <SourceControlPanel
-                key={workspace.id}
-                workspace={workspace}
-                active={visible}
-                selected={!filesActive}
-              />
+              {gitWorkspaces.map((entry) => (
+                <div
+                  key={`${entry.projectPath}:${entry.id}`}
+                  className={cn(
+                    'right-panel-git-workspace min-h-0 flex-1 flex-col overflow-hidden',
+                    entry.id === currentGitId ? 'flex' : 'hidden',
+                  )}
+                  inert={entry.id !== currentGitId || !visible || filesActive}
+                >
+                  <SourceControlPanel
+                    workspace={entry}
+                    active={visible && entry.id === currentGitId}
+                    selected={!filesActive && entry.id === currentGitId}
+                  />
+                </div>
+              ))}
             </TabsContent>
           )}
           <TabsContent

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { unwrap } from '../../../../../shared/contracts'
 import { type HostedReviewHistory, type HostingSnapshot } from '../../../../../shared/code-hosting'
 import { LoadingContent } from '@/components/LoadingContent'
@@ -31,7 +32,12 @@ export function HostedReviewHistoryPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<{ message: string; page: number }>()
   const load = useRef<(page: number) => Promise<void>>(async () => {})
+  const loadedSnapshot = useRef<number | undefined>(undefined)
+  const loadedPages = useRef(0)
   useEffect(() => {
+    // A hidden view may have discarded an in-flight page without clearing its loading state.
+    // oxlint-disable-next-line react/set-state-in-effect
+    setLoading(false)
     let disposed = false
     let reading = false
     async function read(page: number) {
@@ -40,24 +46,34 @@ export function HostedReviewHistoryPanel({
       setLoading(true)
       setError(undefined)
       try {
-        const next = unwrap(
+        let next = unwrap(
           await window.desktop.codeHosting.history(target, snapshot.context.key, page),
         )
-        if (!disposed)
+        // Revalidate the loaded range together so refreshing never drops pages or skips records.
+        let pages = 1
+        const items = [...next.items]
+        while (!disposed && page === 1 && pages < loadedPages.current && next.nextPage) {
+          next = unwrap(
+            await window.desktop.codeHosting.history(target, snapshot.context.key, next.nextPage),
+          )
+          items.push(...next.items)
+          pages++
+        }
+        if (!disposed) {
+          loadedSnapshot.current = snapshot.fetchedAt
+          loadedPages.current = page === 1 ? pages : loadedPages.current + 1
           setHistory((previous) => ({
             ...next,
-            items:
-              page === 1
-                ? next.items
-                : [
-                    ...new Map(
-                      [...(previous?.items || []), ...next.items].map((review) => [
-                        review.number,
-                        review,
-                      ]),
-                    ).values(),
-                  ],
+            items: [
+              ...new Map(
+                [...(page === 1 ? [] : previous?.items || []), ...items].map((review) => [
+                  review.number,
+                  review,
+                ]),
+              ).values(),
+            ],
           }))
+        }
       } catch (cause) {
         if (!disposed)
           setError({
@@ -70,7 +86,7 @@ export function HostedReviewHistoryPanel({
       }
     }
     load.current = read
-    void read(1)
+    if (loadedSnapshot.current !== snapshot.fetchedAt) void read(1)
     return () => {
       disposed = true
     }
@@ -93,10 +109,7 @@ export function HostedReviewHistoryPanel({
     >
       <div className="hosted-review-history-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3 text-xs">
         <div className="hosted-review-history-flow flex flex-col gap-2">
-          <p className="hosted-review-history-note px-2 text-muted-foreground">
-            包含同仓库、同名来源分支的已合并与已关闭记录；同名重建的分支也可能包含在内。
-          </p>
-          <LoadingContent pending={loading} label="评审历史读取中..." showLabel>
+          <LoadingContent pending={loading && !history} label="评审历史读取中..." showLabel>
             <div className="hosted-review-history-list flex flex-col gap-1">
               {history?.items.map((review) => (
                 <HostedReviewItem
@@ -124,12 +137,18 @@ export function HostedReviewHistoryPanel({
           {(error || history?.nextPage) && (
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="hosted-review-history-more self-start"
+              variant="project"
+              className="hosted-review-history-more w-full"
               disabled={loading || !active}
               onClick={() => void load.current(error?.page || history?.nextPage || 1)}
             >
+              {!error && (
+                <ChevronDown
+                  className="hosted-review-history-more-icon"
+                  data-icon="inline-start"
+                  aria-hidden="true"
+                />
+              )}
               {error ? '重试读取历史' : '加载更多'}
             </Button>
           )}

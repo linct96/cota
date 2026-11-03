@@ -132,13 +132,17 @@ export function CommitHistoryContent({
     () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
     [workspace.projectPath, workspace.id],
   )
-  const [history, setHistory] = useState<GitHistory>()
-  const [historyError, setHistoryError] = useState<string>()
   const [historyRetry, setHistoryRetry] = useState(0)
+  const historyKey = JSON.stringify([head, base, historyRetry])
+  const [historyResult, setHistoryResult] = useState<{ key: string; history: GitHistory }>()
+  const history = historyResult?.key === historyKey ? historyResult.history : undefined
+  const loadedHistoryKey = useRef<string | undefined>(undefined)
+  const [historyError, setHistoryError] = useState<string>()
   const [morePending, setMorePending] = useState(false)
   const generation = useRef(0)
   const paging = useRef<number | undefined>(undefined)
   const [detailRequest, setDetailRequest] = useState({ commit: '' })
+  const loadedDetail = useRef<typeof detailRequest | undefined>(undefined)
   const [details, setDetails] = useState<{
     request: typeof detailRequest
     comparison?: GitComparison
@@ -158,13 +162,15 @@ export function CommitHistoryContent({
     // oxlint-disable-next-line react/set-state-in-effect
     setMorePending(false)
     setHistoryError(undefined)
-    if (!active) return
-    setHistory(undefined)
+    if (!active || head === undefined || loadedHistoryKey.current === historyKey) return
     window.desktop
       .gitHistory(target, { head: head ?? undefined, base })
       .then(unwrap)
       .then((page) => {
-        if (version === generation.current) setHistory(page)
+        if (version === generation.current) {
+          loadedHistoryKey.current = historyKey
+          setHistoryResult({ key: historyKey, history: page })
+        }
       })
       .catch((error) => {
         if (version === generation.current)
@@ -173,16 +179,19 @@ export function CommitHistoryContent({
     return () => {
       currentGeneration.current++
     }
-  }, [active, head, base, historyRetry, target])
+  }, [active, head, base, historyKey, target])
 
   useEffect(() => {
-    if (!active || !commit) return
+    if (!active || !commit || loadedDetail.current === detailRequest) return
     let disposed = false
     window.desktop
       .gitCompare(target, { kind: 'commit', commit })
       .then(unwrap)
       .then((next) => {
-        if (!disposed) setDetails({ request: detailRequest, comparison: next })
+        if (!disposed) {
+          loadedDetail.current = detailRequest
+          setDetails({ request: detailRequest, comparison: next })
+        }
       })
       .catch((error) => {
         if (!disposed)
@@ -211,9 +220,12 @@ export function CommitHistoryContent({
         }),
       )
       if (version === generation.current)
-        setHistory((current) =>
-          current?.head === page.head
-            ? { ...page, commits: [...current.commits, ...page.commits] }
+        setHistoryResult((current) =>
+          current?.key === historyKey && current.history.head === page.head
+            ? {
+                key: historyKey,
+                history: { ...page, commits: [...current.history.commits, ...page.commits] },
+              }
             : current,
         )
     } catch (error) {
@@ -275,7 +287,7 @@ export function CommitHistoryContent({
           </Alert>
         )}
         <LoadingContent
-          pending={busy}
+          pending={busy && !(commit ? comparison : history)}
           label={
             commit ? '正在加载提交改动' : base ? '正在加载比较范围内的提交' : '正在加载提交历史'
           }
@@ -335,19 +347,21 @@ export function CommitHistoryContent({
 
 export function ComparisonCommits({
   workspace,
+  active,
   comparison,
   open,
   onOpenChange,
 }: {
   workspace: ProjectWorkspace
   comparison: GitComparison
+  active: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   return (
     <CommitHistoryContent
       workspace={workspace}
-      active
+      active={active}
       head={comparison.head}
       base={comparison.base ?? undefined}
       render={(history, content) => (

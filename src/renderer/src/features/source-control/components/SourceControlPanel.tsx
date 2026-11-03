@@ -42,7 +42,20 @@ export function SourceControlPanel({
     () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
     [workspace.projectPath, workspace.id],
   )
-  const { references, error: referencesError } = useGitBranches(target, active)
+  const {
+    references: currentReferences,
+    snapshot,
+    error: referencesError,
+  } = useGitBranches(target, active)
+  const [branchView, setBranchView] = useState({ references: currentReferences, snapshot })
+  // Keep the last available snapshot when the hidden view releases its subscription.
+  if (
+    currentReferences &&
+    (branchView.references !== currentReferences || branchView.snapshot !== snapshot)
+  )
+    setBranchView({ references: currentReferences, snapshot })
+  const references = currentReferences || branchView.references
+  const branchTips = snapshot?.branches || branchView.snapshot?.branches
   const [dialogError, setDialogError, errorDialog] = useDialogState<string>()
   const currentError = error || readError || referencesError
   useEffect(() => {
@@ -214,12 +227,14 @@ export function SourceControlPanel({
         </TabsContent>
         <TabsContent
           value="compare"
+          keepMounted
           className="source-control-compare-content flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
         >
           <SourceControlComparePanel
             workspace={workspace}
             active={active && selected && session.mode === 'compare'}
             references={references}
+            branchTips={branchTips}
             pending={pending}
             onCreateBranch={(name, head) =>
               mutate({ ...target, action: 'create-branch', name, head })
@@ -241,6 +256,7 @@ export function SourceControlPanel({
         </TabsContent>
         <TabsContent
           value="history"
+          keepMounted
           className="source-control-history-content flex min-h-0 flex-1 flex-col overflow-hidden [&[hidden]]:hidden"
         >
           <SourceControlHistoryPanel

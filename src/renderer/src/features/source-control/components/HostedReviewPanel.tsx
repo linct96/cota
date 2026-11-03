@@ -356,6 +356,7 @@ export function HostedReviewPanel({
       </SourceControlSectionLayout>
       <AlertDialog
         {...mergeDialog}
+        open={active && mergeDialog.open}
         onOpenChange={(open) => {
           if (!open && !action) setMerging(undefined)
         }}
@@ -409,7 +410,7 @@ export function HostedReviewPanel({
         <CreateHostedReviewDialog
           key={JSON.stringify(target)}
           target={target}
-          open
+          open={active}
           onOpenChange={(open) => {
             if (!open) setCreating(undefined)
           }}

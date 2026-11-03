@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
 import type { GitComparison, GitReferences } from '../../../../../shared/source-control'
+import type { GitBranchData } from '../../../../../shared/git-branches'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { SourceControlBranchPicker } from './SourceControlBranchPicker'
 import { HostedReviewCreateButton } from './HostedReviewCreateButton'
@@ -16,12 +17,14 @@ export function SourceControlComparePanel({
   workspace,
   active,
   references,
+  branchTips,
   pending,
   onCreateBranch,
 }: {
   workspace: ProjectWorkspace
   active: boolean
   references?: GitReferences
+  branchTips?: GitBranchData['branches']
   pending: boolean
   onCreateBranch: (name: string, head: string) => Promise<boolean>
 }) {
@@ -29,6 +32,7 @@ export function SourceControlComparePanel({
   const [result, setResult] = useState<{ key: string; comparison: GitComparison }>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
+  const loadedKey = useRef<string | undefined>(undefined)
   const target = useMemo(
     () => ({ projectPath: workspace.projectPath, workspaceId: workspace.id }),
     [workspace.projectPath, workspace.id],
@@ -49,24 +53,29 @@ export function SourceControlComparePanel({
       .sort((a, b) => b.length - a.length),
   ].find((prefix) => baseRef.startsWith(prefix))
   const defaultTargetBranch = basePrefix ? baseRef.slice(basePrefix.length) : undefined
-  const comparisonKey = `branch:${baseRef}:${head}`
-  const comparison = !error && result?.key === comparisonKey ? result.comparison : undefined
-  const comparisonRefresh = session.refreshed
+  const branchesReady = !!branchTips
+  const baseTip = branchTips?.find((branch) => branch.ref === baseRef)?.oid
+  const viewKey = JSON.stringify([baseRef, head])
+  const comparisonKey = JSON.stringify([baseRef, baseTip, head])
+  const comparison = result?.key === viewKey ? result.comparison : undefined
 
   useEffect(() => {
-    if (!active) return
-    // Clear the previous IPC request's loading/error state before starting this comparison.
+    if (!active || loadedKey.current === comparisonKey) return
+    // Only changed commit identities invalidate a comparison, not status polling.
     // oxlint-disable-next-line react/set-state-in-effect
     setError(undefined)
-    setLoading(false)
-    if (!baseRef || !head) return
+    // oxlint-disable-next-line react/set-state-in-effect
+    setLoading(Boolean(baseRef && head && branchesReady))
+    if (!baseRef || !head || !branchesReady) return
     let disposed = false
-    setLoading(true)
     window.desktop
       .gitCompare(target, { kind: 'branch', ref: baseRef })
       .then(unwrap)
       .then((next) => {
-        if (!disposed) setResult({ key: comparisonKey, comparison: next })
+        if (!disposed) {
+          loadedKey.current = comparisonKey
+          setResult({ key: viewKey, comparison: next })
+        }
       })
       .catch((error) => {
         if (!disposed) setError(error instanceof Error ? error.message : String(error))
@@ -77,7 +86,7 @@ export function SourceControlComparePanel({
     return () => {
       disposed = true
     }
-  }, [active, baseRef, head, comparisonRefresh, comparisonKey, target])
+  }, [active, baseRef, branchesReady, head, comparisonKey, viewKey, target])
 
   return (
     <section
@@ -116,11 +125,11 @@ export function SourceControlComparePanel({
       <SourceControlSectionLayout
         resizeLabel="调整分支对比与 Commit 对比区域高度"
         section={(open, onOpenChange) =>
-          comparison &&
-          active && (
+          comparison && (
             <ComparisonCommits
               key={`${workspace.id}:${baseRef}:${comparison.base}:${comparison.head}`}
               workspace={workspace}
+              active={active}
               comparison={comparison}
               open={open}
               onOpenChange={onOpenChange}
@@ -136,7 +145,7 @@ export function SourceControlComparePanel({
               </AlertDescription>
             </Alert>
           )}
-          <LoadingContent pending={loading} label="正在加载比较">
+          <LoadingContent pending={loading && !comparison} label="正在加载比较">
             {!head && (
               <p className="source-control-compare-unborn p-2 text-xs text-app-muted-foreground">
                 当前分支还没有提交，暂不能比较。
