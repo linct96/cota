@@ -108,7 +108,7 @@ export function SourceControlPanel({
   useEffect(() => () => refreshQueue.cancel(), [active, refreshQueue])
   useSourceControlWatch(target, active, refreshQueue.request)
 
-  async function mutate(input: GitMutation) {
+  async function mutate(input: GitMutation, throwOnError = false) {
     if (writing.current) return false
     writing.current = true
     setPending(true)
@@ -136,6 +136,7 @@ export function SourceControlPanel({
       return done
     } catch (error) {
       if (
+        throwOnError ||
         input.action === 'create-branch' ||
         input.action === 'create-and-switch-branch' ||
         input.action === 'delete-branch'
@@ -236,6 +237,7 @@ export function SourceControlPanel({
             references={references}
             branchTips={branchTips}
             pending={pending}
+            onFetch={(remote) => mutate({ ...target, action: 'fetch', remote }, true)}
             onCreateBranch={(name, head) =>
               mutate({ ...target, action: 'create-branch', name, head })
             }
