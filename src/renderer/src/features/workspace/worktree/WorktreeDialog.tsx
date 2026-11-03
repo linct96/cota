@@ -44,7 +44,6 @@ export function WorktreeDialog({
   const [suggestionAttempt, setSuggestionAttempt] = useState(0)
   const target = useMemo(() => ({ projectPath }), [projectPath])
   const resource = useGitBranches(target, true)
-  const refreshBranches = resource.refresh
   const branches =
     resource.references?.branches
       .filter((branch) => branch.ref.startsWith('refs/heads/'))
@@ -131,7 +130,6 @@ export function WorktreeDialog({
   const branchName = branchPrefix && branchSegment ? `${branchPrefix}/${branchSegment}` : ''
   useEffect(() => {
     let disposed = false
-    if (suggestionAttempt) refreshBranches()
     void window.desktop
       .suggestWorktreeName(projectPath)
       .then(unwrap)
@@ -147,7 +145,7 @@ export function WorktreeDialog({
     return () => {
       disposed = true
     }
-  }, [projectPath, suggestionAttempt, form, refreshBranches])
+  }, [projectPath, suggestionAttempt, form])
   useEffect(() => {
     let disposed = false
     if (!branchName || !worktreeFormSchema.safeParse({ name, baseRef }).success) return
@@ -363,6 +361,7 @@ export function WorktreeDialog({
               disabled={pending || (!!branchPrefix && !!baseRef && (!name || !branchName))}
               onClick={() => {
                 if (!branchPrefix || !baseRef) {
+                  resource.refresh()
                   setSuggestionAttempt((attempt) => attempt + 1)
                   return
                 }
