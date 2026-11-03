@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { useSearch } from '@tanstack/react-router'
 import { Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,10 +36,6 @@ export function SettingsPage() {
   const titleId = useId()
   const searchInput = useRef<HTMLInputElement>(null)
   const navRef = useRef<HTMLElement>(null)
-  const detailPane = useRef<HTMLElement>(null)
-  useLayoutEffect(() => {
-    detailPane.current?.scrollTo({ top: 0 })
-  }, [activeCategory])
 
   const filteredGroups = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -245,13 +241,12 @@ export function SettingsPage() {
       {/* 右侧：设置详情内容区 */}
       <main
         id={`${titleId}-detail`}
-        ref={detailPane}
+        key={activeCategory}
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
         aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
         <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 py-6 text-xs/relaxed">
           <LoadingContent
-            key={activeCategory}
             pending={!ready}
             label={`${activeItem?.label ?? '设置'}配置读取中...`}
             loadingHeader={

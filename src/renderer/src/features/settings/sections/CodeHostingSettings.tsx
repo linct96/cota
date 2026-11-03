@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from 'react'
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useForm, useStore } from '@tanstack/react-form'
 import { z } from 'zod'
 import { Copy, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
@@ -244,10 +244,9 @@ function CodeHostingConnectionRow({
   const [error, setError] = useState<string>()
   const lock = useRef(false)
   const alive = useRef(true)
-  const hostInput = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (adding) hostInput.current?.focus()
-  }, [adding])
+  const hostInput = useCallback((input: HTMLInputElement | null) => {
+    input?.focus()
+  }, [])
   const form = useForm({
     defaultValues: { host: '' },
     validators: { onBlur: schema, onSubmit: schema },
