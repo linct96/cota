@@ -1,14 +1,25 @@
 # Cota
 
-## Git / worktree 测试
+## 测试
 
-- 无需安装 Git：`pnpm exec vitest run tests/git-unit.test.ts tests/worktrees-unit.test.ts`，覆盖解析、表单校验、缓存、mock 托管 API 及缺少 Git 的降级行为。
-- 真实 Git 集成：`pnpm exec vitest run --project git`，使用独立临时仓库及本地 bare 远端，不访问真实托管平台。Git 测试文件逐个运行，避免大量 Git 子进程争抢资源；用例内部仍验证并发操作。
-- 本机缺少 Git 时，上述集成测试会明确提示并跳过；CI 缺少或无法执行 Git 时直接失败，不视为验证通过。各场景独立初始化，不依赖前一个测试的执行顺序。
+| 命令               | 范围                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| `pnpm test:unit`   | 纯逻辑、mock 与临时文件测试，不要求 Git、真实 PTY 或应用构建 |
+| `pnpm test:git`    | 真实 Git 集成，包括依赖 Git 的 Host 工作树和文件忽略规则测试 |
+| `pnpm test:native` | 真实 Shell、PTY、进程树、端口与构建后 Host 集成              |
+| `pnpm test`        | Vitest 按 unit → git → native 顺序执行全部非 UI 测试         |
+| `pnpm test:e2e`    | 构建后由 Playwright 驱动真实 Electron UI，仅 macOS           |
+| `pnpm test:all`    | macOS 下依次执行 Vitest 与 E2E，任一失败即停止               |
 
-## E2E 测试
+Vitest 与 Playwright 均单 worker、文件串行、零重试；用例内部针对产品并发行为的检查保留。混合测试文件按其最强外部依赖归类，避免单元测试入口隐含依赖真实工具。
 
-macOS 下运行 `pnpm test:e2e`，使用真实 Electron、Git 和 PTY 验证核心闭环。测试使用独立临时目录，不读取真实账号、不写远端。运行方式、覆盖范围及故障排查见 [E2E 测试流程](docs/e2e.md)。
+- Git 集成使用独立临时仓库及本地 bare 远端，不访问真实托管平台。本机缺少 Git 时明确提示并跳过；CI 缺少或无法执行 Git 时失败，不视为验证通过。
+- native 中的 `node-pty` 由 Electron 的 Node 模式执行，保留真实 ABI 验证；Host 测试先重新构建，再验证独立进程和会话重连。`pnpm test:pty` / `pnpm test:host` 保留为对应 Vitest 用例的快捷入口。
+- `test:all` 直接串联 `pnpm test && pnpm test:e2e`，不生成跨框架汇总报告。测试驱动集中在 `tests/native/`，Vitest 与 Playwright 保留各自的输出和报告。
+- Host 的连接、断言与清理由 `tests/native/host.test.ts` 直接管理；PTY 的原生调用通过同一测试文件内的 Electron 子进程执行，不再维护独立 smoke 脚本。
+- 发布流程设置 `COTA_TEST_PACKAGED=1` 后运行 `pnpm test:host`，复用同一用例验证 `release/` 中的实际安装包，跳过开发构建。
+
+E2E 使用独立 Home、用户目录与项目，不读取真实账号、不写远端。运行方式、覆盖范围及故障排查见 [E2E 测试流程](docs/e2e.md)。
 
 ## Cortana 账号管理
 

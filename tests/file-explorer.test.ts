@@ -17,6 +17,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileExplorerService } from '../src/main/files/file-explorer'
 import { FileExplorerWatches } from '../src/main/files/file-explorer-watch'
+import { gitAvailable } from './helpers/git'
 
 let directory: string
 let root: string
@@ -31,7 +32,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-describe('file explorer', () => {
+describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
   it('browses folders and internal symlinks without reading outside the workspace', async () => {
     const files = new FileExplorerService()
     expect(await files.list(root, '')).toEqual([])

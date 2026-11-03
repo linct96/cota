@@ -27,6 +27,7 @@ import {
   hostDirectory,
 } from '../src/main/host/host-client'
 import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
+import { gitAvailable } from './helpers/git'
 import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { Terminal } from '@xterm/xterm'
@@ -112,7 +113,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-describe('local terminal Host', () => {
+describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
   it('rejects missing credentials and incompatible protocols before granting any capability', async () => {
     await expect(client('0'.repeat(64))).rejects.toThrow('断开')
     await expect(client(token, HOST_PROTOCOL + 1)).rejects.toThrow('断开')

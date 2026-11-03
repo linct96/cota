@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
+import { execFile, type ChildProcess } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { join, resolve, relative } from 'node:path'
@@ -62,6 +62,7 @@ export const test = base.extend<{ desktop: Desktop }>({
       const rendererErrors: string[] = []
       const tracePaths: string[] = []
       let electron: ElectronApplication | undefined
+      let child: ChildProcess | undefined
       let page: Page | undefined
       let generation = 0
       let tracing = false
@@ -119,13 +120,9 @@ export const test = base.extend<{ desktop: Desktop }>({
       }
 
       async function close() {
-        if (
-          !electron ||
-          !page ||
-          electron.process().exitCode !== null ||
-          electron.process().signalCode !== null
-        )
-          return
+        if (!electron || !child || child.exitCode !== null || child.signalCode !== null) return
+        const process = child
+        const sessions = await withHost((client) => client.request('list', []))
         const shells = await withHost((client) => client.request('processRoots', []))
         await stopTracing()
         const closed = electron.waitForEvent('close', { timeout: 15_000 })
@@ -134,20 +131,15 @@ export const test = base.extend<{ desktop: Desktop }>({
         await electron.evaluate(({ app }) => {
           setImmediate(() => app.quit())
         })
-        if (shells.length) {
-          const confirmation = page.getByRole('alertdialog', { name: '退出 Cota？' })
-          await confirmation.getByRole('button', { name: '结束终端并退出' }).click()
-        }
         await closed
-        await expect
-          .poll(async () => {
-            const info = await optionalText(join(hostPath, 'runtime.json'))
-            return !info || !alive(JSON.parse(info).pid)
-          })
-          .toBe(true)
-        for (const shell of shells) await expect.poll(() => alive(shell.pid)).toBe(false)
         electron = undefined
         page = undefined
+        await expect.poll(() => process.exitCode !== null || process.signalCode !== null).toBe(true)
+        expect(
+          (await withHost((client) => client.request('list', []))).map(({ id }) => id),
+        ).toEqual(sessions.map(({ id }) => id))
+        for (const shell of shells)
+          expect(alive(shell.pid), 'normal quit preserves shells').toBe(true)
       }
 
       async function start() {
@@ -159,9 +151,10 @@ export const test = base.extend<{ desktop: Desktop }>({
           chromiumSandbox: true,
           timeout: 20_000,
         })
-        assert.equal(electron.process().spawnfile, electronPath)
-        electron.process().stdout?.on('data', (chunk) => logs.push(`[main] ${chunk}`))
-        electron.process().stderr?.on('data', (chunk) => logs.push(`[main] ${chunk}`))
+        child = electron.process()
+        assert.equal(child.spawnfile, electronPath)
+        child.stdout?.on('data', (chunk) => logs.push(`[main] ${chunk}`))
+        child.stderr?.on('data', (chunk) => logs.push(`[main] ${chunk}`))
         await electron
           .context()
           .tracing.start({ screenshots: true, snapshots: true, sources: true })
@@ -244,8 +237,12 @@ export const test = base.extend<{ desktop: Desktop }>({
         },
         close,
         async restart() {
+          const sessions = await desktop.sessions()
           await close()
           await start()
+          expect((await desktop.sessions()).map(({ id }) => id)).toEqual(
+            sessions.map(({ id }) => id),
+          )
         },
       }
 
@@ -336,7 +333,11 @@ export const test = base.extend<{ desktop: Desktop }>({
             const info = JSON.parse(text)
             assert.ok(Number.isSafeInteger(info.pid) && info.pid > 1)
             if (alive(info.pid)) {
-              await withHost((client) => client.request('shutdown', [])).catch(async () => {
+              const shells = await withHost(async (client) => {
+                const roots = await client.request('processRoots', [])
+                await client.request('shutdown', [])
+                return roots
+              }).catch(async () => {
                 const { stdout } = await exec('/bin/ps', ['-p', String(info.pid), '-o', 'command='])
                 assert.equal(
                   stdout.trim(),
@@ -344,23 +345,26 @@ export const test = base.extend<{ desktop: Desktop }>({
                   'refuse to stop an unknown Host',
                 )
                 await stopProcessTree(info.pid)
+                return []
               })
               await expect.poll(() => alive(info.pid), { timeout: 10_000 }).toBe(false)
+              for (const shell of shells) await expect.poll(() => alive(shell.pid)).toBe(false)
             }
           }
         } catch (error) {
           cleanupError ??= error
           logs.push(`Host cleanup failed: ${String(error)}\n`)
         } finally {
-          if (
-            electron &&
-            electron.process().exitCode === null &&
-            electron.process().signalCode === null
-          ) {
-            const child = electron.process()
-            const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
-            child.kill('SIGKILL')
-            await exited
+          try {
+            if (child && child.exitCode === null && child.signalCode === null) {
+              const process = child
+              const exited = new Promise<void>((resolve) => process.once('exit', () => resolve()))
+              process.kill('SIGKILL')
+              await exited
+            }
+          } catch (error) {
+            cleanupError ??= error
+            logs.push(`Electron cleanup failed: ${String(error)}\n`)
           }
         }
         if (failed || cleanupError) {

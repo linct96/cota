@@ -58,6 +58,8 @@ jobs:
           codesign --verify --deep --strict --verbose=2
           release/mac-arm64/Cota.app
       - name: Check packaged version and Host
+        env:
+          COTA_TEST_PACKAGED: '1'
         run: |
           ELECTRON_RUN_AS_NODE=1 \
             release/mac-arm64/Cota.app/Contents/MacOS/Cota -e '
@@ -69,7 +71,7 @@ jobs:
             assert.equal(app.version, process.env.VERSION)
             assert.equal(process.arch, "arm64")
           '
-          node scripts/host-smoke.cjs --packaged
+          pnpm test:host
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -111,7 +113,9 @@ jobs:
           pnpm run dist:win --publish never
           "-c.extraMetadata.version=${TAG#v}"
       - name: Check packaged Windows Host
-        run: node scripts/host-smoke.cjs --packaged
+        env:
+          COTA_TEST_PACKAGED: '1'
+        run: pnpm test:host
       - name: Publish Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
