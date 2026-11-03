@@ -179,6 +179,7 @@ beforeEach(() => {
     onWindowMaximized: vi.fn(() => vi.fn()),
     respondToConfirmation: vi.fn().mockResolvedValue({ ok: true }),
     onConfirmation: vi.fn(() => vi.fn()),
+    onExitProgress: vi.fn(() => vi.fn()),
     onShortcut: vi.fn(() => vi.fn()),
     onTerminal: vi.fn(() => vi.fn()),
     readAgentClis: vi.fn(),

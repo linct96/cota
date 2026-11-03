@@ -445,6 +445,20 @@ body:has(
 [data-slot='tooltip-content'] {
   -webkit-app-region: no-drag;
 }
+.app-exit-overlay[data-slot='dialog-content'] {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  transform: none;
+  translate: none;
+  place-content: center;
+  border-radius: 0;
+  background: var(--background);
+  box-shadow: none;
+  animation: none;
+  transition: none;
+}
 button:not(:disabled) {
   cursor: pointer;
 }

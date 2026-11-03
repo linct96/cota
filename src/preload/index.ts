@@ -3,6 +3,7 @@ import type { FileWatchEvent } from '../shared/file-explorer'
 import type {
   AgentUpdate,
   AgentSession,
+  AppExitProgress,
   ConfirmationRequest,
   DesktopAPI,
   GitWatchEvent,
@@ -278,6 +279,12 @@ const api: DesktopAPI = {
       listener(request)
     ipcRenderer.on('app:confirm', wrapped)
     return () => ipcRenderer.removeListener('app:confirm', wrapped)
+  },
+  onExitProgress: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, progress: AppExitProgress | null) =>
+      listener(progress)
+    ipcRenderer.on('app:exit-progress', wrapped)
+    return () => ipcRenderer.removeListener('app:exit-progress', wrapped)
   },
   onTerminal: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: TerminalEvent) => listener(event)

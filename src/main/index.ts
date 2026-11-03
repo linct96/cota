@@ -75,7 +75,7 @@ const appName = app.isPackaged ? 'Cota' : 'Cota Dev'
 const rendererFile = join(__dirname, '../renderer/index.html')
 const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
 const rendererURL = URL.parse(devURL || pathToFileURL(rendererFile).href)?.href.split('#')[0]
-const { handle, trusted } = createIPC(getWindow, rendererURL, () => lifecycle.startupError)
+const { handle, trusted } = createIPC(getWindow, rendererURL, lifecycle)
 
 if (!app.isPackaged) {
   const userData = join(app.getPath('appData'), appName)
@@ -175,7 +175,15 @@ if (!app.requestSingleInstanceLock()) {
       const updateMenu = () => {
         const bindings = config.snapshot().preferences.shortcuts
         desktop.setShortcuts(bindings)
-        installMenu(appName, bindings, (shortcut) => renderer.send('app:shortcut', shortcut))
+        installMenu(
+          appName,
+          bindings,
+          (shortcut) => {
+            if (!lifecycle.exitPending && !lifecycle.exiting)
+              renderer.send('app:shortcut', shortcut)
+          },
+          () => void lifecycle.requestExit(true),
+        )
       }
       const common = { handle, config, manager, worktrees, lifecycle, renderer }
       git = registerGitIPC({ ...common, sourceControl, codeHosting, commitMessages })

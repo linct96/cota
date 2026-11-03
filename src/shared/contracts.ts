@@ -434,6 +434,12 @@ export type CreateTerminal = WorkspaceTarget &
     service?: { commandId: string }
   }
 
+export interface AppExitProgress {
+  title: string
+  description: string
+  keepSessions: boolean
+}
+
 export interface ConfirmationRequest {
   id: string
   title: string
@@ -586,6 +592,7 @@ export interface DesktopAPI {
   forceExitApp(): Promise<Result<void>>
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
+  onExitProgress(listener: (progress: AppExitProgress | null) => void): () => void
   onTerminal(listener: (event: TerminalEvent) => void): () => void
   onShortcut(listener: (shortcut: Shortcut) => void): () => void
 }

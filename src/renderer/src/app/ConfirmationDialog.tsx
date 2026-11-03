@@ -30,6 +30,14 @@ export function ConfirmationDialog() {
     [],
   )
 
+  useEffect(
+    () =>
+      window.desktop.onExitProgress((progress) => {
+        if (progress) setDialog((current) => ({ ...current, open: false }))
+      }),
+    [],
+  )
+
   async function respond(confirmed: boolean) {
     if (!open || !request || responsePending.current) return
     responsePending.current = true

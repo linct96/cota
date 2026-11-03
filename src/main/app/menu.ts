@@ -6,6 +6,7 @@ export function installMenu(
   appName: string,
   bindings: ShortcutBindings,
   sendShortcut: (shortcut: Shortcut) => void,
+  stopAllAndQuit: () => void,
 ): void {
   const accelerator = (id: string) => shortcutBinding(bindings, id, process.platform) || undefined
   if (process.platform === 'darwin') {
@@ -20,7 +21,8 @@ export function installMenu(
               accelerator: accelerator('settings'),
               click: () => sendShortcut('settings'),
             },
-            { role: 'quit' },
+            { role: 'quit', label: '退出 Cota（保留终端会话）' },
+            { label: '结束全部任务并退出', click: stopAllAndQuit },
             // Hidden menu items keep application and native editing shortcuts registered.
             ...COTA_SHORTCUTS.flatMap(([id, label]) => {
               if (id === 'settings') return []
@@ -71,7 +73,8 @@ export function installMenu(
           { role: 'hideOthers' },
           { role: 'unhide' },
           { type: 'separator' },
-          { role: 'quit' },
+          { role: 'quit', label: '退出 Cota（保留终端会话）' },
+          { label: '结束全部任务并退出', click: stopAllAndQuit },
         ],
       },
       {

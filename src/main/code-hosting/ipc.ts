@@ -17,33 +17,34 @@ export function registerCodeHostingIPC(deps: {
 }): void {
   const { handle, codeHosting, worktrees, git, lifecycle, renderer } = deps
   const assertLifecycle = () => lifecycle.assertAvailable()
+  const assertReadable = () => lifecycle.assertAvailable(true)
   const readHosting = git.readHosting
   handle('code-hosting:context', (target: WorkspaceTarget) => {
-    assertLifecycle()
+    assertReadable()
     return readHosting(target, async (_cwd, context) => context)
   })
   handle('code-hosting:accounts', (provider: unknown) => {
-    assertLifecycle()
+    assertReadable()
     return codeHosting.accounts(provider)
   })
   handle('code-hosting:connection', (provider: unknown, host: unknown) => {
-    assertLifecycle()
+    assertReadable()
     return codeHosting.connection(provider, host)
   })
   handle('code-hosting:inspect', (target: WorkspaceTarget) => {
-    assertLifecycle()
+    assertReadable()
     return readHosting(target, (cwd, context) => codeHosting.inspect(cwd, context))
   })
   handle('code-hosting:creation-context', (target: WorkspaceTarget) => {
-    assertLifecycle()
+    assertReadable()
     return readHosting(target, (cwd, context) => codeHosting.creationContext(cwd, context))
   })
   handle('code-hosting:history', (target: WorkspaceTarget, key: unknown, page: unknown) => {
-    assertLifecycle()
+    assertReadable()
     return readHosting(target, (cwd, context) => codeHosting.history(cwd, key, page, context))
   })
   handle('code-hosting:prepare', (target: WorkspaceTarget, input: unknown) => {
-    assertLifecycle()
+    assertReadable()
     return readHosting(target, (cwd, context) => codeHosting.prepare(cwd, input, context))
   })
   handle('code-hosting:refresh-branches', (target: WorkspaceTarget, input: unknown) => {

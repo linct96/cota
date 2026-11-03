@@ -91,11 +91,16 @@ const mocks = vi.hoisted(() => {
     hasLive: vi.fn(),
     needsCloseConfirmation: vi.fn(),
     close: vi.fn(),
+    closeCliInstalls: vi.fn(),
     flush: vi.fn(),
     shutdown: vi.fn(),
     forceStopHost: vi.fn(),
     connectFailure: undefined as Error | undefined,
     disconnect: vi.fn(),
+    detachAll: vi.fn(),
+    buildMenu: vi.fn(
+      (template: { submenu?: { label?: string; click?: () => void }[] }[]) => template,
+    ),
     quit: vi.fn(),
     closeWorkspace: vi.fn(),
     closeProject: vi.fn(),
@@ -189,7 +194,7 @@ vi.mock('electron', () => ({
     isStarted: mocks.isBlockerStarted,
   },
   shell: { openPath: mocks.openPath, openExternal: mocks.openExternal },
-  Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
+  Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: mocks.buildMenu },
 }))
 vi.mock('../src/main/git/worktrees/manager', () => ({
   WorktreeManager: class {
@@ -282,6 +287,12 @@ vi.mock('../src/main/system/shell', async (original) => ({
   loginShellEnvironment: vi.fn().mockResolvedValue({ HOME: '/tmp/cota-hook-fixture' }),
   shellEnvironment: () => ({ HOME: '/tmp/cota-hook-fixture' }),
 }))
+vi.mock('../src/main/agents/cli/install-terminal', () => ({
+  AgentCliInstallTerminals: class {
+    close = mocks.closeCliInstalls
+    detachAll = vi.fn()
+  },
+}))
 vi.mock('../src/main/accounts/service', () => ({
   AccountService: class {
     close = vi.fn().mockResolvedValue(undefined)
@@ -311,7 +322,7 @@ vi.mock('../src/main/host/host-client', () => ({
     mocks.sendAgent = sendAgent
     return {
       disconnect: mocks.disconnect,
-      detachAll: vi.fn().mockResolvedValue(undefined),
+      detachAll: mocks.detachAll,
       request: (method: string, args: unknown[]) => {
         if (method === 'closeWorkspace') return mocks.closeWorkspace(...args)
         if (method === 'closeProject') return mocks.closeProject(...args)
@@ -343,6 +354,26 @@ const extra = {
   removeProject: false,
 }
 const remove = (value: unknown = target) => mocks.handlers.get('workspace:remove')!(event, value)
+const stopAllAndQuit = () => {
+  const template = mocks.buildMenu.mock.calls.at(-1)![0]
+  template
+    .flatMap((menu) => menu.submenu || [])
+    .find((item) => item.label === '结束全部任务并退出')!.click!()
+}
+
+async function blockHookInspectionUntilInstallStops() {
+  let finishInspection!: () => void
+  mocks.detectAgents.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishInspection = () => resolve(initialAgentCliCache.entries)
+      }),
+  )
+  // Model Codex inspection waiting for the CLI installation to leave its shared queue.
+  void mocks.handlers.get('agent:hooks-install')!(event, 'codex')
+  await vi.waitFor(() => expect(mocks.detectAgents).toHaveBeenCalledOnce())
+  mocks.closeCliInstalls.mockImplementationOnce(async () => finishInspection())
+}
 
 beforeAll(async () => {
   mocks.config.preferences = { ...DEFAULT_CONFIG.preferences, ...mocks.config.preferences }
@@ -388,8 +419,10 @@ beforeEach(() => {
   mocks.hasLive.mockResolvedValue(true)
   mocks.needsCloseConfirmation.mockResolvedValue(true)
   mocks.close.mockResolvedValue(undefined)
+  mocks.closeCliInstalls.mockReset().mockResolvedValue(undefined)
   mocks.flush.mockResolvedValue(undefined)
   mocks.shutdown.mockResolvedValue(undefined)
+  mocks.detachAll.mockReset().mockResolvedValue(undefined)
   mocks.forceStopHost.mockReset().mockResolvedValue(undefined)
   mocks.connectFailure = undefined
   mocks.openWorkspaceWith.mockResolvedValue(undefined)
@@ -1415,6 +1448,15 @@ describe('workspace removal IPC', () => {
       error: expect.stringContaining('正在删除'),
     })
     expect(mocks.create).not.toHaveBeenCalled()
+    mocks.gitStatus.mockResolvedValueOnce({ files: [] })
+    expect(await mocks.handlers.get('git:status')!(event, extra)).toEqual({
+      ok: true,
+      value: { files: [] },
+    })
+    expect(await mocks.handlers.get('git:mutate')!(event, extra)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('正在关闭'),
+    })
     expect(await create(event, extra)).toMatchObject({ ok: true })
     expect(mocks.create).toHaveBeenCalledOnce()
     finish()
@@ -1481,7 +1523,9 @@ describe('renderer confirmation IPC', () => {
     await vi.waitFor(() =>
       expect(mocks.contents.send).toHaveBeenCalledWith('app:confirm', expect.any(Object)),
     )
-    return mocks.contents.send.mock.calls.at(-1)![1] as {
+    return mocks.contents.send.mock.calls
+      .filter(([channel]) => channel === 'app:confirm')
+      .at(-1)![1] as {
       id: string
       title: string
       confirmLabel?: string
@@ -1489,6 +1533,15 @@ describe('renderer confirmation IPC', () => {
   }
 
   beforeEach(async () => {
+    vi.resetModules()
+    mocks.handlers.clear()
+    vi.stubEnv('ELECTRON_RENDERER_URL', mocks.contents.mainFrame.url)
+    try {
+      await import('../src/main/index')
+      await vi.waitFor(() => expect(mocks.handlers.has('workspace:remove')).toBe(true))
+    } finally {
+      vi.unstubAllEnvs()
+    }
     await mocks.handlers.get('app:bootstrap')!(event)
   })
 
@@ -1515,33 +1568,55 @@ describe('renderer confirmation IPC', () => {
     expect(mocks.quit).not.toHaveBeenCalled()
   })
 
-  it('uses renderer quit confirmation, guards duplicate exits and cancels safely if the renderer disappears', async () => {
-    mocks.config.preferences.confirmCloseRunningTerminal = false
+  it('quits silently after workspace cleanup, defers refreshes, and disconnects without stopping sessions', async () => {
+    await blockHookInspectionUntilInstallStops()
+    let finishRemoval!: () => void
+    let finishDetach!: () => void
+    mocks.closeWorkspace.mockReturnValueOnce(
+      new Promise<void>((resolve) => (finishRemoval = resolve)),
+    )
+    mocks.detachAll.mockReturnValueOnce(new Promise<void>((resolve) => (finishDetach = resolve)))
+    const removing = remove()
     quit()
-    const request = await prompt()
-    expect(request).toMatchObject({ title: '退出 Cota？', confirmLabel: '结束终端并退出' })
     quit()
-    expect(mocks.contents.send).toHaveBeenCalledOnce()
-    expect(mocks.confirm).not.toHaveBeenCalled()
-    expect(mocks.shutdown).not.toHaveBeenCalled()
-    expect(await mocks.handlers.get('terminal:create')!(event, target)).toMatchObject({ ok: false })
-    expect(await remove()).toEqual({ ok: true, value: false })
-    await reply(request.id, false)
+    let refreshed = false
+    void mocks.handlers.get('git:status')!(event, extra).then(() => (refreshed = true))
     await new Promise(setImmediate)
+    expect(mocks.contents.send).toHaveBeenCalledWith(
+      'app:exit-progress',
+      expect.objectContaining({ keepSessions: true, description: '正在等待工作区操作完成' }),
+    )
+    expect(refreshed).toBe(false)
+    expect(mocks.closeCliInstalls).toHaveBeenCalledOnce()
+    expect(mocks.gitStatus).not.toHaveBeenCalled()
     expect(mocks.flush).not.toHaveBeenCalled()
-    mocks.contents.send.mockClear()
-    quit()
-    const retry = await prompt()
-    expect(retry.id).not.toBe(request.id)
-    mocks.rendererEvents.get('render-process-gone')!()
-    await new Promise(setImmediate)
-    expect(await reply(retry.id, true)).toMatchObject({ ok: false })
-    expect(mocks.shutdown).not.toHaveBeenCalled()
     expect(mocks.quit).not.toHaveBeenCalled()
+    expect(await mocks.handlers.get('git:status')!({ ...event, sender: {} }, extra)).toMatchObject({
+      ok: false,
+      error: '拒绝未授权的窗口请求。',
+    })
+    finishRemoval()
+    expect(await removing).toEqual({ ok: true, value: true })
+    await vi.waitFor(() => expect(mocks.detachAll).toHaveBeenCalledOnce())
+    expect(mocks.quit).not.toHaveBeenCalled()
+    finishDetach()
+    await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
+    expect(mocks.disconnect).toHaveBeenCalledOnce()
+    expect(mocks.flush.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.detachAll.mock.invocationCallOrder[0],
+    )
+    expect(mocks.flush.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mocks.disconnect.mock.invocationCallOrder[0],
+    )
+    expect(mocks.shutdown).not.toHaveBeenCalled()
+    expect(mocks.forceStopHost).not.toHaveBeenCalled()
+    expect(mocks.confirm).not.toHaveBeenCalled()
+    expect(mocks.contents.send).not.toHaveBeenCalledWith('app:confirm', expect.anything())
+    expect(refreshed).toBe(false)
   })
 
   it.each(['did-start-navigation', 'render-process-gone', 'destroyed'])(
-    'uses native quit confirmation after %s, prevents duplicate exits and permits retry after cancellation',
+    'uses native stop-all confirmation after %s and resumes deferred refreshes after cancellation',
     async (name) => {
       mocks.rendererEvents.get(name)!(
         name === 'did-start-navigation' ? { isMainFrame: true, isSameDocument: false } : undefined,
@@ -1553,12 +1628,12 @@ describe('renderer confirmation IPC', () => {
             cancel = resolve
           }),
       )
-      quit()
+      stopAllAndQuit()
       await vi.waitFor(() =>
         expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
           expect.objectContaining({
             type: 'warning',
-            buttons: ['取消', '结束终端并退出'],
+            buttons: ['取消', '结束任务并退出'],
             defaultId: 0,
             cancelId: 0,
           }),
@@ -1568,16 +1643,19 @@ describe('renderer confirmation IPC', () => {
       expect(mocks.confirm).toHaveBeenCalledOnce()
       expect(mocks.contents.send).not.toHaveBeenCalledWith('app:confirm', expect.anything())
       expect(mocks.shutdown).not.toHaveBeenCalled()
-      expect(await mocks.handlers.get('terminal:create')!(event, target)).toMatchObject({
-        ok: false,
-      })
-      expect(await remove()).toEqual({ ok: true, value: false })
+      mocks.gitStatus.mockResolvedValueOnce({ files: [] })
+      let refreshed = false
+      const refresh = mocks.handlers.get('git:status')!(event, extra)
+      void refresh.then(() => (refreshed = true))
+      await new Promise(setImmediate)
+      expect(refreshed).toBe(false)
       cancel({ response: 0 })
+      expect(await refresh).toEqual({ ok: true, value: { files: [] } })
       await new Promise(setImmediate)
       expect(mocks.flush).not.toHaveBeenCalled()
       expect(mocks.quit).not.toHaveBeenCalled()
       mocks.confirm.mockResolvedValueOnce({ response: 0 })
-      quit()
+      stopAllAndQuit()
       await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2))
       await new Promise(setImmediate)
       expect(mocks.shutdown).not.toHaveBeenCalled()
@@ -1667,14 +1745,18 @@ describe('renderer confirmation IPC', () => {
 
   it('preserves the application after failed cleanup, then flushes and shuts down only after confirmation', async () => {
     mocks.shutdown.mockRejectedValueOnce(new Error('cleanup failed'))
-    quit()
+    stopAllAndQuit()
     const request = await prompt()
+    expect(request).toMatchObject({
+      title: '结束全部任务并退出 Cota？',
+      confirmLabel: '结束任务并退出',
+    })
     mocks.contents.send.mockClear()
     await reply(request.id, true)
     const failure = await prompt()
     expect(failure).toMatchObject({
       title: '退出失败',
-      description: '终端清理失败，应用暂未退出。\nError: cleanup failed',
+      description: '退出清理失败，应用暂未退出。\nError: cleanup failed',
     })
     expect(failure.confirmLabel).toBeUndefined()
     expect(mocks.confirm).not.toHaveBeenCalled()
@@ -1683,10 +1765,10 @@ describe('renderer confirmation IPC', () => {
     await reply(failure.id, false)
     await new Promise(setImmediate)
     mocks.contents.send.mockClear()
-    quit()
+    stopAllAndQuit()
     await reply((await prompt()).id, true)
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
-    expect(mocks.flush.mock.invocationCallOrder.at(-1)).toBeLessThan(
+    expect(mocks.flush.mock.invocationCallOrder.at(-2)).toBeLessThan(
       mocks.shutdown.mock.invocationCallOrder.at(-1)!,
     )
     expect(mocks.shutdown.mock.invocationCallOrder.at(-1)).toBeLessThan(
@@ -1733,6 +1815,7 @@ describe('error recovery force exit', () => {
       expect(mocks.forceStopHost).not.toHaveBeenCalled()
       expect(mocks.exit).not.toHaveBeenCalled()
 
+      await blockHookInspectionUntilInstallStops()
       mocks.confirm.mockResolvedValue({ response: 1 })
       if (outcome === 'failure') {
         mocks.flush.mockRejectedValueOnce(new Error('save failed'))
@@ -1754,6 +1837,7 @@ describe('error recovery force exit', () => {
               }),
           )
           const closing = forceExit()
+          await vi.waitFor(() => expect(mocks.forceStopHost).toHaveBeenCalledOnce())
           await vi.advanceTimersByTimeAsync(5001)
           expect(mocks.exit).not.toHaveBeenCalled()
           expect(mocks.disconnect).not.toHaveBeenCalled()
@@ -1809,9 +1893,8 @@ describe('error recovery force exit', () => {
       expect(mocks.confirm).not.toHaveBeenCalled()
 
       const preventDefault = vi.fn()
-      mocks.appEvents.get('before-quit')!({ preventDefault })
+      stopAllAndQuit()
       await new Promise(setImmediate)
-      expect(preventDefault).toHaveBeenCalledOnce()
       expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ buttons: ['取消', '强制关闭'] }),
       )

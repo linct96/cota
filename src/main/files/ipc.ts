@@ -22,7 +22,7 @@ export function registerFilesIPC(deps: {
     undefined,
     () => config.snapshot().preferences.fileExplorer,
   )
-  const assertLifecycle = () => lifecycle.assertAvailable()
+  const assertLifecycle = () => lifecycle.assertAvailable(true)
   handle('files:list', (target: WorkspaceTarget, path: unknown) => {
     assertLifecycle()
     return worktrees.withTerminalTarget(target, (binding) => files.list(binding.cwd, path))

@@ -4,6 +4,7 @@ import type { ConfirmationRequest } from '../../shared/contracts'
 
 export class AppRenderer {
   ready = false
+  quitting = false
   visibleTerminal: string | undefined
   pendingAgentFocus: { terminalId: string; launchId: string } | undefined
   private pendingConfirmation: { id: string; resolve(confirmed: boolean): void } | undefined
@@ -21,7 +22,7 @@ export class AppRenderer {
 
   warn(message: string): void {
     console.warn(message)
-    if (this.ready) this.send('app:warning', message)
+    if (this.ready && !this.quitting) this.send('app:warning', message)
   }
 
   sendAgentFocus(): void {
@@ -46,7 +47,13 @@ export class AppRenderer {
 
   confirm(request: Omit<ConfirmationRequest, 'id'>): Promise<boolean> {
     const window = this.getWindow()
-    if (!this.ready || !window || window.webContents.isDestroyed() || this.pendingConfirmation)
+    if (
+      this.quitting ||
+      !this.ready ||
+      !window ||
+      window.webContents.isDestroyed() ||
+      this.pendingConfirmation
+    )
       return Promise.resolve(false)
     const id = randomUUID()
     return new Promise<boolean>((resolve) => {

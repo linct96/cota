@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { RouterProvider } from '@tanstack/react-router'
 import { createAppRouter } from './app/router'
 import { ConfirmationDialog } from './app/ConfirmationDialog'
+import { ExitOverlay } from './app/ExitOverlay'
 import { Toaster } from './components/ui/sonner'
 import './styles.css'
 import { useWorkspace } from './state/workspace'
@@ -76,6 +77,7 @@ createRoot(document.getElementById('root')!).render(
   <>
     {/* Confirmation stays available when a route error replaces the application. */}
     <ConfirmationDialog />
+    <ExitOverlay />
     <Toaster
       closeButton
       containerAriaLabel="操作结果提示"

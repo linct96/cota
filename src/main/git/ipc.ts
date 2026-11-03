@@ -43,6 +43,7 @@ export function registerGitIPC(deps: {
     renderer,
   } = deps
   const assertLifecycle = () => lifecycle.assertAvailable()
+  const assertReadable = () => lifecycle.assertAvailable(true)
   let hostingGeneration = 0
   const sourceControlWatches = new SourceControlWatches(undefined, (_cwd, changes, commonDir) =>
     branches.invalidateRepository(commonDir, changes),
@@ -154,7 +155,7 @@ export function registerGitIPC(deps: {
   }
 
   handle('git:status', (target: WorkspaceTarget) => {
-    assertLifecycle()
+    assertReadable()
     return worktrees.withTerminalTarget(target, (binding) =>
       sourceControl.status(binding.cwd, true),
     )
@@ -191,7 +192,7 @@ export function registerGitIPC(deps: {
     )
   })
   handle('git:watch', (target: WorkspaceTarget, id: unknown) => {
-    assertLifecycle()
+    assertReadable()
     return sourceControlWatches.start(
       id,
       () => worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
@@ -202,26 +203,26 @@ export function registerGitIPC(deps: {
   handle(
     'git:branch-snapshot',
     (value: GitBranchTarget, subscriptionId: unknown, force = false) => {
-      assertLifecycle()
+      assertReadable()
       if (typeof force !== 'boolean') throw new Error('分支刷新参数无效。')
       return readBranches(branchTarget(value), terminalId(subscriptionId), force)
     },
   )
   handle('git:release-branches', (id: unknown) => branches.release(terminalId(id)))
   handle('git:history', (target: WorkspaceTarget, request?: GitHistoryRequest) => {
-    assertLifecycle()
+    assertReadable()
     return worktrees.withTerminalTarget(target, (binding) =>
       sourceControl.history(binding.cwd, request),
     )
   })
   handle('git:compare', (target: WorkspaceTarget, request: GitCompareRequest) => {
-    assertLifecycle()
+    assertReadable()
     return worktrees.withTerminalTarget(target, (binding) =>
       sourceControl.compare(binding.cwd, request),
     )
   })
   handle('git:diff', (target: WorkspaceTarget, file: GitDiffSelection) => {
-    assertLifecycle()
+    assertReadable()
     return worktrees.withTerminalTarget(target, (binding) => sourceControl.diff(binding.cwd, file))
   })
   handle('git:mutate', (input: GitMutation) => {

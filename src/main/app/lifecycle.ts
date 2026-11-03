@@ -1,4 +1,5 @@
 import { app, dialog, type BrowserWindow } from 'electron'
+import type { AppExitProgress } from '../../shared/contracts'
 import type { ConfigStore } from '../settings/config-store'
 import type { AccountService } from '../accounts/service'
 import type { WorktreeManager } from '../git/worktrees/manager'
@@ -17,6 +18,8 @@ export class AppLifecycle {
   exitPending = false
   removingWorkspace: RemovalTarget | undefined
   readonly closingTabs = new Set<string>()
+  private readonly operations = new Set<Promise<unknown>>()
+  private readonly exitWaiters = new Set<() => void>()
 
   constructor(
     private readonly dependencies: {
@@ -34,14 +37,48 @@ export class AppLifecycle {
     },
   ) {}
 
-  assertAvailable(): void {
+  assertAvailable(readOnly = false): void {
+    // Reads already serialize and revalidate through the repository gate, not the global removal lock.
     if (
-      this.removingWorkspace ||
-      this.dependencies.getWorktrees()?.removing ||
+      (!readOnly && (this.removingWorkspace || this.dependencies.getWorktrees()?.removing)) ||
       this.exitPending ||
       this.exiting
     )
       throw new Error('正在关闭或移除工作区，请稍后重试。')
+  }
+
+  async trackOperation<T>(action: () => Promise<T> | T): Promise<T> {
+    const operation = Promise.resolve(action())
+    this.operations.add(operation)
+    try {
+      return await operation
+    } finally {
+      this.operations.delete(operation)
+    }
+  }
+
+  async waitForExit(): Promise<void> {
+    // Successful quit never resumes renderer requests; a cancelled or failed quit does.
+    while (this.exitPending || this.exiting)
+      await new Promise<void>((resolve) => this.exitWaiters.add(resolve))
+  }
+
+  private progress(description: string, keepSessions: boolean): void {
+    this.dependencies.renderer.quitting = true
+    this.dependencies.renderer.send('app:exit-progress', {
+      title: keepSessions ? '正在退出 Cota' : '正在结束任务并退出',
+      description,
+      keepSessions,
+    } satisfies AppExitProgress)
+  }
+
+  private finishExit(): void {
+    this.exitPending = false
+    if (this.exiting) return
+    this.dependencies.renderer.quitting = false
+    this.dependencies.renderer.send('app:exit-progress', null)
+    for (const resolve of this.exitWaiters) resolve()
+    this.exitWaiters.clear()
   }
 
   async requestForceExit(): Promise<void> {
@@ -62,7 +99,7 @@ export class AppLifecycle {
       })
       response = result.response
     } finally {
-      this.exitPending = false
+      this.finishExit()
     }
     if (response === 1) await this.forceExit()
   }
@@ -73,7 +110,12 @@ export class AppLifecycle {
     const deps = this.dependencies
     try {
       deps.renderer.settleConfirmation(false)
+      this.progress('正在停止 CLI 安装与更新', false)
+      // Hooks inspection can be queued behind an install; stop it before waiting for operations.
       await deps.cliInstallTerminals?.close()
+      this.progress('正在等待工作区操作完成', false)
+      await Promise.allSettled([...this.operations])
+      this.progress('正在停止后台任务', false)
       await deps.getWorktreeSetups()?.close()
       await deps.getConfig()?.flush()
       deps.closeResources()
@@ -85,41 +127,29 @@ export class AppLifecycle {
       this.exiting = true
       app.exit(0)
     } finally {
-      this.exitPending = false
+      this.finishExit()
     }
   }
 
-  async requestExit(): Promise<void> {
+  async requestExit(stopSessions = false): Promise<void> {
     const deps = this.dependencies
-    if (
-      this.exitPending ||
-      this.exiting ||
-      this.closingTabs.size ||
-      this.removingWorkspace ||
-      deps.getWorktrees()?.removing
-    )
+    if (this.exitPending || this.exiting) return
+    if (stopSessions && this.startupError) {
+      await this.requestForceExit()
       return
+    }
+    this.exitPending = true
     try {
-      if (this.startupError) {
-        await this.requestForceExit()
-        return
-      }
-      this.exitPending = true
-      const worktreeSetups = deps.getWorktreeSetups()!
-      const manager = deps.getManager()!
+      const manager = deps.getManager()
       const window = deps.getWindow()
-      if (
-        deps.cliInstallTerminals?.running ||
-        worktreeSetups.running ||
-        (await manager.request('hasLive', []))
-      ) {
-        const title = '退出 Cota？'
-        const description = '退出将结束所有终端及运行中的程序，项目设置将会保留。'
-        const confirmLabel = '结束终端并退出'
+      if (stopSessions) {
+        const title = '结束全部任务并退出 Cota？'
+        const description =
+          '将结束所有终端及运行中的程序，终端输出不保留，未保存的内容可能丢失。普通退出会保留终端会话。'
+        const confirmLabel = '结束任务并退出'
         if (deps.renderer.ready && window && !window.webContents.isDestroyed()) {
           if (!(await deps.renderer.confirm({ title, description, confirmLabel }))) return
         } else {
-          // Keep exit available when the renderer cannot display the shadcn dialog.
           const { response } = await dialog.showMessageBox({
             type: 'warning',
             title,
@@ -133,36 +163,54 @@ export class AppLifecycle {
           if (response !== 1) return
         }
       }
+      deps.renderer.settleConfirmation(false)
+      this.progress('正在停止 CLI 安装与更新', !stopSessions)
+      // Hooks inspection can be queued behind an install; stop it before waiting for operations.
       await deps.cliInstallTerminals?.close()
-      await worktreeSetups.close()
-      await deps.getConfig()!.flush()
-      await manager.request('shutdown', [])
+      this.progress('正在等待工作区操作完成', !stopSessions)
+      await Promise.allSettled([...this.operations])
+      this.progress('正在清理界面后台任务', !stopSessions)
+      await deps.getWorktreeSetups()?.close()
       await deps.commitMessages.close()
-      manager.disconnect()
+      this.progress('正在保存设置与工作区布局', !stopSessions)
+      await deps.getConfig()?.flush()
+      if (stopSessions) {
+        this.progress('正在依次结束终端和程序', false)
+        await manager?.request('shutdown', [])
+      }
       deps.closeResources()
-      await deps.getAccounts()!.close()
+      await deps.getAccounts()?.close()
+      await deps.getConfig()?.flush()
+      if (!stopSessions) {
+        this.progress('正在断开界面连接，终端任务继续运行', true)
+        // Closing the socket also detaches on the Host, even if its acknowledgement is lost.
+        await manager?.detachAll().catch((error) => console.warn('终端视图断开失败', error))
+      }
+      manager?.disconnect()
       deps.agentSleep.dispose()
       this.exiting = true
       app.quit()
     } catch (error) {
+      deps.renderer.quitting = false
+      deps.renderer.send('app:exit-progress', null)
       const window = deps.getWindow()
       if (deps.renderer.ready && window && !window.webContents.isDestroyed()) {
         await deps.renderer.confirm({
           title: '退出失败',
-          description: `终端清理失败，应用暂未退出。\n${String(error)}`,
+          description: `退出清理失败，应用暂未退出。\n${String(error)}`,
         })
       } else {
         await dialog.showMessageBox({
           type: 'error',
           title: '退出失败',
-          message: '终端清理失败，应用暂未退出。',
+          message: '退出清理失败，应用暂未退出。',
           detail: String(error),
           buttons: ['知道了'],
           noLink: true,
         })
       }
     } finally {
-      this.exitPending = false
+      this.finishExit()
     }
   }
 }
