@@ -56,6 +56,59 @@ if [[ -n "\${COTA_STARTUP_COMMAND-}" ]]; then
 fi
 `
 
+// Defer history until Bash loads HISTFILE, but keep foreground jobs out of PROMPT_COMMAND.
+const bashStartupCommand = `
+if [[ "\${COTA_SERVICE-}" != 1 && -t 0 ]]; then
+  __cota_startup_history="$COTA_STARTUP_COMMAND"
+  __cota_record_startup_command() {
+    if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == 'declare -a '* ]]; then
+      local __cota_hook
+      local -a __cota_hooks=()
+      for __cota_hook in "\${PROMPT_COMMAND[@]}"; do
+        [[ "$__cota_hook" == __cota_record_startup_command ]] || __cota_hooks+=("$__cota_hook")
+      done
+      PROMPT_COMMAND=("\${__cota_hooks[@]}")
+    else
+      PROMPT_COMMAND="\${PROMPT_COMMAND%__cota_record_startup_command}"
+    fi
+    unset -f __cota_record_startup_command
+    builtin history -s "$__cota_startup_history" 2>/dev/null || true
+    unset __cota_startup_history
+  }
+  if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == 'declare -a '* ]]; then
+    PROMPT_COMMAND+=(__cota_record_startup_command)
+  else
+    PROMPT_COMMAND="\${PROMPT_COMMAND:+$PROMPT_COMMAND$'\\n'}__cota_record_startup_command"
+  fi
+fi
+${shellStartupCommand}
+`
+
+const zshStartupCommand = `
+if [[ "\${COTA_SERVICE-}" = 1 || ! -o zle || ! -t 0 ]]; then
+${shellStartupCommand}
+else
+  if [[ "\${widgets[zle-line-init]-}" != user:__cota_startup_line_init ]]; then
+    __cota_previous_line_init=""
+    if [[ "\${widgets[zle-line-init]-}" == user:* ]]; then
+      __cota_previous_line_init="\${widgets[zle-line-init]#user:}"
+    fi
+  fi
+  __cota_startup_line_init() {
+    if [[ -n "$__cota_previous_line_init" ]]; then
+      "$__cota_previous_line_init" "$@"
+    fi
+    if (( \${+COTA_STARTUP_COMMAND} )); then
+      BUFFER="$COTA_STARTUP_COMMAND"
+      CURSOR=\${#BUFFER}
+      unset COTA_STARTUP_COMMAND
+      zle accept-line
+    fi
+  }
+  zle -N zle-line-init __cota_startup_line_init
+fi
+`
+
 const fishStartupCommand = `
 if set -q COTA_STARTUP_COMMAND
   set -l __cota_startup_command "$COTA_STARTUP_COMMAND"
@@ -143,7 +196,8 @@ Remove-Variable cotaCommand -ErrorAction SilentlyContinue
     ? shellActivityScripts[name as 'bash' | 'zsh' | 'fish']
     : ''
   // Native startup scripts run commands after user initialization, without racing PTY input.
-  const startup = startupCommand === undefined ? '' : shellStartupCommand
+  const startup =
+    startupCommand === undefined ? '' : name === 'zsh' ? zshStartupCommand : bashStartupCommand
   if (name === 'fish')
     return [
       '-il',

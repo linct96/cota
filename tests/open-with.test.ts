@@ -233,8 +233,19 @@ child.write(input)
     const run = promisify(
       (await vi.importActual<typeof import('node:child_process')>('node:child_process')).execFile,
     )
-    await writeFile(join(root, '.bash_profile'), 'export COTA_TEST_PROFILE=ready\n')
+    await writeFile(
+      join(root, '.bash_profile'),
+      'export COTA_TEST_PROFILE=ready\nPS1="COTA_PROMPT> "\n',
+    )
     await writeFile(join(root, '.zprofile'), 'export COTA_TEST_PROFILE=ready\n')
+    await writeFile(
+      join(root, '.zshrc'),
+      `PS1='COTA_PROMPT> '
+HISTFILE="$HOME/history"; HISTSIZE=100; SAVEHIST=100
+__cota_test_line_init() { printf 'called\\n' >> "$HOME/line-init"; }
+zle -N zle-line-init __cota_test_line_init
+`,
+    )
     await mkdir(join(root, 'config', 'fish'), { recursive: true })
     await writeFile(
       join(root, 'config', 'fish', 'config.fish'),
@@ -271,6 +282,66 @@ child.write(input)
       )
       expect(await readdir(root)).not.toContain('nope')
       await rm(join(root, 'startup output'))
+      if (name !== 'fish') {
+        const require = createRequire(import.meta.url)
+        const ptyEnv = {
+          ...env,
+          ZDOTDIR: root,
+          HISTFILE: join(root, 'history'),
+          TERM: 'xterm-256color',
+          COTA_SHELL_ACTIVITY: 'a'.repeat(64),
+        }
+        await writeFile(ptyEnv.HISTFILE, 'echo COTA_OLDER_COMMAND\n')
+        const ptyArgs = await prepareAgentShell(
+          shell,
+          ptyEnv,
+          join(root, 'runtime'),
+          `${command}\nsh -c 'printf "COTA_%s\\n" RUNNING; exec sleep 30'`,
+        )
+        const driver = `
+const { shell, args, env, cwd } = JSON.parse(process.argv[1])
+const child = require(${JSON.stringify(require.resolve('node-pty'))}).spawn(shell, args, { env, cwd, cols: 91, rows: 31 })
+let stage = 0, output = ''
+const timer = setTimeout(() => child.kill('SIGKILL'), 4000)
+child.onData((data) => {
+  process.stdout.write(data)
+  output += data
+  if ((stage === 0 || stage === 2) && output.includes('COTA_RUNNING')) {
+    stage++
+    output = ''
+    child.write('\\x03')
+  } else if ((stage === 1 || stage === 3) && output.includes('COTA_PROMPT> ')) {
+    stage++
+    output = ''
+    // Prompt hooks precede readline/ZLE; let the editor start before sending keys.
+    setTimeout(() => child.write(stage === 2 ? '\\x1b[A\\r' : ${JSON.stringify('printf \'COTA_CLEAN:%s\\n\' "${COTA_STARTUP_COMMAND-unset}"; exit\r')}), 30)
+  }
+})
+child.onExit(({ exitCode, signal }) => {
+  clearTimeout(timer)
+  process.stdout.write('COTA_DRIVER_STAGE:' + stage)
+  process.exitCode = signal ? 1 : exitCode
+})
+process.on('SIGTERM', () => { child.kill(); process.exit(1) })
+`
+        const { stdout: ptyOutput } = await run(
+          require('electron'),
+          ['-e', driver, JSON.stringify({ shell, args: ptyArgs, env: ptyEnv, cwd: root })],
+          { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, cwd: root, timeout: 5000 },
+        ).catch((error) => {
+          throw new Error(`${name}: ${error.message}\n${error.stdout}\n${error.stderr}`)
+        })
+        expect(ptyOutput, name).toContain('COTA_DRIVER_STAGE:4')
+        expect(ptyOutput, name).toContain('COTA_CLEAN:unset')
+        expect(await readFile(join(root, 'startup output'), 'utf8'), name).toBe(
+          'ready\n中文 ; $(touch nope)\ndone\n'.repeat(2),
+        )
+        if (name === 'zsh')
+          expect(
+            (await readFile(join(root, 'line-init'), 'utf8')).trim().split('\n').length,
+          ).toBeGreaterThanOrEqual(3)
+        await rm(join(root, 'startup output'))
+      }
       for (const fails of [false, true]) {
         const serviceEnv = { ...env, ZDOTDIR: root, COTA_SERVICE: '1', PORT: '32123' }
         const serviceArgs = await prepareAgentShell(
