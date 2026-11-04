@@ -3296,6 +3296,119 @@ describe('workspace state', () => {
     expect(api.closeWindow).not.toHaveBeenCalled()
   })
 
+  it('prioritizes unread indicators only when activating a split terminal tab', async () => {
+    const store = () => useWorkspace.getState()
+    await store().openProject()
+    const a = store().tabs[0]
+    store().updateTab(a.id, { status: 'running' })
+    store().splitTerminal(a.id)
+    const b = store().tabs[1]
+    store().splitTerminal(a.id, 'vertical')
+    const c = store().tabs[2]
+    const layout = store().terminalLayouts[0]
+    const outside = store().newTerminal()!
+    const key = `terminal:${layout.id}`
+    const agent: NonNullable<TerminalTab['agent']> = {
+      terminalId: a.id,
+      projectPath: a.projectPath,
+      workspaceId: a.workspaceId,
+      cwd: a.cwd!,
+      revision: 1,
+      unread: true,
+      launchId: crypto.randomUUID(),
+      provider: 'codex',
+      runtimeState: 'running',
+      activityState: 'working',
+      startedAt: new Date().toISOString(),
+      lastEventAt: new Date().toISOString(),
+      eventSource: 'process',
+      observability: 'unavailable',
+    }
+    const working = { agent }
+    const needsInput = { agent: { ...agent, activityState: 'needs-input' as const } }
+    const completed = { shellActivity: 'idle' as const, shellUnread: true }
+    const succeeded = {
+      agent: { ...agent, activityState: 'completed' as const, outcome: 'success' as const },
+    }
+    const failed = {
+      agent: { ...agent, activityState: 'failed' as const, outcome: 'failure' as const },
+    }
+    const error = { ...working, status: 'error' as const }
+    const running = { shellActivity: 'running' as const }
+    expect(terminalPaneIds(layout.root)).toEqual([a.id, c.id, b.id])
+    const cases: [string, Partial<TerminalTab>[], string, string][] = [
+      ['error before failure', [failed, error, succeeded], a.id, b.id],
+      ['failure before success', [succeeded, failed, completed], a.id, b.id],
+      ['success before completion', [completed, succeeded, needsInput], a.id, b.id],
+      ['completion before input', [needsInput, completed, working], a.id, b.id],
+      ['input before working', [working, needsInput, running], a.id, b.id],
+      ['same state keeps focus', [completed, completed, completed], b.id, b.id],
+      ['same state uses layout order', [working, completed, completed], a.id, c.id],
+      [
+        'read success is skipped',
+        [{ agent: { ...succeeded.agent, unread: false } }, needsInput, working],
+        a.id,
+        b.id,
+      ],
+      [
+        'read failure is skipped',
+        [{ agent: { ...failed.agent, unread: false } }, needsInput, working],
+        a.id,
+        b.id,
+      ],
+      ['read error is skipped', [{ ...error, errorRead: true }, needsInput, working], a.id, b.id],
+      [
+        'read shell completion is skipped',
+        [{ ...completed, shellUnread: false }, needsInput, working],
+        a.id,
+        b.id,
+      ],
+      [
+        'closing pane is skipped',
+        [{ ...error, closingStatus: 'running' }, needsInput, working],
+        a.id,
+        b.id,
+      ],
+      ['working does not override focus', [working, running, {}], c.id, c.id],
+      [
+        'interrupted does not override focus',
+        [{ agent: { ...agent, activityState: 'interrupted' } }, running, {}],
+        c.id,
+        c.id,
+      ],
+      ['missing focus uses first pane', [{}, {}, {}], 'removed', a.id],
+      ['missing focus still prioritizes status', [{}, needsInput, {}], 'removed', b.id],
+    ]
+    for (const [name, patches, focused, expected] of cases) {
+      useWorkspace.setState({
+        tabs: [a, b, c]
+          .map((tab, index): TerminalTab => ({
+            ...tab,
+            status: 'running',
+            ...patches[index],
+            ...(patches[index].agent
+              ? { agent: { ...patches[index].agent, terminalId: tab.id } }
+              : {}),
+          }))
+          .concat({ ...a, id: outside, status: 'running' }),
+        terminalLayouts: [{ ...layout, activePaneId: focused }],
+      })
+      store().selectTab(outside)
+      store().selectWorkspaceTab(a.workspaceId, key)
+      expect(store().activeTabs[a.workspaceId], name).toBe(expected)
+      expect(store().terminalLayouts[0].activePaneId, name).toBe(expected)
+    }
+
+    store().selectTab(a.id)
+    store().selectWorkspaceTab(a.workspaceId, key)
+    expect(store().activeTabs[a.workspaceId]).toBe(a.id)
+    useSourceControl.getState().openChanges(a.workspaceId)
+    store().selectWorkspaceTab(a.workspaceId, key)
+    expect(store().activeTabs[a.workspaceId]).toBe(b.id)
+    store().selectTab(a.id)
+    expect(store().activeTabs[a.workspaceId]).toBe(a.id)
+  })
+
   it('respects close cancellation and chooses a surviving tab after confirmation', async () => {
     await useWorkspace.getState().openProject()
     useWorkspace.getState().newTerminal()

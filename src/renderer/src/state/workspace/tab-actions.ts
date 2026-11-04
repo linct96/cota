@@ -3,6 +3,10 @@ import { useRightPanel } from '../right-panel-store'
 import { gitFileKey } from '../../../../shared/source-control'
 import { terminalPaneIds, type TerminalPane } from '../../../../shared/terminal-layout'
 import { MAX_TERMINALS } from '../../../../shared/contracts'
+import {
+  terminalIndicatorState,
+  workspaceTerminalSummary,
+} from '../../features/agents/lib/agent-status'
 import type { StateCreator } from 'zustand'
 import type { WorkspaceState } from './types'
 import { currentWorkspace, terminalTabId, terminalTabs } from './selectors'
@@ -145,13 +149,24 @@ export const createTabActions: StateCreator<
         const id = key.slice('terminal:'.length)
         const group = get().terminalLayouts.find((group) => group.id === id)
         const panes = group
-          ? terminalPaneIds(group.root).filter((paneId) =>
-              get().tabs.some((tab) => tab.id === paneId),
-            )
+          ? terminalPaneIds(group.root).flatMap((paneId) => {
+              const tab = get().tabs.find((tab) => tab.id === paneId)
+              return tab ? [tab] : []
+            })
           : []
-        get().selectTab(
-          group && panes.includes(group.activePaneId) ? group.activePaneId : panes[0] || id,
-        )
+        const focused = panes.find((pane) => pane.id === group?.activePaneId) || panes[0]
+        const indicatorState =
+          group && activeWorkspaceTab(get(), workspaceId) !== key
+            ? workspaceTerminalSummary(panes)?.state
+            : undefined
+        const preferred =
+          indicatorState &&
+          ['error', 'failed', 'succeeded', 'completed', 'needs-input'].includes(indicatorState)
+            ? [focused, ...panes].find(
+                (pane) => pane && terminalIndicatorState(pane) === indicatorState,
+              )
+            : undefined
+        get().selectTab(preferred?.id || focused?.id || id)
         return
       }
       if (key === 'changes') sourceControl.openChanges(workspaceId)
