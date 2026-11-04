@@ -315,6 +315,12 @@ body:has(
 .app-top-status-bar[data-right-panel-open='true'] {
   padding-right: 0;
 }
+.terminal-tabs-separator {
+  margin-inline-end: var(--spacing);
+}
+.app-top-status-bar[data-left-panel-open='false'] .terminal-tabs-separator {
+  margin-inline-start: calc(var(--spacing) * 3);
+}
 .right-panel-header[data-open='true'] {
   padding-right: calc(var(--window-controls-width) + var(--titlebar-trailing-inset));
 }

@@ -57,6 +57,7 @@ export function TopStatusBar({
   return (
     <header
       className="app-top-status-bar title-bar flex h-[var(--app-titlebar-height)] shrink-0 items-center"
+      data-left-panel-open={leftPanelOpen}
       data-right-panel-open={isRightPanelVisible}
       aria-label="顶部状态栏"
     >
