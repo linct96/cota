@@ -221,7 +221,11 @@ revision    资源代次
 | Fetch          | 获取远端提交并更新本地远端跟踪引用 |
 | Pull           | 保持现有仅快进策略                 |
 | Push / Publish | 保持现有推送及首次设置上游策略     |
-| Sync           | 保持现有获取、合并、推送流程       |
+| Sync           | 原生 Git Pull 成功后再 Push        |
+
+2026-11-04 同步流程调整（已实施）：将 Pull/Sync 共用的手动 Fetch + Merge 替换为原生 `git pull`，Sync 在拉取成功并复核分支、上游及合并状态后才执行 Push。沿用 Pull 仅快进、Sync 允许合并的策略，不自动 stash、不启用 rebase；保留显式远端/分支、受限 Fetch 映射、不拉取标签、不 prune、不递归子模块和忽略文件保护。Pull 不透传 `--no-overwrite-ignore`，通过本次命令的 `branch.<当前分支>.mergeOptions` 保留该保护；显式关闭全局及远端的 `pruneTags`，不改写仓库配置。分支、HEAD、上游和未完成合并的二次校验移至 Pull 前，拉取内部的 Fetch/Merge 交由 Git 管理。
+
+验证：复用 `tests/git-remote.test.ts`，单次定向执行 `fetches into remote refs and pulls|refuses divergent push/pull|preserves merge conflicts`，3 项通过、4 项无关用例筛选跳过。覆盖实际 Pull → Push 命令、暂存/未暂存/未跟踪及忽略文件保护、分叉合并、未完成合并和冲突阻断推送；主进程 TypeScript、定向格式及 diff 检查通过。未新增测试文件或用例，未跑全量、GUI、真实远端、Windows 或安装包验证；未打包、安装或提交，已安装应用需更新构建才生效。
 
 普通页面刷新、窗口聚焦和缓存过期不能隐式触发 Git Fetch。
 

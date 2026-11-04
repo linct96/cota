@@ -1,7 +1,8 @@
 import type { GitStatus, GitRemoteMutation } from '../../../shared/source-control'
 import type { SourceControlService } from '../source-control/service'
-import { runGit, resolveGitCommit, explainGitError as explain } from '../git-runner'
+import { runGit, explainGitError as explain } from '../git-runner'
 
+// 校验远端操作，并在同步拉取成功后推送复核过的提交。
 export async function mutateRemote(
   cwd: string,
   status: GitStatus,
@@ -65,41 +66,37 @@ export async function mutateRemote(
   if (input.action === 'pull' || input.action === 'sync') {
     if (status.entries.some((entry) => entry.area === 'conflict'))
       throw new Error('请先解决现有合并冲突，再拉取或同步；不会自动 stash。')
-    const upstream = `refs/remotes/${remote}/${branch}`
-    await runGit(
-      root,
-      [
-        'fetch',
-        '--refmap=',
-        '--no-tags',
-        '--no-prune',
-        '--no-prune-tags',
-        '--no-recurse-submodules',
-        '--',
-        remote,
-        `+refs/heads/${branch}:${upstream}`,
-      ],
-      true,
-    )
-    const tip = await resolveGitCommit(root, upstream)
     const current = await sourceControl.status(cwd)
     verify(current)
     if (current.entries.some((entry) => entry.area === 'conflict'))
-      throw new Error('获取期间出现合并冲突，仅完成 Fetch，未更新工作文件。')
+      throw new Error('请先解决现有合并冲突，再拉取或同步；不会自动 stash。')
     try {
+      // Pull 不透传 --no-overwrite-ignore，改由分支合并选项保留忽略文件保护。
       await runGit(
         root,
         [
           '-c',
           'merge.autoStash=false',
-          'merge',
+          '-c',
+          `branch.${status.branch}.mergeOptions=--no-overwrite-ignore`,
+          '-c',
+          'fetch.pruneTags=false',
+          '-c',
+          `remote.${remote}.pruneTags=false`,
+          'pull',
+          '--no-rebase',
           input.action === 'sync' ? '--ff' : '--ff-only',
           '--commit',
           '--no-squash',
           '--no-autostash',
-          '--no-overwrite-ignore',
           '--no-edit',
-          tip,
+          '--refmap=',
+          '--no-tags',
+          '--no-prune',
+          '--no-recurse-submodules',
+          '--',
+          remote,
+          `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`,
         ],
         true,
       )

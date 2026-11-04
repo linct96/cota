@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourceControlService } from '../src/main/git/source-control/service'
 import { BranchService } from '../src/main/git/branches/service'
 import { gitEnvironment } from '../src/main/git/git-runner'
+import * as gitRunner from '../src/main/git/git-runner'
 import { gitAvailable } from './helpers/git'
 
 const exec = promisify(execFile)
@@ -298,7 +299,21 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           expect.objectContaining({ path: 'local.txt', area: 'staged' }),
         )
         await git('-C', worktree, 'restore', '--staged', '--', 'local.txt')
-        expect(await sourceControl.mutate(worktree, sync, noConfirmation)).toBe(true)
+        // 确认同步直接执行 Pull → Push，不再由服务拆分 Fetch + Merge。
+        const commands = vi.spyOn(gitRunner, 'runGit')
+        try {
+          expect(await sourceControl.mutate(worktree, sync, noConfirmation)).toBe(true)
+          const networkCommands = commands.mock.calls
+            .map(([, args]) => args)
+            .filter((args) => args.some((arg) => ['fetch', 'merge', 'pull', 'push'].includes(arg)))
+          expect(networkCommands).toHaveLength(2)
+          expect(networkCommands[0]).toEqual(
+            expect.arrayContaining(['pull', '--no-autostash', '--no-rebase']),
+          )
+          expect(networkCommands[1][0]).toBe('push')
+        } finally {
+          commands.mockRestore()
+        }
         const merged = await sourceControl.status(worktree)
         expect(merged.entries).toEqual([
           expect.objectContaining({ path: 'local.txt', area: 'unstaged' }),
@@ -355,7 +370,7 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
               noConfirmation,
             ),
           ).rejects.toThrow('当前合并尚未提交')
-        // Recheck after Fetch even if another process started merging after the initial read.
+        // 即使初读状态过期，Pull 前也须重新检查未完成的合并。
         const staleRead = vi.spyOn(sourceControl, 'status').mockResolvedValueOnce(beforeMerge)
         try {
           await expect(
