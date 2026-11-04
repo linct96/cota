@@ -28,6 +28,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Textarea } from '@/components/ui/textarea'
 import type { SourceControlChangesPanelProps } from './source-control-changes-types'
 
+// 渲染提交表单，并在提交时校验输入。
 export function SourceControlCommitForm({
   workspace,
   pending,
@@ -58,7 +59,7 @@ export function SourceControlCommitForm({
   )
   const form = useForm({
     defaultValues: { message: session.draft },
-    validationLogic: revalidateLogic({ mode: 'blur' }),
+    validationLogic: revalidateLogic(),
     validators: { onDynamic: commitMessageFormSchema },
     onSubmitMeta: { push: false },
     onSubmit: async ({ value, meta }) => {
