@@ -1,6 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
 import { memo, useMemo, useRef, useState } from 'react'
-import { FolderOpen, FolderPlus } from 'lucide-react'
+import { CopyMinus, CopyPlus, FolderOpen, FolderPlus } from 'lucide-react'
 import { nextWorkspaceName, useWorkspace } from '@/state/workspace'
 import { type WorkspaceTarget } from '../../../../../shared/contracts'
 import { ShortcutKbd } from '@/components/ShortcutKbd'
@@ -53,6 +53,8 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const menuTrigger = useRef<HTMLElement | null>(null)
   const workspaceDialogTrigger = useRef<HTMLElement | null>(null)
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({})
+  const hasOpenProject = projects.some((path) => openProjects[path] !== false)
+  const toggleProjectsLabel = hasOpenProject ? '折叠全部项目' : '展开全部项目'
   const [removal, setRemoval, removalDialog] = useDialogState<WorkspaceRemovalTarget>()
   const [workspaceDialog, setWorkspaceDialog, workspaceNameDialog] =
     useDialogState<WorkspaceNameTarget>()
@@ -106,30 +108,59 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       >
         <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
           <h2 className="project-title">项目</h2>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="project"
-                  size="icon-sm"
-                  className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                  disabled={!state.ready || !!state.removingWorkspace}
-                  aria-label="添加项目"
-                  onClick={() => {
-                    void state.openProject()
-                  }}
+          <div className="project-header-actions flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="project"
+                    size="icon-sm"
+                    className="project-toggle-all-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                    disabled={!projects.length || !state.ready || !!state.removingWorkspace}
+                    aria-label={toggleProjectsLabel}
+                    onClick={() => {
+                      setOpenProjects(
+                        Object.fromEntries(projects.map((path) => [path, !hasOpenProject])),
+                      )
+                    }}
+                  />
+                }
+              >
+                {hasOpenProject ? (
+                  <CopyMinus className="project-toggle-all-icon" aria-hidden="true" />
+                ) : (
+                  <CopyPlus className="project-toggle-all-icon" aria-hidden="true" />
+                )}
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="project-toggle-all-tooltip">
+                {toggleProjectsLabel}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="project"
+                    size="icon-sm"
+                    className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                    disabled={!state.ready || !!state.removingWorkspace}
+                    aria-label="添加项目"
+                    onClick={() => {
+                      void state.openProject()
+                    }}
+                  />
+                }
+              >
+                <FolderPlus className="project-add-icon" />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                添加项目
+                <ShortcutKbd
+                  binding={shortcutBinding(state.shortcuts, 'open-folder', window.desktop.platform)}
                 />
-              }
-            >
-              <FolderPlus className="project-add-icon" />
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              添加项目
-              <ShortcutKbd
-                binding={shortcutBinding(state.shortcuts, 'open-folder', window.desktop.platform)}
-              />
-            </TooltipContent>
-          </Tooltip>
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         <ScrollArea className="project-list-scroll-area min-h-0 min-w-0 flex-1">
           <nav
