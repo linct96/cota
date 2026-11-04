@@ -593,6 +593,7 @@ export interface DesktopAPI {
   respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
   onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
   onExitProgress(listener: (progress: AppExitProgress | null) => void): () => void
+  onExitLayoutRequest(listener: () => WorkspaceLayout | undefined): () => void
   onTerminal(listener: (event: TerminalEvent) => void): () => void
   onShortcut(listener: (shortcut: Shortcut) => void): () => void
 }

@@ -11,6 +11,7 @@ export type IpcHandler = <Args extends unknown[], T>(
 
 const exitChannels = new Set([
   'app:confirm-response',
+  'app:exit-layout',
   'app:force-exit',
   'window:is-maximized',
   'workspace:save-layout',
@@ -71,7 +72,9 @@ export function createIPC(
       async (event: IpcMainInvokeEvent, ...args: unknown[]): Promise<Result<T>> => {
         let authorized = false
         const exitPending = () =>
-          !exitChannels.has(channel) && (lifecycle.exitPending || lifecycle.exiting)
+          (!exitChannels.has(channel) ||
+            (channel === 'workspace:save-layout' && lifecycle.layoutSealed)) &&
+          (lifecycle.exitPending || lifecycle.exiting)
         try {
           trusted(event)
           authorized = true

@@ -14,6 +14,7 @@ import { installWorkspaceSubscriptions } from './subscriptions'
 export const useWorkspace = create<WorkspaceState>((set, get, api) => ({
   ready: false,
   layoutLoaded: false,
+  layoutFrozen: false,
   projects: [],
   workspaces: [],
   selectedWorkspaces: {},

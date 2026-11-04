@@ -208,6 +208,9 @@ if (!app.requestSingleInstanceLock()) {
       handle('app:confirm-response', (id: unknown, confirmed: unknown) =>
         renderer.reply(id, confirmed),
       )
+      handle('app:exit-layout', (id: unknown, layout: unknown) =>
+        renderer.replyExitLayout(id, layout),
+      )
       handle('app:force-exit', () => lifecycle.requestForceExit())
       updateMenu()
       if (devURL) await window.loadURL(devURL)

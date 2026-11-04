@@ -16,6 +16,8 @@ export class AppLifecycle {
   startupError: Error | undefined
   exiting = false
   exitPending = false
+  exitConfirming = false
+  layoutSealed = false
   removingWorkspace: RemovalTarget | undefined
   readonly closingTabs = new Set<string>()
   private readonly operations = new Set<Promise<unknown>>()
@@ -72,9 +74,19 @@ export class AppLifecycle {
     } satisfies AppExitProgress)
   }
 
+  private async saveExitLayout(): Promise<void> {
+    const layout = await this.dependencies.renderer.captureExitLayout()
+    this.layoutSealed = true
+    const config = this.dependencies.getConfig()
+    if (layout !== undefined) await config?.saveLayout(layout)
+    await config?.flush()
+  }
+
   private finishExit(): void {
+    this.exitConfirming = false
     this.exitPending = false
     if (this.exiting) return
+    this.layoutSealed = false
     this.dependencies.renderer.quitting = false
     this.dependencies.renderer.send('app:exit-progress', null)
     for (const resolve of this.exitWaiters) resolve()
@@ -82,8 +94,8 @@ export class AppLifecycle {
   }
 
   async requestForceExit(): Promise<void> {
-    if (this.exitPending || this.exiting) return
-    this.exitPending = true
+    if (this.exitConfirming || this.exitPending || this.exiting) return
+    this.exitConfirming = true
     let response: number
     try {
       const result = await dialog.showMessageBox({
@@ -99,13 +111,13 @@ export class AppLifecycle {
       })
       response = result.response
     } finally {
-      this.finishExit()
+      this.exitConfirming = false
     }
     if (response === 1) await this.forceExit()
   }
 
   async forceExit(): Promise<void> {
-    if (this.exitPending || this.exiting) return
+    if (this.exitConfirming || this.exitPending || this.exiting) return
     this.exitPending = true
     const deps = this.dependencies
     try {
@@ -117,12 +129,13 @@ export class AppLifecycle {
       await Promise.allSettled([...this.operations])
       this.progress('正在停止后台任务', false)
       await deps.getWorktreeSetups()?.close()
-      await deps.getConfig()?.flush()
-      deps.closeResources()
       await deps.commitMessages.close()
+      await this.saveExitLayout()
+      deps.closeResources()
       await forceStopTerminalHost(app.getPath('userData'))
       deps.getManager()?.disconnect()
       await deps.getAccounts()?.close()
+      await deps.getConfig()?.flush()
       deps.agentSleep.dispose()
       this.exiting = true
       app.exit(0)
@@ -133,12 +146,12 @@ export class AppLifecycle {
 
   async requestExit(stopSessions = false): Promise<void> {
     const deps = this.dependencies
-    if (this.exitPending || this.exiting) return
+    if (this.exitConfirming || this.exitPending || this.exiting) return
     if (stopSessions && this.startupError) {
       await this.requestForceExit()
       return
     }
-    this.exitPending = true
+    this.exitConfirming = stopSessions
     try {
       const manager = deps.getManager()
       const window = deps.getWindow()
@@ -163,6 +176,8 @@ export class AppLifecycle {
           if (response !== 1) return
         }
       }
+      this.exitConfirming = false
+      this.exitPending = true
       deps.renderer.settleConfirmation(false)
       this.progress('正在停止 CLI 安装与更新', !stopSessions)
       // Hooks inspection can be queued behind an install; stop it before waiting for operations.
@@ -173,19 +188,19 @@ export class AppLifecycle {
       await deps.getWorktreeSetups()?.close()
       await deps.commitMessages.close()
       this.progress('正在保存设置与工作区布局', !stopSessions)
-      await deps.getConfig()?.flush()
+      await this.saveExitLayout()
       if (stopSessions) {
         this.progress('正在依次结束终端和程序', false)
         await manager?.request('shutdown', [])
       }
       deps.closeResources()
       await deps.getAccounts()?.close()
-      await deps.getConfig()?.flush()
       if (!stopSessions) {
         this.progress('正在断开界面连接，终端任务继续运行', true)
         // Closing the socket also detaches on the Host, even if its acknowledgement is lost.
         await manager?.detachAll().catch((error) => console.warn('终端视图断开失败', error))
       }
+      await deps.getConfig()?.flush()
       manager?.disconnect()
       deps.agentSleep.dispose()
       this.exiting = true

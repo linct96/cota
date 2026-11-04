@@ -7,6 +7,7 @@ import { ExitOverlay } from './app/ExitOverlay'
 import { Toaster } from './components/ui/sonner'
 import './styles.css'
 import { useWorkspace } from './state/workspace'
+import { savedLayout } from './state/workspace/subscriptions'
 import { unwrap } from '../../shared/contracts'
 import { applyDocumentTheme } from './lib/theme'
 import { playNotificationSound } from './lib/notification-sound'
@@ -39,7 +40,17 @@ const stopNotificationSound = window.desktop.onNotificationSound(playNotificatio
 const stopWarnings = window.desktop.onWarning((message) =>
   toast.warning(message, { id: `app-warning:${message}` }),
 )
+const stopExitLayout = window.desktop.onExitLayoutRequest(() => {
+  useWorkspace.setState({ layoutFrozen: true })
+  const state = useWorkspace.getState()
+  return state.layoutLoaded ? savedLayout(state) : undefined
+})
+const stopExitProgress = window.desktop.onExitProgress((progress) => {
+  if (!progress) useWorkspace.setState({ layoutFrozen: false })
+})
 import.meta.hot?.dispose(() => {
+  stopExitLayout()
+  stopExitProgress()
   stopWarnings()
   stopNotificationSound()
   stopTheme()

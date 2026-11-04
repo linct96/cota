@@ -6,7 +6,7 @@ import type { StoreApi } from 'zustand'
 import type { WorkspaceState } from './types'
 import { currentWorkspace, terminalTabs } from './selectors'
 
-function savedLayout(state: WorkspaceState): WorkspaceLayout {
+export function savedLayout(state: WorkspaceState): WorkspaceLayout {
   const workspaces = state.workspaces.filter((workspace) =>
     state.projects.includes(workspace.projectPath),
   )
@@ -102,9 +102,13 @@ export function installWorkspaceSubscriptions(store: StoreApi<WorkspaceState>) {
     }
   }
   const unsubscribeLayout = store.subscribe((state, previous) => {
-    if (!state.layoutLoaded) return
+    if (!state.layoutLoaded || state.layoutFrozen) return
     const layout = savedLayout(state)
-    if (previous.layoutLoaded && JSON.stringify(layout) === JSON.stringify(savedLayout(previous)))
+    if (
+      previous.layoutLoaded &&
+      !previous.layoutFrozen &&
+      JSON.stringify(layout) === JSON.stringify(savedLayout(previous))
+    )
       return
     void window.desktop
       .saveLayout(layout)

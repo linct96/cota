@@ -93,6 +93,7 @@ const mocks = vi.hoisted(() => {
     close: vi.fn(),
     closeCliInstalls: vi.fn(),
     flush: vi.fn(),
+    saveLayout: vi.fn(),
     shutdown: vi.fn(),
     forceStopHost: vi.fn(),
     connectFailure: undefined as Error | undefined,
@@ -303,6 +304,7 @@ vi.mock('../src/main/settings/config-store', () => ({
     load = async () => ({})
     forget = mocks.forget
     closeWorkspace = mocks.saveWorkspaceClosure
+    saveLayout = mocks.saveLayout
     flush = mocks.flush
     snapshot = () => structuredClone(mocks.config)
     saveAgentClis = async (cache: import('../src/shared/agent-cli').AgentCliCache) => {
@@ -388,6 +390,11 @@ beforeAll(async () => {
 beforeEach(() => {
   mocks.contents.mainFrame.url = 'http://localhost:5173/'
   vi.clearAllMocks()
+  mocks.contents.send.mockImplementation((channel: string, value: unknown) => {
+    if (channel === 'app:exit-layout-request')
+      void mocks.handlers.get('app:exit-layout')!(event, value, undefined)
+  })
+  mocks.saveLayout.mockReset().mockResolvedValue(undefined)
   mocks.readSound.mockImplementation(async (sound: NotificationSound) =>
     typeof sound === 'string' ? undefined : 'data:audio/mpeg;base64,SUQz',
   )
@@ -1616,7 +1623,7 @@ describe('renderer confirmation IPC', () => {
   })
 
   it.each(['did-start-navigation', 'render-process-gone', 'destroyed'])(
-    'uses native stop-all confirmation after %s and resumes deferred refreshes after cancellation',
+    'uses native stop-all confirmation after %s without locking refreshes before confirmation',
     async (name) => {
       mocks.rendererEvents.get(name)!(
         name === 'did-start-navigation' ? { isMainFrame: true, isSameDocument: false } : undefined,
@@ -1648,7 +1655,7 @@ describe('renderer confirmation IPC', () => {
       const refresh = mocks.handlers.get('git:status')!(event, extra)
       void refresh.then(() => (refreshed = true))
       await new Promise(setImmediate)
-      expect(refreshed).toBe(false)
+      expect(refreshed).toBe(true)
       cancel({ response: 0 })
       expect(await refresh).toEqual({ ok: true, value: { files: [] } })
       await new Promise(setImmediate)
@@ -1659,6 +1666,126 @@ describe('renderer confirmation IPC', () => {
       await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2))
       await new Promise(setImmediate)
       expect(mocks.shutdown).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps in-flight writes available before stop-all confirmation and cancels without a closing error', async () => {
+    let continueMutation!: () => void
+    mocks.withTerminalTarget.mockImplementationOnce(async (_target, action) => {
+      await new Promise<void>((resolve) => (continueMutation = resolve))
+      return action({ cwd: path })
+    })
+    mocks.gitMutate.mockResolvedValueOnce(true)
+    const mutation = mocks.handlers.get('git:mutate')!(event, { ...target, action: 'stage' })
+    stopAllAndQuit()
+    const request = await prompt()
+    quit()
+    expect(
+      mocks.contents.send.mock.calls.filter(([channel]) => channel === 'app:confirm'),
+    ).toHaveLength(1)
+    continueMutation()
+    expect(await mutation).toEqual({ ok: true, value: true })
+    expect(mocks.shutdown).not.toHaveBeenCalled()
+    await reply(request.id, false)
+    await new Promise(setImmediate)
+    expect(mocks.quit).not.toHaveBeenCalled()
+    expect(mocks.closeCliInstalls).not.toHaveBeenCalled()
+  })
+
+  it('captures and seals the final layout, defers late saves, and flushes after detach', async () => {
+    let finishDetach!: () => void
+    mocks.detachAll.mockReturnValueOnce(new Promise<void>((resolve) => (finishDetach = resolve)))
+    mocks.contents.send.mockImplementation(() => {})
+    quit()
+    await vi.waitFor(() =>
+      expect(mocks.contents.send).toHaveBeenCalledWith(
+        'app:exit-layout-request',
+        expect.any(String),
+      ),
+    )
+    const id = mocks.contents.send.mock.calls.find(
+      ([channel]) => channel === 'app:exit-layout-request',
+    )![1]
+    const respond = (id: unknown, layout: unknown, sender = event) =>
+      mocks.handlers.get('app:exit-layout')!(sender, id, layout)
+    expect(await respond('stale', {})).toMatchObject({ ok: false })
+    expect(await respond(id, {}, { ...event, sender: {} } as typeof event)).toMatchObject({
+      ok: false,
+    })
+    const layout = { workspaces: [], tabs: [], selectedWorkspaces: {}, activeTabs: {} }
+    let finishSave!: () => void
+    mocks.saveLayout.mockReturnValueOnce(new Promise<void>((resolve) => (finishSave = resolve)))
+    expect(await respond(id, layout)).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(mocks.saveLayout).toHaveBeenCalledExactlyOnceWith(layout))
+    expect(await respond(id, layout)).toMatchObject({ ok: false })
+    expect(mocks.detachAll).not.toHaveBeenCalled()
+    finishSave()
+    await vi.waitFor(() => expect(mocks.detachAll).toHaveBeenCalledOnce())
+    let lateSaved = false
+    void mocks.handlers.get('workspace:save-layout')!(event, layout).then(() => (lateSaved = true))
+    await new Promise(setImmediate)
+    expect(lateSaved).toBe(false)
+    expect(mocks.saveLayout).toHaveBeenCalledOnce()
+    const flushesBeforeDetach = mocks.flush.mock.calls.length
+    finishDetach()
+    await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
+    expect(mocks.flush.mock.calls.length).toBeGreaterThan(flushesBeforeDetach)
+    expect(mocks.flush.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mocks.disconnect.mock.invocationCallOrder[0],
+    )
+    expect(mocks.saveLayout).toHaveBeenCalledOnce()
+    expect(lateSaved).toBe(false)
+  })
+
+  it.each(['timeout', 'renderer disconnect', 'save failure'])(
+    'aborts exit and permits retry when final layout capture fails: %s',
+    async (failure) => {
+      mocks.contents.send.mockImplementation(() => {})
+      mocks.confirm.mockResolvedValue({ response: 0 })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        quit()
+        await vi.waitFor(() =>
+          expect(mocks.contents.send).toHaveBeenCalledWith(
+            'app:exit-layout-request',
+            expect.any(String),
+          ),
+        )
+        const id = mocks.contents.send.mock.calls.find(
+          ([channel]) => channel === 'app:exit-layout-request',
+        )![1]
+        if (failure === 'timeout') await vi.advanceTimersByTimeAsync(10001)
+        else if (failure === 'renderer disconnect')
+          mocks.rendererEvents.get('render-process-gone')!()
+        else {
+          mocks.saveLayout.mockRejectedValueOnce(new Error('save failed'))
+          await mocks.handlers.get('app:exit-layout')!(event, id, {})
+        }
+        if (failure === 'renderer disconnect') {
+          await vi.waitFor(() => expect(mocks.confirm).toHaveBeenCalled())
+        } else {
+          const request = await prompt()
+          expect(request.title).toBe('退出失败')
+          await reply(request.id, false)
+        }
+        await new Promise(setImmediate)
+        expect(mocks.quit).not.toHaveBeenCalled()
+        expect(mocks.disconnect).not.toHaveBeenCalled()
+        expect(await mocks.handlers.get('app:exit-layout')!(event, id, {})).toMatchObject({
+          ok: false,
+        })
+        expect(await mocks.handlers.get('workspace:save-layout')!(event, {})).toMatchObject({
+          ok: true,
+        })
+        mocks.contents.send.mockImplementation((channel: string, value: unknown) => {
+          if (channel === 'app:exit-layout-request')
+            void mocks.handlers.get('app:exit-layout')!(event, value, undefined)
+        })
+        quit()
+        await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalledOnce())
+      } finally {
+        vi.useRealTimers()
+      }
     },
   )
 

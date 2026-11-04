@@ -43,6 +43,7 @@ export interface WorkspaceState {
   bootstrapError?: string
   ready: boolean
   layoutLoaded: boolean
+  layoutFrozen: boolean
   projects: string[]
   selectedProject?: string
   workspaces: ProjectWorkspace[]

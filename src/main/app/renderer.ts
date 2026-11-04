@@ -8,6 +8,9 @@ export class AppRenderer {
   visibleTerminal: string | undefined
   pendingAgentFocus: { terminalId: string; launchId: string } | undefined
   private pendingConfirmation: { id: string; resolve(confirmed: boolean): void } | undefined
+  private pendingExitLayout:
+    | { id: string; resolve(layout: unknown): void; reject(error: Error): void }
+    | undefined
 
   constructor(private readonly getWindow: () => BrowserWindow | undefined) {}
 
@@ -69,7 +72,33 @@ export class AppRenderer {
     })
   }
 
+  async captureExitLayout(): Promise<unknown> {
+    const window = this.getWindow()
+    if (!this.ready || !window || window.webContents.isDestroyed()) return undefined
+    const id = randomUUID()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await new Promise<unknown>((resolve, reject) => {
+        this.pendingExitLayout = { id, resolve, reject }
+        timer = setTimeout(() => reject(new Error('保存退出布局超时，请重试。')), 10000)
+        window.webContents.send('app:exit-layout-request', id)
+      })
+    } finally {
+      clearTimeout(timer)
+      this.pendingExitLayout = undefined
+    }
+  }
+
+  replyExitLayout(id: unknown, layout: unknown): void {
+    if (typeof id !== 'string' || this.pendingExitLayout?.id !== id)
+      throw new Error('退出布局请求已失效。')
+    const pending = this.pendingExitLayout
+    this.pendingExitLayout = undefined
+    pending.resolve(layout)
+  }
+
   reset(): void {
+    this.pendingExitLayout?.reject(new Error('界面已断开，未能保存最终布局，请重试退出。'))
     this.ready = false
     this.visibleTerminal = undefined
     this.settleConfirmation(false)

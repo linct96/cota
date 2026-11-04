@@ -286,6 +286,13 @@ const api: DesktopAPI = {
     ipcRenderer.on('app:exit-progress', wrapped)
     return () => ipcRenderer.removeListener('app:exit-progress', wrapped)
   },
+  onExitLayoutRequest: (listener) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, id: string) => {
+      void ipcRenderer.invoke('app:exit-layout', id, listener()).catch(console.error)
+    }
+    ipcRenderer.on('app:exit-layout-request', wrapped)
+    return () => ipcRenderer.removeListener('app:exit-layout-request', wrapped)
+  },
   onTerminal: (listener) => {
     const wrapped = (_event: Electron.IpcRendererEvent, event: TerminalEvent) => listener(event)
     ipcRenderer.on('terminal:event', wrapped)

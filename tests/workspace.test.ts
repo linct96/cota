@@ -24,6 +24,7 @@ import { Terminal } from '@xterm/headless'
 import { createTerminalKeyboardState } from '../src/shared/terminal-keyboard-state'
 import { createTerminalRenderer } from '../src/renderer/src/features/terminal/lib/terminal-renderer'
 import { createTerminalInputHandler } from '../src/renderer/src/features/terminal/lib/terminal-input'
+import { savedLayout } from '../src/renderer/src/state/workspace/subscriptions'
 import { useSourceControl } from '../src/renderer/src/state/source-control-store'
 import {
   retainGitBranches,
@@ -180,6 +181,7 @@ beforeEach(() => {
     respondToConfirmation: vi.fn().mockResolvedValue({ ok: true }),
     onConfirmation: vi.fn(() => vi.fn()),
     onExitProgress: vi.fn(() => vi.fn()),
+    onExitLayoutRequest: vi.fn(() => vi.fn()),
     onShortcut: vi.fn(() => vi.fn()),
     onTerminal: vi.fn(() => vi.fn()),
     readAgentClis: vi.fn(),
@@ -1859,6 +1861,24 @@ describe('workspace state', () => {
     store().reorderTab(workspace.id, a.id, 0)
     expect(api.saveLayout).toHaveBeenCalledTimes(1)
     expect(store().tabs.map((tab) => tab.id)).toEqual(['b', 'sibling', 'c', 'a'])
+
+    useWorkspace.setState({ layoutFrozen: true })
+    const finalLayout = savedLayout(store())
+    expect(finalLayout.tabs.map((tab) => tab.id)).toEqual(['b', 'sibling', 'c', 'a'])
+    store().updateTab(a.id, { title: '退出期间的更新' })
+    expect(api.saveLayout).toHaveBeenCalledTimes(1)
+    expect(finalLayout.tabs.find((tab) => tab.id === a.id)?.title).toBe('A')
+    useWorkspace.setState({ layoutFrozen: false })
+    expect(api.saveLayout).toHaveBeenCalledTimes(2)
+    expect(api.saveLayout).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tabs: expect.arrayContaining([
+          expect.objectContaining({ id: a.id, title: '退出期间的更新' }),
+        ]),
+      }),
+    )
+    useWorkspace.setState({ layoutFrozen: false })
+    expect(api.saveLayout).toHaveBeenCalledTimes(2)
 
     const fresh = { ...a, id: 'fresh' }
     vi.mocked(api.bootstrap).mockResolvedValueOnce({
