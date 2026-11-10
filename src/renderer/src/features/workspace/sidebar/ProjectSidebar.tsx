@@ -1,8 +1,8 @@
 import { useShallow } from 'zustand/react/shallow'
-import { memo, useMemo, useRef, useState } from 'react'
-import { CopyMinus, CopyPlus, FolderOpen, FolderPlus } from 'lucide-react'
+import { memo, useCallback, useMemo, useRef, useState } from 'react'
+import { CopyMinus, CopyPlus, FolderOpen, FolderPlus, ListPlus } from 'lucide-react'
 import { nextWorkspaceName, useWorkspace } from '@/state/workspace'
-import { type WorkspaceTarget } from '../../../../../shared/contracts'
+import type { WorkspaceTarget } from '../../../../../shared/contracts'
 import { ShortcutKbd } from '@/components/ShortcutKbd'
 import { useLeftPanel } from '@/state/left-panel-store'
 import { WorktreeDialog } from '@/features/workspace/worktree/WorktreeDialog'
@@ -11,6 +11,7 @@ import { WorktreeSetupDialog } from '@/features/workspace/worktree/WorktreeSetup
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useProjectBranches } from '@/features/workspace/hooks/use-project-branches'
@@ -18,14 +19,21 @@ import { useDialogState } from '@/hooks/use-dialog-state'
 import { formatShortcut, shortcutBinding } from '../../../../../shared/shortcuts'
 import type { ProjectSidebarActions } from './project-sidebar-actions'
 import { ProjectGroup } from './ProjectGroup'
+import { AgentList } from './AgentList'
+import { ProjectSection } from './ProjectSection'
 import {
-  WorkspaceNameDialog,
-  type WorkspaceNameTarget,
-} from '@/features/workspace/dialogs/WorkspaceNameDialog'
-import {
-  WorkspaceRemovalDialog,
-  type WorkspaceRemovalTarget,
-} from '@/features/workspace/dialogs/WorkspaceRemovalDialog'
+  ProjectGroupNameDialog,
+  ProjectGroupRemovalDialog,
+} from '@/features/workspace/dialogs/ProjectGroupDialogs'
+import type { ProjectGroupNameTarget } from '@/features/workspace/dialogs/ProjectGroupDialogs'
+import type {
+  ProjectGroup as ProjectGroupData,
+  ProjectGroupingChange,
+} from '../../../../../shared/project-groups'
+import { WorkspaceNameDialog } from '@/features/workspace/dialogs/WorkspaceNameDialog'
+import type { WorkspaceNameTarget } from '@/features/workspace/dialogs/WorkspaceNameDialog'
+import { WorkspaceRemovalDialog } from '@/features/workspace/dialogs/WorkspaceRemovalDialog'
+import type { WorkspaceRemovalTarget } from '@/features/workspace/dialogs/WorkspaceRemovalDialog'
 
 export const ProjectSidebar = memo(function ProjectSidebar({
   projects,
@@ -35,17 +43,22 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   homeActive: boolean
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      workspaces: state.workspaces,
-      worktreeRecords: state.worktreeRecords,
-      removeWorkspace: state.removeWorkspace,
-      ready: state.ready,
-      removingWorkspace: state.removingWorkspace,
-      openProject: state.openProject,
-      shortcuts: state.preferences.shortcuts,
+    useShallow((currentState) => ({
+      workspaces: currentState.workspaces,
+      worktreeRecords: currentState.worktreeRecords,
+      removeWorkspace: currentState.removeWorkspace,
+      ready: currentState.ready,
+      removingWorkspace: currentState.removingWorkspace,
+      openProject: currentState.openProject,
+      shortcuts: currentState.preferences.shortcuts,
+      projectGrouping: currentState.projectGrouping,
+      changeProjectGrouping: currentState.changeProjectGrouping,
+      updatingProjectGrouping: currentState.updatingProjectGrouping,
+      projectOpenError: currentState.projectOpenError,
+      creatingWorktree: currentState.creatingWorktree,
     })),
   )
-  const leftPanelOpen = useLeftPanel((state) => state.open)
+  const leftPanelOpen = useLeftPanel((currentState) => currentState.open)
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
   const [setupProject, setSetupProject] = useState<string>()
@@ -53,6 +66,34 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const menuTrigger = useRef<HTMLElement | null>(null)
   const workspaceDialogTrigger = useRef<HTMLElement | null>(null)
   const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({})
+  const [groupNameTarget, setGroupNameTarget, groupNameDialog] =
+    useDialogState<ProjectGroupNameTarget>()
+  const [groupRemovalTarget, setGroupRemovalTarget, groupRemovalDialog] =
+    useDialogState<ProjectGroupData>()
+  const groupMenuTrigger = useRef<HTMLElement | null>(null)
+  const [groupingError, setGroupingError] = useState<string>()
+  const { groups } = state.projectGrouping
+  const groupedProjects = new Set(groups.flatMap((group) => group.projects))
+  const ungroupedProjects = projects.filter((path) => !groupedProjects.has(path))
+  const groupingDisabled =
+    !state.ready ||
+    !!state.removingWorkspace ||
+    state.updatingProjectGrouping ||
+    state.creatingWorktree
+  const { changeProjectGrouping } = state
+  const runGroupingChange = useCallback(
+    async (change: ProjectGroupingChange) => {
+      setGroupingError(undefined)
+      try {
+        await changeProjectGrouping(change)
+        return true
+      } catch (error) {
+        setGroupingError(error instanceof Error ? error.message : String(error))
+        return false
+      }
+    },
+    [changeProjectGrouping],
+  )
   const hasOpenProject = projects.some((path) => openProjects[path] !== false)
   const toggleProjectsLabel = hasOpenProject ? '折叠全部项目' : '展开全部项目'
   const [removal, setRemoval, removalDialog] = useDialogState<WorkspaceRemovalTarget>()
@@ -83,6 +124,22 @@ export const ProjectSidebar = memo(function ProjectSidebar({
           scan,
         })
       },
+      createGroup(projectPath, trigger) {
+        groupMenuTrigger.current = trigger
+        setGroupNameTarget({ name: '', projectPath })
+      },
+      moveProject(projectPath, groupId) {
+        void runGroupingChange({ type: 'move', projectPath, groupId }).then((saved) => {
+          if (saved)
+            requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLButtonElement>(
+                  `[data-project-path="${CSS.escape(projectPath)}"] .project-folder-trigger`,
+                )
+                ?.focus(),
+            )
+        })
+      },
       removeProject(projectPath) {
         setRemoval({ projectPath })
       },
@@ -94,7 +151,27 @@ export const ProjectSidebar = memo(function ProjectSidebar({
       configureWorktree: setSetupProject,
       initializeWorktree: (target) => setSetupTarget({ target }),
     }),
-    [workspaces, worktreeRecords, removeWorkspace, setWorkspaceDialog, setRemoval],
+    [
+      workspaces,
+      worktreeRecords,
+      removeWorkspace,
+      setWorkspaceDialog,
+      setRemoval,
+      runGroupingChange,
+      setGroupNameTarget,
+    ],
+  )
+  const renderProject = (path: string) => (
+    <ProjectSection
+      key={path}
+      path={path}
+      open={openProjects[path] !== false}
+      onOpenChange={(open) => setOpenProjects((value) => ({ ...value, [path]: open }))}
+      projectBranch={projectBranches[path]}
+      homeActive={homeActive}
+      actions={actions}
+      menuTrigger={menuTrigger}
+    />
   )
   return (
     <>
@@ -106,95 +183,162 @@ export const ProjectSidebar = memo(function ProjectSidebar({
         inert={!leftPanelOpen}
         aria-label="项目"
       >
-        <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
-          <h2 className="project-title">项目</h2>
-          <div className="project-header-actions flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="project"
-                    size="icon-sm"
-                    className="project-toggle-all-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                    disabled={!projects.length || !state.ready || !!state.removingWorkspace}
-                    aria-label={toggleProjectsLabel}
-                    onClick={() => {
-                      setOpenProjects(
-                        Object.fromEntries(projects.map((path) => [path, !hasOpenProject])),
-                      )
-                    }}
-                  />
-                }
-              >
-                {hasOpenProject ? (
-                  <CopyMinus className="project-toggle-all-icon" aria-hidden="true" />
-                ) : (
-                  <CopyPlus className="project-toggle-all-icon" aria-hidden="true" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="project-toggle-all-tooltip">
-                {toggleProjectsLabel}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="project"
-                    size="icon-sm"
-                    className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                    disabled={!state.ready || !!state.removingWorkspace}
-                    aria-label="添加项目"
-                    onClick={() => {
-                      void state.openProject()
-                    }}
-                  />
-                }
-              >
-                <FolderPlus className="project-add-icon" />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                添加项目
-                <ShortcutKbd
-                  binding={shortcutBinding(state.shortcuts, 'open-folder', window.desktop.platform)}
-                />
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-        <ScrollArea className="project-list-scroll-area min-h-0 min-w-0 flex-1">
-          <nav
-            className="project-list recent-projects flex min-w-0 flex-col gap-2 p-2"
-            aria-label="最近项目"
+        <ResizablePanelGroup
+          orientation="vertical"
+          className="project-sidebar-sections min-h-0 flex-1"
+        >
+          <ResizablePanel
+            id="project-tree"
+            minSize={120}
+            className="project-tree-panel flex min-h-0 flex-col"
           >
-            {projects.map((path) => (
-              <ProjectGroup
-                key={path}
-                path={path}
-                open={openProjects[path] !== false}
-                onOpenChange={(open) => setOpenProjects((value) => ({ ...value, [path]: open }))}
-                projectBranch={projectBranches[path]}
-                homeActive={homeActive}
-                actions={actions}
-                menuTrigger={menuTrigger}
-              />
-            ))}
-            {!projects.length && (
-              <Empty className="project-empty-state flex-none px-3 py-8">
-                <EmptyHeader className="project-empty-header">
-                  <EmptyMedia variant="icon" className="project-empty-media">
-                    <FolderOpen className="project-empty-icon" aria-hidden="true" />
-                  </EmptyMedia>
-                  <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
-                  <EmptyDescription className="project-empty-description">
-                    点击上方 + 或按 {shortcutLabel('open-folder')} 添加
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+            <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
+              <h2 className="project-title">项目</h2>
+              <div className="project-header-actions flex items-center gap-1">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="project"
+                        size="icon-sm"
+                        className="project-toggle-all-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                        disabled={!projects.length || !state.ready || !!state.removingWorkspace}
+                        aria-label={toggleProjectsLabel}
+                        onClick={() => {
+                          setOpenProjects(
+                            Object.fromEntries(projects.map((path) => [path, !hasOpenProject])),
+                          )
+                        }}
+                      />
+                    }
+                  >
+                    {hasOpenProject ? (
+                      <CopyMinus className="project-toggle-all-icon" aria-hidden="true" />
+                    ) : (
+                      <CopyPlus className="project-toggle-all-icon" aria-hidden="true" />
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="project-toggle-all-tooltip">
+                    {toggleProjectsLabel}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="project"
+                        size="icon-sm"
+                        className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                        disabled={groupingDisabled}
+                        aria-label="添加项目"
+                        onClick={() => {
+                          void state.openProject()
+                        }}
+                      />
+                    }
+                  >
+                    <FolderPlus className="project-add-icon" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    添加项目
+                    <ShortcutKbd
+                      binding={shortcutBinding(
+                        state.shortcuts,
+                        'open-folder',
+                        window.desktop.platform,
+                      )}
+                    />
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="project"
+                        size="icon-sm"
+                        className="project-create-group-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                        disabled={groupingDisabled}
+                        aria-label="新建分组"
+                        onClick={(event) => {
+                          groupMenuTrigger.current = event.currentTarget
+                          setGroupNameTarget({ name: '' })
+                        }}
+                      />
+                    }
+                  >
+                    <ListPlus className="project-create-group-icon" aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="project-create-group-tooltip">
+                    新建分组
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+            {(groupingError || state.projectOpenError) && (
+              <p className="project-grouping-error px-4 pb-2 text-xs text-destructive" role="alert">
+                {groupingError || state.projectOpenError}
+              </p>
             )}
-          </nav>
-        </ScrollArea>
+            <ScrollArea className="project-list-scroll-area min-h-0 min-w-0 flex-1">
+              <nav
+                className="project-list recent-projects flex min-w-0 flex-col gap-2 p-2"
+                aria-label="项目列表"
+              >
+                {groups.map((group) => {
+                  const groupProjects = projects.filter((path) => group.projects.includes(path))
+                  return (
+                    <ProjectGroup
+                      key={group.id}
+                      group={group}
+                      disabled={groupingDisabled}
+                      onCollapsedChange={(collapsed) => {
+                        void runGroupingChange({ type: 'collapse', id: group.id, collapsed })
+                      }}
+                      onAdd={() => {
+                        void state.openProject(group.id)
+                      }}
+                      onRename={() => setGroupNameTarget({ id: group.id, name: group.name })}
+                      onRemove={() => setGroupRemovalTarget(group)}
+                      rememberTrigger={(trigger) => {
+                        groupMenuTrigger.current = trigger
+                      }}
+                    >
+                      {groupProjects.map(renderProject)}
+                    </ProjectGroup>
+                  )
+                })}
+                {ungroupedProjects.map(renderProject)}
+                {!projects.length && !groups.length && (
+                  <Empty className="project-empty-state flex-none px-3 py-8">
+                    <EmptyHeader className="project-empty-header">
+                      <EmptyMedia variant="icon" className="project-empty-media">
+                        <FolderOpen className="project-empty-icon" aria-hidden="true" />
+                      </EmptyMedia>
+                      <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
+                      <EmptyDescription className="project-empty-description">
+                        点击上方 + 或按 {shortcutLabel('open-folder')} 添加
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </nav>
+            </ScrollArea>
+          </ResizablePanel>
+          <AgentList homeActive={homeActive} projectBranches={projectBranches} />
+        </ResizablePanelGroup>
       </aside>
+      <ProjectGroupNameDialog
+        target={groupNameTarget}
+        dialog={groupNameDialog}
+        trigger={groupMenuTrigger}
+        onClose={() => setGroupNameTarget(undefined)}
+      />
+      <ProjectGroupRemovalDialog
+        target={groupRemovalTarget}
+        dialog={groupRemovalDialog}
+        trigger={groupMenuTrigger}
+        onClose={() => setGroupRemovalTarget(undefined)}
+      />
       {worktreeProject && (
         <WorktreeDialog
           key={worktreeProject}

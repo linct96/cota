@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -168,9 +168,9 @@ describe('local JSON configuration', () => {
     await expect(readNotificationSound({ path: join(root, 'sound.txt') })).rejects.toThrow(
       '音频文件',
     )
-    for (const audio of [Buffer.alloc(0), Buffer.alloc(5 * 1024 * 1024 + 1)]) {
+    for (const invalidAudio of [Buffer.alloc(0), Buffer.alloc(5 * 1024 * 1024 + 1)]) {
       const path = join(root, 'invalid.wav')
-      await writeFile(path, audio)
+      await writeFile(path, invalidAudio)
       await expect(readNotificationSound({ path })).rejects.toThrow('不能为空，且不能超过 5 MB')
     }
     for (const notificationSound of ['system', 'none', customSound] satisfies NotificationSound[]) {
@@ -276,6 +276,148 @@ describe('local JSON configuration', () => {
       )
     }
   })
+  it('persists project grouping with exclusive membership, independent collapse state and non-destructive removal', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    await store.remember('/tmp/first')
+    await store.remember('/tmp/second')
+    const first = await store.changeProjectGrouping({ type: 'create', name: ' 公司项目 ' })
+    const firstId = first.groups[0].id
+    expect(first.groups[0]).toMatchObject({ name: '公司项目', projects: [], collapsed: false })
+    const second = await store.changeProjectGrouping({
+      type: 'create',
+      name: '个人项目',
+      projectPath: '/tmp/second',
+    })
+    const secondId = second.groups[1].id
+    expect(second.groups[1]).toMatchObject({
+      name: '个人项目',
+      projects: ['/tmp/second'],
+      collapsed: false,
+    })
+    const workspace = {
+      id: randomUUID(),
+      projectPath: '/tmp/first',
+      name: '工作区',
+      kind: 'local' as const,
+    }
+    const tab = {
+      id: randomUUID(),
+      projectPath: '/tmp/first',
+      workspaceId: workspace.id,
+      title: 'Agent',
+    }
+    await store.saveLayout({
+      workspaces: [workspace],
+      tabs: [tab],
+      selectedProject: '/tmp/first',
+      selectedWorkspaces: { '/tmp/first': workspace.id },
+      activeTabs: { [workspace.id]: tab.id },
+    })
+    const layout = store.snapshot().layout
+    await store.changeProjectGrouping({ type: 'move', projectPath: '/tmp/first', groupId: firstId })
+    await store.changeProjectGrouping({
+      type: 'move',
+      projectPath: '/tmp/first',
+      groupId: secondId,
+    })
+    await Promise.all([
+      store.changeProjectGrouping({ type: 'rename', id: secondId, name: '工具' }),
+      store.changeProjectGrouping({ type: 'collapse', id: secondId, collapsed: true }),
+    ])
+    const restored = (await new ConfigStore(file).load()).config
+    expect(restored.projectGrouping).toEqual({
+      groups: [
+        { id: firstId, name: '公司项目', projects: [], collapsed: false },
+        { id: secondId, name: '工具', projects: ['/tmp/second', '/tmp/first'], collapsed: true },
+      ],
+    })
+    await store.changeProjectGrouping({ type: 'move', projectPath: '/tmp/first', groupId: null })
+    expect(store.snapshot().projectGrouping).toMatchObject({
+      groups: [{ projects: [] }, { projects: ['/tmp/second'] }],
+    })
+    await store.changeProjectGrouping({
+      type: 'move',
+      projectPath: '/tmp/first',
+      groupId: secondId,
+    })
+    await store.changeProjectGrouping({ type: 'remove', id: secondId })
+    expect(store.snapshot()).toMatchObject({
+      recentProjects: ['/tmp/first', '/tmp/second'],
+      layout,
+      worktreeRecords: [],
+    })
+    expect(store.snapshot().projectGrouping?.groups.map((group) => group.id)).toEqual([firstId])
+    expect((await new ConfigStore(file).load()).config.projectGrouping).toEqual(
+      store.snapshot().projectGrouping,
+    )
+  })
+
+  it('rejects invalid project grouping changes without replacing persisted data', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    await store.remember('/tmp/project')
+    const grouping = await store.changeProjectGrouping({ type: 'create', name: '项目' })
+    const id = grouping.groups[0].id
+    const before = await readFile(file, 'utf8')
+    for (const change of [
+      { type: 'create', name: ' ' },
+      { type: 'create', name: '未分组' },
+      { type: 'create', name: '项目' },
+      { type: 'rename', id, name: 'a'.repeat(81) },
+      { type: 'create', name: '新分组', projectPath: '/tmp/missing' },
+      { type: 'move', projectPath: '/tmp/missing', groupId: id },
+      { type: 'move', projectPath: '../project', groupId: id },
+      { type: 'move', projectPath: '/tmp/project', groupId: randomUUID() },
+      { type: 'remove', id: randomUUID() },
+      { type: 'collapse', id, collapsed: 'yes' },
+    ]) {
+      await expect(store.changeProjectGrouping(change)).rejects.toThrow()
+      expect(await readFile(file, 'utf8')).toBe(before)
+      expect(store.snapshot().projectGrouping).toEqual(grouping)
+    }
+    const invalid = {
+      ...store.snapshot(),
+      projectGrouping: {
+        ...grouping,
+        groups: [grouping.groups[0], { ...grouping.groups[0], id: randomUUID() }],
+      },
+    }
+    await writeFile(file, JSON.stringify(invalid))
+    const blocked = new ConfigStore(file)
+    expect((await blocked.load()).warning).toContain('原文件已保留')
+    await expect(blocked.changeProjectGrouping({ type: 'create', name: '新分组' })).rejects.toThrow(
+      '原文件已保留',
+    )
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(invalid)
+  })
+
+  it('prunes project grouping on removal, recent-project eviction and reload while keeping empty groups', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    await store.remember('/tmp/old')
+    await store.remember('/tmp/removed')
+    const grouping = await store.changeProjectGrouping({ type: 'create', name: '保留分组' })
+    const id = grouping.groups[0].id
+    await store.changeProjectGrouping({ type: 'move', projectPath: '/tmp/old', groupId: id })
+    await store.changeProjectGrouping({ type: 'move', projectPath: '/tmp/removed', groupId: id })
+    await store.forget('/tmp/removed')
+    expect(store.snapshot().projectGrouping?.groups[0].projects).toEqual(['/tmp/old'])
+    for (let index = 0; index < 20; index++) await store.remember(`/tmp/new-${index}`)
+    expect(store.snapshot().projectGrouping?.groups[0]).toMatchObject({ id, projects: [] })
+    const saved = store.snapshot()
+    saved.projectGrouping!.groups[0].projects = ['/tmp/old']
+    await writeFile(file, JSON.stringify(saved))
+    expect((await new ConfigStore(file).load()).config.projectGrouping?.groups[0].projects).toEqual(
+      [],
+    )
+    delete saved.projectGrouping
+    await writeFile(file, JSON.stringify(saved))
+    const legacy = await new ConfigStore(file).load()
+    expect(legacy.warning).toBeUndefined()
+    expect(legacy.config.projectGrouping).toBeUndefined()
+  })
+
   it('serializes concurrent writes and keeps the last 20 additions in insertion order without reordering existing projects', async () => {
     const store = new ConfigStore(file)
     await store.load()

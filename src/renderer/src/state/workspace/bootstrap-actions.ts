@@ -1,7 +1,8 @@
 import { pruneTerminalLayouts } from '../../../../shared/terminal-layout'
-import { AGENT_PROVIDERS, unwrap, type TerminalSession } from '../../../../shared/contracts'
+import { AGENT_PROVIDERS, unwrap } from '../../../../shared/contracts'
+import type { TerminalSession } from '../../../../shared/contracts'
 import type { StateCreator } from 'zustand'
-import type { WorkspaceState, TerminalTab } from './types'
+import type { TerminalTab, WorkspaceState } from './types'
 import { createWorkspace } from './workspace-actions'
 import { currentWorkspace, nextWorkspaceName } from './selectors'
 
@@ -34,7 +35,7 @@ export const createBootstrapActions: StateCreator<
                 bound.kind !== 'git-worktree' ||
                 bound.worktreeId !== session.worktreeId ||
                 record?.path !== session.cwd ||
-                record?.repoCommonDir !== session.repoCommonDir)) ||
+                record.repoCommonDir !== session.repoCommonDir)) ||
             (session.workspaceKind === 'local' && session.cwd !== session.projectPath)
           ) {
             orphanSessions.push(session)
@@ -100,6 +101,7 @@ export const createBootstrapActions: StateCreator<
           bootstrapError: undefined,
           layoutLoaded: true,
           projects: config.recentProjects,
+          projectGrouping: config.projectGrouping || { groups: [] },
           workspaces,
           selectedProject: tabs.some((tab) => tab.workspaceId === selectedWorkspace?.id)
             ? layout?.selectedProject
@@ -119,7 +121,7 @@ export const createBootstrapActions: StateCreator<
         void get().refreshWorkspaceOpeners().catch(console.warn)
         const pending = get().pendingAgentUpdates
         set({ pendingAgentUpdates: {} })
-        for (const event of Object.values(pending)) get().receiveAgent(event)
+        for (const event of Object.values(pending)) if (event) get().receiveAgent(event)
         if (get().agentConnectionLost) get().receiveAgent({ type: 'disconnected' })
       } catch (error) {
         console.error(error)

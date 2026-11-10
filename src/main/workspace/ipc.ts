@@ -1,4 +1,5 @@
-import { dialog, shell, type BrowserWindow } from 'electron'
+import { dialog, shell } from 'electron'
+import type { BrowserWindow } from 'electron'
 import type { WorkspaceLayout, WorkspaceTarget, WorktreeScan } from '../../shared/contracts'
 import type { IpcHandler } from '../app/ipc'
 import type { ConfigStore } from '../settings/config-store'
@@ -20,7 +21,7 @@ export function registerWorkspaceIPC(deps: {
   git: GitResources
   lifecycle: AppLifecycle
   renderer: AppRenderer
-  getWindow(): BrowserWindow | undefined
+  getWindow: () => BrowserWindow | undefined
   warning: string | undefined
 }): void {
   const { handle, config, manager, worktrees, worktreeSetups, git, lifecycle, renderer } = deps
@@ -144,6 +145,11 @@ export function registerWorkspaceIPC(deps: {
     )
     git.invalidateProjects(changed.map((workspace) => workspace.projectPath))
   })
+  handle('project:grouping', (change: unknown) => {
+    assertLifecycle()
+    if (lifecycle.removingWorkspace) throw new Error('正在删除项目或工作区，请稍后重试。')
+    return config.changeProjectGrouping(change)
+  })
   handle('project:open', async () => {
     const window = deps.getWindow()
     if (!window || window.isDestroyed()) throw new Error('当前没有可用窗口。')
@@ -202,8 +208,11 @@ export function registerWorkspaceIPC(deps: {
     assertLifecycle()
     return git.withBranchInvalidation(
       () => worktrees.createWorktree(input),
-      typeof (input as { projectPath?: unknown })?.projectPath === 'string'
-        ? (input as { projectPath: string }).projectPath
+      input &&
+        typeof input === 'object' &&
+        'projectPath' in input &&
+        typeof input.projectPath === 'string'
+        ? input.projectPath
         : undefined,
     )
   })
@@ -223,7 +232,7 @@ export function registerWorkspaceIPC(deps: {
         worktrees.removeWorktree(id, {
           deleteBranch,
           sessions: () => manager.request('list', []),
-          close: (id) => manager.request('close', [id]),
+          close: (candidateId) => manager.request('close', [candidateId]),
           confirm: (check, force) => {
             let branchDescription = ''
             if (check.currentBranch)
@@ -253,7 +262,7 @@ export function registerWorkspaceIPC(deps: {
       () =>
         worktrees.unlinkWorktree(id, {
           sessions: () => manager.request('list', []),
-          close: (id) => manager.request('close', [id]),
+          close: (candidateId) => manager.request('close', [candidateId]),
           confirm: () =>
             renderer.confirm({
               title: '移除工作区关联',
@@ -265,17 +274,14 @@ export function registerWorkspaceIPC(deps: {
     )
   })
   handle('workspace:path', (target: WorkspaceTarget) =>
-    worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+    worktrees.withTerminalTarget(target, (binding) => binding.cwd),
   )
   handle('workspace:openers', () => listWorkspaceOpeners(config.snapshot().preferences))
   handle('workspace:open-with', async (path: unknown, openerId: unknown) => {
     const directory =
       typeof path === 'string'
         ? absolutePath(path)
-        : await worktrees.withTerminalTarget(
-            path as WorkspaceTarget,
-            async (binding) => binding.cwd,
-          )
+        : await worktrees.withTerminalTarget(path as WorkspaceTarget, (binding) => binding.cwd)
     const snapshot = config.snapshot()
     if (typeof path === 'string' && !snapshot.recentProjects.includes(directory))
       throw new Error('请先打开项目目录。')

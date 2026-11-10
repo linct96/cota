@@ -16,6 +16,8 @@ export const useWorkspace = create<WorkspaceState>((set, get, api) => ({
   layoutLoaded: false,
   layoutFrozen: false,
   projects: [],
+  projectGrouping: { groups: [] },
+  updatingProjectGrouping: false,
   workspaces: [],
   selectedWorkspaces: {},
   preferences: DEFAULT_CONFIG.preferences,

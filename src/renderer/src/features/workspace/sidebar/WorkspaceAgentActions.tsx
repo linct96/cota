@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useRouter } from '@tanstack/react-router'
 import { useWorkspace } from '@/state/workspace'
-import { type ProjectWorkspace } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import { DotStatus } from '@/components/DotStatus'
 import { AgentIcon } from '@/features/agents/components/AgentIcon'
 import {
@@ -23,19 +23,19 @@ export const WorkspaceAgentActions = memo(function WorkspaceAgentActions({
   homeActive: boolean
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      activeId: state.activeTabs[workspace.id],
-      ready: state.ready,
-      removingWorkspace: state.removingWorkspace,
-      selectProject: state.selectProject,
-      selectTab: state.selectTab,
+    useShallow((currentState) => ({
+      activeId: currentState.activeTabs[workspace.id],
+      ready: currentState.ready,
+      removingWorkspace: currentState.removingWorkspace,
+      selectProject: currentState.selectProject,
+      selectTab: currentState.selectTab,
     })),
   )
   const router = useRouter()
   const path = workspace.projectPath
   const workspaceAgents = useWorkspace(
-    useShallow((state) =>
-      state.tabs.filter(
+    useShallow((currentState) =>
+      currentState.tabs.filter(
         (tab) =>
           tab.workspaceId === workspace.id && (tab.kind === 'agent' || tab.provider || tab.agent),
       ),

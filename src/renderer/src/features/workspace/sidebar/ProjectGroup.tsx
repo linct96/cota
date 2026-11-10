@@ -1,9 +1,7 @@
-import { memo } from 'react'
-import { useShallow } from 'zustand/react/shallow'
-import { Folder, FolderOpen, GitFork, MoreHorizontal, Trash2 } from 'lucide-react'
-import { currentWorkspace, useWorkspace } from '@/state/workspace'
+import type { ReactNode } from 'react'
+import { ChevronRight, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import type { ProjectGroup as ProjectGroupData } from '../../../../../shared/project-groups'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
@@ -12,165 +10,116 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { abbreviateHomePath, cn, folderName } from '@/lib/utils'
-import type { RefObject } from 'react'
-import type { ProjectSidebarActions } from './project-sidebar-actions'
-import { WorkspaceItem } from './WorkspaceItem'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { cn } from '@/lib/utils'
 
-export const ProjectGroup = memo(function ProjectGroup({
-  path,
-  open,
-  onOpenChange,
-  projectBranch,
-  homeActive,
-  actions,
-  menuTrigger,
+export function ProjectGroup({
+  group,
+  disabled,
+  onCollapsedChange,
+  onAdd,
+  onRename,
+  onRemove,
+  rememberTrigger,
+  children,
 }: {
-  path: string
-  open: boolean
-  onOpenChange(open: boolean): void
-  projectBranch?: string | null
-  homeActive: boolean
-  actions: ProjectSidebarActions
-  menuTrigger: RefObject<HTMLElement | null>
+  group: ProjectGroupData
+  disabled: boolean
+  onCollapsedChange: (collapsed: boolean) => void
+  onAdd: () => void
+  onRename: () => void
+  onRemove: () => void
+  rememberTrigger: (trigger: HTMLElement) => void
+  children: ReactNode
 }) {
-  const state = useWorkspace(
-    useShallow((state) => ({
-      workspaces: state.workspaces,
-      selectedProject: state.selectedProject,
-      selectedWorkspaces: state.selectedWorkspaces,
-      removingWorkspace: state.removingWorkspace,
-      worktreeScans: state.worktreeScans,
-      ready: state.ready,
-      creatingWorktree: state.creatingWorktree,
-    })),
-  )
-  const activeWorkspace = currentWorkspace(state)
-  const workspaces = state.workspaces.filter((workspace) => workspace.projectPath === path)
   return (
     <Collapsible
-      key={path}
-      open={open}
-      onOpenChange={onOpenChange}
       render={<section />}
-      aria-label={`${folderName(path)} 项目`}
-      aria-busy={
-        state.removingWorkspace === path ||
-        workspaces.some((workspace) => workspace.id === state.removingWorkspace)
-      }
-      className="project-group flex shrink-0 flex-col gap-1"
+      className="project-group flex min-w-0 shrink-0 flex-col gap-1"
+      aria-label={`${group.name}分组`}
+      open={!group.collapsed}
+      onOpenChange={(open) => onCollapsedChange(!open)}
     >
-      <div className="project-folder-row group/folder flex items-center pr-1 transition-colors">
-        <h3 className="project-folder-heading min-w-0 flex-1">
+      <div className="project-group-row group/project-group flex items-center pr-1 transition-colors">
+        <h3 className="project-group-heading min-w-0 flex-1">
           <CollapsibleTrigger
-            render={(props, { open }) => (
-              <Button {...props} variant="project">
-                {open ? (
-                  <FolderOpen className="project-folder-icon" />
-                ) : (
-                  <Folder className="project-folder-icon" />
-                )}
-                <span className="project-folder-name truncate">{folderName(path)}</span>
-              </Button>
-            )}
-            className="project-folder-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent text-inherit hover:bg-transparent hover:text-inherit"
-            title={abbreviateHomePath(path)}
-            disabled={!!state.removingWorkspace}
-          />
-        </h3>
-        {state.worktreeScans[path]?.repository.status === 'ready' && (
-          <Tooltip>
-            <TooltipTrigger
-              render={<Button variant="project" size="icon-sm" />}
+            render={<Button variant="project" />}
+            className="project-group-trigger w-full min-w-0 justify-start gap-2 px-2 bg-transparent text-inherit hover:bg-transparent hover:text-inherit"
+            disabled={disabled}
+            title={group.name}
+          >
+            <ChevronRight
               className={cn(
-                'project-worktree-add-button bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent',
-                activeWorkspace?.projectPath !== path &&
-                  'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
+                'project-group-chevron size-3.5 transition-transform duration-150',
+                !group.collapsed && 'rotate-90',
               )}
-              aria-label={`${folderName(path)} 新建工作树`}
-              aria-haspopup="dialog"
-              disabled={!state.ready || !!state.removingWorkspace || state.creatingWorktree}
-              onClick={() => actions.createWorktree(path)}
-            >
-              <GitFork className="project-worktree-add-icon" aria-hidden="true" />
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="project-worktree-add-tooltip">
-              新建工作树
-            </TooltipContent>
-          </Tooltip>
-        )}
+              aria-hidden="true"
+            />
+            <span className="project-group-name truncate">{group.name}</span>
+          </CollapsibleTrigger>
+        </h3>
+        <Tooltip>
+          <TooltipTrigger
+            render={<Button variant="project" size="icon-sm" />}
+            className="project-group-add-button invisible shrink-0 bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent focus-visible:visible group-hover/project-group:visible group-has-data-popup-open/project-group:visible"
+            aria-label={`${group.name} 添加项目`}
+            disabled={disabled}
+            onClick={onAdd}
+          >
+            <FolderPlus className="project-group-add-icon" aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="project-group-add-tooltip">
+            添加项目
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenu modal={false}>
           <Tooltip>
             <TooltipTrigger
               render={
                 <DropdownMenuTrigger
                   render={<Button variant="project" size="icon-sm" />}
-                  className={cn(
-                    'project-folder-menu-trigger shrink-0 bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent',
-                    activeWorkspace?.projectPath !== path &&
-                      'invisible focus-visible:visible group-hover/folder:visible group-has-data-popup-open/folder:visible',
-                  )}
-                  disabled={!!state.removingWorkspace}
-                  aria-label={`${folderName(path)} 更多操作`}
-                  onFocus={(event) => {
-                    actions.rememberMenuTrigger(event.currentTarget)
-                  }}
+                  className="project-group-menu-trigger invisible shrink-0 bg-transparent text-inherit hover:bg-transparent hover:text-inherit active:bg-transparent focus-visible:visible group-hover/project-group:visible group-has-data-popup-open/project-group:visible"
+                  aria-label={`${group.name} 更多操作`}
+                  disabled={disabled}
+                  onFocus={(event) => rememberTrigger(event.currentTarget)}
                 />
               }
             >
-              <MoreHorizontal className="project-folder-menu-icon size-3.5" />
+              <MoreHorizontal className="project-group-menu-icon size-3.5" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="project-folder-menu-tooltip">
+            <TooltipContent side="bottom" className="project-group-menu-tooltip">
               更多操作
             </TooltipContent>
           </Tooltip>
           <DropdownMenuContent
             align="end"
-            aria-label={`${folderName(path)} 项目操作菜单`}
-            className="project-folder-dropdown-menu"
+            className="project-group-menu"
+            aria-label={`${group.name} 分组操作菜单`}
           >
-            <DropdownMenuGroup className="project-folder-menu-actions">
-              <DropdownMenuItem
-                className="project-new-local-workspace-item"
-                disabled={!state.ready || !!state.removingWorkspace}
-                onClick={() => actions.createWorkspace(path, menuTrigger.current)}
-              >
-                新建工作区
+            <DropdownMenuGroup className="project-group-menu-actions">
+              <DropdownMenuItem className="project-group-add-project" onClick={onAdd}>
+                <FolderPlus className="project-group-add-project-icon" aria-hidden="true" />
+                <span className="project-group-add-project-label">添加项目</span>
               </DropdownMenuItem>
-              {state.worktreeScans[path]?.repository.status === 'ready' && (
-                <DropdownMenuItem
-                  className="project-worktree-setup-item"
-                  disabled={!state.ready || !!state.removingWorkspace}
-                  onClick={() => actions.configureWorktree(path)}
-                >
-                  工作树初始化配置
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem className="project-group-rename" onClick={onRename}>
+                <Pencil className="project-group-rename-icon" aria-hidden="true" />
+                <span className="project-group-rename-label">重命名分组</span>
+              </DropdownMenuItem>
               <DropdownMenuItem
+                className="project-group-remove"
                 variant="destructive"
-                className="project-delete-item"
-                disabled={!!state.removingWorkspace}
-                onClick={() => actions.removeProject(path)}
+                onClick={onRemove}
               >
-                <Trash2 className="project-delete-icon" />
-                <span className="project-delete-label">删除项目</span>
+                <Trash2 className="project-group-remove-icon" aria-hidden="true" />
+                <span className="project-group-remove-label">删除分组</span>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <CollapsibleContent className="project-workspaces flex flex-col gap-1">
-        {workspaces.map((workspace) => (
-          <WorkspaceItem
-            key={workspace.id}
-            workspace={workspace}
-            projectBranch={projectBranch}
-            homeActive={homeActive}
-            actions={actions}
-            menuTrigger={menuTrigger}
-          />
-        ))}
+      <CollapsibleContent className="project-group-projects flex min-w-0 flex-col gap-2 pl-2 empty:hidden">
+        {children}
       </CollapsibleContent>
     </Collapsible>
   )
-})
+}

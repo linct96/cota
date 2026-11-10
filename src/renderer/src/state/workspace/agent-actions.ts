@@ -81,7 +81,7 @@ export const createAgentActions: StateCreator<
             agent,
             shellUnread: false,
             ...(tab.agent?.runtimeState !== agent.runtimeState ||
-            tab.agent?.launchId !== agent.launchId
+            tab.agent.launchId !== agent.launchId
               ? { errorRead: false }
               : {}),
             agentRevision: agent.revision,

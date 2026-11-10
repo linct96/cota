@@ -1,5 +1,7 @@
+import { pruneProjectGrouping } from '../../../../shared/project-groups'
 import { removeTerminalPanes } from '../../../../shared/terminal-layout'
-import { unwrap, type ProjectWorkspace } from '../../../../shared/contracts'
+import { unwrap } from '../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../shared/contracts'
 import type { StateCreator } from 'zustand'
 import type { WorkspaceState } from './types'
 import { currentWorkspace, nextWorkspaceName } from './selectors'
@@ -19,6 +21,7 @@ export const createWorkspaceActions: StateCreator<
   [],
   Pick<
     WorkspaceState,
+    | 'changeProjectGrouping'
     | 'openProject'
     | 'selectProject'
     | 'newWorkspace'
@@ -28,8 +31,21 @@ export const createWorkspaceActions: StateCreator<
   >
 > = (set, get) => {
   return {
-    async openProject() {
-      if (get().removingWorkspace || get().creatingWorktree) return
+    async changeProjectGrouping(change) {
+      if (get().removingWorkspace || get().updatingProjectGrouping)
+        throw new Error('正在保存，请稍后重试。')
+      set({ updatingProjectGrouping: true })
+      try {
+        const grouping = unwrap(await window.desktop.changeProjectGrouping(change))
+        set((state) => ({ projectGrouping: pruneProjectGrouping(grouping, state.projects) }))
+      } finally {
+        set({ updatingProjectGrouping: false })
+      }
+    },
+
+    async openProject(groupId) {
+      if (get().removingWorkspace || get().creatingWorktree || get().updatingProjectGrouping) return
+      set({ projectOpenError: undefined })
       try {
         const path = unwrap(await window.desktop.openProject())
         if (!path || get().removingWorkspace || get().creatingWorktree) return
@@ -42,8 +58,18 @@ export const createWorkspaceActions: StateCreator<
         const workspace = currentWorkspace(get())
         if (workspace && !get().tabs.some((tab) => tab.workspaceId === workspace.id))
           get().newTerminal()
+        if (groupId) {
+          try {
+            await get().changeProjectGrouping({ type: 'move', projectPath: path, groupId })
+          } catch (error) {
+            set({
+              projectOpenError: `项目已添加，但无法加入分组：${error instanceof Error ? error.message : String(error)}`,
+            })
+          }
+        }
       } catch (error) {
         console.error(error)
+        set({ projectOpenError: error instanceof Error ? error.message : String(error) })
       }
     },
 
@@ -172,6 +198,7 @@ export const createWorkspaceActions: StateCreator<
             : state.projects
           return {
             projects,
+            projectGrouping: pruneProjectGrouping(state.projectGrouping, projects),
             selectedProject:
               removeProject && state.selectedProject === path
                 ? projects[0] || workspaces[0]?.projectPath
@@ -216,6 +243,7 @@ export const createWorkspaceActions: StateCreator<
           delete selectedWorkspaces[path]
           return {
             projects,
+            projectGrouping: pruneProjectGrouping(state.projectGrouping, projects),
             workspaces,
             selectedProject:
               state.selectedProject === path

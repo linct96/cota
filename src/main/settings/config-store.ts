@@ -1,24 +1,32 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { agentCliCacheSchema, type AgentCliCache } from '../../shared/agent-cli'
+import { agentCliCacheSchema } from '../../shared/agent-cli'
+import type { AgentCliCache } from '../../shared/agent-cli'
 import { worktreeSetupSchema } from '../../shared/worktree-setup'
-import { pendingHostedReviewSchema, type PendingHostedReview } from '../../shared/code-hosting'
+import { pendingHostedReviewSchema } from '../../shared/code-hosting'
+import type { PendingHostedReview } from '../../shared/code-hosting'
 import { z } from 'zod'
-import { pruneTerminalLayouts } from '../../shared/terminal-layout'
 import {
-  DEFAULT_CONFIG,
-  type AppConfig,
-  type Preferences,
-  type WorktreeRecord,
-  type ProjectWorkspace,
+  projectGroupingChangeSchema,
+  projectGroupingSchema,
+  pruneProjectGrouping,
+} from '../../shared/project-groups'
+import type { ProjectGrouping } from '../../shared/project-groups'
+import { pruneTerminalLayouts } from '../../shared/terminal-layout'
+import { DEFAULT_CONFIG } from '../../shared/contracts'
+import type {
+  AppConfig,
+  Preferences,
+  ProjectWorkspace,
+  WorktreeRecord,
 } from '../../shared/contracts'
 import {
   absolutePath,
   preferences,
   workspaceLayout,
-  worktreeRecords,
   worktreeNameHistory,
+  worktreeRecords,
 } from '../validation'
 
 export class ConfigStore {
@@ -32,7 +40,7 @@ export class ConfigStore {
     try {
       const value: unknown = JSON.parse(await readFile(this.file, 'utf8'))
       if (!value || typeof value !== 'object') throw new Error('配置不是对象')
-      const data = value as Partial<AppConfig>
+      const data = value as Record<keyof AppConfig, unknown>
       if (data.version !== 2 || !Array.isArray(data.recentProjects))
         throw new Error('不支持的配置版本或项目列表（仅支持 V2，不自动迁移旧配置）')
       const next: AppConfig = {
@@ -40,6 +48,14 @@ export class ConfigStore {
         recentProjects: [...new Set(data.recentProjects.map(absolutePath))].slice(0, 20),
         preferences: preferences(data.preferences),
         worktreeRecords: worktreeRecords(data.worktreeRecords),
+      }
+      if (data.projectGrouping !== undefined) {
+        const grouping = projectGroupingSchema.parse(data.projectGrouping)
+        for (const group of grouping.groups) group.projects = group.projects.map(absolutePath)
+        next.projectGrouping = pruneProjectGrouping(
+          projectGroupingSchema.parse(grouping),
+          next.recentProjects,
+        )
       }
       if (data.agentCliCache !== undefined) {
         const cache = agentCliCacheSchema.safeParse(data.agentCliCache)
@@ -54,9 +70,9 @@ export class ConfigStore {
         )
           throw new Error('Worktree 初始化配置无效。')
         next.worktreeSetups = Object.fromEntries(
-          Object.entries(data.worktreeSetups).map(([path, value]) => [
+          Object.entries(data.worktreeSetups).map(([path, inputValue]) => [
             absolutePath(path),
-            worktreeSetupSchema.parse(value),
+            worktreeSetupSchema.parse(inputValue),
           ]),
         )
       }
@@ -112,6 +128,57 @@ export class ConfigStore {
         )
       }
     })
+  }
+
+  async changeProjectGrouping(value: unknown): Promise<ProjectGrouping> {
+    const change = projectGroupingChangeSchema.parse(value)
+    let saved!: ProjectGrouping
+    await this.update((config) => {
+      const grouping = config.projectGrouping || { groups: [] }
+      if (change.type === 'create' || change.type === 'rename') {
+        if (
+          grouping.groups.some(
+            (group) =>
+              group.name === change.name && (change.type === 'create' || group.id !== change.id),
+          )
+        )
+          throw new Error('已存在同名分组。')
+      }
+      if (change.type === 'create') {
+        const path = change.projectPath ? absolutePath(change.projectPath) : undefined
+        if (path && !config.recentProjects.includes(path)) throw new Error('请先添加项目。')
+        if (path) {
+          for (const entry of grouping.groups)
+            entry.projects = entry.projects.filter((project) => project !== path)
+        }
+        grouping.groups.push({
+          id: randomUUID(),
+          name: change.name,
+          projects: path ? [path] : [],
+          collapsed: false,
+        })
+      } else if (change.type === 'move') {
+        const group = grouping.groups.find((entry) => entry.id === change.groupId)
+        if (change.groupId !== null && !group) throw new Error('分组不存在，请重新选择。')
+        const path = absolutePath(change.projectPath)
+        if (!config.recentProjects.includes(path)) throw new Error('请先添加项目。')
+        for (const entry of grouping.groups)
+          entry.projects = entry.projects.filter((project) => project !== path)
+        if (group) {
+          group.projects.push(path)
+          group.collapsed = false
+        }
+      } else {
+        const group = grouping.groups.find((entry) => entry.id === change.id)
+        if (!group) throw new Error('分组不存在，请重新选择。')
+        if (change.type === 'rename') group.name = change.name
+        else if (change.type === 'collapse') group.collapsed = change.collapsed
+        else grouping.groups = grouping.groups.filter((entry) => entry.id !== change.id)
+      }
+      config.projectGrouping = projectGroupingSchema.parse(grouping)
+      saved = structuredClone(config.projectGrouping)
+    })
+    return saved
   }
 
   savePreferences(value: Preferences): Promise<void> {
@@ -213,7 +280,7 @@ export class ConfigStore {
     const history = config.worktreeNameHistory || {}
     config.worktreeNameHistory = worktreeNameHistory({
       ...history,
-      [repoId]: [...(Object.hasOwn(history, repoId) ? history[repoId]! : []), name],
+      [repoId]: [...(Object.hasOwn(history, repoId) ? history[repoId] : []), name],
     })
   }
 
@@ -266,6 +333,8 @@ export class ConfigStore {
       this.assertWritable()
       const next = this.snapshot()
       change(next)
+      if (next.projectGrouping)
+        next.projectGrouping = pruneProjectGrouping(next.projectGrouping, next.recentProjects)
       const temp = `${this.file}.${randomUUID()}.tmp`
       await mkdir(dirname(this.file), { recursive: true, mode: 0o700 })
       try {

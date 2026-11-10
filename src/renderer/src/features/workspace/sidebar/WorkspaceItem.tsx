@@ -2,7 +2,8 @@ import { memo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { Pencil, Trash2 } from 'lucide-react'
 import { currentWorkspace, useWorkspace } from '@/state/workspace'
-import { type ProjectWorkspace } from '../../../../../shared/contracts'
+import { useLeftPanel } from '@/state/left-panel-store'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import { AgentMenu } from '@/features/agents/components/AgentMenu'
 import { DotStatus } from '@/components/DotStatus'
 import { workspaceTerminalSummary } from '@/features/agents/lib/agent-status'
@@ -34,21 +35,22 @@ export const WorkspaceItem = memo(function WorkspaceItem({
   menuTrigger: RefObject<HTMLElement | null>
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      selectedProject: state.selectedProject,
-      workspaceId: currentWorkspace(state)?.id,
+    useShallow((currentState) => ({
+      selectedProject: currentState.selectedProject,
+      workspaceId: currentWorkspace(currentState)?.id,
       scanEntry:
         workspace.kind === 'git-worktree'
-          ? state.worktreeScans[workspace.projectPath]?.entries.find(
+          ? currentState.worktreeScans[workspace.projectPath]?.entries.find(
               (entry) => entry.record.id === workspace.worktreeId,
             )
           : undefined,
-      removingWorkspace: state.removingWorkspace,
-      ready: state.ready,
-      creatingWorktree: state.creatingWorktree,
-      selectProject: state.selectProject,
+      removingWorkspace: currentState.removingWorkspace,
+      ready: currentState.ready,
+      creatingWorktree: currentState.creatingWorktree,
+      selectProject: currentState.selectProject,
     })),
   )
+  const agentsOpen = useLeftPanel((currentState) => currentState.agentsOpen)
   const path = workspace.projectPath
   const workspaceId = state.workspaceId
   const isSelected = path === state.selectedProject && workspace.id === workspaceId
@@ -59,7 +61,9 @@ export const WorkspaceItem = memo(function WorkspaceItem({
       ? projectBranch
       : worktree?.branch || (worktree?.head ? `detached ${worktree.head.slice(0, 8)}` : undefined)
   const workspaceTabs = useWorkspace(
-    useShallow((state) => state.tabs.filter((tab) => tab.workspaceId === workspace.id)),
+    useShallow((currentState) =>
+      currentState.tabs.filter((tab) => tab.workspaceId === workspace.id),
+    ),
   )
   const hasTerminals = workspaceTabs.length > 0
 
@@ -68,7 +72,7 @@ export const WorkspaceItem = memo(function WorkspaceItem({
     <ContextMenu key={workspace.id} disabled={!!state.removingWorkspace}>
       <ContextMenuTrigger
         className={cn(
-          'project-item group relative isolate ml-3 flex flex-col items-stretch rounded-md transition-colors',
+          'project-item group relative isolate ml-2 flex flex-col items-stretch rounded-md transition-colors',
           isSelected
             ? 'project-item-active bg-sidebar-accent text-sidebar-accent-foreground'
             : 'project-item-inactive text-app-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
@@ -130,11 +134,13 @@ export const WorkspaceItem = memo(function WorkspaceItem({
             </span>
           )}
         </Button>
-        <WorkspaceAgentActions
-          workspace={workspace}
-          isSelected={isSelected}
-          homeActive={homeActive}
-        />
+        {!agentsOpen && (
+          <WorkspaceAgentActions
+            workspace={workspace}
+            isSelected={isSelected}
+            homeActive={homeActive}
+          />
+        )}
       </ContextMenuTrigger>
       <ContextMenuContent
         finalFocus={() => menuTrigger.current}
