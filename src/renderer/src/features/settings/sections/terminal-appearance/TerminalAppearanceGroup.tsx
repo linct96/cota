@@ -1,12 +1,13 @@
 import { cn } from '@/lib/utils'
-import { type TerminalAppearance } from '../../../../../../shared/terminal-appearance'
+import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import { Card } from '@/components/ui/card'
-import { Field, FieldDescription, FieldGroup } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { InputNumber } from '@/components/ui/input-number'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
-import { NUMBER_FIELDS, ENUM_FIELDS, SWITCH_FIELDS, type AppearanceGroup } from './fields'
+import { ENUM_FIELDS, NUMBER_FIELDS, SWITCH_FIELDS } from './fields'
+import type { AppearanceGroup } from './fields'
 import { TerminalTypographyFields } from './TerminalTypographyFields'
 import { TerminalThemeFields } from './TerminalThemeFields'
 
@@ -20,8 +21,8 @@ export function TerminalAppearanceGroup({
   group: AppearanceGroup
   form: TerminalAppearanceForm
   values: TerminalAppearance
-  onEdit(): void
-  saveAppearance(value: TerminalAppearance): Promise<void>
+  onEdit: () => void
+  saveAppearance: (value: TerminalAppearance) => Promise<void>
 }) {
   const isGridNumberGroup = group.name === 'typography' || group.name === 'background'
   const numberFields = NUMBER_FIELDS.filter((field) => field.group === group.name).map(
@@ -29,14 +30,6 @@ export function TerminalAppearanceGroup({
       <form.Field key={name} name={name}>
         {(field) => {
           const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-
-          const errorMessage = [
-            ...new Set(
-              (field.state.meta.isTouched ? field.state.meta.errors : [])
-                .map((error) => error?.message)
-                .filter(Boolean),
-            ),
-          ].join(' ')
           return (
             <Field
               className={cn(
@@ -47,10 +40,10 @@ export function TerminalAppearanceGroup({
               )}
               data-invalid={invalid}
             >
-              <label
+              <FieldLabel
                 htmlFor={`terminal-${name}`}
                 className={cn(
-                  'terminal-appearance-number-label text-xs leading-5 font-medium text-foreground',
+                  'terminal-appearance-number-label inline-block text-xs leading-5 font-medium text-foreground',
                   !isGridNumberGroup && 'min-w-0 flex-1 basis-64',
                 )}
               >
@@ -61,34 +54,33 @@ export function TerminalAppearanceGroup({
                 >
                   ({min}–{max})
                 </span>
-              </label>
-              <Input
+              </FieldLabel>
+              <InputNumber
                 id={`terminal-${name}`}
                 className={cn(
                   'terminal-appearance-number-input font-mono tabular-nums',
                   !isGridNumberGroup && 'w-28 max-w-full shrink-0',
                 )}
-                type="number"
                 min={min}
                 max={max}
                 step={step}
                 value={
                   Number.isNaN(field.state.value)
-                    ? ''
+                    ? null
                     : name === 'backgroundOpacity'
                       ? Number((1 - field.state.value).toFixed(2))
                       : field.state.value
                 }
                 onBlur={field.handleBlur}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   field.handleChange(
-                    name === 'backgroundOpacity'
-                      ? 1 - event.target.valueAsNumber
-                      : event.target.valueAsNumber,
+                    value === null ? NaN : name === 'backgroundOpacity' ? 1 - value : value,
                   )
                 }
-                aria-invalid={invalid}
-                aria-describedby={`terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`}
+                inputProps={{
+                  'aria-invalid': invalid,
+                  'aria-describedby': `terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`,
+                }}
               />
               {name === 'backgroundOpacity' && (
                 <p
@@ -98,18 +90,14 @@ export function TerminalAppearanceGroup({
                   0 为不透明，1 为完全透明
                 </p>
               )}
-              {errorMessage && (
-                <p
-                  id={`terminal-${name}-error`}
-                  className={cn(
-                    'terminal-appearance-number-error text-xs text-destructive',
-                    !isGridNumberGroup && 'basis-full',
-                  )}
-                  role="alert"
-                >
-                  {errorMessage}
-                </p>
-              )}
+              <FieldError
+                id={`terminal-${name}-error`}
+                className={cn(
+                  'terminal-appearance-number-error',
+                  !isGridNumberGroup && 'basis-full',
+                )}
+                errors={field.state.meta.isTouched ? field.state.meta.errors : []}
+              />
             </Field>
           )
         }}

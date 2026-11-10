@@ -1,8 +1,6 @@
 import { ChevronDown } from 'lucide-react'
-import {
-  TERMINAL_COLOR_KEYS,
-  type TerminalAppearance,
-} from '../../../../../../shared/terminal-appearance'
+import { TERMINAL_COLOR_KEYS } from '../../../../../../shared/terminal-appearance'
+import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import { TERMINAL_THEME_CATALOG } from '../../../../../../shared/terminal-themes'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -29,8 +27,8 @@ export function TerminalThemeFields({
 }: {
   form: TerminalAppearanceForm
   values: TerminalAppearance
-  onEdit(): void
-  saveAppearance(value: TerminalAppearance): Promise<void>
+  onEdit: () => void
+  saveAppearance: (value: TerminalAppearance) => Promise<void>
 }) {
   return (
     <>

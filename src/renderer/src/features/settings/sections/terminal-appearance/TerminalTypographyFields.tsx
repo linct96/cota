@@ -1,4 +1,4 @@
-import { type TerminalAppearance } from '../../../../../../shared/terminal-appearance'
+import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import {
   Combobox,
   ComboboxContent,
@@ -7,8 +7,8 @@ import {
   ComboboxItem,
   ComboboxList,
 } from '@/components/ui/combobox'
-import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { InputNumber } from '@/components/ui/input-number'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
 import type { ReactNode } from 'react'
@@ -23,7 +23,7 @@ export function TerminalTypographyFields({
 }: {
   form: TerminalAppearanceForm
   values: TerminalAppearance
-  onEdit(): void
+  onEdit: () => void
   numberFields: ReactNode
   choiceFields: ReactNode
 }) {
@@ -158,9 +158,9 @@ export function TerminalTypographyFields({
                 data-invalid={invalid}
               >
                 <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                  <label
+                  <FieldLabel
                     htmlFor="terminal-minimumContrastRatio"
-                    className="terminal-contrast-ratio-label text-xs leading-5 font-medium text-foreground"
+                    className="terminal-contrast-ratio-label inline-block text-xs leading-5 font-medium text-foreground"
                   >
                     最低对比度
                     <span
@@ -169,7 +169,7 @@ export function TerminalTypographyFields({
                     >
                       (1–21)
                     </span>
-                  </label>
+                  </FieldLabel>
                   <FieldDescription
                     id="terminal-minimumContrastRatio-description"
                     className="terminal-contrast-ratio-description"
@@ -177,21 +177,23 @@ export function TerminalTypographyFields({
                     推荐 4.5（WCAG AA）或 7.0（WCAG AAA）。数值越高文字越醒目。
                   </FieldDescription>
                 </div>
-                <Input
+                <InputNumber
                   id="terminal-minimumContrastRatio"
                   className="terminal-contrast-ratio-input w-28 max-w-full shrink-0 font-mono tabular-nums"
-                  type="number"
                   min={1}
                   max={21}
                   step={0.1}
-                  value={Number.isNaN(field.state.value) ? '' : field.state.value}
+                  value={Number.isNaN(field.state.value) ? null : field.state.value}
                   onBlur={field.handleBlur}
-                  onChange={(event) => {
-                    field.handleChange(event.target.valueAsNumber)
+                  onValueChange={(value) => {
+                    field.handleChange(value ?? NaN)
                     onEdit()
                   }}
-                  aria-invalid={invalid}
-                  aria-describedby="terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error"
+                  inputProps={{
+                    'aria-invalid': invalid,
+                    'aria-describedby':
+                      'terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error',
+                  }}
                 />
                 <FieldError
                   id="terminal-minimumContrastRatio-error"

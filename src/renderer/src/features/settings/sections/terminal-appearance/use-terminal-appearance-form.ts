@@ -1,10 +1,8 @@
 import { useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { useWorkspace } from '@/state/workspace'
-import {
-  terminalAppearanceSchema,
-  type TerminalAppearance,
-} from '../../../../../../shared/terminal-appearance'
+import { terminalAppearanceSchema } from '../../../../../../shared/terminal-appearance'
+import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import type { Preferences } from '../../../../../../shared/contracts'
 
 export function useTerminalAppearanceForm(

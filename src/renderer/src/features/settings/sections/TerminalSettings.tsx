@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
-import { shellFormSchema, scrollbackFormSchema } from '@/features/settings/schemas'
+import { scrollbackFormSchema, shellFormSchema } from '@/features/settings/schemas'
 import { isWindows } from '@/lib/platform'
-import { abbreviateHomePath } from '@/lib/utils'
+import { abbreviateHomePath, folderName } from '@/lib/utils'
 import { Check, SquareTerminal } from 'lucide-react'
-import { unwrap, type Preferences } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { Preferences } from '../../../../../shared/contracts'
 import { useWorkspace } from '@/state/workspace'
 import { TerminalAppearanceSettings } from './TerminalAppearanceSettings'
 import { LoadingContent } from '@/components/LoadingContent'
@@ -22,6 +23,7 @@ import {
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Input } from '@/components/ui/input'
+import { InputNumber } from '@/components/ui/input-number'
 import {
   Select,
   SelectContent,
@@ -58,7 +60,7 @@ export function TerminalSettings() {
   const [defaultShellPath, setDefaultShellPath] = useState<string>()
   const [defaultShellError, setDefaultShellError] = useState<string>()
   const defaultShellLabel = defaultShellPath
-    ? `系统默认（${abbreviateHomePath(defaultShellPath)}）`
+    ? `系统默认（${folderName(defaultShellPath)}）`
     : defaultShellError
       ? '系统默认（读取失败）'
       : '系统默认'
@@ -233,7 +235,6 @@ export function TerminalSettings() {
                     id="terminal-settings-shell-description"
                     className="terminal-settings-shell-description text-xs text-muted-foreground"
                   >
-                    新建终端时使用的 Shell。
                     {(preferences.shellPath ?? defaultShellPath) && (
                       <code
                         className="terminal-settings-shell-path mt-0.5 block truncate font-mono text-xs text-muted-foreground"
@@ -585,7 +586,7 @@ export function TerminalSettings() {
                       type="submit"
                       disabled={!canSubmit || saving || submitting}
                     >
-                      {submitting ? '保存中…' : '保存'}
+                      保存
                     </Button>
                   </DialogFooter>
                 )}
@@ -633,22 +634,25 @@ export function TerminalSettings() {
                         >
                           缓冲行数
                         </FieldLabel>
-                        <Input
+                        <InputNumber
                           id="custom-scrollback-input"
                           name={field.name}
-                          type="number"
                           min={1000}
                           max={20000}
                           step={1}
                           required
-                          value={field.state.value}
-                          placeholder="5000"
+                          value={field.state.value === '' ? null : Number(field.state.value)}
                           className="terminal-settings-scrollback-input font-mono tabular-nums"
                           disabled={saving}
                           onBlur={field.handleBlur}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          aria-invalid={invalid}
-                          aria-describedby={invalid ? 'custom-scrollback-error' : undefined}
+                          onValueChange={(value) =>
+                            field.handleChange(value === null ? '' : String(value))
+                          }
+                          inputProps={{
+                            placeholder: '5000',
+                            'aria-invalid': invalid,
+                            'aria-describedby': invalid ? 'custom-scrollback-error' : undefined,
+                          }}
                         />
                         {invalid && (
                           <FieldError

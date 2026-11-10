@@ -4,6 +4,7 @@ release/
 # Impeccable local state
 .impeccable/hook.cache.json
 .impeccable/config.local.json
+.impeccable/review/
 
 # Logs
 logs

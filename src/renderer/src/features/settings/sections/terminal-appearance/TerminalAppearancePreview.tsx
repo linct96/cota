@@ -7,10 +7,8 @@ import {
   terminalAppearanceOptions,
 } from '@/features/terminal/lib/terminal-appearance'
 import { observeDocumentTheme } from '@/lib/theme'
-import {
-  terminalAppearanceSchema,
-  type TerminalAppearance,
-} from '../../../../../../shared/terminal-appearance'
+import { terminalAppearanceSchema } from '../../../../../../shared/terminal-appearance'
+import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 
 const PREVIEW_PROMPT = '\x1b[34m~/cota\x1b[0m \x1b[35mmain\x1b[0m \x1b[32m❯\x1b[0m '
 const PREVIEW_OUTPUT = [
