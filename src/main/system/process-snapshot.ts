@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { isWindows } from './platform'
 import { macProcessIdentity } from './mac-process-identity'
-import { windowsProcesses, type WindowsProcess } from './windows-processes'
+import { windowsProcesses } from './windows-processes'
+import type { WindowsProcess } from './windows-processes'
 
 export type ProcessIdentity = WindowsProcess & { instance?: string }
 

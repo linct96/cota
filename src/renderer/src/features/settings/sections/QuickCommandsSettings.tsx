@@ -39,11 +39,7 @@ export function QuickCommandsSettings() {
 
   async function copy(entry: QuickCommand) {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(entry.command)
-      } else {
-        throw new Error('当前环境不支持剪贴板操作')
-      }
+      await navigator.clipboard.writeText(entry.command)
       setCopiedId(entry.id)
       if (copyTimer.current) clearTimeout(copyTimer.current)
       copyTimer.current = setTimeout(() => {
@@ -241,7 +237,7 @@ export function QuickCommandsSettings() {
                 void remove()
               }}
             >
-              {pending ? '删除中…' : '删除命令'}
+              删除命令
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

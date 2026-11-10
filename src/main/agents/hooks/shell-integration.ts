@@ -109,6 +109,13 @@ else
 fi
 `
 
+const fishStartupInput = `
+function __cota_startup_ready --on-event fish_prompt
+  functions --erase __cota_startup_ready
+  printf '\\033]133;A;Cota=%s;Shell=%s\\007' "$COTA_SHELL_ACTIVITY" $fish_pid
+end
+`
+
 const fishStartupCommand = `
 if set -q COTA_STARTUP_COMMAND
   set -l __cota_startup_command "$COTA_STARTUP_COMMAND"
@@ -152,7 +159,8 @@ export async function prepareAgentShell(
 ): Promise<string[] | undefined> {
   const name = basename(shell)
   const codex = (await inspectAgentHook('codex', env)).state === 'installed'
-  if (startupCommand !== undefined) env.COTA_STARTUP_COMMAND = startupCommand
+  if (startupCommand !== undefined && (name !== 'fish' || env.COTA_SERVICE === '1'))
+    env.COTA_STARTUP_COMMAND = startupCommand
   if (isWindows) {
     if (!/^(?:pwsh|powershell)\.exe$/i.test(name)) {
       if (startupCommand !== undefined)
@@ -204,7 +212,11 @@ Remove-Variable cotaCommand -ErrorAction SilentlyContinue
       '-C',
       (codex ? fishCodexShellFunction : '') +
         activity +
-        (startupCommand === undefined ? '' : fishStartupCommand),
+        (startupCommand === undefined
+          ? ''
+          : env.COTA_SERVICE === '1'
+            ? fishStartupCommand
+            : fishStartupInput),
     ]
 
   const directory = join(

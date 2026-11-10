@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import {
   ChevronRight,
   ExternalLink,
@@ -6,8 +7,10 @@ import {
   LoaderCircle,
   UnfoldVertical,
 } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import { gitFileKey, type GitArea, type GitChange } from '../../../../../shared/source-control'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
+import { gitFileKey } from '../../../../../shared/source-control'
+import type { GitArea, GitChange } from '../../../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { useRightPanel } from '@/state/right-panel-store'
 import { useSourceControlWatch } from '@/features/source-control/hooks/use-source-control-watch'
@@ -15,16 +18,13 @@ import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { useWorkspace } from '@/state/workspace'
 import { preferredWorkspaceOpener } from '../../../../../shared/open-with'
 import { SourceControlDiff } from './SourceControlDiff'
-import {
-  DEFAULT_DIFF_DISPLAY_OPTIONS,
-  GitDiffOptions,
-  type DiffDisplayOptions,
-} from './GitDiffOptions'
+import { DEFAULT_DIFF_DISPLAY_OPTIONS, GitDiffOptions } from './GitDiffOptions'
+import type { DiffDisplayOptions } from './GitDiffOptions'
 import { FileTypeIcon } from '@/features/files/components/FileTypeIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Separator } from '@/components/ui/separator'
 
 const areaLabels: Record<GitArea, string> = {
@@ -65,13 +65,16 @@ const ChangeFile = memo(function ChangeFile({
 
   useEffect(() => {
     if (!section.current) return
-    const observer = new IntersectionObserver(([entry]) => setNearViewport(entry.isIntersecting), {
-      root: scrollRoot.current,
-      rootMargin: '800px 0px',
-    })
+    const observer = new IntersectionObserver(
+      ([candidateEntry]) => setNearViewport(candidateEntry.isIntersecting),
+      {
+        root: scrollRoot.current,
+        rootMargin: '800px 0px',
+      },
+    )
     observer.observe(section.current)
-    const sizeObserver = new ResizeObserver(([entry]) => {
-      if (entry.contentRect.height > 0) setBodyHeight(entry.contentRect.height)
+    const sizeObserver = new ResizeObserver(([candidateEntry]) => {
+      if (candidateEntry.contentRect.height > 0) setBodyHeight(candidateEntry.contentRect.height)
     })
     if (body.current) sizeObserver.observe(body.current)
     return () => {
@@ -84,7 +87,7 @@ const ChangeFile = memo(function ChangeFile({
     <Collapsible
       ref={section}
       open={open}
-      onOpenChange={(open) => onOpenChange(gitFileKey(entry), open)}
+      onOpenChange={(nextOpen) => onOpenChange(gitFileKey(entry), nextOpen)}
       className="source-control-all-file flex shrink-0 flex-col"
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {
@@ -192,8 +195,8 @@ export function SourceControlChanges({
         useSourceControl.getState().update(workspace.id, { status, refreshed: Date.now() })
         setError(undefined)
       })
-      .catch((error) => {
-        if (!disposed) setError(error instanceof Error ? error.message : String(error))
+      .catch((cause) => {
+        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause))
       })
     return () => {
       disposed = true
@@ -273,7 +276,7 @@ export function SourceControlChanges({
               void window.desktop
                 .openWorkspaceWith(target, opener.id)
                 .then(unwrap)
-                .catch((error) => setError(error instanceof Error ? error.message : String(error)))
+                .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
             }}
           >
             <ExternalLink className="source-control-all-open-editor-icon" />

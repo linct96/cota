@@ -61,9 +61,11 @@ it.each([false, true])(
   'escalates surviving descendants and rejects incomplete cleanup: %s',
   async (stuck) => {
     let forced = false
-    mocks.exec.mockImplementation(async () => ({
-      stdout: !forced || stuck ? '100 1 100 Z\n200 1 200 S\n' : '100 1 100 Z\n200 1 200 Z\n',
-    }))
+    mocks.exec.mockImplementation(() =>
+      Promise.resolve({
+        stdout: !forced || stuck ? '100 1 100 Z\n200 1 200 S\n' : '100 1 100 Z\n200 1 200 Z\n',
+      }),
+    )
     mocks.exec.mockResolvedValueOnce({ stdout: '100 1 100 Ss\n200 100 200 S\n' })
     const kill = vi.spyOn(process, 'kill').mockImplementation((_pid, signal) => {
       if (signal === 'SIGKILL') forced = true

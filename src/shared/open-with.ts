@@ -40,7 +40,7 @@ export function parseArguments(value: string): string[] {
   for (let index = 0; index < value.length; index++) {
     const char = value[index]
     if (char === '\\' && quote !== "'") {
-      const next = value[index + 1]
+      const next = value.at(index + 1)
       if (next === undefined) throw new Error('启动参数不能以未转义的反斜杠结尾。')
       if (!quote || ['"', '\\', '$', '`'].includes(next)) {
         argument += next

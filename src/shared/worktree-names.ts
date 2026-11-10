@@ -109,6 +109,6 @@ export function suggestWorktreeName(
     const available = SPACE_NAMES.map((name) => (tier === 1 ? name : `${name}-${tier}`)).filter(
       (name) => !used.has(name),
     )
-    if (available.length) return available[Math.floor(random() * available.length)]!
+    if (available.length) return available[Math.floor(random() * available.length)]
   }
 }

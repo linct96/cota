@@ -21,13 +21,13 @@ export function WorkspaceStage({
   activeNavigation: 'home' | 'settings' | 'cortana'
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      worktreeError: state.worktreeError,
-      selectedProject: state.selectedProject,
-      openProject: state.openProject,
-      removingWorkspace: state.removingWorkspace,
-      newTerminal: state.newTerminal,
-      shortcuts: state.preferences.shortcuts,
+    useShallow((currentState) => ({
+      worktreeError: currentState.worktreeError,
+      selectedProject: currentState.selectedProject,
+      openProject: currentState.openProject,
+      removingWorkspace: currentState.removingWorkspace,
+      newTerminal: currentState.newTerminal,
+      shortcuts: currentState.preferences.shortcuts,
     })),
   )
   const {

@@ -1,11 +1,5 @@
-import {
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ComponentProps,
-  type CSSProperties,
-  type ReactNode,
-} from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { CSSProperties, ComponentProps, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -43,10 +37,10 @@ export function WorkspaceTab({
 
   useLayoutEffect(() => {
     const title = titleRef.current
-    const icon = iconRef.current
+    const iconElement = iconRef.current
     const close = closeRef.current
     const tab = title?.parentElement
-    if (typeof width === 'number' || !title || !icon || !close || !tab) return
+    if (typeof width === 'number' || !title || !iconElement || !close || !tab) return
 
     let frame = 0
     const measure = () => {
@@ -58,7 +52,7 @@ export function WorkspaceTab({
       // Use the full inline layout, regardless of the current close-button position.
       const inlineWidth =
         title.scrollWidth +
-        icon.offsetWidth +
+        iconElement.offsetWidth +
         close.offsetWidth +
         Number.parseFloat(styles.paddingLeft) +
         Number.parseFloat(styles.paddingRight) +
@@ -74,7 +68,8 @@ export function WorkspaceTab({
     }
     const observer = new ResizeObserver(schedule)
     observer.observe(tab)
-    if (width === undefined) for (const element of [title, icon, close]) observer.observe(element)
+    if (width === undefined)
+      for (const element of [title, iconElement, close]) observer.observe(element)
     document.fonts.addEventListener('loadingdone', schedule)
     measure()
     return () => {

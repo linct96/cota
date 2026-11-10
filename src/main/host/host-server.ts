@@ -1,17 +1,11 @@
-import { createServer, type Socket } from 'node:net'
+import { createServer } from 'node:net'
+import type { Socket } from 'node:net'
 import { hostEndpoint, protectEndpoint, removeEndpoint } from '../system/platform'
 import { timingSafeEqual } from 'node:crypto'
 import { TerminalManager } from '../terminal/manager'
 import { startAgentEventServer } from '../agents/runtime/event-server'
-import {
-  HOST_PROTOCOL,
-  readMessages,
-  sendMessage,
-  type HostMessage,
-  type HostMethods,
-  type ResolvedTerminalCreate,
-  type ResolvedTerminalAttach,
-} from './host-protocol'
+import { HOST_PROTOCOL, readMessages, sendMessage } from './host-protocol'
+import type { HostMessage, HostMethods, ResolvedTerminalCreate } from './host-protocol'
 import { absolutePath, terminalId } from '../validation'
 import type { AttachTerminal, Preferences, WorkspaceTarget } from '../../shared/contracts'
 
@@ -69,7 +63,7 @@ export async function startHost(directory: string, token: string, onStopped = ()
         case 'create':
           return manager.create(args[0] as ResolvedTerminalCreate, args[1] as Preferences)
         case 'attach': {
-          const value = await manager.attach(args[0] as ResolvedTerminalAttach)
+          const value = await manager.attach(args[0])
           const attachmentId = terminalId((args[0] as AttachTerminal).attachmentId)
           if (socket.destroyed) manager.detach(value.id, attachmentId)
           else attachments.set(value.id, attachmentId)

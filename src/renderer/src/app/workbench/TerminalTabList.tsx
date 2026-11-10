@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
 import { isSortable } from '@dnd-kit/react/sortable'
 import {
@@ -6,10 +7,11 @@ import {
   DragDropManager,
   Feedback,
   PointerActivationConstraints,
-  type DragDropManagerInput,
 } from '@dnd-kit/dom'
+import type { DragDropManagerInput } from '@dnd-kit/dom'
 import { RestrictToHorizontalAxis } from '@dnd-kit/abstract/modifiers'
-import { useWorkspace, type TerminalTab as TerminalTabData } from '@/state/workspace'
+import { useWorkspace } from '@/state/workspace'
+import type { TerminalTab as TerminalTabData } from '@/state/workspace'
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area'
 
 const accessibilityOptions: ConstructorParameters<typeof Accessibility>[1] = {
@@ -136,7 +138,7 @@ export function TerminalTabList({
             event.preventDefault()
             next.click()
             next.focus()
-            next.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+            next.scrollIntoView({ block: 'nearest', inline: 'nearest' })
           }}
         >
           {children}

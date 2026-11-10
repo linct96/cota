@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { hostDirectory } from '../src/main/host/host-client'
+import type * as FsModule from 'node:fs'
 
 const mocks = vi.hoisted(() => ({
   mkdir: vi.fn(),
@@ -14,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   },
 }))
 vi.mock('node:fs', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:fs')>()),
+  ...(await importOriginal<typeof FsModule>()),
   mkdirSync: mocks.mkdir,
 }))
 vi.mock('electron', () => ({ app: mocks.app }))

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { unwrap, type ConfirmationRequest } from '../../../shared/contracts'
+import { unwrap } from '../../../shared/contracts'
+import type { ConfirmationRequest } from '../../../shared/contracts'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,9 +24,9 @@ export function ConfirmationDialog() {
 
   useEffect(
     () =>
-      window.desktop.onConfirmation((request) => {
+      window.desktop.onConfirmation((nextRequest) => {
         setError(undefined)
-        setDialog({ request, open: true })
+        setDialog({ request: nextRequest, open: true })
       }),
     [],
   )
@@ -48,8 +49,8 @@ export function ConfirmationDialog() {
       setDialog((current) =>
         current.request?.id === request.id ? { ...current, open: false } : current,
       )
-    } catch (error) {
-      setError(error instanceof Error ? error.message : String(error))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       responsePending.current = false
       setResponding(false)
@@ -59,14 +60,15 @@ export function ConfirmationDialog() {
   return (
     <AlertDialog
       open={open}
-      onOpenChange={(open, details) => {
-        if (!open) {
+      onOpenChange={(nextOpen, details) => {
+        if (!nextOpen) {
           details.cancel()
           void respond(false)
         }
       }}
-      onOpenChangeComplete={(open) => {
-        if (!open) setDialog((current) => (current.open ? current : { request: null, open: false }))
+      onOpenChangeComplete={(nextOpen) => {
+        if (!nextOpen)
+          setDialog((current) => (current.open ? current : { request: null, open: false }))
       }}
     >
       <AlertDialogContent className="app-confirmation-dialog" initialFocus={cancelButton}>

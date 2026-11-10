@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -14,8 +14,8 @@ import { resolveShell, shellEnvironment } from '../src/main/system/shell'
 import * as validation from '../src/main/validation'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import {
-  shellFormSchema,
   scrollbackFormSchema,
+  shellFormSchema,
 } from '../src/renderer/src/features/settings/schemas'
 import { openerFormSchema } from '../src/renderer/src/features/workspace/open-with/schemas'
 import { workspaceFormSchema } from '../src/renderer/src/features/workspace/dialogs/schemas'
@@ -147,9 +147,13 @@ describe('trust boundary validation', () => {
     const programFiles = join(tmpdir(), 'cota shell defaults')
     vi.stubEnv('ProgramFiles', programFiles)
     const defaultShell = windows ? join(programFiles, 'PowerShell', '7', 'pwsh.exe') : '/bin/zsh'
-    vi.spyOn(validation, 'executable').mockImplementation(async (value) => {
-      if (value === process.execPath || value === defaultShell) return value
-      throw new Error('Shell 不存在或不可执行。')
+    vi.spyOn(validation, 'executable').mockImplementation((value) => {
+      try {
+        if (value === process.execPath || value === defaultShell) return Promise.resolve(value)
+        throw new Error('Shell 不存在或不可执行。')
+      } catch (cause) {
+        return Promise.reject(cause)
+      }
     })
     vi.stubEnv('SHELL', process.execPath)
     expect(await resolveShell(settings)).toBe(windows ? defaultShell : process.execPath)

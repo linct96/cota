@@ -1,11 +1,11 @@
 import type {
   CreateHostedReview,
   HostedReview,
-  HostingCheckState,
-  HostingRepository,
   HostedReviewHistory,
-  HostingComparison,
   HostingBranch,
+  HostingCheckState,
+  HostingComparison,
+  HostingRepository,
 } from '../../shared/code-hosting'
 
 export interface RemoteRepository {
@@ -21,17 +21,21 @@ export interface ReviewScope {
   branch: string
 }
 export interface HostingAdapter {
-  account(repository: HostingRepository): Promise<string>
-  repository(repository: HostingRepository): Promise<RemoteRepository>
-  branches(repository: HostingRepository): Promise<HostingBranch[]>
-  listOpen(scope: ReviewScope): Promise<HostedReview[]>
-  history(scope: ReviewScope, page: number): Promise<HostedReviewHistory>
-  get(scope: ReviewScope, number: number): Promise<HostedReview>
-  compare(scope: ReviewScope, sourceHead: string, targetHead: string): Promise<HostingComparison>
-  branchHead(repository: HostingRepository, branch: string): Promise<string>
-  checks(scope: ReviewScope, review: HostedReview): Promise<HostingCheckState>
-  create(scope: ReviewScope, input: CreateHostedReview): Promise<HostedReview>
-  merge(scope: ReviewScope, review: HostedReview): Promise<HostedReview>
+  account: (repository: HostingRepository) => Promise<string>
+  repository: (repository: HostingRepository) => Promise<RemoteRepository>
+  branches: (repository: HostingRepository) => Promise<HostingBranch[]>
+  listOpen: (scope: ReviewScope) => Promise<HostedReview[]>
+  history: (scope: ReviewScope, page: number) => Promise<HostedReviewHistory>
+  get: (scope: ReviewScope, number: number) => Promise<HostedReview>
+  compare: (
+    scope: ReviewScope,
+    sourceHead: string,
+    targetHead: string,
+  ) => Promise<HostingComparison>
+  branchHead: (repository: HostingRepository, branch: string) => Promise<string>
+  checks: (scope: ReviewScope, review: HostedReview) => Promise<HostingCheckState>
+  create: (scope: ReviewScope, input: CreateHostedReview) => Promise<HostedReview>
+  merge: (scope: ReviewScope, review: HostedReview) => Promise<HostedReview>
 }
 export function reviewUrl(repository: HostingRepository, number: number): string {
   return `https://${repository.host}/${repository.path}/${repository.provider === 'github' ? 'pull' : '-/merge_requests'}/${number}`

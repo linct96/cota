@@ -7,9 +7,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ComponentProps,
-  type ReactNode,
 } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { ChevronRight, FileIcon, Folder, FolderOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
@@ -85,7 +84,7 @@ function FileTree({
     const target =
       rows.find((item) => item === previous) ||
       rows.find((item) => item.getAttribute('aria-selected') === 'true') ||
-      rows[0]
+      rows.at(0)
     for (const item of rows) item.tabIndex = item === target ? 0 : -1
     return target
   }
@@ -224,7 +223,10 @@ function FileTreeFolder({
         'file-tree-folder-trigger w-full min-w-0 flex-1 justify-start font-normal aria-expanded:bg-transparent aria-expanded:hover:bg-muted dark:aria-expanded:hover:bg-muted/50',
         className,
       )}
-      style={{ paddingLeft: 6 + depth * 12, ...style }}
+      style={(state) => ({
+        paddingLeft: 6 + depth * 12,
+        ...(typeof style === 'function' ? style(state) : style),
+      })}
     >
       <ChevronRight
         className={cn(
@@ -307,7 +309,10 @@ function FileTreeFile({
         actions.length ? 'flex-1' : 'w-full',
         className,
       )}
-      style={{ paddingLeft: 6 + depth * 12, ...style }}
+      style={(state) => ({
+        paddingLeft: 6 + depth * 12,
+        ...(typeof style === 'function' ? style(state) : style),
+      })}
       onClick={(event) => {
         onClick?.(event)
         if (event.defaultPrevented) return

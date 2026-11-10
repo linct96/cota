@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import {
   ChevronRight,
   Copy,
@@ -8,7 +9,8 @@ import {
   Square,
   TerminalSquare,
 } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import type { WorkspacePort, WorkspacePortSnapshot } from '../../../../../shared/workspace-ports'
 import { useWorkspace } from '@/state/workspace'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
@@ -37,9 +39,9 @@ function WorkspacePortsPanel({
 }: {
   workspace: ProjectWorkspace
   active: boolean
-  close(): void
+  close: () => void
   actionBusy: RefObject<boolean>
-  onActionBusyChange(busy: boolean): void
+  onActionBusyChange: (busy: boolean) => void
 }) {
   const workspaces = useWorkspace((state) => state.workspaces)
   const tabs = useWorkspace((state) => state.tabs)
@@ -58,9 +60,10 @@ function WorkspacePortsPanel({
   useEffect(() => {
     if (!active) return
     let alive = true
+    const isAlive = () => alive
     let busy = false
     const scan = async () => {
-      if (!alive || busy || actionBusy.current || document.visibilityState === 'hidden') return
+      if (!isAlive() || busy || actionBusy.current || document.visibilityState === 'hidden') return
       busy = true
       setPending(true)
       setError(undefined)
@@ -71,12 +74,12 @@ function WorkspacePortsPanel({
             workspaceId: workspace.id,
           }),
         )
-        if (alive) setSnapshot(result)
+        if (isAlive()) setSnapshot(result)
       } catch (cause) {
-        if (alive) setError(cause instanceof Error ? cause.message : String(cause))
+        if (isAlive()) setError(cause instanceof Error ? cause.message : String(cause))
       } finally {
         busy = false
-        if (alive) setPending(false)
+        if (isAlive()) setPending(false)
       }
     }
     refresh.current = () => void scan()

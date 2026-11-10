@@ -27,7 +27,7 @@ export function createSourceControlRefreshQueue(read: () => Promise<void>, canRe
   }
 
   return {
-    request() {
+    request(this: void) {
       pending = true
       schedule()
     },

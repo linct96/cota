@@ -128,7 +128,7 @@ export function SourceControlSettings() {
                     type="submit"
                     disabled={submitting || !dirty}
                   >
-                    {submitting ? '保存中…' : '保存'}
+                    保存
                   </Button>
                 )}
               </form.Subscribe>

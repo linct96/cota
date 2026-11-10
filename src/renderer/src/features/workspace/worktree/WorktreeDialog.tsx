@@ -4,7 +4,8 @@ import { z } from 'zod'
 import type { WorktreeSetupConfig } from '../../../../../shared/worktree-setup'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { worktreeFormSchema } from '@/features/workspace/worktree/schemas'
-import { unwrap, type WorktreePlan, type WorkspaceTarget } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { WorkspaceTarget, WorktreePlan } from '../../../../../shared/contracts'
 import { worktreeBranchSegment } from '../../../../../shared/worktree-names'
 import { useWorkspace } from '@/state/workspace'
 import { Button } from '@/components/ui/button'
@@ -33,8 +34,8 @@ export function WorktreeDialog({
   initialized,
 }: {
   projectPath: string
-  close(): void
-  initialized(target: WorkspaceTarget, error?: string): void
+  close: () => void
+  initialized: (target: WorkspaceTarget, error?: string) => void
 }) {
   const [open, setOpen] = useState(true)
   const setupResult = useRef<{ target: WorkspaceTarget; error?: string } | undefined>(undefined)
@@ -85,14 +86,14 @@ export function WorktreeDialog({
           planId: plan.id,
         })
         if (value.initialize && setupConfig) {
-          const target = { projectPath, workspaceId: result.workspace.id }
+          const workspaceTarget = { projectPath, workspaceId: result.workspace.id }
           let setupFailure: string | undefined
           try {
-            unwrap(await window.desktop.startWorktreeSetup(target, setupConfig))
+            unwrap(await window.desktop.startWorktreeSetup(workspaceTarget, setupConfig))
           } catch (failure) {
             setupFailure = failure instanceof Error ? failure.message : String(failure)
           }
-          setupResult.current = { target, error: setupFailure }
+          setupResult.current = { target: workspaceTarget, error: setupFailure }
         }
         setOpen(false)
       } catch (failure) {

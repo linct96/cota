@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import type {
-  GitBranchTarget,
   GitBranchChange,
   GitBranchSnapshot,
+  GitBranchTarget,
   GitBranchView,
 } from '../../../shared/git-branches'
 import { SourceControlWatches } from '../source-control/watch'
 import type { SourceControlService } from '../source-control/service'
 import { GitService } from '../worktrees/git'
-import { runGit, WorktreeError } from '../git-runner'
+import { WorktreeError, runGit } from '../git-runner'
 import { readBranchData, readBranchRemotes } from './read'
-import { mutateBranch, type GitBranchMutation } from './mutations'
+import { mutateBranch } from './mutations'
+import type { GitBranchMutation } from './mutations'
 
 type Entry = {
   commonDir: string
@@ -193,7 +194,7 @@ export class BranchService {
       const request = this.watches
         .start(
           entry.repositoryId,
-          async () => cwd,
+          () => cwd,
           (event) => {
             if (event === 'unavailable' && this.entries.get(repoCommonDir) === owned) {
               owned.watch = undefined
@@ -234,7 +235,10 @@ export class BranchService {
       : await runGit(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
           .then((value) => value.replace(/\r?\n$/, ''))
           .catch((error) => {
-            if (error instanceof WorktreeError && (error.cause as { code?: number })?.code === 1)
+            if (
+              error instanceof WorktreeError &&
+              (error.cause as { code?: number } | undefined)?.code === 1
+            )
               return null
             throw error
           })

@@ -187,7 +187,7 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     const notify = vi.fn()
     await mkdir(join(root, 'src'))
     try {
-      expect(await service.start(id, ['', 'src'], async () => root, notify)).toBe(true)
+      expect(await service.start(id, ['', 'src'], () => root, notify)).toBe(true)
       vi.useFakeTimers()
       watched.get(root)!.emit()
       watched.get(root)!.emit()
@@ -202,20 +202,23 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
       expect(notify).toHaveBeenLastCalledWith({ kind: 'change', paths: ['', 'src'] })
       watched.get(root)!.watcher.emit('error', new Error('watch limit'))
       expect(notify).toHaveBeenLastCalledWith({ kind: 'unavailable', error: expect.any(String) })
-      for (const { watcher } of watched.values()) expect(watcher.close).toHaveBeenCalledOnce()
+      for (const { watcher } of watched.values())
+        expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
       watched.clear()
-      expect(await service.start(id, ['', 'src'], async () => root, notify)).toBe(true)
+      expect(await service.start(id, ['', 'src'], () => root, notify)).toBe(true)
       await rename(join(root, 'src'), join(root, 'old-src'))
       await mkdir(join(root, 'src'))
       watched.get(join(root, 'src'))!.emit()
       await vi.advanceTimersByTimeAsync(250)
-      await vi.waitFor(() => expect(watched.get(root)!.watcher.close).toHaveBeenCalledOnce())
+      await vi.waitFor(() =>
+        expect(vi.mocked(watched.get(root)!.watcher).close.mock.calls).toHaveLength(1),
+      )
       expect(notify).toHaveBeenLastCalledWith({ kind: 'unavailable', error: expect.any(String) })
       watched.clear()
       watch.mockImplementationOnce(() => {
         throw new Error('unsupported')
       })
-      expect(await service.start(id, [''], async () => root, notify)).toBe(false)
+      expect(await service.start(id, [''], () => root, notify)).toBe(false)
       let resolveRoot!: (path: string) => void
       const pending = service.start(
         id,
@@ -232,14 +235,14 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
       expect(await pending).toBe(false)
       expect(watch).toHaveBeenCalledTimes(count)
       await symlink(join(directory, 'outside'), join(root, 'link'))
-      expect(await service.start(id, ['link'], async () => root, notify)).toBe(false)
-      await expect(
-        service.start(id, Array(129).fill('src'), async () => root, notify),
-      ).rejects.toThrow('128')
-      await expect(service.start('invalid', [''], async () => root, notify)).rejects.toThrow()
-      expect(await service.start(id, [''], async () => root, notify)).toBe(true)
+      expect(await service.start(id, ['link'], () => root, notify)).toBe(false)
+      await expect(service.start(id, Array(129).fill('src'), () => root, notify)).rejects.toThrow(
+        '128',
+      )
+      await expect(service.start('invalid', [''], () => root, notify)).rejects.toThrow()
+      expect(await service.start(id, [''], () => root, notify)).toBe(true)
       service.close()
-      expect(watched.get(root)!.watcher.close).toHaveBeenCalledOnce()
+      expect(vi.mocked(watched.get(root)!.watcher).close.mock.calls).toHaveLength(1)
     } finally {
       service.close()
     }

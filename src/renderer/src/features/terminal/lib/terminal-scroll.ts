@@ -232,7 +232,7 @@ export function installTerminalScroll(terminal: Terminal) {
         }
       }
     },
-    dispose() {
+    dispose(this: void) {
       disposed = true
       interact()
       releaseAnchor()

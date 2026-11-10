@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FileWatchEvent } from '../shared/file-explorer'
 import type {
-  AgentUpdate,
   AgentSession,
+  AgentUpdate,
   AppExitProgress,
   ConfirmationRequest,
   DesktopAPI,
@@ -11,6 +11,8 @@ import type {
   Shortcut,
   TerminalEvent,
 } from '../shared/contracts'
+import type { AgentCliCache, AgentCliInstallEvent } from '../shared/agent-cli'
+import type { AccountOAuthProgress } from '../shared/accounts'
 
 function initialTheme(): DesktopAPI['initialAppearance']['theme'] {
   if (process.argv.includes('--cota-theme=dark')) return 'dark'
@@ -47,7 +49,8 @@ const api: DesktopAPI = {
   setTerminalInputFocused: (focused) => ipcRenderer.send('shortcuts:terminal-focus', focused),
   inspectAgentClis: (checkUpdates = false, provider) =>
     ipcRenderer.invoke('agent:cli-inspect', checkUpdates, provider),
-  installAgentCli: (provider) => ipcRenderer.invoke('agent:cli-install', provider),
+  openAgentCliInstallGuide: (provider) => ipcRenderer.invoke('agent:cli-install-guide', provider),
+  updateAgentCli: (provider) => ipcRenderer.invoke('agent:cli-update', provider),
   listAgentCliInstalls: () => ipcRenderer.invoke('agent:cli-install-list'),
   readAgentCliInstallTerminal: (provider, attachmentId) =>
     ipcRenderer.invoke('agent:cli-install-terminal', provider, attachmentId),
@@ -60,10 +63,8 @@ const api: DesktopAPI = {
   resizeAgentCliInstallTerminal: (id, cols, rows) =>
     ipcRenderer.invoke('agent:cli-install-resize', id, cols, rows),
   onAgentCliInstall: (listener) => {
-    const wrapped = (
-      _event: Electron.IpcRendererEvent,
-      progress: import('../shared/agent-cli').AgentCliInstallEvent,
-    ) => listener(progress)
+    const wrapped = (_event: Electron.IpcRendererEvent, progress: AgentCliInstallEvent) =>
+      listener(progress)
     ipcRenderer.on('agent:cli-install-progress', wrapped)
     return () => ipcRenderer.removeListener('agent:cli-install-progress', wrapped)
   },
@@ -80,10 +81,8 @@ const api: DesktopAPI = {
     startOAuth: (product, alias) => ipcRenderer.invoke('accounts:oauth-start', product, alias),
     cancelOAuth: () => ipcRenderer.invoke('accounts:oauth-cancel'),
     onOAuth: (listener) => {
-      const wrapped = (
-        _event: Electron.IpcRendererEvent,
-        progress: import('../shared/accounts').AccountOAuthProgress,
-      ) => listener(progress)
+      const wrapped = (_event: Electron.IpcRendererEvent, progress: AccountOAuthProgress) =>
+        listener(progress)
       ipcRenderer.on('accounts:oauth-progress', wrapped)
       return () => ipcRenderer.removeListener('accounts:oauth-progress', wrapped)
     },
@@ -109,6 +108,7 @@ const api: DesktopAPI = {
   bootstrap: () => ipcRenderer.invoke('app:bootstrap'),
   saveLayout: (layout) => ipcRenderer.invoke('workspace:save-layout', layout),
   openProject: () => ipcRenderer.invoke('project:open'),
+  changeProjectGrouping: (change) => ipcRenderer.invoke('project:grouping', change),
   selectProject: (path) => ipcRenderer.invoke('project:select', path),
   inspectRepository: (path) => ipcRenderer.invoke('git:inspect-repository', path),
   listWorktrees: (path) => ipcRenderer.invoke('git:list-worktrees', path),
@@ -223,15 +223,13 @@ const api: DesktopAPI = {
   },
   readAgentClis: () => ipcRenderer.invoke('agent:cli-read'),
   onAgentClis: (listener) => {
-    const wrapped = (
-      _event: Electron.IpcRendererEvent,
-      cache: import('../shared/agent-cli').AgentCliCache,
-    ) => listener(cache)
+    const wrapped = (_event: Electron.IpcRendererEvent, cache: AgentCliCache) => listener(cache)
     ipcRenderer.on('agent:clis-changed', wrapped)
     return () => ipcRenderer.removeListener('agent:clis-changed', wrapped)
   },
   detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
+  trustAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-trust', provider),
   uninstallAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-uninstall', provider),
   readAgent: (id, launchId, revision) => ipcRenderer.invoke('agent:read', id, launchId, revision),
   setVisibleTerminal: (id) => ipcRenderer.invoke('agent:visible', id),

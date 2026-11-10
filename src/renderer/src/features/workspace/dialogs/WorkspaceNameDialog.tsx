@@ -1,16 +1,11 @@
 import { useShallow } from 'zustand/react/shallow'
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ComponentProps,
-  type RefObject,
-} from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ComponentProps, RefObject } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { workspaceFormSchema } from '@/features/workspace/dialogs/schemas'
 import { useWorkspace } from '@/state/workspace'
-import { unwrap, type WorktreeRecord, type WorktreeState } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { WorktreeRecord, WorktreeState } from '../../../../../shared/contracts'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
@@ -42,19 +37,19 @@ export function WorkspaceNameDialog({
   target: WorkspaceNameTarget | undefined
   dialog: Pick<ComponentProps<typeof Dialog>, 'open' | 'onOpenChangeComplete'>
   trigger: RefObject<HTMLElement | null>
-  onClose(): void
-  onCreated(projectPath: string): void
+  onClose: () => void
+  onCreated: (projectPath: string) => void
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      removingWorkspace: state.removingWorkspace,
-      renameWorkspace: state.renameWorkspace,
-      newWorkspace: state.newWorkspace,
-      worktreeScans: state.worktreeScans,
-      creatingWorktree: state.creatingWorktree,
-      removeWorktree: state.removeWorktree,
-      worktreeError: state.worktreeError,
-      orphanSessions: state.orphanSessions,
+    useShallow((currentState) => ({
+      removingWorkspace: currentState.removingWorkspace,
+      renameWorkspace: currentState.renameWorkspace,
+      newWorkspace: currentState.newWorkspace,
+      worktreeScans: currentState.worktreeScans,
+      creatingWorktree: currentState.creatingWorktree,
+      removeWorktree: currentState.removeWorktree,
+      worktreeError: currentState.worktreeError,
+      orphanSessions: currentState.orphanSessions,
     })),
   )
   const [savingWorkspace, setSavingWorkspace] = useState(false)

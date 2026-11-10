@@ -1,7 +1,7 @@
 import type { GitMutation } from '../../../shared/source-control'
 import type { SourceControlService } from '../source-control/service'
 import { GitService } from '../worktrees/git'
-import { runGit, resolveGitCommit, explainGitError as explain } from '../git-runner'
+import { explainGitError as explain, resolveGitCommit, runGit } from '../git-runner'
 import { mutateRemote } from './remote'
 
 const OID = /^[\da-f]{40}([\da-f]{24})?$/
@@ -79,7 +79,7 @@ export async function mutateBranch(
       }
       return true
     }
-    if (input.action === 'switch-branch' || input.action === 'delete-branch') {
+    if ('ref' in input && ['switch-branch', 'delete-branch'].includes(input.action)) {
       const remoteRef =
         input.action === 'switch-branch' &&
         typeof input.ref === 'string' &&

@@ -62,7 +62,8 @@ it(`reconnects a ${packaged ? 'packaged' : 'built'} Host without replacing its s
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'chs-')))
   const token = randomBytes(32).toString('hex')
   const clients: HostClient[] = []
-  let hostPid: number | undefined
+  // Cleanup is registered before launch and must also handle a failed launch.
+  let hostPid: number | undefined = undefined
 
   async function open() {
     const socket = connect(hostEndpoint(directory, 'host'))
@@ -234,7 +235,7 @@ child.once('spawn', () => { console.log(child.pid); child.unref() })
     allowProposedApi: true,
   })
   try {
-    await new Promise<void>((resolve) => terminal.write(restored.snapshot, resolve))
+    await new Promise<void>((complete) => terminal.write(restored.snapshot, complete))
     expect(terminal.buffer.active.type).toBe('alternate')
     expect(terminal.buffer.active.getLine(3)!.translateToString()).toContain('COTA_TUI_ACTIVE')
   } finally {

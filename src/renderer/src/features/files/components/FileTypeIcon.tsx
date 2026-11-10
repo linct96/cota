@@ -11,12 +11,12 @@ import {
   FileType,
   FileVideo,
   Folder,
-  FolderOpen,
   FolderGit2,
+  FolderOpen,
   KeyRound,
   Package,
-  type LucideIcon,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import {
   siCss3,
   siDocker,
@@ -32,9 +32,10 @@ import {
   siRust,
   siTypescript,
   siVuedotjs,
-  type SimpleIcon,
 } from 'simple-icons'
-import { fileIconKind, type FileIconKind } from '@/features/files/lib/file-icon'
+import type { SimpleIcon } from 'simple-icons'
+import { fileIconKind } from '@/features/files/lib/file-icon'
+import type { FileIconKind } from '@/features/files/lib/file-icon'
 import { useWorkspace } from '@/state/workspace'
 
 const icons: Record<FileIconKind, SimpleIcon | LucideIcon> = {

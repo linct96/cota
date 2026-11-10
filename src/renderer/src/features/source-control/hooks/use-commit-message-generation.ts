@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { unwrap, type WorkspaceTarget } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { WorkspaceTarget } from '../../../../../shared/contracts'
 import { useSourceControl } from '../../../state/source-control-store'
 
 export function useCommitMessageGeneration(target: WorkspaceTarget) {
@@ -7,6 +8,7 @@ export function useCommitMessageGeneration(target: WorkspaceTarget) {
   const [feedback, setFeedback] = useState<{ message: string; error: boolean }>()
   const current = useRef<{ id: string; canceled: boolean } | undefined>(undefined)
   const mounted = useRef(true)
+  const isMounted = () => mounted.current
 
   useEffect(() => {
     mounted.current = true
@@ -26,11 +28,11 @@ export function useCommitMessageGeneration(target: WorkspaceTarget) {
     const request = current.current
     if (!request) return
     request.canceled = true
-    if (mounted.current) setState('stopping')
+    if (isMounted()) setState('stopping')
     try {
       unwrap(await window.desktop.cancelCommitMessage({ ...target, requestId: request.id }))
     } catch (error) {
-      if (mounted.current && current.current === request)
+      if (isMounted() && current.current === request)
         setFeedback({
           message: error instanceof Error ? error.message : '停止生成失败，请重试。',
           error: true,
@@ -40,14 +42,14 @@ export function useCommitMessageGeneration(target: WorkspaceTarget) {
   }
 
   async function generate(indexVersion: string, apply: (message: string) => void) {
-    if (current.current || !mounted.current) return
+    if (current.current || !isMounted()) return
     const request = { id: crypto.randomUUID(), canceled: false }
     current.current = request
     const before = useSourceControl.getState().sessions[target.workspaceId]
     const revision = before?.draftRevision ?? 0
     setState('running')
     setFeedback(undefined)
-    const isCurrent = () => mounted.current && current.current === request && !request.canceled
+    const isCurrent = () => isMounted() && current.current === request && !request.canceled
     try {
       const result = unwrap(
         await window.desktop.generateCommitMessage({
@@ -81,7 +83,7 @@ export function useCommitMessageGeneration(target: WorkspaceTarget) {
     } finally {
       if (current.current === request) {
         current.current = undefined
-        if (mounted.current) setState('idle')
+        if (isMounted()) setState('idle')
       }
     }
   }

@@ -1,10 +1,6 @@
 import type { ThemePreference } from '../../../shared/contracts'
-import {
-  DEFAULT_INTERFACE_COLORS,
-  interfaceColorsSchema,
-  type InterfaceColorRole,
-  type InterfaceColors,
-} from '../../../shared/interface-colors'
+import { DEFAULT_INTERFACE_COLORS, interfaceColorsSchema } from '../../../shared/interface-colors'
+import type { InterfaceColorRole, InterfaceColors } from '../../../shared/interface-colors'
 
 let colorContext: CanvasRenderingContext2D | null | undefined
 
@@ -27,7 +23,7 @@ function primaryForeground(color: string): '#000000' | '#ffffff' {
     const value = parseInt(color.slice(offset, offset + 2), 16) / 255
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   })
-  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
   const blackContrast = (luminance + 0.05) / 0.05
   const whiteContrast = 1.05 / (luminance + 0.05)
   return blackContrast >= whiteContrast ? '#000000' : '#ffffff'

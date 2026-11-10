@@ -2,12 +2,12 @@ import { createHash, randomUUID } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import type {
-  GitWorktreeInfo,
-  WorktreeScan,
-  TerminalSession,
   CreateWorktreeResult,
-  WorktreeRecord,
+  GitWorktreeInfo,
   ProjectWorkspace,
+  TerminalSession,
+  WorktreeRecord,
+  WorktreeScan,
 } from '../../../shared/contracts'
 import { absolutePath, projectDirectory } from '../../validation'
 import { WorktreeError } from './git'

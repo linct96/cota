@@ -1,4 +1,5 @@
-import { useState, type ComponentProps } from 'react'
+import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { cn } from 'cn'
 import { InputGroup, InputGroupAddon, InputGroupInput } from './input-group'
 

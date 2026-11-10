@@ -1,12 +1,13 @@
-import { ipcMain, type BrowserWindow, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain } from 'electron'
+import type { BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import type { Result } from '../../shared/contracts'
 import type { AppLifecycle } from './lifecycle'
 import { WorktreeError } from '../git/worktrees/git'
 import { HostingError } from '../code-hosting/cli-runner'
 
-export type IpcHandler = <Args extends unknown[], T>(
+export type IpcHandler = <TArgs extends unknown[], T>(
   channel: string,
-  action: (...args: Args) => Promise<T> | T,
+  action: (...args: TArgs) => Promise<T> | T,
 ) => void
 
 const exitChannels = new Set([
@@ -39,6 +40,7 @@ const workspaceOperations = new Set([
   'code-hosting:merge',
   'code-hosting:clear-creation',
   'agent:hooks-install',
+  'agent:hooks-trust',
   'agent:hooks-uninstall',
 ])
 
@@ -63,9 +65,9 @@ export function createIPC(
     }
   }
 
-  function handle<Args extends unknown[], T>(
+  function handle<TArgs extends unknown[], T>(
     channel: string,
-    action: (...args: Args) => Promise<T> | T,
+    action: (...args: TArgs) => Promise<T> | T,
   ): void {
     ipcMain.handle(
       channel,
@@ -82,7 +84,7 @@ export function createIPC(
           if (startupError && channel !== 'app:force-exit' && channel !== 'window:is-maximized')
             throw startupError
           if (exitPending()) await lifecycle.waitForExit()
-          const run = () => action(...(args as Args))
+          const run = () => action(...(args as TArgs))
           return {
             ok: true,
             value: await (workspaceOperations.has(channel) ? lifecycle.trackOperation(run) : run()),

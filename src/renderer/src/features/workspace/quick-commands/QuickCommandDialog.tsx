@@ -33,8 +33,8 @@ export function QuickCommandDialog({
   projectPath,
 }: {
   open: boolean
-  onOpenChange(open: boolean): void
-  onOpenChangeComplete(open: boolean): void
+  onOpenChange: (open: boolean) => void
+  onOpenChangeComplete: (open: boolean) => void
   command?: QuickCommand
   projectPath?: string
 }) {
@@ -370,7 +370,7 @@ export function QuickCommandDialog({
                                 title={field.state.value}
                               >
                                 {(value: string) =>
-                                  value?.split(/[\\/]/).filter(Boolean).pop() || value
+                                  value.split(/[\\/]/).filter(Boolean).pop() || value
                                 }
                               </SelectValue>
                             </SelectTrigger>
@@ -412,13 +412,13 @@ export function QuickCommandDialog({
             </p>
           )}
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
-            {([canSubmit, submitting]) => (
+            {([canSubmit, formSubmitting]) => (
               <DialogFooter className="quick-command-dialog-footer">
                 <Button
                   type="button"
                   variant="outline"
                   className="quick-command-cancel"
-                  disabled={submitting}
+                  disabled={formSubmitting}
                   onClick={() => onOpenChange(false)}
                 >
                   取消
@@ -426,9 +426,9 @@ export function QuickCommandDialog({
                 <Button
                   type="submit"
                   className="quick-command-save"
-                  disabled={!canSubmit || submitting}
+                  disabled={!canSubmit || formSubmitting}
                 >
-                  {submitting ? '保存中…' : '保存命令'}
+                  保存命令
                 </Button>
               </DialogFooter>
             )}

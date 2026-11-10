@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { GitStatus, GitTracking } from '../../../shared/source-control'
 import { runGit, runGitBytes } from '../git-runner'
-import { filePath, hash, MAX_FILES } from './shared'
+import { MAX_FILES, filePath, hash } from './shared'
 
 function fields(record: string, count: number): [string[], string] {
   const parts: string[] = []
@@ -96,8 +96,8 @@ export async function mergeState(root: string): Promise<GitStatus['merge']> {
   const path = (
     await runGit(root, ['rev-parse', '--path-format=absolute', '--git-path', 'MERGE_HEAD'])
   ).trim()
-  const read = (path: string) =>
-    readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+  const read = (metadataPath: string) =>
+    readFile(metadataPath, 'utf8').catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined
       throw error
     })

@@ -7,9 +7,9 @@ export class AppRenderer {
   quitting = false
   visibleTerminal: string | undefined
   pendingAgentFocus: { terminalId: string; launchId: string } | undefined
-  private pendingConfirmation: { id: string; resolve(confirmed: boolean): void } | undefined
+  private pendingConfirmation: { id: string; resolve: (confirmed: boolean) => void } | undefined
   private pendingExitLayout:
-    | { id: string; resolve(layout: unknown): void; reject(error: Error): void }
+    | { id: string; resolve: (layout: unknown) => void; reject: (error: Error) => void }
     | undefined
 
   constructor(private readonly getWindow: () => BrowserWindow | undefined) {}

@@ -1,14 +1,15 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { createServer, type Server } from 'node:http'
+import { createServer } from 'node:http'
+import type { Server } from 'node:http'
 import { shell } from 'electron'
 import type { AccountOAuthProgress, AccountProduct } from '../../shared/accounts'
 import { ACCOUNT_PRODUCTS } from '../../shared/accounts'
 import {
-  authFromToken,
-  exchangeCode,
   GROK_CLIENT_ID,
   GROK_SCOPE,
   OAUTH_CONFIG,
+  authFromToken,
+  exchangeCode,
   requestJSON,
 } from './network'
 import { text } from './files'

@@ -1,4 +1,5 @@
-import { Suspense, useLayoutEffect, useState, type ReactNode } from 'react'
+import { Suspense, useLayoutEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { cn } from '@/lib/utils'

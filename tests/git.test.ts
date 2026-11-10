@@ -3,8 +3,8 @@ import { gitAvailable } from './helpers/git'
 import { EventEmitter } from 'node:events'
 import type { FSWatcher } from 'node:fs'
 import {
-  mkdtemp,
   mkdir,
+  mkdtemp,
   readFile,
   realpath,
   rename,
@@ -53,12 +53,14 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       let read = vi.fn(readBranchData)
       let notify = vi.fn()
       let service: BranchService
+      let closeService: (() => void) | undefined
       let target: { projectPath: string; workspaceId: string }
       let releaseRead: (() => void) | undefined
       let pendingRead: Promise<unknown> | undefined
       let main: Awaited<ReturnType<BranchService['query']>>
       let worktree: Awaited<ReturnType<BranchService['query']>>
       beforeEach(async () => {
+        closeService = undefined
         releaseRead = undefined
         pendingRead = undefined
         await git('init', '--initial-branch=main')
@@ -86,6 +88,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           start: vi.fn().mockResolvedValue(true),
           stop: vi.fn(),
         })
+        closeService = () => service.close()
         target = { projectPath: directory, workspaceId: 'main' }
         service.subscribe('main', target)
         service.subscribe('linked', { ...target, workspaceId: 'linked' })
@@ -96,7 +99,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       })
       afterEach(async () => {
         releaseRead?.()
-        service?.close()
+        closeService?.()
         await pendingRead?.catch(() => {})
       })
       it('shares snapshots but isolates worktree remotes and config invalidation', async () => {
@@ -284,7 +287,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
             }),
           ).rejects.toThrow('已改变')
           expect(await readFile(join(directory, name), 'utf8')).toBe('agent changed it\n')
-          await sourceControl.mutate(directory, discard, async () => true)
+          await sourceControl.mutate(directory, discard, () => Promise.resolve(true))
           expect(await readFile(join(directory, name), 'utf8')).toBe('second\n')
           expect(noConfirm).toHaveBeenCalledTimes(1)
           await expect(
@@ -360,14 +363,14 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
             expect.objectContaining({ kind: 'unavailable' }),
           )
           expect((await sourceControl.status(directory, true)).entries[0].stats).toBeNull()
-          await sourceControl.mutate(directory, discard, async () => true)
+          await sourceControl.mutate(directory, discard, () => Promise.resolve(true))
           const outside = join(directory, 'outside.txt')
           await writeFile(outside, 'do not delete')
           await symlink(outside, join(nested, 'link'))
           await sourceControl.mutate(
             directory,
             { ...target, action: 'discard', files: [{ path: 'nested/link', area: 'untracked' }] },
-            async () => true,
+            () => Promise.resolve(true),
           )
           expect(await readFile(outside, 'utf8')).toBe('do not delete')
           await expect(
@@ -557,7 +560,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
               { path: 'local.txt', area: 'untracked' },
             ],
           },
-          async () => false,
+          () => Promise.resolve(false),
         )
         expect((await sourceControl.status(worktree)).branch).toBe('feature/worktree')
         expect((await sourceControl.status(worktree)).rootPath).toBe(worktree)
@@ -590,7 +593,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         await sourceControl.mutate(
           worktree,
           { ...target, action: 'unstage', files: [{ path: 'renamed 空格.txt', area: 'staged' }] },
-          async () => false,
+          () => Promise.resolve(false),
         )
         expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe('one\n')
       }, 15000)
@@ -840,7 +843,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       const common = join(directory, '.git')
       const paths = new Map<
         string,
-        { watcher: FSWatcher; emit(event: 'change' | 'rename', file: string | null): void }
+        { watcher: FSWatcher; emit: (event: 'change' | 'rename', file: string | null) => void }
       >()
       const watch = vi.fn((...args: unknown[]) => {
         const [path, , listener] = args
@@ -864,7 +867,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         return Promise.reject(Object.assign(new Error('No ignored paths'), { cause: { code: 1 } }))
       })
       try {
-        expect(await service.start(id, async () => linked, notify)).toBe(true)
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         expect(paths.has(linked)).toBe(true)
         expect(paths.has(gitDir)).toBe(true)
         expect(paths.has(common)).toBe(true)
@@ -872,10 +875,13 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         expect(paths.has(join(common, 'worktrees'))).toBe(true)
         const watchCount = watch.mock.calls.length
         const sharedId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
-        expect(await service.start(sharedId, async () => linked, vi.fn(), true)).toBe(true)
+        expect(await service.start(sharedId, () => Promise.resolve(linked), vi.fn(), true)).toBe(
+          true,
+        )
         expect(watch).toHaveBeenCalledTimes(watchCount)
         service.stop(sharedId)
-        for (const { watcher } of paths.values()) expect(watcher.close).not.toHaveBeenCalled()
+        for (const { watcher } of paths.values())
+          expect(vi.mocked(watcher).close.mock.calls).toHaveLength(0)
         vi.useFakeTimers()
         paths.get(linked)!.emit('change', '.git')
         paths.get(common)!.emit('change', 'index.lock')
@@ -912,18 +918,20 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         expect(notify.mock.calls).toEqual([['unavailable']])
         await vi.advanceTimersByTimeAsync(5000)
         expect(notify).toHaveBeenCalledTimes(1)
-        for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
+        for (const { watcher } of paths.values())
+          expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
 
         paths.clear()
-        expect(await service.start(id, async () => linked, notify)).toBe(true)
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         paths.get(common)!.emit('rename', 'refs')
         expect(notify).toHaveBeenLastCalledWith('unavailable')
-        for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
+        for (const { watcher } of paths.values())
+          expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
         paths.clear()
         watch.mockImplementationOnce(() => {
           throw new Error('recursive watch unsupported')
         })
-        expect(await service.start(id, async () => linked, notify)).toBe(false)
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(false)
         let resolvePath!: (path: string) => void
         const pending = service.start(
           id,
@@ -939,10 +947,13 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         expect(await pending).toBe(false)
         expect(watch).toHaveBeenCalledTimes(count)
 
-        expect(await service.start(id, async () => linked, notify)).toBe(true)
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         service.close()
-        for (const { watcher } of paths.values()) expect(watcher.close).toHaveBeenCalledOnce()
-        await expect(service.start('invalid', async () => linked, notify)).rejects.toThrow()
+        for (const { watcher } of paths.values())
+          expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
+        await expect(
+          service.start('invalid', () => Promise.resolve(linked), notify),
+        ).rejects.toThrow()
       } finally {
         service.close()
         vi.useRealTimers()
@@ -974,8 +985,8 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           { host: 'gitlab.leke.cn', account: 'old', active: false, status: 'error' },
         ],
       }
-      const scan = vi.fn(async (provider: unknown): Promise<HostingAccounts> =>
-        provider === 'github' ? github : gitlab,
+      const scan = vi.fn((provider: unknown): Promise<HostingAccounts> =>
+        Promise.resolve(provider === 'github' ? github : gitlab),
       )
       const service = new CodeHostingService(config, gitService, undefined, scan)
       const path = 'frontend/leke-webapp/micro-frontends/micro-frontends-web'
@@ -1062,9 +1073,9 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       await service.accounts('github')
       expect((await service.context(directory)).source).toBeNull()
 
-      const failingScan = vi.fn(async (): Promise<HostingAccounts> => {
-        throw new HostingError('response', 'safe scan failure')
-      })
+      const failingScan = vi.fn((): Promise<HostingAccounts> =>
+        Promise.reject(new HostingError('response', 'safe scan failure')),
+      )
       const failedService = new CodeHostingService(config, gitService, undefined, failingScan)
       expect((await failedService.context(directory)).reason).toContain('自定义托管端点读取失败')
       await git('remote', 'set-url', 'origin', 'https://github.com/team/repo.git')

@@ -1,9 +1,7 @@
 import { extname } from 'node:path'
 import type { Preferences } from '../../shared/contracts'
-import {
-  NOTIFICATION_SOUND_EXTENSIONS,
-  type NotificationSound,
-} from '../../shared/notification-sounds'
+import { NOTIFICATION_SOUND_EXTENSIONS } from '../../shared/notification-sounds'
+import type { NotificationSound } from '../../shared/notification-sounds'
 import {
   DEFAULT_TERMINAL_APPEARANCE,
   terminalAppearanceSchema,
@@ -11,7 +9,7 @@ import {
 import { validateShortcutBindings } from '../../shared/shortcuts'
 import { DEFAULT_INTERFACE_COLORS, interfaceColorsSchema } from '../../shared/interface-colors'
 import { absolutePath } from './paths'
-import { workspaceOpeners, savedQuickCommands } from './commands'
+import { savedQuickCommands, workspaceOpeners } from './commands'
 
 function notificationSoundPreference(value: unknown): NotificationSound {
   if (value === 'system' || value === 'none') return value
@@ -56,7 +54,7 @@ export function preferences(value: unknown): Preferences {
     reusePreviewTabs = true,
     confirmCloseRunningTerminal = true,
     commitMessagePrompt = '',
-  } = value as Partial<Preferences>
+  } = value as Record<keyof Preferences, unknown>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
   if (fileIconTheme !== 'default' && fileIconTheme !== 'material')
     throw new Error('文件图标主题选项无效。')
@@ -73,6 +71,9 @@ export function preferences(value: unknown): Preferences {
     throw new Error('轮次完成通知选项无效。')
   if (
     !fileExplorer ||
+    typeof fileExplorer !== 'object' ||
+    !('showIgnored' in fileExplorer) ||
+    !('followSymlinks' in fileExplorer) ||
     typeof fileExplorer.showIgnored !== 'boolean' ||
     typeof fileExplorer.followSymlinks !== 'boolean'
   )
@@ -96,8 +97,13 @@ export function preferences(value: unknown): Preferences {
   ) {
     throw new Error('Shell 名称不能包含换行且最多 80 字符。')
   }
-  if (shellPath !== null) absolutePath(shellPath)
-  if (!Number.isInteger(scrollback) || scrollback! < 1000 || scrollback! > 20000) {
+  const validatedShellPath = shellPath === null ? null : absolutePath(shellPath)
+  if (
+    typeof scrollback !== 'number' ||
+    !Number.isInteger(scrollback) ||
+    scrollback < 1000 ||
+    scrollback > 20000
+  ) {
     throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
   }
   if (
@@ -125,8 +131,8 @@ export function preferences(value: unknown): Preferences {
     confirmCloseRunningTerminal,
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
-    shellPath: shellPath as string | null,
-    scrollback: scrollback!,
+    shellPath: validatedShellPath,
+    scrollback,
     openWith: workspaceOpeners(openWith),
     quickCommands: savedQuickCommands(quickCommands),
   }

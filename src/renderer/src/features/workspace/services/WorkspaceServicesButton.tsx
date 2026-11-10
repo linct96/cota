@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { ExternalLink, RotateCw, Server, Square, TerminalSquare } from 'lucide-react'
 import { MAX_TERMINALS, unwrap } from '../../../../../shared/contracts'
-import { useWorkspace, type TerminalTab } from '@/state/workspace'
+import { useWorkspace } from '@/state/workspace'
+import type { TerminalTab } from '@/state/workspace'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,

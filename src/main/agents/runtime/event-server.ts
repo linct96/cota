@@ -1,4 +1,5 @@
-import { createServer, type Socket } from 'node:net'
+import { createServer } from 'node:net'
+import type { Socket } from 'node:net'
 import { protectEndpoint, removeEndpoint } from '../../system/platform'
 import type { AgentSessionManager } from './session-manager'
 

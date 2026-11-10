@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   GitService,
-  parseWorktreeList,
   WorktreeError,
   gitEnvironment,
+  parseWorktreeList,
 } from '../src/main/git/worktrees/git'
 import {
   SPACE_NAMES,

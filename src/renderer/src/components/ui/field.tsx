@@ -53,7 +53,7 @@ function FieldError({
   children,
   errors,
   ...props
-}: ComponentProps<'div'> & { errors?: Array<{ message?: string } | undefined> }) {
+}: ComponentProps<'div'> & { errors?: ({ message?: string } | undefined)[] }) {
   const messages = [...new Set(errors?.map((error) => error?.message).filter(Boolean))]
   if (!children && !messages.length) return null
   return (

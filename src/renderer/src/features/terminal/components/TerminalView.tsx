@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { StableCellFitAddon } from '@/features/terminal/lib/terminal-stable-cell-fit-addon'
-import { unwrap, type TerminalEvent } from '../../../../../shared/contracts'
-import { useWorkspace, type TerminalTab } from '@/state/workspace'
+import { unwrap } from '../../../../../shared/contracts'
+import type { TerminalEvent } from '../../../../../shared/contracts'
+import { useWorkspace } from '@/state/workspace'
+import type { TerminalTab } from '@/state/workspace'
 import { createTerminalRenderer } from '@/features/terminal/lib/terminal-renderer'
 import { installTerminalInput } from '@/features/terminal/lib/terminal-input'
 import { installTerminalScroll } from '@/features/terminal/lib/terminal-scroll'
@@ -84,6 +86,7 @@ export function TerminalView({
     const stopTheme = observeDocumentTheme(updateAppearance)
     instance.current = { terminal, fit: viewportFit, renderer }
     let disposed = false
+    const isDisposed = () => disposed
     let connected = false
     let closing = false
     let restoreFocus = false
@@ -220,17 +223,17 @@ export function TerminalView({
             rows: terminal.rows,
           }),
         )
-      if (disposed) return
+      if (isDisposed()) return
       const attached = unwrap(
         await window.desktop.attachTerminal({ id, projectPath, workspaceId, attachmentId }),
       )
-      if (disposed) {
+      if (isDisposed()) {
         void window.desktop.detachTerminal(id, attachmentId).catch(() => {})
         return
       }
       scrolling.preserve(() => terminal.resize(attached.cols, attached.rows))
       await new Promise<void>((resolve) => terminal.write(attached.snapshot, resolve))
-      if (disposed) return
+      if (isDisposed()) return
       scrolling.restore(readingOffset.current)
       connected = true
       terminal.options.disableStdin = attached.exited
@@ -249,7 +252,7 @@ export function TerminalView({
       fitAndResize()
       if (live()) await window.desktop.resizeTerminal(id, terminal.cols, terminal.rows).then(unwrap)
     })().catch((error: unknown) => {
-      if (disposed) return
+      if (isDisposed()) return
       terminal.options.disableStdin = true
       useWorkspace.getState().updateTab(id, {
         status: 'error',

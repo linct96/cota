@@ -1,7 +1,8 @@
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { ClaudeCode, Grok, OpenAI, Pi } from '@lobehub/icons'
 import { Check, ChevronDown, UsersRound } from 'lucide-react'
-import { ACCOUNT_PRODUCTS, type AccountProduct } from '../../../../shared/accounts'
+import { ACCOUNT_PRODUCTS } from '../../../../shared/accounts'
+import type { AccountProduct } from '../../../../shared/accounts'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,

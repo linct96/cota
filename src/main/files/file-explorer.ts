@@ -55,7 +55,7 @@ export class FileExplorerService {
         within.startsWith(`..${sep}`) ||
         isAbsolute(within) ||
         (!this.options().followSymlinks && canonical !== target) ||
-        within.split(sep).some((part) => part.toLowerCase() === '.git')
+        within.split(sep).some((segment) => segment.toLowerCase() === '.git')
       )
         throw new Error('文件真实路径已改变或位于工作区外，已拒绝访问。')
       if (ancestors.has(canonical)) throw new Error('符号链接指向上级目录，已阻止循环访问。')
@@ -120,7 +120,7 @@ export class FileExplorerService {
               : 'other',
       })
       if (entry.isSymbolicLink() && this.options().followSymlinks) {
-        const listed = entries[entries.length - 1]!
+        const listed = entries[entries.length - 1]
         try {
           const linked = await this.location(root, listed.path, false)
           if ((await stat(linked)).isDirectory()) {
@@ -133,7 +133,7 @@ export class FileExplorerService {
       }
     }
     if (entries.length) {
-      const names = entries.map(
+      const entryNames = entries.map(
         (entry) => entry.name + (entry.kind === 'directory' && !entry.symlink ? '/' : ''),
       )
       // Ignore styling is optional: ordinary folders and unavailable Git must remain browsable.
@@ -142,11 +142,11 @@ export class FileExplorerService {
         ['check-ignore', '-z', '--stdin'],
         false,
         2000,
-        names.join('\0') + '\0',
+        entryNames.join('\0') + '\0',
       ).catch(() => Buffer.alloc(0))
       const ignored = new Set(output.toString('utf8').split('\0'))
       for (const [index, entry] of entries.entries()) {
-        if (ignored.has(names[index])) entry.ignored = true
+        if (ignored.has(entryNames[index])) entry.ignored = true
       }
     }
     await this.location(root, path, false)

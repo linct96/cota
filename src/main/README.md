@@ -8,7 +8,7 @@
 | ----------------------- | --------------------------------------------------------------------- |
 | `app/`                  | 窗口安全、菜单、渲染进程通信、可信 IPC 边界、退出生命周期             |
 | `accounts/`             | Agent 账号、凭据文件、OAuth、网络访问和账号存储                       |
-| `agents/cli/`           | CLI 发现、启动命令、安装与更新                                        |
+| `agents/cli/`           | CLI 发现、启动命令、来源检测与自更新                                  |
 | `agents/hooks/`         | Hooks / Extension 适配、配置安装、Shell 集成及事件发送                |
 | `agents/runtime/`       | 原生事件接收与校验、任务状态归并、进程识别、防休眠                    |
 | `agents/notifications/` | Agent 通知策略与 Electron 桌面通知                                    |

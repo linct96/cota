@@ -8,6 +8,7 @@ import type { AppLifecycle } from '../app/lifecycle'
 import type { AppRenderer } from '../app/renderer'
 import type { IpcHandler, TrustedIPC } from '../app/ipc'
 import { startupCommand, terminalId, terminalLaunch } from '../validation'
+import type { AgentCliCache } from '../../shared/agent-cli'
 
 export function registerTerminalIPC(deps: {
   handle: IpcHandler
@@ -20,8 +21,9 @@ export function registerTerminalIPC(deps: {
   renderer: AppRenderer
 }): void {
   const { handle, trusted, config, manager, agentClis, worktrees, lifecycle, renderer } = deps
-  handle('terminal:create', (value: CreateTerminal) => {
-    if (!value || typeof value !== 'object') throw new Error('终端参数无效。')
+  handle('terminal:create', (input: unknown) => {
+    if (!input || typeof input !== 'object') throw new Error('终端参数无效。')
+    const value = input as CreateTerminal
     if (
       lifecycle.removingWorkspace?.projectPath === value.projectPath &&
       (lifecycle.removingWorkspace.removeProject ||
@@ -44,7 +46,7 @@ export function registerTerminalIPC(deps: {
         lifecycle.exitPending
       )
         throw new Error('工作区正在关闭，无法新建终端。')
-      const create = (agentCliCache?: import('../../shared/agent-cli').AgentCliCache) =>
+      const create = (agentCliCache?: AgentCliCache) =>
         manager.request('create', [
           {
             id: value.id,
@@ -73,8 +75,10 @@ export function registerTerminalIPC(deps: {
     if (!session?.service?.port || session.exited) throw new Error('服务未运行或未配置端口。')
     await shell.openExternal(`http://127.0.0.1:${session.service.port}`)
   })
-  handle('terminal:attach', (value: AttachTerminal) => {
-    if (!value || !config.snapshot().recentProjects.includes(value.projectPath))
+  handle('terminal:attach', (input: unknown) => {
+    if (!input || typeof input !== 'object') throw new Error('请先打开项目目录。')
+    const value = input as AttachTerminal
+    if (!config.snapshot().recentProjects.includes(value.projectPath))
       throw new Error('请先打开项目目录。')
     return worktrees.withTerminalTarget(value, (binding) =>
       manager.request('attach', [{ id: value.id, attachmentId: value.attachmentId, ...binding }]),

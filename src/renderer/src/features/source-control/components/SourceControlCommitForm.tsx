@@ -4,12 +4,12 @@ import { toast } from 'sonner'
 import {
   ChevronDown,
   ChevronUp,
-  Upload,
   GitCommitHorizontal,
   GitMerge,
-  Sparkles,
   LoaderCircle,
+  Sparkles,
   Square,
+  Upload,
 } from 'lucide-react'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { commitMessageFormSchema } from '@/features/source-control/lib/form-schemas'
@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Field, FieldGroup, FieldLabel, FieldError, FieldDescription } from '@/components/ui/field'
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Textarea } from '@/components/ui/textarea'
 import type { SourceControlChangesPanelProps } from './source-control-changes-types'
@@ -47,6 +47,7 @@ export function SourceControlCommitForm({
   const [messageExpandedOverride, setMessageExpanded] = useState<boolean>()
   const messageExpanded = messageExpandedOverride ?? !!status?.merge
   const mounted = useRef(true)
+  const isMounted = () => mounted.current
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -79,9 +80,9 @@ export function SourceControlCommitForm({
         message,
         indexVersion: status.indexVersion,
       })
-      if (committed && mounted.current && form.getFieldValue('message') === message)
+      if (committed && isMounted() && form.getFieldValue('message') === message)
         form.reset({ message: '' })
-      if (!committed || !meta.push || !mounted.current) return
+      if (!committed || !meta.push || !isMounted()) return
       const current = useSourceControl.getState().sessions[workspace.id]?.status
       if (
         !current?.head ||
@@ -100,7 +101,7 @@ export function SourceControlCommitForm({
           ? { ...identity, action: 'push', tracking: current.tracking }
           : { ...identity, action: 'publish', remote: selectedRemote },
       )
-      if (mounted.current) {
+      if (isMounted()) {
         if (pushed) toast.success('提交并推送成功', { description: workspace.name })
         else toast.warning('提交已成功，未完成推送。', { description: workspace.name })
       }
@@ -118,7 +119,7 @@ export function SourceControlCommitForm({
   const disabled = pending || !status
   const hasConflicts = status?.entries.some((entry) => entry.area === 'conflict')
   const hasStaged = status?.entries.some((entry) => entry.area === 'staged')
-  const commitDisabled = disabled || hasConflicts || (!status?.merge && !hasStaged)
+  const commitDisabled = disabled || hasConflicts || (!status.merge && !hasStaged)
   return (
     <Collapsible
       className="source-control-commit flex shrink-0 flex-col gap-2 px-2 py-1.5"

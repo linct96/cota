@@ -19,7 +19,9 @@ export async function readBranchData(cwd: string, git = new GitService()): Promi
     .map((record) => record.split('\0'))
   const branches = records
     .filter(([, symbolic]) => !symbolic)
-    .map(([ref, , oid, date, subject]) => {
+    .map((fields) => {
+      const [ref, , oid, date] = fields
+      const subject = fields.at(4)
       if (
         !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(oid) ||
         !Number.isFinite(Date.parse(date)) ||

@@ -1,18 +1,15 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { realpath } from 'node:fs/promises'
-import { basename, isAbsolute, relative, sep, join } from 'node:path'
+import { basename, isAbsolute, join, relative, sep } from 'node:path'
 import { isIP } from 'node:net'
 import type {
   PortScanContext,
   WorkspacePort,
   WorkspacePortSnapshot,
 } from '../../shared/workspace-ports'
-import {
-  readProcessSnapshot,
-  processStartedAt,
-  type ProcessIdentity,
-} from '../system/process-snapshot'
+import { processStartedAt, readProcessSnapshot } from '../system/process-snapshot'
+import type { ProcessIdentity } from '../system/process-snapshot'
 
 export interface ListeningPort {
   pid: number
@@ -157,7 +154,7 @@ export function attributePorts(
       const candidates = context.workspaces
         .filter((workspace) => within(cwd, workspace.cwd))
         .sort((a, b) => b.cwd.length - a.cwd.length)
-      const best = candidates[0]
+      const best = candidates.at(0)
       if (best && (candidates.length === 1 || best.cwd.length > candidates[1].cwd.length))
         owner = { projectPath: best.projectPath, workspaceId: best.workspaceId, evidence: 'cwd' }
     }

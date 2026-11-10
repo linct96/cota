@@ -6,10 +6,15 @@ import { terminalId } from './terminal'
 export function createWorktreeInput(value: unknown): CreateWorktreeInput {
   if (!value || typeof value !== 'object') throw new Error('Worktree 参数无效。')
   const input = value as Partial<CreateWorktreeInput>
-  const text = (value: unknown): string => {
-    if (typeof value !== 'string' || !value.trim() || value.length > 1024 || /[\0\r\n]/.test(value))
+  const text = (inputValue: unknown): string => {
+    if (
+      typeof inputValue !== 'string' ||
+      !inputValue.trim() ||
+      inputValue.length > 1024 ||
+      /[\0\r\n]/.test(inputValue)
+    )
       throw new Error('Worktree 名称、分支和基准引用不能为空，且不得超过 1024 字符。')
-    return value
+    return inputValue
   }
   return {
     projectPath: absolutePath(input.projectPath),
@@ -51,16 +56,21 @@ export function worktreeNameHistory(value: unknown): Record<string, string[]> {
 
 export function worktreeRecords(value: unknown): WorktreeRecord[] {
   if (!Array.isArray(value) || value.length > 10000) throw new Error('Worktree 登记列表无效。')
-  const path = (value: unknown): string => {
-    const result = absolutePath(value)
+  const path = (inputValue: unknown): string => {
+    const result = absolutePath(inputValue)
     if (normalize(result) !== result || result === '/') throw new Error('Worktree 登记路径无效。')
     return result
   }
-  const optionalText = (value: unknown): string | undefined => {
-    if (value === undefined) return undefined
-    if (typeof value !== 'string' || !value || value.length > 1024 || /[\0\r\n]/.test(value))
+  const optionalText = (inputValue: unknown): string | undefined => {
+    if (inputValue === undefined) return undefined
+    if (
+      typeof inputValue !== 'string' ||
+      !inputValue ||
+      inputValue.length > 1024 ||
+      /[\0\r\n]/.test(inputValue)
+    )
       throw new Error('Worktree 登记引用无效。')
-    return value
+    return inputValue
   }
   const records = value.map((entry: unknown): WorktreeRecord => {
     if (!entry || typeof entry !== 'object') throw new Error('Worktree 登记格式无效。')

@@ -11,7 +11,7 @@ export function createTerminalRenderer(
   fit: Pick<FitAddon, 'fit'>,
 ) {
   let addon: WebglAddon | undefined
-  let contextLoss: { dispose(): void } | undefined
+  let contextLoss: { dispose: () => void } | undefined
   let mode: TerminalGpuAcceleration = 'auto'
   let visible = false
   let failed = false

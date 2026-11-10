@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Check, ChevronRight, FileDiff, Minus, Plus, Undo2 } from 'lucide-react'
-import { gitFileKey, type GitArea, type GitChange } from '../../../../../shared/source-control'
+import { gitFileKey } from '../../../../../shared/source-control'
+import type { GitArea, GitChange } from '../../../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { useWorkspace } from '@/state/workspace'
 import { buildGitChangeTree } from '@/features/source-control/lib/source-control-tree'
@@ -67,7 +68,7 @@ export function SourceControlFileGroups({
           variant="ghost"
           size="sm"
           className="source-control-view-all"
-          disabled={disabled || !status?.entries.length}
+          disabled={disabled || !status.entries.length}
           onClick={() => useSourceControl.getState().openChanges(workspace.id)}
         >
           <FileDiff className="source-control-view-all-icon" data-icon="inline-start" />
@@ -156,7 +157,7 @@ export function SourceControlFileGroups({
                   label={`${label}文件树`}
                   selectedPath={selectedDiff?.area === area ? selectedDiff.path : undefined}
                   renderDirectoryActions={(directoryEntries, path) => {
-                    const targets = directoryEntries.filter((entry) => !entry.submodule)
+                    const directoryTargets = directoryEntries.filter((entry) => !entry.submodule)
                     return (
                       <>
                         {(area === 'unstaged' || area === 'untracked') && (
@@ -164,10 +165,10 @@ export function SourceControlFileGroups({
                             variant="ghost"
                             size="icon-xs"
                             className="source-control-directory-discard"
-                            aria-label={`放弃 ${path} 下 ${targets.length} 个${label}文件的更改`}
+                            aria-label={`放弃 ${path} 下 ${directoryTargets.length} 个${label}文件的更改`}
                             title="放弃该目录及子目录的更改（需确认）"
-                            disabled={disabled || !targets.length}
-                            onClick={() => filesAction('discard', targets)}
+                            disabled={disabled || !directoryTargets.length}
+                            onClick={() => filesAction('discard', directoryTargets)}
                           >
                             <Undo2 className="source-control-directory-discard-icon" />
                           </Button>
@@ -176,7 +177,7 @@ export function SourceControlFileGroups({
                           variant="ghost"
                           size="icon-xs"
                           className="source-control-directory-stage"
-                          aria-label={`${area === 'staged' ? '取消暂存' : '暂存'} ${path} 下 ${targets.length} 个${label}文件`}
+                          aria-label={`${area === 'staged' ? '取消暂存' : '暂存'} ${path} 下 ${directoryTargets.length} 个${label}文件`}
                           title={
                             area === 'staged'
                               ? '取消暂存该目录及子目录的文件'
@@ -184,9 +185,9 @@ export function SourceControlFileGroups({
                                 ? '暂存该目录及子目录的文件以标记已解决'
                                 : '暂存该目录及子目录的文件'
                           }
-                          disabled={disabled || !targets.length}
+                          disabled={disabled || !directoryTargets.length}
                           onClick={() =>
-                            filesAction(area === 'staged' ? 'unstage' : 'stage', targets)
+                            filesAction(area === 'staged' ? 'unstage' : 'stage', directoryTargets)
                           }
                         >
                           {area === 'staged' ? (

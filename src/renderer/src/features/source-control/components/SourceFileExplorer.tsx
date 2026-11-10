@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from 'react'
 import type { GitChangeNode } from '@/features/source-control/lib/source-control-tree'
 import { FileTypeIcon } from '@/features/files/components/FileTypeIcon'
-import { Button } from '@/components/ui/button'
+import type { Button } from '@/components/ui/button'
 import { FileTree, FileTreeActions, FileTreeFolder } from '@/components/ui/file-tree'
 
 type SourceFileExplorerItemProps = Pick<

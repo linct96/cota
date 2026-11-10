@@ -84,7 +84,7 @@ export function agentOwner(
       (row) => row.parent === rootPid && !/^(?:conhost|OpenConsole)\.exe$/i.test(row.command),
     )
     if (children.length > 1) return
-    let row = rows.find((row) => row.pid === reporterPid)
+    let row = rows.find((candidate) => candidate.pid === reporterPid)
     const seen = new Set<number>()
     while (row && row.pid !== rootPid && !seen.has(row.pid)) {
       seen.add(row.pid)
@@ -194,10 +194,10 @@ export async function agentProcesses(
           command: string
         }[]) {
           const row = wrappers.find(
-            (row) =>
-              row.pid === current.pid &&
-              row.parent === current.parent &&
-              row.started === current.started,
+            (candidate) =>
+              candidate.pid === current.pid &&
+              candidate.parent === current.parent &&
+              candidate.started === current.started,
           )
           if (row) row.provider = recognizeNodeAgent(current.command || '')
         }

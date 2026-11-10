@@ -1,10 +1,6 @@
 import { Notification } from 'electron'
-import {
-  AGENT_PROVIDERS,
-  type AgentSession,
-  type AgentUpdate,
-  type TurnCompleteNotification,
-} from '../../../shared/contracts'
+import { AGENT_PROVIDERS } from '../../../shared/contracts'
+import type { AgentSession, AgentUpdate, TurnCompleteNotification } from '../../../shared/contracts'
 
 export class AgentNotifications {
   private entries = new Map<
@@ -14,13 +10,13 @@ export class AgentNotifications {
 
   constructor(
     private readonly options: {
-      createNotification(options: Electron.NotificationConstructorOptions): Notification
-      isEnabled(): boolean
-      turnCompleteMode(): TurnCompleteNotification
-      isVisible(id: string): boolean
-      describe(session: AgentSession): string
-      activate(session: AgentSession): Promise<void>
-      warn(message: string): void
+      createNotification: (options: Electron.NotificationConstructorOptions) => Notification
+      isEnabled: () => boolean
+      turnCompleteMode: () => TurnCompleteNotification
+      isVisible: (id: string) => boolean
+      describe: (session: AgentSession) => string
+      activate: (session: AgentSession) => Promise<void>
+      warn: (message: string) => void
     },
   ) {}
 
@@ -51,7 +47,7 @@ export class AgentNotifications {
     const entry = {
       session,
       sent: sameTurn ? previous.sent : new Set<string>(),
-      notification: keepNotification ? previous?.notification : undefined,
+      notification: keepNotification ? previous.notification : undefined,
     }
     if (!keepNotification) previous?.notification?.close()
     this.entries.set(id, entry)

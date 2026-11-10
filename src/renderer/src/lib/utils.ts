@@ -1,5 +1,7 @@
 export { cn } from 'cn'
 
+const pathGraphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 export function folderName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() || path
 }
@@ -17,12 +19,14 @@ export function abbreviateHomePath(path: string): string {
 
 export function compactPath(path: string): string {
   const parts = abbreviateHomePath(path).split('/')
-  const last = parts.reduce((last, part, index) => (part ? index : last), -1)
+  const last = parts.reduce((previous, part, index) => (part ? index : previous), -1)
   return parts
     .map((part, index) =>
       index === last || part === '~' || part.endsWith(':')
         ? part
-        : [...part].slice(0, part.startsWith('.') ? 2 : 1).join(''),
+        : Array.from(pathGraphemes.segment(part), ({ segment }) => segment)
+            .slice(0, part.startsWith('.') ? 2 : 1)
+            .join(''),
     )
     .join('/')
 }

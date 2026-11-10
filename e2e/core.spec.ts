@@ -1,6 +1,6 @@
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
-import { test, expect } from './desktop.fixture'
+import { expect, test } from './desktop.fixture'
 
 async function text(path: string) {
   return readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {

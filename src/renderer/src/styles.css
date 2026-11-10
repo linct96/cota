@@ -487,6 +487,7 @@ button:not([data-slot='button']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+.project-group-row:hover,
 .project-folder-row:hover {
   background: var(--sidebar-accent);
   color: var(--sidebar-accent-foreground);
@@ -516,6 +517,7 @@ button:not([data-slot='button']):focus-visible {
   color: var(--foreground);
   box-shadow: var(--shadow-xs);
 }
+.project-group-row,
 .project-folder-row,
 .source-control-branch-option-row,
 .source-control-group-header,
@@ -725,6 +727,8 @@ button:not([data-slot='button']):focus-visible {
 .source-control-review-path,
 .file-preview-path,
 .project-folder-name,
+.project-group-name,
+.project-move-group-name,
 .project-item-name,
 .project-item-branch,
 .workspace-tab-title,

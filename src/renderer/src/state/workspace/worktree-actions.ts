@@ -1,7 +1,8 @@
 import { removeTerminalPanes } from '../../../../shared/terminal-layout'
-import { MAX_TERMINALS, unwrap, type CreateWorktreeResult } from '../../../../shared/contracts'
+import { MAX_TERMINALS, unwrap } from '../../../../shared/contracts'
+import type { CreateWorktreeResult } from '../../../../shared/contracts'
 import type { StateCreator } from 'zustand'
-import type { WorkspaceState, TerminalTab } from './types'
+import type { TerminalTab, WorkspaceState } from './types'
 import { currentWorkspace } from './selectors'
 
 export const createWorktreeActions: StateCreator<

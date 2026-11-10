@@ -1,4 +1,5 @@
-import { connect, type Socket } from 'node:net'
+import { connect } from 'node:net'
+import type { Socket } from 'node:net'
 import { randomUUID } from 'node:crypto'
 import type {
   AgentEventType,

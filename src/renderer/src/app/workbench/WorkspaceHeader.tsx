@@ -18,16 +18,16 @@ import type { WorkspaceView } from './use-workspace-view'
 
 export function WorkspaceHeader({ view }: { view: WorkspaceView }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      removingWorkspace: state.removingWorkspace,
-      closeWorkspaceTab: state.closeWorkspaceTab,
-      selectedProject: state.selectedProject,
-      selectWorkspaceTab: state.selectWorkspaceTab,
-      closeTab: state.closeTab,
-      creatingWorktree: state.creatingWorktree,
-      worktreeScans: state.worktreeScans,
-      newTerminal: state.newTerminal,
-      terminalLayouts: state.terminalLayouts,
+    useShallow((currentState) => ({
+      removingWorkspace: currentState.removingWorkspace,
+      closeWorkspaceTab: currentState.closeWorkspaceTab,
+      selectedProject: currentState.selectedProject,
+      selectWorkspaceTab: currentState.selectWorkspaceTab,
+      closeTab: currentState.closeTab,
+      creatingWorktree: currentState.creatingWorktree,
+      worktreeScans: currentState.worktreeScans,
+      newTerminal: currentState.newTerminal,
+      terminalLayouts: currentState.terminalLayouts,
     })),
   )
   const {
@@ -57,9 +57,9 @@ export function WorkspaceHeader({ view }: { view: WorkspaceView }) {
   }
   function pinPreview() {
     if (!workspaceId || !hasPreview || state.removingWorkspace) return
-    const sourceControl = useSourceControl.getState()
-    if (previewSelection) sourceControl.pinDiff(workspaceId)
-    else sourceControl.pinFile(workspaceId)
+    const controlState = useSourceControl.getState()
+    if (previewSelection) controlState.pinDiff(workspaceId)
+    else controlState.pinFile(workspaceId)
     requestAnimationFrame(() =>
       document
         .getElementById(
@@ -98,7 +98,9 @@ export function WorkspaceHeader({ view }: { view: WorkspaceView }) {
                 disabled={!!state.removingWorkspace}
               >
                 {sourceControl.tabOrder.map((key, index) => {
-                  const tab = currentTabs.find((tab) => key === `terminal:${tab.id}`)
+                  const tab = currentTabs.find(
+                    (candidateTab) => key === `terminal:${candidateTab.id}`,
+                  )
                   if (tab)
                     return (
                       <TerminalTab
@@ -141,7 +143,7 @@ export function WorkspaceHeader({ view }: { view: WorkspaceView }) {
                       />
                     )
                   const selection = sourceControl.pinnedDiffs.find(
-                    (selection) => key === `diff:${gitFileKey(selection)}`,
+                    (candidateSelection) => key === `diff:${gitFileKey(candidateSelection)}`,
                   )
                   if (selection) {
                     const diffKey = gitFileKey(selection)

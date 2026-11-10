@@ -1,22 +1,37 @@
-import type { PendingHostedReview } from './code-hosting'
+import type { CodeHostingAPI, HostingFailure, PendingHostedReview } from './code-hosting'
 import type { WorktreeSetupConfig, WorktreeSetupSnapshot } from './worktree-setup'
 import type { WorkspacePortSnapshot } from './workspace-ports'
-import type { FileEntry, FilePreview, FileAction, FileWatchEvent } from './file-explorer'
+import type { FileAction, FileEntry, FilePreview, FileWatchEvent } from './file-explorer'
 import type { CommitMessageRequest, CommitMessageResult } from './commit-message'
-import { DEFAULT_TERMINAL_APPEARANCE, type TerminalAppearance } from './terminal-appearance'
+import { DEFAULT_TERMINAL_APPEARANCE } from './terminal-appearance'
+import type { TerminalAppearance } from './terminal-appearance'
 import type { ShortcutBindings } from './shortcuts'
 import type { NotificationSound } from './notification-sounds'
-import { DEFAULT_INTERFACE_COLORS, type InterfaceColors } from './interface-colors'
+import { DEFAULT_INTERFACE_COLORS } from './interface-colors'
+import type { InterfaceColors } from './interface-colors'
 import type {
+  GitCompareRequest,
+  GitComparison,
   GitDiff,
   GitDiffSelection,
-  GitMutation,
-  GitStatus,
+  GitFailureDetails,
   GitHistory,
   GitHistoryRequest,
-  GitComparison,
-  GitCompareRequest,
+  GitMutation,
+  GitStatus,
 } from './source-control'
+import type { ProjectGrouping, ProjectGroupingChange } from './project-groups'
+import type {
+  AgentCliCache,
+  AgentCliInstallEvent,
+  AgentCliInstallResult,
+  AgentCliInstallRun,
+  AgentCliInstallTerminal,
+  AgentCliStatus,
+} from './agent-cli'
+import type { TerminalLayout } from './terminal-layout'
+import type { AccountsAPI } from './accounts'
+import type { GitBranchTarget, GitBranchView } from './git-branches'
 
 export interface WorkspaceOpener {
   id: string
@@ -76,13 +91,14 @@ export interface Preferences {
 export interface AppConfig {
   version: 2
   recentProjects: string[]
+  projectGrouping?: ProjectGrouping
   preferences: Preferences
   layout?: WorkspaceLayout
   worktreeRecords: WorktreeRecord[]
   worktreeNameHistory?: Record<string, string[]>
   worktreeSetups?: Record<string, WorktreeSetupConfig>
   codeHostingPendingCreates?: (string | PendingHostedReview)[]
-  agentCliCache?: import('./agent-cli').AgentCliCache
+  agentCliCache?: AgentCliCache
 }
 
 export type WorktreeErrorCode =
@@ -101,6 +117,7 @@ export type WorktreeErrorCode =
   | 'REMOVAL_BLOCKED'
 
 export interface WorktreeFailureDetails {
+  git?: GitFailureDetails
   operationId?: string
   path?: string
   gitState?: 'created' | 'not-created' | 'removed' | 'unknown'
@@ -114,7 +131,7 @@ export type Result<T> =
       error: string
       code?: WorktreeErrorCode
       details?: WorktreeFailureDetails
-      hostingFailure?: import('./code-hosting').HostingFailure
+      hostingFailure?: HostingFailure
     }
 export type Shortcut =
   | 'open-folder'
@@ -340,6 +357,7 @@ export interface ManagedAgentEvent extends Omit<AgentLifecycleEvent, 'launchId'>
 export interface AgentHookStatus {
   provider: AgentProvider
   state: 'installed' | 'missing' | 'outdated' | 'conflict' | 'error'
+  trust?: 'trusted' | 'untrusted' | 'unknown'
   paths: string[]
   detail: string
 }
@@ -378,7 +396,7 @@ export interface SavedTerminal extends WorkspaceTarget {
 }
 
 export interface WorkspaceLayout {
-  terminalLayouts?: import('./terminal-layout').TerminalLayout[]
+  terminalLayouts?: TerminalLayout[]
   workspaces: ProjectWorkspace[]
   tabs: SavedTerminal[]
   selectedProject?: string
@@ -458,44 +476,41 @@ export interface DesktopAPI {
     windowBlur: boolean
     interfaceColors?: InterfaceColors
   }
-  readClipboard(): Promise<Result<string>>
-  writeClipboard(text: string): Promise<Result<void>>
-  setShortcutRecording(recording: boolean): void
-  setTerminalInputFocused(focused: boolean): void
-  inspectAgentClis(
+  readClipboard: () => Promise<Result<string>>
+  writeClipboard: (text: string) => Promise<Result<void>>
+  setShortcutRecording: (recording: boolean) => void
+  setTerminalInputFocused: (focused: boolean) => void
+  inspectAgentClis: (
     checkUpdates?: boolean,
     provider?: AgentProvider,
-  ): Promise<Result<import('./agent-cli').AgentCliStatus[]>>
-  installAgentCli(
-    provider: AgentProvider,
-  ): Promise<Result<import('./agent-cli').AgentCliInstallResult>>
-  listAgentCliInstalls(): Promise<Result<import('./agent-cli').AgentCliInstallRun[]>>
-  readAgentCliInstallTerminal(
-    provider: AgentProvider,
-    attachmentId: string,
-  ): Promise<Result<import('./agent-cli').AgentCliInstallTerminal | undefined>>
-  detachAgentCliInstallTerminal(
+  ) => Promise<Result<AgentCliStatus[]>>
+  openAgentCliInstallGuide: (provider: AgentProvider) => Promise<Result<void>>
+  updateAgentCli: (provider: AgentProvider) => Promise<Result<AgentCliInstallResult>>
+  listAgentCliInstalls: () => Promise<Result<AgentCliInstallRun[]>>
+  readAgentCliInstallTerminal: (
     provider: AgentProvider,
     attachmentId: string,
-  ): Promise<Result<void>>
-  acknowledgeAgentCliInstallTerminal(
+  ) => Promise<Result<AgentCliInstallTerminal | undefined>>
+  detachAgentCliInstallTerminal: (
+    provider: AgentProvider,
+    attachmentId: string,
+  ) => Promise<Result<void>>
+  acknowledgeAgentCliInstallTerminal: (
     provider: AgentProvider,
     attachmentId: string,
     length: number,
-  ): Promise<Result<void>>
-  writeAgentCliInstallTerminal(
+  ) => Promise<Result<void>>
+  writeAgentCliInstallTerminal: (
     id: string,
     data: string,
     encoding?: 'utf8' | 'binary',
-  ): Promise<Result<void>>
-  resizeAgentCliInstallTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
-  onAgentCliInstall(
-    listener: (event: import('./agent-cli').AgentCliInstallEvent) => void,
-  ): () => void
-  readonly accounts: import('./accounts').AccountsAPI
-  readonly codeHosting: import('./code-hosting').CodeHostingAPI
+  ) => Promise<Result<void>>
+  resizeAgentCliInstallTerminal: (id: string, cols: number, rows: number) => Promise<Result<void>>
+  onAgentCliInstall: (listener: (event: AgentCliInstallEvent) => void) => () => void
+  readonly accounts: AccountsAPI
+  readonly codeHosting: CodeHostingAPI
   readonly platform: string
-  bootstrap(): Promise<
+  bootstrap: () => Promise<
     Result<{
       config: AppConfig
       sessions: TerminalSession[]
@@ -503,99 +518,107 @@ export interface DesktopAPI {
       worktreeScans?: Record<string, WorktreeScan>
     }>
   >
-  saveLayout(layout: WorkspaceLayout): Promise<Result<void>>
-  openProject(): Promise<Result<string | null>>
-  selectProject(path: string): Promise<Result<void>>
-  inspectRepository(path: string): Promise<Result<GitRepositoryInfo>>
-  listWorktrees(path: string): Promise<Result<GitWorktreeInfo[]>>
-  listFiles(target: WorkspaceTarget, path: string): Promise<Result<FileEntry[]>>
-  readFile(target: WorkspaceTarget, path: string): Promise<Result<FilePreview>>
-  fileAction(target: WorkspaceTarget, path: string, action: FileAction): Promise<Result<void>>
-  watchFiles(
+  saveLayout: (layout: WorkspaceLayout) => Promise<Result<void>>
+  openProject: () => Promise<Result<string | null>>
+  changeProjectGrouping: (change: ProjectGroupingChange) => Promise<Result<ProjectGrouping>>
+  selectProject: (path: string) => Promise<Result<void>>
+  inspectRepository: (path: string) => Promise<Result<GitRepositoryInfo>>
+  listWorktrees: (path: string) => Promise<Result<GitWorktreeInfo[]>>
+  listFiles: (target: WorkspaceTarget, path: string) => Promise<Result<FileEntry[]>>
+  readFile: (target: WorkspaceTarget, path: string) => Promise<Result<FilePreview>>
+  fileAction: (target: WorkspaceTarget, path: string, action: FileAction) => Promise<Result<void>>
+  watchFiles: (
     target: WorkspaceTarget,
     paths: string[],
     listener: (event: FileWatchEvent) => void,
-  ): () => void
-  gitStatus(target: WorkspaceTarget): Promise<Result<GitStatus>>
-  watchGit(target: WorkspaceTarget, listener: (event: GitWatchEvent) => void): () => void
-  gitDiff(target: WorkspaceTarget, file: GitDiffSelection): Promise<Result<GitDiff>>
-  gitBranches(
-    target: import('./git-branches').GitBranchTarget,
+  ) => () => void
+  gitStatus: (target: WorkspaceTarget) => Promise<Result<GitStatus>>
+  watchGit: (target: WorkspaceTarget, listener: (event: GitWatchEvent) => void) => () => void
+  gitDiff: (target: WorkspaceTarget, file: GitDiffSelection) => Promise<Result<GitDiff>>
+  gitBranches: (
+    target: GitBranchTarget,
     subscriptionId: string,
     force?: boolean,
-  ): Promise<Result<import('./git-branches').GitBranchView>>
-  releaseGitBranches(subscriptionId: string): Promise<Result<void>>
-  onGitBranchesChanged(listener: (repositoryId: string) => void): () => void
-  gitHistory(target: WorkspaceTarget, request?: GitHistoryRequest): Promise<Result<GitHistory>>
-  gitCompare(target: WorkspaceTarget, request: GitCompareRequest): Promise<Result<GitComparison>>
-  gitMutate(input: GitMutation): Promise<Result<boolean>>
-  generateCommitMessage(input: CommitMessageRequest): Promise<Result<CommitMessageResult>>
-  cancelCommitMessage(input: WorkspaceTarget & { requestId: string }): Promise<Result<void>>
-  planGitWorktree(input: CreateWorktreeInput): Promise<Result<WorktreePlan>>
-  suggestWorktreeName(path: string): Promise<Result<WorktreeNameSuggestion>>
-  scanWorktrees(path: string): Promise<Result<WorktreeScan>>
-  createGitWorktree(
+  ) => Promise<Result<GitBranchView>>
+  releaseGitBranches: (subscriptionId: string) => Promise<Result<void>>
+  onGitBranchesChanged: (listener: (repositoryId: string) => void) => () => void
+  gitHistory: (target: WorkspaceTarget, request?: GitHistoryRequest) => Promise<Result<GitHistory>>
+  gitCompare: (
+    target: WorkspaceTarget,
+    request: GitCompareRequest,
+  ) => Promise<Result<GitComparison>>
+  gitMutate: (input: GitMutation) => Promise<Result<boolean>>
+  generateCommitMessage: (input: CommitMessageRequest) => Promise<Result<CommitMessageResult>>
+  cancelCommitMessage: (input: WorkspaceTarget & { requestId: string }) => Promise<Result<void>>
+  planGitWorktree: (input: CreateWorktreeInput) => Promise<Result<WorktreePlan>>
+  suggestWorktreeName: (path: string) => Promise<Result<WorktreeNameSuggestion>>
+  scanWorktrees: (path: string) => Promise<Result<WorktreeScan>>
+  createGitWorktree: (
     input: CreateWorktreeInput & { planId?: string },
-  ): Promise<Result<CreateWorktreeResult>>
-  linkGitWorktree(path: string, worktreePath: string): Promise<Result<CreateWorktreeResult>>
-  inspectWorktreeRemoval(id: string): Promise<Result<WorktreeRemovalCheck>>
-  removeGitWorktree(id: string, deleteBranch: boolean): Promise<Result<RemoveWorktreeResult>>
-  unlinkGitWorktree(id: string): Promise<Result<boolean>>
-  worktreeSetupConfig(projectPath: string): Promise<Result<WorktreeSetupConfig>>
-  saveWorktreeSetupConfig(projectPath: string, value: WorktreeSetupConfig): Promise<Result<void>>
-  inspectWorktreeSetup(target: WorkspaceTarget): Promise<Result<WorktreeSetupSnapshot>>
-  startWorktreeSetup(
+  ) => Promise<Result<CreateWorktreeResult>>
+  linkGitWorktree: (path: string, worktreePath: string) => Promise<Result<CreateWorktreeResult>>
+  inspectWorktreeRemoval: (id: string) => Promise<Result<WorktreeRemovalCheck>>
+  removeGitWorktree: (id: string, deleteBranch: boolean) => Promise<Result<RemoveWorktreeResult>>
+  unlinkGitWorktree: (id: string) => Promise<Result<boolean>>
+  worktreeSetupConfig: (projectPath: string) => Promise<Result<WorktreeSetupConfig>>
+  saveWorktreeSetupConfig: (
+    projectPath: string,
+    value: WorktreeSetupConfig,
+  ) => Promise<Result<void>>
+  inspectWorktreeSetup: (target: WorkspaceTarget) => Promise<Result<WorktreeSetupSnapshot>>
+  startWorktreeSetup: (
     target: WorkspaceTarget,
     definition: WorktreeSetupConfig,
-  ): Promise<Result<boolean>>
-  stopWorktreeSetup(target: WorkspaceTarget): Promise<Result<void>>
-  workspacePath(target: WorkspaceTarget): Promise<Result<string>>
-  listWorkspaceOpeners(): Promise<Result<WorkspaceOpener[]>>
-  openWorkspaceWith(path: string | WorkspaceTarget, openerId: string): Promise<Result<void>>
-  removeWorkspace(target: RemoveWorkspace): Promise<Result<boolean>>
-  removeProject(path: string): Promise<Result<boolean>>
-  getDefaultShell(): Promise<Result<string>>
-  savePreferences(preferences: Preferences): Promise<Result<Preferences>>
-  sendTestNotification(): Promise<Result<void>>
-  openNotificationSettings(): Promise<Result<void>>
-  chooseNotificationSound(): Promise<Result<{ path: string } | null>>
-  onNotificationSound(listener: (source: string) => void): () => void
-  onWarning(listener: (message: string) => void): () => void
-  readAgentClis(): Promise<Result<import('./agent-cli').AgentCliCache>>
-  onAgentClis(listener: (cache: import('./agent-cli').AgentCliCache) => void): () => void
-  detectAgentHooks(): Promise<Result<AgentHookStatus[]>>
-  installAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
-  uninstallAgentHook(provider: AgentProvider): Promise<Result<AgentHookStatus | null>>
-  readAgent(id: string, launchId: string, revision: number): Promise<Result<void>>
-  setVisibleTerminal(id?: string): Promise<Result<void>>
-  onAgentFocus(
+  ) => Promise<Result<boolean>>
+  stopWorktreeSetup: (target: WorkspaceTarget) => Promise<Result<void>>
+  workspacePath: (target: WorkspaceTarget) => Promise<Result<string>>
+  listWorkspaceOpeners: () => Promise<Result<WorkspaceOpener[]>>
+  openWorkspaceWith: (path: string | WorkspaceTarget, openerId: string) => Promise<Result<void>>
+  removeWorkspace: (target: RemoveWorkspace) => Promise<Result<boolean>>
+  removeProject: (path: string) => Promise<Result<boolean>>
+  getDefaultShell: () => Promise<Result<string>>
+  savePreferences: (preferences: Preferences) => Promise<Result<Preferences>>
+  sendTestNotification: () => Promise<Result<void>>
+  openNotificationSettings: () => Promise<Result<void>>
+  chooseNotificationSound: () => Promise<Result<{ path: string } | null>>
+  onNotificationSound: (listener: (source: string) => void) => () => void
+  onWarning: (listener: (message: string) => void) => () => void
+  readAgentClis: () => Promise<Result<AgentCliCache>>
+  onAgentClis: (listener: (cache: AgentCliCache) => void) => () => void
+  detectAgentHooks: () => Promise<Result<AgentHookStatus[]>>
+  installAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
+  trustAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
+  uninstallAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
+  readAgent: (id: string, launchId: string, revision: number) => Promise<Result<void>>
+  setVisibleTerminal: (id?: string) => Promise<Result<void>>
+  onAgentFocus: (
     listener: (target: Pick<AgentSession, 'terminalId' | 'launchId'>) => void,
-  ): () => void
-  onAgent(listener: (event: AgentUpdate) => void): () => void
-  createTerminal(options: CreateTerminal): Promise<Result<void>>
-  attachTerminal(options: AttachTerminal): Promise<Result<TerminalAttachment>>
-  detachTerminal(id: string, attachmentId: string): Promise<Result<void>>
-  writeTerminal(id: string, data: string, encoding?: 'utf8' | 'binary'): Promise<Result<void>>
-  resizeTerminal(id: string, cols: number, rows: number): Promise<Result<void>>
-  acknowledge(id: string, attachmentId: string, length: number): void
-  closeTerminal(id: string): Promise<Result<boolean>>
-  stopService(id: string): Promise<Result<void>>
-  openService(id: string): Promise<Result<void>>
-  scanWorkspacePorts(target: WorkspaceTarget): Promise<Result<WorkspacePortSnapshot>>
-  stopWorkspacePort(target: WorkspaceTarget, id: string): Promise<Result<boolean>>
-  openWorkspacePort(target: WorkspaceTarget, id: string): Promise<Result<void>>
-  minimizeWindow(): void
-  toggleMaximizeWindow(): void
-  isWindowMaximized(): Promise<Result<boolean>>
-  onWindowMaximized(listener: (maximized: boolean) => void): () => void
-  closeWindow(): void
-  forceExitApp(): Promise<Result<void>>
-  respondToConfirmation(id: string, confirmed: boolean): Promise<Result<void>>
-  onConfirmation(listener: (request: ConfirmationRequest) => void): () => void
-  onExitProgress(listener: (progress: AppExitProgress | null) => void): () => void
-  onExitLayoutRequest(listener: () => WorkspaceLayout | undefined): () => void
-  onTerminal(listener: (event: TerminalEvent) => void): () => void
-  onShortcut(listener: (shortcut: Shortcut) => void): () => void
+  ) => () => void
+  onAgent: (listener: (event: AgentUpdate) => void) => () => void
+  createTerminal: (options: CreateTerminal) => Promise<Result<void>>
+  attachTerminal: (options: AttachTerminal) => Promise<Result<TerminalAttachment>>
+  detachTerminal: (id: string, attachmentId: string) => Promise<Result<void>>
+  writeTerminal: (id: string, data: string, encoding?: 'utf8' | 'binary') => Promise<Result<void>>
+  resizeTerminal: (id: string, cols: number, rows: number) => Promise<Result<void>>
+  acknowledge: (id: string, attachmentId: string, length: number) => void
+  closeTerminal: (id: string) => Promise<Result<boolean>>
+  stopService: (id: string) => Promise<Result<void>>
+  openService: (id: string) => Promise<Result<void>>
+  scanWorkspacePorts: (target: WorkspaceTarget) => Promise<Result<WorkspacePortSnapshot>>
+  stopWorkspacePort: (target: WorkspaceTarget, id: string) => Promise<Result<boolean>>
+  openWorkspacePort: (target: WorkspaceTarget, id: string) => Promise<Result<void>>
+  minimizeWindow: () => void
+  toggleMaximizeWindow: () => void
+  isWindowMaximized: () => Promise<Result<boolean>>
+  onWindowMaximized: (listener: (maximized: boolean) => void) => () => void
+  closeWindow: () => void
+  forceExitApp: () => Promise<Result<void>>
+  respondToConfirmation: (id: string, confirmed: boolean) => Promise<Result<void>>
+  onConfirmation: (listener: (request: ConfirmationRequest) => void) => () => void
+  onExitProgress: (listener: (progress: AppExitProgress | null) => void) => () => void
+  onExitLayoutRequest: (listener: () => WorkspaceLayout | undefined) => () => void
+  onTerminal: (listener: (event: TerminalEvent) => void) => () => void
+  onShortcut: (listener: (shortcut: Shortcut) => void) => () => void
 }
 
 export const MAX_TERMINALS = 50

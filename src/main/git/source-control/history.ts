@@ -1,34 +1,31 @@
 import { isUtf8 } from 'node:buffer'
-import type {
-  GitHistory,
-  GitHistoryRequest,
-  GitComparison,
-  GitCompareRequest,
-  GitReviewFile,
-} from '../../../shared/source-control'
+import type { GitComparison, GitHistory, GitReviewFile } from '../../../shared/source-control'
 import { GitService } from '../worktrees/git'
 import {
-  runGit,
-  runGitBytes,
-  resolveGitCommit,
   WorktreeError,
   explainGitError as explain,
+  resolveGitCommit,
+  runGit,
+  runGitBytes,
 } from '../git-runner'
 import { diffStats } from './stats'
-import { filePath, OID, HISTORY_PAGE, MAX_FILES, STATS_BUDGET_MS } from './shared'
+import { HISTORY_PAGE, MAX_FILES, OID, STATS_BUDGET_MS, filePath } from './shared'
+
 const git = new GitService()
 
 export async function checkedCommit(root: string, value: unknown): Promise<string> {
   if (typeof value !== 'string' || !OID.test(value)) throw new Error('请提供完整的提交标识。')
   return resolveGitCommit(root, value)
 }
-export async function history(cwd: string, request: GitHistoryRequest = {}): Promise<GitHistory> {
+export async function history(cwd: string, value: unknown = {}): Promise<GitHistory> {
   try {
-    if (!request || typeof request !== 'object') throw new Error('历史查询参数无效。')
+    if (!value || typeof value !== 'object') throw new Error('历史查询参数无效。')
+    const request = value as Record<string, unknown>
     if (request.base !== undefined && request.head === undefined)
       throw new Error('比较范围需要明确的起点和终点提交。')
     const offset = request.offset ?? 0
     if (
+      typeof offset !== 'number' ||
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
       offset >= 10000 ||
@@ -41,7 +38,10 @@ export async function history(cwd: string, request: GitHistoryRequest = {}): Pro
     else {
       const current = await runGit(rootPath, ['rev-parse', '--verify', '--quiet', 'HEAD']).catch(
         (error) => {
-          if (error instanceof WorktreeError && (error.cause as { code?: number })?.code === 1)
+          if (
+            error instanceof WorktreeError &&
+            (error.cause as { code?: number } | undefined)?.code === 1
+          )
             return ''
           throw error
         },
@@ -86,9 +86,10 @@ export async function history(cwd: string, request: GitHistoryRequest = {}): Pro
     throw explain(error)
   }
 }
-export async function compare(cwd: string, request: GitCompareRequest): Promise<GitComparison> {
+export async function compare(cwd: string, value: unknown): Promise<GitComparison> {
   try {
-    if (!request || typeof request !== 'object') throw new Error('比较查询参数无效。')
+    if (!value || typeof value !== 'object') throw new Error('比较查询参数无效。')
+    const request = value as Record<string, unknown>
     const { rootPath } = await git.requireRepository(cwd)
     let head: string, base: string | null, label: string
     if (request.kind === 'commit') {
@@ -111,7 +112,10 @@ export async function compare(cwd: string, request: GitCompareRequest): Promise<
       const tip = await resolveGitCommit(rootPath, request.ref)
       base = (
         await runGit(rootPath, ['merge-base', tip, head]).catch((error) => {
-          if (error instanceof WorktreeError && (error.cause as { code?: number })?.code === 1)
+          if (
+            error instanceof WorktreeError &&
+            (error.cause as { code?: number } | undefined)?.code === 1
+          )
             throw new Error('分支没有共同祖先（或浅克隆缺少历史），请在终端处理。')
           throw error
         })

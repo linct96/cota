@@ -5,10 +5,10 @@ import { eventConnection, lifecycleEvent } from './event-client'
 
 // Structural API keeps the bundled adapter independent of Pi's installation and module graph.
 interface PiEvents {
-  on(
+  on: (
     event: string,
     handler: (event: { aborted?: boolean; outcome?: 'completed' | 'aborted' | 'error' }) => void,
-  ): void
+  ) => void
 }
 
 export default function cotaLifecycle(pi: PiEvents): void {

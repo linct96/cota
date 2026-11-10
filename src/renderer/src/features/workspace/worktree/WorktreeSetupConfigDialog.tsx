@@ -21,7 +21,7 @@ export function WorktreeSetupConfigDialog({
   close,
 }: {
   projectPath: string
-  close(): void
+  close: () => void
 }) {
   const [open, setOpen] = useState(true)
   const [loading, setLoading] = useState(true)

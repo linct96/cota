@@ -1,11 +1,13 @@
-import { connect, type Socket } from 'node:net'
+import { connect } from 'node:net'
+import type { Socket } from 'node:net'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createHash, randomBytes } from 'node:crypto'
 import { lstat, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { HOST_PROTOCOL, readMessages, sendMessage, type HostMethods } from './host-protocol'
+import { HOST_PROTOCOL, readMessages, sendMessage } from './host-protocol'
+import type { HostMethods } from './host-protocol'
 import type { AgentUpdate, TerminalEvent } from '../../shared/contracts'
 import { hostEndpoint, isWindows, powershell, removeEndpoint } from '../system/platform'
 import { stopProcessTree } from '../system/process-tree'
@@ -15,8 +17,8 @@ export class HostClient {
   private pending = new Map<
     number,
     {
-      resolve(value: unknown): void
-      reject(error: Error): void
+      resolve: (value: unknown) => void
+      reject: (error: Error) => void
       timer: ReturnType<typeof setTimeout>
     }
   >()
@@ -72,10 +74,10 @@ export class HostClient {
     })
   }
 
-  async request<K extends keyof HostMethods>(
-    method: K,
-    args: HostMethods[K]['args'],
-  ): Promise<HostMethods[K]['value']> {
+  async request<TMethod extends keyof HostMethods>(
+    method: TMethod,
+    args: HostMethods[TMethod]['args'],
+  ): Promise<HostMethods[TMethod]['value']> {
     const epoch = this.attachmentEpoch
     const id = ++this.nextId
     const terminalId = method === 'close' ? (args as HostMethods['close']['args'])[0] : undefined
@@ -108,11 +110,12 @@ export class HostClient {
       }
       this.attachments.set(options[0].id, options[0].attachmentId)
     } else if (method === 'detach') {
-      const [id, attachmentId] = args as HostMethods['detach']['args']
-      if (this.attachments.get(id) === attachmentId) this.attachments.delete(id)
+      const [candidateId, detachedAttachmentId] = args as HostMethods['detach']['args']
+      if (this.attachments.get(candidateId) === detachedAttachmentId)
+        this.attachments.delete(candidateId)
     } else if (method === 'close')
       this.attachments.delete((args as HostMethods['close']['args'])[0])
-    return value as HostMethods[K]['value']
+    return value as HostMethods[TMethod]['value']
   }
 
   async detachAll(): Promise<void> {

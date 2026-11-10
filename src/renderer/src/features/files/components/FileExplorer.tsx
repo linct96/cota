@@ -1,15 +1,10 @@
-import {
-  useEffect,
-  useEffectEvent,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ChevronRight, ChevronsDownUp, Link, RefreshCw } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import { fileParent, type FileAction } from '../../../../../shared/file-explorer'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
+import { fileParent } from '../../../../../shared/file-explorer'
+import type { FileAction } from '../../../../../shared/file-explorer'
 import { EMPTY_EXPLORER, explorerRows, useFileExplorer } from '@/state/file-explorer-store'
 import { useSourceControl } from '@/state/source-control-store'
 import { useFileWatch } from '@/features/files/hooks/use-file-watch'
@@ -62,7 +57,7 @@ export function FileExplorer({
         path,
         {
           ...directory,
-          entries: directory.entries
+          entries: directory?.entries
             ?.filter((entry) => explorerOptions.showIgnored || !entry.ignored)
             .map((entry) =>
               !explorerOptions.followSymlinks && entry.symlink

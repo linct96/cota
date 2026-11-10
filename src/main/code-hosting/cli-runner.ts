@@ -3,7 +3,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 import { homedir } from 'node:os'
-import type { HostingRepository, HostingFailure } from '../../shared/code-hosting'
+import type { HostingFailure, HostingRepository } from '../../shared/code-hosting'
 import { hostingHostSchema, hostingProviderSchema } from '../../shared/code-hosting'
 import { findExecutable, loginShellEnvironment } from '../system/shell'
 

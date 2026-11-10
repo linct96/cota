@@ -1,8 +1,8 @@
 import type {
-  PrepareHostedReview,
-  HostedReviewPreparation,
   HostedReview,
+  HostedReviewPreparation,
   HostingComparison,
+  PrepareHostedReview,
 } from '../../shared/code-hosting'
 import type { HostingAdapter, ReviewScope } from './adapter'
 

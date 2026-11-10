@@ -6,15 +6,15 @@ import { folderName } from '@/lib/utils'
 
 export function useWorkspaceView() {
   const state = useWorkspace(
-    useShallow((state) => ({
-      workspaces: state.workspaces,
-      selectedProject: state.selectedProject,
-      selectedWorkspaces: state.selectedWorkspaces,
-      worktreeScans: state.worktreeScans,
-      tabs: state.tabs,
-      terminalLayouts: state.terminalLayouts,
-      closingTerminalTabs: state.closingTerminalTabs,
-      activeTabs: state.activeTabs,
+    useShallow((currentState) => ({
+      workspaces: currentState.workspaces,
+      selectedProject: currentState.selectedProject,
+      selectedWorkspaces: currentState.selectedWorkspaces,
+      worktreeScans: currentState.worktreeScans,
+      tabs: currentState.tabs,
+      terminalLayouts: currentState.terminalLayouts,
+      closingTerminalTabs: currentState.closingTerminalTabs,
+      activeTabs: currentState.activeTabs,
     })),
   )
   const activeWorkspace = currentWorkspace(state)
@@ -31,8 +31,8 @@ export function useWorkspaceView() {
   )
   const activeId = state.activeTabs[workspaceId || '']
   const sourceControl = useSourceControl(
-    useShallow((state) => {
-      const session = state.sessions[workspaceId || ''] || EMPTY_SOURCE_CONTROL
+    useShallow((currentState) => {
+      const session = currentState.sessions[workspaceId || ''] || EMPTY_SOURCE_CONTROL
       return {
         tabOrder: session.tabOrder,
         selection: session.selection,
@@ -59,13 +59,13 @@ export function useWorkspaceView() {
   const showingDiff = showingPreview || showingChanges || !!activePinnedDiff || !!activePinnedFile
   // Keep projects with workspaces or terminals reachable outside the recent 20.
   const projects = useWorkspace(
-    useShallow((state) => [
+    useShallow((currentState) => [
       ...new Set([
-        ...state.projects,
-        ...state.workspaces.map((workspace) => workspace.projectPath),
-        ...state.tabs.map((tab) => tab.projectPath),
-        ...state.worktreeRecords.map((record) => record.projectPath),
-        ...state.orphanSessions.map((session) => session.projectPath),
+        ...currentState.projects,
+        ...currentState.workspaces.map((workspace) => workspace.projectPath),
+        ...currentState.tabs.map((tab) => tab.projectPath),
+        ...currentState.worktreeRecords.map((record) => record.projectPath),
+        ...currentState.orphanSessions.map((session) => session.projectPath),
       ]),
     ]),
   )

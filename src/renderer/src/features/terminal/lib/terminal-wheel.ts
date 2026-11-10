@@ -66,7 +66,7 @@ export function installTerminalWheel(terminal: Terminal) {
     remainder = total - reports
     pending += reports
     source = event
-    target = event.currentTarget ?? terminal.element!
+    target = event.currentTarget ?? terminal.element
     event.preventDefault()
 
     if (!scheduled && pending > 0) {
@@ -107,7 +107,7 @@ export function installTerminalWheel(terminal: Terminal) {
   })
 
   return {
-    dispose() {
+    dispose(this: void) {
       disposed = true
       reset()
       source = undefined

@@ -5,8 +5,8 @@ import type { AgentCliCache } from '../../../shared/agent-cli'
 interface AgentClis {
   cache?: AgentCliCache
   error?: string
-  receive(cache: AgentCliCache): void
-  load(): Promise<void>
+  receive: (cache: AgentCliCache) => void
+  load: () => Promise<void>
 }
 
 export const useAgentClis = create<AgentClis>((set, get) => ({

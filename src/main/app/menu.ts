@@ -1,5 +1,6 @@
 import { Menu } from 'electron'
-import { COTA_SHORTCUTS, shortcutBinding, type ShortcutBindings } from '../../shared/shortcuts'
+import { COTA_SHORTCUTS, shortcutBinding } from '../../shared/shortcuts'
+import type { ShortcutBindings } from '../../shared/shortcuts'
 import type { Shortcut } from '../../shared/contracts'
 
 export function installMenu(

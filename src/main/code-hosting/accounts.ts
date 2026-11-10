@@ -2,13 +2,9 @@ import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { z } from 'zod'
-import {
-  hostingHostSchema,
-  hostingProviderSchema,
-  type HostingAccounts,
-  type HostingProvider,
-} from '../../shared/code-hosting'
-import { hostingCLI, HostingError } from './cli-runner'
+import { hostingHostSchema, hostingProviderSchema } from '../../shared/code-hosting'
+import type { HostingAccounts, HostingProvider } from '../../shared/code-hosting'
+import { HostingError, hostingCLI } from './cli-runner'
 
 const execute = promisify(execFile)
 const accountName = z

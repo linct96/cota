@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Result } from './contracts'
 
 export const ACCOUNT_PRODUCTS = {
   codex: { name: 'Codex', description: 'ChatGPT 登录与 API 账号' },
@@ -101,16 +102,16 @@ export interface AccountOAuthProgress {
 }
 
 export interface AccountsAPI {
-  list(product: AccountProduct): Promise<import('./contracts').Result<AccountStatus>>
-  add(input: AddAccountInput): Promise<import('./contracts').Result<void>>
-  importCurrent(product: AccountProduct): Promise<import('./contracts').Result<number>>
-  importCortana(): Promise<import('./contracts').Result<number>>
-  switch(input: z.input<typeof switchAccountSchema>): Promise<import('./contracts').Result<void>>
-  rename(input: z.infer<typeof renameAccountSchema>): Promise<import('./contracts').Result<void>>
-  remove(id: string): Promise<import('./contracts').Result<void>>
-  refresh(id: string): Promise<import('./contracts').Result<void>>
-  reorder(product: AccountProduct, ids: string[]): Promise<import('./contracts').Result<void>>
-  startOAuth(product: AccountProduct, alias: string): Promise<import('./contracts').Result<void>>
-  cancelOAuth(): Promise<import('./contracts').Result<void>>
-  onOAuth(listener: (progress: AccountOAuthProgress) => void): () => void
+  list: (product: AccountProduct) => Promise<Result<AccountStatus>>
+  add: (input: AddAccountInput) => Promise<Result<void>>
+  importCurrent: (product: AccountProduct) => Promise<Result<number>>
+  importCortana: () => Promise<Result<number>>
+  switch: (input: z.input<typeof switchAccountSchema>) => Promise<Result<void>>
+  rename: (input: z.infer<typeof renameAccountSchema>) => Promise<Result<void>>
+  remove: (id: string) => Promise<Result<void>>
+  refresh: (id: string) => Promise<Result<void>>
+  reorder: (product: AccountProduct, ids: string[]) => Promise<Result<void>>
+  startOAuth: (product: AccountProduct, alias: string) => Promise<Result<void>>
+  cancelOAuth: () => Promise<Result<void>>
+  onOAuth: (listener: (progress: AccountOAuthProgress) => void) => () => void
 }

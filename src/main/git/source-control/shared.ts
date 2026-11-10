@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute } from 'node:path'
+
 export const MAX_FILE_BYTES = 2 * 1024 * 1024
 export const MAX_FILES = 5000
 export const STATS_BUDGET_MS = 500

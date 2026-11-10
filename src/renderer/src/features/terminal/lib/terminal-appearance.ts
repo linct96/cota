@@ -1,6 +1,5 @@
-import type { ITheme, ITerminalOptions } from '@xterm/xterm'
+import type { ITerminalOptions, ITheme, Terminal } from '@xterm/xterm'
 import type { LigaturesAddon } from '@xterm/addon-ligatures'
-import type { Terminal } from '@xterm/xterm'
 import type { TerminalAppearance } from '../../../../../shared/terminal-appearance'
 import { TERMINAL_THEME_CATALOG } from '../../../../../shared/terminal-themes'
 
@@ -14,7 +13,7 @@ export function opacityColor(value: string, opacity: number): string {
   const [r, g, b] = colorContext.getImageData(0, 0, 1, 1).data
   return (
     '#' +
-    [r!, g!, b!, Math.round(opacity * 255)]
+    [r, g, b, Math.round(opacity * 255)]
       .map((channel) => channel.toString(16).padStart(2, '0'))
       .join('')
   )
@@ -77,7 +76,7 @@ function automaticContrastRatio(background: string | undefined, dark: boolean): 
     const value = Math.round(channel * alpha + surface * (1 - alpha)) / 255
     return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
   })
-  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+  const luminance = channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
   return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? 4.5 : 3
 }
 

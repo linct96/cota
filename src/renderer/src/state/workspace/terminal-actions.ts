@@ -3,16 +3,12 @@ import {
   mapTerminalPane,
   removeTerminalPanes,
   terminalPaneIds,
-  type TerminalPane,
 } from '../../../../shared/terminal-layout'
-import {
-  MAX_TERMINALS,
-  AGENT_PROVIDERS,
-  type AgentUpdate,
-  unwrap,
-} from '../../../../shared/contracts'
+import type { TerminalPane } from '../../../../shared/terminal-layout'
+import { AGENT_PROVIDERS, MAX_TERMINALS, unwrap } from '../../../../shared/contracts'
+import type { AgentUpdate } from '../../../../shared/contracts'
 import type { StateCreator } from 'zustand'
-import type { WorkspaceState, TerminalTab } from './types'
+import type { TerminalTab, WorkspaceState } from './types'
 import { currentWorkspace, terminalTabId } from './selectors'
 import { activeWorkspaceTab, adjacentWorkspaceTab } from './tab-actions'
 
@@ -126,7 +122,7 @@ export const createTerminalActions: StateCreator<
     },
 
     splitTerminal(id, direction = 'horizontal') {
-      const tab = get().tabs.find((tab) => tab.id === id)
+      const tab = get().tabs.find((candidateTab) => candidateTab.id === id)
       if (
         !tab ||
         tab.closingStatus ||
@@ -147,8 +143,8 @@ export const createTerminalActions: StateCreator<
         ],
       }
       set((state) => {
-        const group = state.terminalLayouts.find((group) =>
-          terminalPaneIds(group.root).includes(id),
+        const group = state.terminalLayouts.find((candidateGroup) =>
+          terminalPaneIds(candidateGroup.root).includes(id),
         )
         return {
           terminalLayouts: group
@@ -222,7 +218,8 @@ export const createTerminalActions: StateCreator<
         return
       }
       const group = get().terminalLayouts.find(
-        (group) => group.id === id || terminalPaneIds(group.root).includes(id),
+        (candidateGroup) =>
+          candidateGroup.id === id || terminalPaneIds(candidateGroup.root).includes(id),
       )
       if (!group) return get().closePane(id)
       const panes = terminalPaneIds(group.root).map((paneId) =>
@@ -253,7 +250,9 @@ export const createTerminalActions: StateCreator<
           })
       } finally {
         set((state) => ({
-          closingTerminalTabs: state.closingTerminalTabs.filter((id) => id !== group.id),
+          closingTerminalTabs: state.closingTerminalTabs.filter(
+            (candidateId) => candidateId !== group.id,
+          ),
         }))
       }
     },
@@ -262,7 +261,9 @@ export const createTerminalActions: StateCreator<
       if (get().removingWorkspace) return
       const tab = get().tabs.find((item) => item.id === id)
       if (!tab || tab.status === 'starting' || tab.closingStatus) return
-      const group = get().terminalLayouts.find((group) => terminalPaneIds(group.root).includes(id))
+      const group = get().terminalLayouts.find((candidateGroup) =>
+        terminalPaneIds(candidateGroup.root).includes(id),
+      )
       if (remember && group && get().closingTerminalTabs.includes(group.id)) return
       const tabKey = `terminal:${group?.id || id}`
       // Keep the pre-close presentation while exit events continue updating the actual status.
@@ -281,14 +282,18 @@ export const createTerminalActions: StateCreator<
         if (!current) return
         recovery = current
         position = get().tabs.indexOf(current)
-        tabPosition = useSourceControl.getState().sessions[tab.workspaceId].tabOrder.indexOf(tabKey)
+        tabPosition =
+          useSourceControl.getState().sessions[tab.workspaceId]?.tabOrder.indexOf(tabKey) ?? -1
         wasActive =
           activeWorkspaceTab(get(), tab.workspaceId) === tabKey &&
           get().activeTabs[tab.workspaceId] === id
         const paneIds = group
           ? terminalPaneIds(group.root).filter(
               (paneId) =>
-                paneId === id || get().tabs.some((tab) => tab.id === paneId && !tab.closingStatus),
+                paneId === id ||
+                get().tabs.some(
+                  (candidateTab) => candidateTab.id === paneId && !candidateTab.closingStatus,
+                ),
             )
           : []
         const paneIndex = paneIds.indexOf(id)
@@ -297,7 +302,7 @@ export const createTerminalActions: StateCreator<
         const hasOtherTabs =
           useSourceControl
             .getState()
-            .sessions[tab.workspaceId].tabOrder.some((key) => key !== tabKey) || !!nextPane
+            .sessions[tab.workspaceId]?.tabOrder.some((key) => key !== tabKey) || !!nextPane
         removed = true
         set((state) => {
           const tabs = state.tabs.filter((item) => item.id !== id)
@@ -333,7 +338,7 @@ export const createTerminalActions: StateCreator<
           activeWorkspaceTab(get(), tab.workspaceId) === nextTab
         const hadTab = useSourceControl
           .getState()
-          .sessions[tab.workspaceId].tabOrder.includes(tabKey)
+          .sessions[tab.workspaceId]?.tabOrder.includes(tabKey)
         removed = false
         set((state) => {
           if (
@@ -359,9 +364,9 @@ export const createTerminalActions: StateCreator<
         if (get().tabs.some((item) => item.id === id)) {
           const sourceControl = useSourceControl.getState()
           if (!hadTab) {
-            const tabOrder = sourceControl.sessions[tab.workspaceId].tabOrder.filter(
-              (key) => key !== tabKey,
-            )
+            const tabOrder =
+              sourceControl.sessions[tab.workspaceId]?.tabOrder.filter((key) => key !== tabKey) ||
+              []
             tabOrder.splice(Math.max(0, tabPosition), 0, tabKey)
             sourceControl.update(tab.workspaceId, { tabOrder })
           }
@@ -401,7 +406,7 @@ export const createTerminalActions: StateCreator<
           get().workspaces.some((workspace) => workspace.id === tab.workspaceId) &&
           (!group ||
             !terminalPaneIds(group.root).some((paneId) =>
-              get().tabs.some((tab) => tab.id === paneId),
+              get().tabs.some((candidateTab) => candidateTab.id === paneId),
             ))
         )
           useSourceControl.getState().rememberClosedTab(tab.workspaceId, {

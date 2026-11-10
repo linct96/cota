@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
-import { AGENT_PROVIDERS, unwrap, type AgentProvider } from '../../../../../shared/contracts'
-import {
-  AGENT_CLI_INSTALL_SCROLLBACK,
-  type AgentCliInstallEvent,
-  type AgentCliInstallRun,
-} from '../../../../../shared/agent-cli'
+import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
+import type { AgentProvider } from '../../../../../shared/contracts'
+import { AGENT_CLI_INSTALL_SCROLLBACK } from '../../../../../shared/agent-cli'
+import type { AgentCliInstallEvent, AgentCliInstallRun } from '../../../../../shared/agent-cli'
 import { useWorkspace } from '@/state/workspace'
 import { StableCellFitAddon } from '@/features/terminal/lib/terminal-stable-cell-fit-addon'
 import {
@@ -32,8 +30,8 @@ function AgentCliInstallTerminal({
   setError,
 }: {
   provider: AgentProvider
-  setRun(run: AgentCliInstallRun): void
-  setError(error: string): void
+  setRun: (run: AgentCliInstallRun) => void
+  setError: (error: string) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
 
@@ -158,7 +156,7 @@ function AgentCliInstallTerminal({
           detach()
           return
         }
-        if (!snapshot) throw new Error('暂无安装或更新终端。')
+        if (!snapshot) throw new Error('暂无更新终端。')
         current = snapshot.run
         revision = snapshot.revision
         setRun(current)
@@ -207,8 +205,8 @@ export function AgentCliInstallDialog({
 }: {
   provider: AgentProvider
   open: boolean
-  onClose(): void
-  onOpenChangeComplete(open: boolean): void
+  onClose: () => void
+  onOpenChangeComplete: (open: boolean) => void
 }) {
   const [run, setRun] = useState<AgentCliInstallRun>()
   const [error, setError] = useState<string>()
@@ -227,16 +225,15 @@ export function AgentCliInstallDialog({
       >
         <DialogHeader className="agent-cli-install-header">
           <DialogTitle className="agent-cli-install-title">
-            {AGENT_PROVIDERS[provider].name} 安装与更新进度
+            {AGENT_PROVIDERS[provider].name} 更新进度
           </DialogTitle>
           <DialogDescription className="agent-cli-install-description">
-            关闭弹窗不会中断任务。仅在本次应用运行期间保留最近一次终端，回滚记录最多{' '}
-            {AGENT_CLI_INSTALL_SCROLLBACK} 行。
+            关闭弹窗不会中断更新。
           </DialogDescription>
         </DialogHeader>
         <section
           className="agent-cli-install-terminal-region terminal-screen-container h-[55vh] min-h-0 overflow-hidden rounded-md border"
-          aria-label={`${AGENT_PROVIDERS[provider].name} 安装与更新终端`}
+          aria-label={`${AGENT_PROVIDERS[provider].name} 更新终端`}
         >
           <AgentCliInstallTerminal provider={provider} setRun={setRun} setError={setError} />
         </section>
@@ -245,12 +242,12 @@ export function AgentCliInstallDialog({
             {error ||
               run?.error ||
               (run?.status === 'succeeded'
-                ? '安装或更新完成'
+                ? '更新完成'
                 : run?.status === 'failed'
-                  ? '安装或更新失败'
+                  ? '更新失败'
                   : run?.status === 'not-installed'
                     ? '未安装'
-                    : '安装或更新中…')}
+                    : '更新中…')}
           </output>
           <Button className="agent-cli-install-close" variant="outline" onClick={onClose}>
             关闭

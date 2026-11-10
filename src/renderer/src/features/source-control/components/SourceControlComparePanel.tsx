@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Check, RefreshCw } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import type { GitComparison, GitReferences } from '../../../../../shared/source-control'
 import type { GitBranchData } from '../../../../../shared/git-branches'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
@@ -10,7 +11,7 @@ import { ComparisonCommits, ReviewFiles } from './SourceControlReview'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Field } from '@/components/ui/field'
 import { SourceControlSectionLayout } from './SourceControlSection'
 
@@ -118,8 +119,8 @@ export function SourceControlComparePanel({
           setResult({ key: viewKey, comparison: next })
         }
       })
-      .catch((error) => {
-        if (!disposed) setError(error instanceof Error ? error.message : String(error))
+      .catch((cause) => {
+        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause))
       })
       .finally(() => {
         if (!disposed) setLoading(false)

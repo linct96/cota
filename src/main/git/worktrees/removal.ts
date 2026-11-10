@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, realpath } from 'node:fs/promises'
-import { dirname, normalize, relative, isAbsolute, sep } from 'node:path'
-import {
-  REMOVAL_BLOCKER_LABELS,
-  type WorktreeRecord,
-  type TerminalSession,
-  type WorktreeRemovalCheck,
-  type RemoveWorktreeResult,
+import { dirname, isAbsolute, normalize, relative, sep } from 'node:path'
+import { REMOVAL_BLOCKER_LABELS } from '../../../shared/contracts'
+import type {
+  RemoveWorktreeResult,
+  TerminalSession,
+  WorktreeRecord,
+  WorktreeRemovalCheck,
 } from '../../../shared/contracts'
-import { terminalId, projectDirectory } from '../../validation'
+import { projectDirectory, terminalId } from '../../validation'
 import { WorktreeError } from './git'
 import type { WorktreeAccess } from './access'
 import type { WorktreePaths } from './paths'
@@ -106,9 +106,9 @@ export class WorktreeRemoval {
     value: string,
     options: {
       deleteBranch: boolean
-      sessions(): Promise<TerminalSession[]>
-      close(id: string): Promise<void>
-      confirm(check: WorktreeRemovalCheck, force: boolean): Promise<boolean>
+      sessions: () => Promise<TerminalSession[]>
+      close: (id: string) => Promise<void>
+      confirm: (check: WorktreeRemovalCheck, force: boolean) => Promise<boolean>
     },
   ): Promise<RemoveWorktreeResult> {
     const record = this.registered(value)
@@ -158,7 +158,7 @@ export class WorktreeRemoval {
         if (
           final.blockers.some((entry) => !(force && discardable.has(entry))) ||
           final.currentBranch !== check.currentBranch ||
-          (branch && (finalBranch?.head !== branch.head || (!force && !finalBranch?.merged)))
+          (branch && (finalBranch?.head !== branch.head || (!force && !finalBranch.merged)))
         )
           throw new WorktreeError(
             'REMOVAL_BLOCKED',
@@ -246,9 +246,9 @@ export class WorktreeRemoval {
   async unlinkWorktree(
     value: string,
     options: {
-      sessions(): Promise<TerminalSession[]>
-      close(id: string): Promise<void>
-      confirm(): Promise<boolean>
+      sessions: () => Promise<TerminalSession[]>
+      close: (id: string) => Promise<void>
+      confirm: () => Promise<boolean>
     },
   ): Promise<boolean> {
     const record = this.registered(value)

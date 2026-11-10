@@ -76,11 +76,9 @@ async function tokenRequest(product: 'codex' | 'claude', fields: Record<string, 
         }
       : {
           method: 'POST',
-          body: new URLSearchParams({
-            ...Object.fromEntries(
-              Object.entries(payload).map(([key, value]) => [key, String(value)]),
-            ),
-          }),
+          body: new URLSearchParams(
+            Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, String(value)])),
+          ),
         },
   )
   const normalized = {

@@ -110,8 +110,8 @@ export function ShortcutSettings() {
                         if (form.state.isSubmitting) return
                         const next = { ...form.state.values.bindings }
                         for (const [id] of items) {
-                          delete next[id!]
-                          recordingStartValues.current.delete(id!)
+                          delete next[id]
+                          recordingStartValues.current.delete(id)
                         }
                         form.setFieldValue('bindings', next)
                         setRecording(undefined)
@@ -128,13 +128,13 @@ export function ShortcutSettings() {
                     className="shortcut-settings-card gap-0 divide-y divide-border py-0"
                   >
                     {items.map(([id, label]) => (
-                      <form.Field key={id} name={`bindings.${id!}`}>
+                      <form.Field key={id} name={`bindings.${id}`}>
                         {(field) => {
                           const isCustom = field.state.value !== undefined
                           const errorMessage = [
                             ...new Set(
                               field.state.meta.errors
-                                .map((error) => error?.message)
+                                .map((cause) => cause?.message)
                                 .filter(Boolean),
                             ),
                           ].join(' ')
@@ -169,7 +169,7 @@ export function ShortcutSettings() {
                                     recording === id && field.state.meta.isValid
                                       ? '请按下组合键…'
                                       : formatShortcut(
-                                          field.state.value ?? shortcutBinding({}, id!, platform),
+                                          field.state.value ?? shortcutBinding({}, id, platform),
                                           platform,
                                         )
                                   }
@@ -178,15 +178,15 @@ export function ShortcutSettings() {
                                   }
                                   aria-invalid={!field.state.meta.isValid}
                                   onFocus={() => {
-                                    if (!recordingStartValues.current.has(id!))
-                                      recordingStartValues.current.set(id!, field.state.value)
+                                    if (!recordingStartValues.current.has(id))
+                                      recordingStartValues.current.set(id, field.state.value)
                                     setRecording(id)
                                   }}
                                   onBlur={() => {
                                     setRecording(undefined)
                                     field.handleBlur()
                                     if (field.state.meta.isValid)
-                                      recordingStartValues.current.delete(id!)
+                                      recordingStartValues.current.delete(id)
                                   }}
                                   onKeyDown={(event) => {
                                     if (event.key === 'Tab') return
@@ -194,14 +194,14 @@ export function ShortcutSettings() {
                                     event.stopPropagation()
                                     if (form.state.isSubmitting) return
                                     if (event.key === 'Escape') {
-                                      if (recordingStartValues.current.has(id!)) {
+                                      if (recordingStartValues.current.has(id)) {
                                         const next = { ...form.state.values.bindings }
-                                        const previous = recordingStartValues.current.get(id!)
-                                        if (previous === undefined) delete next[id!]
-                                        else next[id!] = previous
+                                        const previous = recordingStartValues.current.get(id)
+                                        if (previous === undefined) delete next[id]
+                                        else next[id] = previous
                                         form.setFieldValue('bindings', next)
                                         field.handleBlur()
-                                        recordingStartValues.current.delete(id!)
+                                        recordingStartValues.current.delete(id)
                                       }
                                       event.currentTarget.blur()
                                       saveIfValid()
@@ -228,9 +228,9 @@ export function ShortcutSettings() {
                                   aria-label={`清除${label}自定义快捷键，恢复默认`}
                                   onClick={() => {
                                     if (form.state.isSubmitting) return
-                                    recordingStartValues.current.delete(id!)
+                                    recordingStartValues.current.delete(id)
                                     const next = { ...form.state.values.bindings }
-                                    delete next[id!]
+                                    delete next[id]
                                     form.setFieldValue('bindings', next)
                                     field.handleBlur()
                                     setSaved(false)

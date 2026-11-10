@@ -26,11 +26,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import {
-  OpenerIcon,
-  PRESET_OPENERS,
-  type PresetOpener,
-} from '@/features/workspace/open-with/OpenWithIcons'
+import { OpenerIcon, PRESET_OPENERS } from '@/features/workspace/open-with/OpenWithIcons'
+import type { PresetOpener } from '@/features/workspace/open-with/OpenWithIcons'
 
 export function OpenWithSettings() {
   const preferences = useWorkspace((state) => state.preferences)
@@ -489,7 +486,7 @@ export function OpenWithSettings() {
                     className="open-with-dialog-save"
                     disabled={!canSubmit || dialogPending}
                   >
-                    {dialogPending ? '保存中…' : dialogMode === 'add' ? '添加' : '保存'}
+                    {dialogMode === 'add' ? '添加' : '保存'}
                   </Button>
                 </DialogFooter>
               )}

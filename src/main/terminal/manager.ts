@@ -1,15 +1,15 @@
 import type {
+  AgentUpdate,
   Preferences,
   TerminalAttachment,
   TerminalEvent,
   TerminalSession,
-  AgentUpdate,
   WorkspaceTarget,
 } from '../../shared/contracts'
 import { dimensions, preferences, terminalId, workspaceTarget } from '../validation'
 import { AgentSessionManager } from '../agents/runtime/session-manager'
 import { hasRunningJob, stopProcessTree } from '../system/process-tree'
-import type { ResolvedTerminalCreate, ResolvedTerminalAttach } from '../host/host-protocol'
+import type { ResolvedTerminalAttach, ResolvedTerminalCreate } from '../host/host-protocol'
 import { sameBinding, terminalBinding } from './terminal-binding'
 import type { TerminalProcessRoot } from '../../shared/workspace-ports'
 import type { Session } from './session'
@@ -73,7 +73,7 @@ export class TerminalManager {
   }
 
   async list(): Promise<TerminalSession[]> {
-    await Promise.allSettled([...this.creations])
+    await Promise.allSettled(this.creations)
     return [...this.sessions.values()].map(
       ({
         id,
@@ -114,8 +114,10 @@ export class TerminalManager {
     )
   }
 
-  async attach(options: ResolvedTerminalAttach): Promise<TerminalAttachment> {
-    const id = terminalId(options?.id)
+  async attach(value: unknown): Promise<TerminalAttachment> {
+    if (!value || typeof value !== 'object') throw new Error('终端参数无效。')
+    const options = value as ResolvedTerminalAttach
+    const id = terminalId(options.id)
     const attachmentId = terminalId(options.attachmentId)
     const target = terminalBinding(options)
     const session = this.sessions.get(id)
@@ -176,16 +178,18 @@ export class TerminalManager {
 
   async needsCloseConfirmation(id: string): Promise<boolean> {
     const session = this.sessions.get(terminalId(id))
-    if (!session || session.exited) return false
+    if (!session) return false
+    const hasExited = () => session.exited
+    if (hasExited()) return false
     await session.creation
-    if (session.exited) return false
+    if (hasExited()) return false
     if (session.agent || session.service) return true
     if (!session.child || !session.shell) return true
     try {
       const busy = await hasRunningJob(session.child.pid, session.shell)
-      return !session.exited && busy
+      return !hasExited() && busy
     } catch {
-      return !session.exited
+      return !hasExited()
     }
   }
 
@@ -243,29 +247,27 @@ export class TerminalManager {
     if (session.closing) throw new Error('服务正在关闭。')
     if (session.stoppingService) return session.stoppingService
     if (session.exited) return
-    if (!session.stoppingService) {
-      session.stoppingService = Promise.resolve()
-        .then(async () => {
-          if (session.child) await stopProcessTree(session.child.pid)
-          session.exited = true
-          session.shellActivity = 'unknown'
-          session.managed = undefined
-          if (session.agent) this.agents.runtime(id, 'exited', session.exitCode)
-          session.screen.write('', () => {
-            flush(session, this.send)
-            if (session.attachmentId)
-              this.send({
-                type: 'exit',
-                id: session.id,
-                attachmentId: session.attachmentId,
-                exitCode: session.exitCode ?? 0,
-              })
-          })
+    session.stoppingService = Promise.resolve()
+      .then(async () => {
+        if (session.child) await stopProcessTree(session.child.pid)
+        session.exited = true
+        session.shellActivity = 'unknown'
+        session.managed = undefined
+        if (session.agent) this.agents.runtime(id, 'exited', session.exitCode)
+        session.screen.write('', () => {
+          flush(session, this.send)
+          if (session.attachmentId)
+            this.send({
+              type: 'exit',
+              id: session.id,
+              attachmentId: session.attachmentId,
+              exitCode: session.exitCode ?? 0,
+            })
         })
-        .finally(() => {
-          session.stoppingService = undefined
-        })
-    }
+      })
+      .finally(() => {
+        session.stoppingService = undefined
+      })
     await session.stoppingService
   }
 
@@ -299,14 +301,14 @@ export class TerminalManager {
   }
 
   async closeProject(path: string): Promise<void> {
-    await Promise.allSettled([...this.creations])
+    await Promise.allSettled(this.creations)
     for (const [id, session] of this.sessions)
       if (session.projectPath === path) await this.close(id)
   }
 
   async closeWorkspace(target: WorkspaceTarget): Promise<void> {
     target = workspaceTarget(target)
-    await Promise.allSettled([...this.creations])
+    await Promise.allSettled(this.creations)
     for (const [id, session] of this.sessions) {
       if (session.projectPath === target.projectPath && session.workspaceId === target.workspaceId)
         await this.close(id)
@@ -316,7 +318,7 @@ export class TerminalManager {
   async shutdown(): Promise<void> {
     this.stopping = true
     try {
-      await Promise.allSettled([...this.creations])
+      await Promise.allSettled(this.creations)
       for (const id of this.sessions.keys()) await this.close(id)
       this.integration.dispose()
     } catch (error) {

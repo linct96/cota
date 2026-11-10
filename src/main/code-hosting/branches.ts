@@ -1,8 +1,5 @@
-import {
-  hostingBranchesExpired,
-  type HostingBranch,
-  type HostingRepository,
-} from '../../shared/code-hosting'
+import { hostingBranchesExpired } from '../../shared/code-hosting'
+import type { HostingBranch, HostingRepository } from '../../shared/code-hosting'
 import type { HostingAdapter } from './adapter'
 import { HostingError } from './cli-runner'
 import { parseHostingRemote } from './remote'

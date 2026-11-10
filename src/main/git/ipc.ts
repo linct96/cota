@@ -8,15 +8,16 @@ import type { GitBranchTarget } from '../../shared/git-branches'
 import type { WorkspaceTarget } from '../../shared/contracts'
 import type { CommitMessageRequest } from '../../shared/commit-message'
 import type {
-  GitDiffSelection,
-  GitMutation,
-  GitHistoryRequest,
   GitCompareRequest,
+  GitDiffSelection,
+  GitHistoryRequest,
+  GitMutation,
 } from '../../shared/source-control'
 import type { CommitMessageService } from './commit-message/service'
 import type { WorktreeManager } from './worktrees/manager'
 import type { SourceControlService } from './source-control/service'
 import { BranchService } from './branches/service'
+import { withGitDiagnostics } from './git-runner'
 import { isBranchMutation } from './branches/mutations'
 import { SourceControlWatches } from './source-control/watch'
 import { WorktreeError } from './worktrees/git'
@@ -90,10 +91,12 @@ export function registerGitIPC(deps: {
     }
   }
 
-  function branchTarget(value: GitBranchTarget): GitBranchTarget {
-    return value?.workspaceId === undefined
-      ? { projectPath: absolutePath(value?.projectPath) }
-      : workspaceTarget(value)
+  function branchTarget(value: unknown): GitBranchTarget {
+    if (!value || typeof value !== 'object') throw new Error('工作区参数无效。')
+    const target = value as Record<string, unknown>
+    return target.workspaceId === undefined
+      ? { projectPath: absolutePath(target.projectPath) }
+      : workspaceTarget(target)
   }
 
   function withBranchTarget<T>(
@@ -118,8 +121,8 @@ export function registerGitIPC(deps: {
     const binding = owner()
     branches.subscribe(id, target)
     try {
-      const view = await withBranchTarget(target, (binding) =>
-        branches.query(binding.cwd, id, force),
+      const view = await withBranchTarget(target, (targetBinding) =>
+        branches.query(targetBinding.cwd, id, force),
       )
       if (owner() !== binding || !config.snapshot().recentProjects.includes(target.projectPath))
         throw new WorktreeError('REPOSITORY_UNAVAILABLE', '工作区绑定已改变，请重新读取。')
@@ -132,7 +135,7 @@ export function registerGitIPC(deps: {
 
   async function readHosting<T>(
     target: WorkspaceTarget,
-    read: (cwd: string, context: HostingContext) => Promise<T>,
+    read: (cwd: string, context: HostingContext) => T | Promise<T>,
   ): Promise<T> {
     prune()
     const generation = hostingGeneration
@@ -195,7 +198,7 @@ export function registerGitIPC(deps: {
     assertReadable()
     return sourceControlWatches.start(
       id,
-      () => worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+      () => worktrees.withTerminalTarget(target, (binding) => binding.cwd),
       (event) => renderer.send('git:changed', { id, event }),
     )
   })
@@ -225,23 +228,26 @@ export function registerGitIPC(deps: {
     assertReadable()
     return worktrees.withTerminalTarget(target, (binding) => sourceControl.diff(binding.cwd, file))
   })
-  handle('git:mutate', (input: GitMutation) => {
+  handle('git:mutate', (value: unknown) => {
     assertLifecycle()
-    if (!input || typeof input !== 'object') throw new Error('Git 操作参数无效。')
-    return worktrees.withTerminalTarget(input, (binding) => {
-      assertLifecycle()
-      if (isBranchMutation(input))
-        return branches.mutate(binding.cwd, input, sourceControl, (urls) =>
-          codeHosting.invalidateRemoteBranches(urls),
-        )
-      const mutate = () =>
-        sourceControl.mutate(binding.cwd, input, (description) =>
-          renderer.confirm({ title: '丢弃工作区改动', description, confirmLabel: '丢弃改动' }),
-        )
-      return ['stage', 'unstage', 'discard'].includes(input.action)
-        ? mutate()
-        : withBranchInvalidation(mutate, binding.projectPath)
-    })
+    if (!value || typeof value !== 'object') throw new Error('Git 操作参数无效。')
+    const input = value as GitMutation
+    return withGitDiagnostics(() =>
+      worktrees.withTerminalTarget(input, (binding) => {
+        assertLifecycle()
+        if (isBranchMutation(input))
+          return branches.mutate(binding.cwd, input, sourceControl, (urls) =>
+            codeHosting.invalidateRemoteBranches(urls),
+          )
+        const mutate = () =>
+          sourceControl.mutate(binding.cwd, input, (description) =>
+            renderer.confirm({ title: '丢弃工作区改动', description, confirmLabel: '丢弃改动' }),
+          )
+        return ['stage', 'unstage', 'discard'].includes(input.action)
+          ? mutate()
+          : withBranchInvalidation(mutate, binding.projectPath)
+      }),
+    )
   })
 
   return {

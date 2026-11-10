@@ -2,13 +2,10 @@ import { Fragment, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Columns2, Rows2, X } from 'lucide-react'
 import { MAX_TERMINALS } from '../../../../../shared/contracts'
-import {
-  pruneTerminalPane,
-  terminalPaneIds,
-  type TerminalPane,
-  type TerminalLayout,
-} from '../../../../../shared/terminal-layout'
-import { terminalTabId, useWorkspace, type TerminalTab } from '@/state/workspace'
+import { pruneTerminalPane, terminalPaneIds } from '../../../../../shared/terminal-layout'
+import type { TerminalLayout, TerminalPane } from '../../../../../shared/terminal-layout'
+import { terminalTabId, useWorkspace } from '@/state/workspace'
+import type { TerminalTab } from '@/state/workspace'
 import { abbreviateHomePath, cn } from '@/lib/utils'
 import { TerminalView } from './TerminalView'
 import { Button } from '@/components/ui/button'
@@ -20,7 +17,7 @@ function PaneLayout({ node }: { node: TerminalPane }) {
   const removing = useWorkspace((state) => state.removingWorkspace)
   const closing = useWorkspace((state) => state.closingTerminalTabs)
   if (node.type === 'terminal') {
-    const tab = tabs.find((tab) => tab.id === node.id)!
+    const tab = tabs.find((candidateTab) => candidateTab.id === node.id)!
     const focused = activeTabs[tab.workspaceId] === tab.id
     const disabled =
       !!removing ||

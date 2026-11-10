@@ -1,4 +1,5 @@
-import { FitAddon, type ITerminalDimensions } from '@xterm/addon-fit'
+import { FitAddon } from '@xterm/addon-fit'
+import type { ITerminalDimensions } from '@xterm/addon-fit'
 import type { Terminal } from '@xterm/xterm'
 
 export class StableCellFitAddon extends FitAddon {

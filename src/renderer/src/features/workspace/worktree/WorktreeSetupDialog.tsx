@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { unwrap, type WorkspaceTarget } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { WorkspaceTarget } from '../../../../../shared/contracts'
 import type { WorktreeSetupSnapshot } from '../../../../../shared/worktree-setup'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -27,8 +28,8 @@ export function WorktreeSetupDialog({
 }: {
   target: WorkspaceTarget
   initialError?: string
-  close(): void
-  configure(): void
+  close: () => void
+  configure: () => void
 }) {
   const [open, setOpen] = useState(true)
   const configureAfterClose = useRef(false)

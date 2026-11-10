@@ -2,15 +2,15 @@ import { lstat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import type {
   GitChange,
-  GitStatus,
   GitFileSelection,
   GitMutation,
+  GitStatus,
 } from '../../../shared/source-control'
 import type { SourceControlService } from './service'
 import { isBranchMutation, mutateBranch } from '../branches/mutations'
-import { runGit, explainGitError as explain } from '../git-runner'
+import { explainGitError as explain, runGit } from '../git-runner'
 import { safeTarget, workingFile } from './files'
-import { filePath, hash, literal, MAX_FILES } from './shared'
+import { MAX_FILES, filePath, hash, literal } from './shared'
 
 export function selectFiles(status: GitStatus, values: unknown): GitChange[] {
   if (!Array.isArray(values) || !values.length || values.length > MAX_FILES)
@@ -20,7 +20,7 @@ export function selectFiles(status: GitStatus, values: unknown): GitChange[] {
     const selection = value as GitFileSelection
     const path = filePath(selection.path)
     const entry = status.entries.find(
-      (entry) => entry.path === path && entry.area === selection.area,
+      (candidateEntry) => candidateEntry.path === path && candidateEntry.area === selection.area,
     )
     if (!entry) throw new Error('文件状态已改变，请刷新后重新选择。')
     return entry

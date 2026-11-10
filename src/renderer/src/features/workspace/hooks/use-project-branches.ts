@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react'
 import {
-  retainGitBranches,
   branchViewKey,
+  retainGitBranches,
   useGitBranchesStore,
 } from '../../../state/git-branches-store'
-import { useWorkspace, type ProjectWorkspace } from '../../../state/workspace'
+import { useWorkspace } from '../../../state/workspace'
+import type { ProjectWorkspace } from '../../../state/workspace'
 
 export function useProjectBranches(workspaces: ProjectWorkspace[]) {
   const projects = useWorkspace((state) => state.projects)

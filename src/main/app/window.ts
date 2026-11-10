@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { BrowserWindow, app, ipcMain, nativeTheme } from 'electron'
 import { join } from 'node:path'
 import type { Preferences } from '../../shared/contracts'
-import { isTerminalMenuShortcut, type ShortcutBindings } from '../../shared/shortcuts'
+import { isTerminalMenuShortcut } from '../../shared/shortcuts'
+import type { ShortcutBindings } from '../../shared/shortcuts'
 import type { IpcHandler, TrustedIPC } from './ipc'
 import type { AppLifecycle } from './lifecycle'
 
@@ -9,7 +10,7 @@ export function createAppWindow(options: {
   appName: string
   preferences: Preferences
   lifecycle: AppLifecycle
-  rendererUnavailable(): void
+  rendererUnavailable: () => void
 }) {
   const { appName, preferences, lifecycle } = options
   const windowBlurEnabled =

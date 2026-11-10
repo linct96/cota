@@ -19,5 +19,5 @@
     "e2e/**/*.ts",
     "tests/**/*.test.ts"
   ],
-  "exclude": ["tests/workspace.test.ts"]
+  "exclude": ["tests/renderer/**"]
 }

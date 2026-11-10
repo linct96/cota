@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowLeft, ChevronRight, GitCommitHorizontal } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import type { GitCommit, GitComparison, GitHistory } from '../../../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { useWorkspace } from '@/state/workspace'
@@ -12,7 +14,7 @@ import { FileTreeFile } from '@/components/ui/file-tree'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Badge } from '@/components/ui/badge'
 import { SourceControlSection } from './SourceControlSection'
 
@@ -172,9 +174,9 @@ export function CommitHistoryContent({
           setHistoryResult({ key: historyKey, history: page })
         }
       })
-      .catch((error) => {
+      .catch((cause) => {
         if (version === generation.current)
-          setHistoryError(error instanceof Error ? error.message : String(error))
+          setHistoryError(cause instanceof Error ? cause.message : String(cause))
       })
     return () => {
       currentGeneration.current++
@@ -193,11 +195,11 @@ export function CommitHistoryContent({
           setDetails({ request: detailRequest, comparison: next })
         }
       })
-      .catch((error) => {
+      .catch((cause) => {
         if (!disposed)
           setDetails({
             request: detailRequest,
-            error: error instanceof Error ? error.message : String(error),
+            error: cause instanceof Error ? cause.message : String(cause),
           })
       })
     return () => {
@@ -228,9 +230,9 @@ export function CommitHistoryContent({
               }
             : current,
         )
-    } catch (error) {
+    } catch (cause) {
       if (version === generation.current)
-        setHistoryError(error instanceof Error ? error.message : String(error))
+        setHistoryError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       if (paging.current === version) {
         paging.current = undefined
@@ -309,7 +311,7 @@ export function CommitHistoryContent({
               {!!history?.commits.length && (
                 <CommitList
                   commits={history.commits}
-                  onSelect={(commit) => setDetailRequest({ commit })}
+                  onSelect={(candidateCommit) => setDetailRequest({ commit: candidateCommit })}
                 />
               )}
               {history?.more && (

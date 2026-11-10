@@ -2,11 +2,8 @@ import { useCallback, useEffect, useMemo } from 'react'
 import { create } from 'zustand'
 import { useSourceControl } from './source-control-store'
 import { unwrap } from '../../../shared/contracts'
-import {
-  branchReferences,
-  type GitBranchTarget,
-  type GitBranchSnapshot,
-} from '../../../shared/git-branches'
+import { branchReferences } from '../../../shared/git-branches'
+import type { GitBranchSnapshot, GitBranchTarget } from '../../../shared/git-branches'
 
 type WorkspaceBranches = {
   repositoryId?: string
@@ -18,8 +15,8 @@ type WorkspaceBranches = {
   watching?: boolean
 }
 interface GitBranchesState {
-  repositories: Record<string, GitBranchSnapshot>
-  workspaces: Record<string, WorkspaceBranches>
+  repositories: Partial<Record<string, GitBranchSnapshot>>
+  workspaces: Partial<Record<string, WorkspaceBranches>>
 }
 type Subscription = {
   target: GitBranchTarget
@@ -103,7 +100,7 @@ export function refreshGitBranches(target: GitBranchTarget, force = false): Prom
           previous && previous.revision >= view.snapshot.revision
             ? state.repositories
             : { ...state.repositories, [view.snapshot.repositoryId]: view.snapshot }
-        const used = new Set(Object.values(workspaces).map((workspace) => workspace.repositoryId))
+        const used = new Set(Object.values(workspaces).map((workspace) => workspace?.repositoryId))
         return {
           workspaces,
           repositories: Object.fromEntries(
@@ -119,6 +116,7 @@ export function refreshGitBranches(target: GitBranchTarget, force = false): Prom
           workspaces: {
             ...state.workspaces,
             [key]: {
+              remotes: [],
               ...state.workspaces[key],
               loading: false,
               stale: true,
@@ -131,10 +129,10 @@ export function refreshGitBranches(target: GitBranchTarget, force = false): Prom
       subscription.request = undefined
       if (!current()) return
       if (subscription.again && !document.hidden) {
-        const force = subscription.force
+        const forceRefresh = subscription.force
         subscription.again = false
         subscription.force = false
-        void refreshGitBranches(target, force)
+        void refreshGitBranches(target, forceRefresh)
       }
     })
   return subscription.request
@@ -155,28 +153,37 @@ export function retainGitBranches(target: GitBranchTarget): () => void {
     }
     subscriptions.set(key, subscription)
     stopNotifications ||= window.desktop.onGitBranchesChanged((repositoryId) => {
-      for (const [key, subscription] of subscriptions) {
-        if (useGitBranchesStore.getState().workspaces[key]?.repositoryId !== repositoryId) continue
+      for (const [workspaceKey, currentSubscription] of subscriptions) {
+        if (useGitBranchesStore.getState().workspaces[workspaceKey]?.repositoryId !== repositoryId)
+          continue
         useGitBranchesStore.setState((state) => ({
-          workspaces: { ...state.workspaces, [key]: { ...state.workspaces[key], stale: true } },
+          workspaces: {
+            ...state.workspaces,
+            [workspaceKey]: {
+              remotes: [],
+              loading: false,
+              ...state.workspaces[workspaceKey],
+              stale: true,
+            },
+          },
         }))
-        if (!document.hidden) void refreshGitBranches(subscription.target)
+        if (!document.hidden) void refreshGitBranches(currentSubscription.target)
       }
     })
     if (!stopRecovery) {
       const refreshVisible = (onlyDue: boolean) => {
         if (document.hidden) return
         const forced = new Set<string>()
-        for (const [key, subscription] of subscriptions) {
-          const view = useGitBranchesStore.getState().workspaces[key]
+        for (const [workspaceKey, currentSubscription] of subscriptions) {
+          const view = useGitBranchesStore.getState().workspaces[workspaceKey]
           if (
             onlyDue &&
-            Date.now() - subscription.lastAttempt < (view?.watching === false ? 5000 : 60000)
+            Date.now() - currentSubscription.lastAttempt < (view?.watching === false ? 5000 : 60000)
           )
             continue
           const force = !view?.repositoryId || !forced.has(view.repositoryId)
           if (view?.repositoryId) forced.add(view.repositoryId)
-          void refreshGitBranches(subscription.target, force)
+          void refreshGitBranches(currentSubscription.target, force)
         }
       }
       const recover = () => refreshVisible(false)
@@ -199,7 +206,7 @@ export function retainGitBranches(target: GitBranchTarget): () => void {
     useGitBranchesStore.setState((state) => {
       const workspaces = { ...state.workspaces }
       delete workspaces[key]
-      const used = new Set(Object.values(workspaces).map((view) => view.repositoryId))
+      const used = new Set(Object.values(workspaces).map((view) => view?.repositoryId))
       const repositories = Object.fromEntries(
         Object.entries(state.repositories).filter(([id]) => used.has(id)),
       )

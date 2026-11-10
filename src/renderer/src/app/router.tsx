@@ -1,13 +1,13 @@
 import {
+  Navigate,
   createHashHistory,
   createRootRoute,
   createRoute,
   createRouter,
-  Navigate,
-  type RouterHistory,
   lazyRouteComponent,
   redirect,
 } from '@tanstack/react-router'
+import type { RouterHistory } from '@tanstack/react-router'
 import { App } from './App'
 import { AppError } from './AppError'
 

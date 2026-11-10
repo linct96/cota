@@ -1,4 +1,5 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { Combobox as ComboboxPrimitive } from '@base-ui/react/combobox'
 import { Check, GitBranch, ListFilter } from 'lucide-react'
 import { cn } from '@/lib/utils'

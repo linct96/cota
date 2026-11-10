@@ -1,6 +1,6 @@
-import type { GitStatus, GitRemoteMutation } from '../../../shared/source-control'
+import type { GitRemoteMutation, GitStatus } from '../../../shared/source-control'
 import type { SourceControlService } from '../source-control/service'
-import { runGit, explainGitError as explain } from '../git-runner'
+import { explainGitError as explain, runGit } from '../git-runner'
 
 // 校验远端操作，并在同步拉取成功后推送复核过的提交。
 export async function mutateRemote(
@@ -10,8 +10,9 @@ export async function mutateRemote(
   sourceControl: Pick<SourceControlService, 'status' | 'references'>,
   onRemoteWrite: (urls: string[]) => void,
 ): Promise<boolean> {
+  const tracking = 'tracking' in input ? input.tracking : undefined
   const remote =
-    input.action === 'fetch' || input.action === 'publish' ? input.remote : input.tracking?.remote
+    input.action === 'fetch' || input.action === 'publish' ? input.remote : tracking?.remote
   const references = await sourceControl.references(cwd)
   if (typeof remote !== 'string' || !references.remotes.includes(remote))
     throw new Error('请选择仓库中已配置的远端；本地上游请使用终端。')
@@ -55,8 +56,8 @@ export async function mutateRemote(
         throw new Error('分支已有上游，请使用推送而非重新发布。')
     } else if (
       !current.tracking ||
-      current.tracking.remote !== input.tracking?.remote ||
-      current.tracking.branch !== input.tracking?.branch
+      current.tracking.remote !== tracking?.remote ||
+      current.tracking.branch !== tracking.branch
     )
       throw new Error('上游配置已改变，请刷新后重试。')
   }
@@ -102,8 +103,9 @@ export async function mutateRemote(
       )
     } catch (error) {
       if (input.action === 'sync')
-        throw new Error(
-          `拉取合并未完成，未执行推送。请检查合并状态；如有冲突，解决并暂存后完成合并提交，再同步。\n${explain(error).message}`,
+        throw explain(
+          error,
+          '拉取合并未完成，未执行推送。请检查合并状态；如有冲突，解决并暂存后完成合并提交，再同步。',
         )
       throw error
     }
@@ -113,7 +115,7 @@ export async function mutateRemote(
       if (
         merged.branch !== status.branch ||
         merged.tracking?.remote !== input.tracking.remote ||
-        merged.tracking?.branch !== input.tracking.branch
+        merged.tracking.branch !== input.tracking.branch
       )
         throw new Error('分支或上游已改变，请刷新后重试。')
       if (!merged.head || merged.merge || merged.entries.some((entry) => entry.area === 'conflict'))
@@ -127,7 +129,7 @@ export async function mutateRemote(
         onRemoteWrite,
       )
     } catch (error) {
-      throw new Error(`已完成拉取合并，但同步未完成。\n${explain(error).message}`)
+      throw explain(error, '已完成拉取合并，但同步未完成。')
     }
   }
   const urls = await runGit(root, ['remote', 'get-url', '--push', '--all', remote])
@@ -165,9 +167,7 @@ export async function mutateRemote(
         true,
       )
     } catch (error) {
-      throw new Error(
-        `远端推送已完成，但上游未能设置。请刷新并在终端检查，不要直接重复推送。\n${explain(error).message}`,
-      )
+      throw explain(error, '远端推送已完成，但上游未能设置。请刷新并在终端检查，不要直接重复推送。')
     }
   }
   return true

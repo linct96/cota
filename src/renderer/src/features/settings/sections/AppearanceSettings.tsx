@@ -7,8 +7,8 @@ import type { Preferences, ThemePreference } from '../../../../../shared/contrac
 import {
   DEFAULT_INTERFACE_COLORS,
   interfaceColorSchema,
-  type InterfaceColorRole,
 } from '../../../../../shared/interface-colors'
+import type { InterfaceColorRole } from '../../../../../shared/interface-colors'
 import { observeDocumentTheme, resolveDocumentColor } from '@/lib/theme'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -166,8 +166,7 @@ export function AppearanceSettings() {
               }
               aria-invalid={!!errors.theme}
               onValueChange={([value]) => {
-                if (value === 'system' || value === 'light' || value === 'dark')
-                  void changeTheme(value)
+                if (value === 'system' || value === 'light' || value === 'dark') changeTheme(value)
               }}
             >
               <ToggleGroupItem className="appearance-theme-option" value="system">

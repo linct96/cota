@@ -1,7 +1,8 @@
 import { useSourceControl } from '../source-control-store'
 import { terminalIndicatorState } from '../../features/agents/lib/agent-status'
 import { pruneTerminalLayouts } from '../../../../shared/terminal-layout'
-import { type AgentSession, unwrap, type WorkspaceLayout } from '../../../../shared/contracts'
+import { unwrap } from '../../../../shared/contracts'
+import type { AgentSession, WorkspaceLayout } from '../../../../shared/contracts'
 import type { StoreApi } from 'zustand'
 import type { WorkspaceState } from './types'
 import { currentWorkspace, terminalTabs } from './selectors'
@@ -54,11 +55,11 @@ export function installWorkspaceSubscriptions(store: StoreApi<WorkspaceState>) {
 
   function readVisibleTerminal(state: WorkspaceState): void {
     const tab = state.tabs.find(
-      (tab) =>
-        tab.id === state.visibleTerminal &&
-        !tab.closingStatus &&
-        tab.workspaceId === currentWorkspace(state)?.id &&
-        state.activeTabs[tab.workspaceId] === tab.id,
+      (candidateTab) =>
+        candidateTab.id === state.visibleTerminal &&
+        !candidateTab.closingStatus &&
+        candidateTab.workspaceId === currentWorkspace(state)?.id &&
+        state.activeTabs[candidateTab.workspaceId] === candidateTab.id,
     )
     const agent = !state.agentConnectionLost ? tab?.agent : undefined
     const shellCompleted = !!tab && !tab.agent && terminalIndicatorState(tab) === 'completed'

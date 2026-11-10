@@ -1,4 +1,5 @@
-import { app, dialog, type BrowserWindow } from 'electron'
+import { app, dialog } from 'electron'
+import type { BrowserWindow } from 'electron'
 import type { AppExitProgress } from '../../shared/contracts'
 import type { ConfigStore } from '../settings/config-store'
 import type { AccountService } from '../accounts/service'
@@ -7,7 +8,8 @@ import type { WorktreeSetupService } from '../git/worktrees/setup'
 import type { AgentSleepPrevention } from '../agents/runtime/sleep-prevention'
 import type { CommitMessageService } from '../git/commit-message/service'
 import type { AgentCliInstallTerminals } from '../agents/cli/install-terminal'
-import { forceStopTerminalHost, type HostClient } from '../host/host-client'
+import { forceStopTerminalHost } from '../host/host-client'
+import type { HostClient } from '../host/host-client'
 import type { AppRenderer } from './renderer'
 
 export type RemovalTarget = { projectPath: string; workspaceId?: string; removeProject: boolean }
@@ -25,13 +27,13 @@ export class AppLifecycle {
 
   constructor(
     private readonly dependencies: {
-      getWindow(): BrowserWindow | undefined
-      getManager(): HostClient | undefined
-      getConfig(): ConfigStore | undefined
-      getWorktrees(): WorktreeManager | undefined
-      getWorktreeSetups(): WorktreeSetupService | undefined
-      getAccounts(): AccountService | undefined
-      closeResources(): void
+      getWindow: () => BrowserWindow | undefined
+      getManager: () => HostClient | undefined
+      getConfig: () => ConfigStore | undefined
+      getWorktrees: () => WorktreeManager | undefined
+      getWorktreeSetups: () => WorktreeSetupService | undefined
+      getAccounts: () => AccountService | undefined
+      closeResources: () => void
       renderer: AppRenderer
       agentSleep: AgentSleepPrevention
       commitMessages: CommitMessageService
@@ -122,11 +124,11 @@ export class AppLifecycle {
     const deps = this.dependencies
     try {
       deps.renderer.settleConfirmation(false)
-      this.progress('正在停止 CLI 安装与更新', false)
-      // Hooks inspection can be queued behind an install; stop it before waiting for operations.
+      this.progress('正在停止 CLI 更新', false)
+      // Hooks inspection can be queued behind an update; stop it before waiting for operations.
       await deps.cliInstallTerminals?.close()
       this.progress('正在等待工作区操作完成', false)
-      await Promise.allSettled([...this.operations])
+      await Promise.allSettled(this.operations)
       this.progress('正在停止后台任务', false)
       await deps.getWorktreeSetups()?.close()
       await deps.commitMessages.close()
@@ -179,11 +181,11 @@ export class AppLifecycle {
       this.exitConfirming = false
       this.exitPending = true
       deps.renderer.settleConfirmation(false)
-      this.progress('正在停止 CLI 安装与更新', !stopSessions)
-      // Hooks inspection can be queued behind an install; stop it before waiting for operations.
+      this.progress('正在停止 CLI 更新', !stopSessions)
+      // Hooks inspection can be queued behind an update; stop it before waiting for operations.
       await deps.cliInstallTerminals?.close()
       this.progress('正在等待工作区操作完成', !stopSessions)
-      await Promise.allSettled([...this.operations])
+      await Promise.allSettled(this.operations)
       this.progress('正在清理界面后台任务', !stopSessions)
       await deps.getWorktreeSetups()?.close()
       await deps.commitMessages.close()

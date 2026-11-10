@@ -1,5 +1,5 @@
-import type { WorkspaceTarget, TerminalBinding, TerminalSession } from '../../../shared/contracts'
-import { ConfigStore } from '../../settings/config-store'
+import type { TerminalBinding, TerminalSession, WorkspaceTarget } from '../../../shared/contracts'
+import type { ConfigStore } from '../../settings/config-store'
 import { GitService } from './git'
 import { WorktreeAccess } from './access'
 import { WorktreePaths } from './paths'
@@ -26,7 +26,7 @@ export class WorktreeManager {
     return this.removal.removing
   }
 
-  withRepositoryLock<T>(repoCommonDir: string, action: () => Promise<T>): Promise<T> {
+  withRepositoryLock<T>(repoCommonDir: string, action: () => T | Promise<T>): Promise<T> {
     return this.access.withRepositoryLock(repoCommonDir, action)
   }
 
@@ -39,7 +39,7 @@ export class WorktreeManager {
 
   withTerminalTarget<T>(
     value: WorkspaceTarget,
-    action: (binding: TerminalBinding) => Promise<T>,
+    action: (binding: TerminalBinding) => T | Promise<T>,
   ): Promise<T> {
     return this.access.withTerminalTarget(value, action)
   }

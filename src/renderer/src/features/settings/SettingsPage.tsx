@@ -20,7 +20,7 @@ import { LoadingContent } from '@/components/LoadingContent'
 import { useWorkspace } from '@/state/workspace'
 import { useLeftPanel } from '@/state/left-panel-store'
 import { cn } from '@/lib/utils'
-import { SETTING_GROUPS, SETTING_COMPONENTS } from '@/features/settings/settings-sections'
+import { SETTING_COMPONENTS, SETTING_GROUPS } from '@/features/settings/settings-sections'
 
 export function SettingsPage() {
   const { section } = useSearch({ from: '/settings' })
@@ -106,7 +106,7 @@ export function SettingsPage() {
                   event.preventDefault()
                   const targetId = filteredItems.some((item) => item.id === activeCategory)
                     ? activeCategory
-                    : filteredItems[0]!.id
+                    : filteredItems[0].id
                   setActiveCategory(targetId)
                   const targetButton = navRef.current?.querySelector<HTMLButtonElement>(
                     `[data-setting-id="${targetId}"]`,
@@ -118,7 +118,7 @@ export function SettingsPage() {
                 if (event.key === 'Enter' && filteredItems.length > 0) {
                   event.preventDefault()
                   if (!filteredItems.some((item) => item.id === activeCategory)) {
-                    setActiveCategory(filteredItems[0]!.id)
+                    setActiveCategory(filteredItems[0].id)
                   }
                 }
               }}
@@ -191,8 +191,8 @@ export function SettingsPage() {
                               else if (event.key === 'ArrowUp')
                                 nextIndex = (currentIndex - 1 + buttons.length) % buttons.length
                               else if (event.key === 'Home') nextIndex = 0
-                              else if (event.key === 'End') nextIndex = buttons.length - 1
-                              const nextButton = buttons[nextIndex]
+                              else nextIndex = buttons.length - 1
+                              const nextButton = buttons.at(nextIndex)
                               nextButton?.focus()
                               nextButton?.click()
                               nextButton?.scrollIntoView({ block: 'nearest' })
@@ -245,7 +245,7 @@ export function SettingsPage() {
         className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
         aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
-        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 py-6 text-xs/relaxed">
+        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 pt-6 pb-24 text-xs/relaxed">
           <LoadingContent
             pending={!ready}
             label={`${activeItem?.label ?? '设置'}配置读取中...`}
@@ -258,7 +258,7 @@ export function SettingsPage() {
             }
             showLabel
           >
-            {ready && SettingContent && <SettingContent />}
+            {ready && <SettingContent />}
           </LoadingContent>
         </div>
       </main>

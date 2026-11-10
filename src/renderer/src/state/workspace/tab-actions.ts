@@ -1,7 +1,8 @@
 import { useSourceControl } from '../source-control-store'
 import { useRightPanel } from '../right-panel-store'
 import { gitFileKey } from '../../../../shared/source-control'
-import { terminalPaneIds, type TerminalPane } from '../../../../shared/terminal-layout'
+import { terminalPaneIds } from '../../../../shared/terminal-layout'
+import type { TerminalPane } from '../../../../shared/terminal-layout'
 import { MAX_TERMINALS } from '../../../../shared/contracts'
 import {
   terminalIndicatorState,
@@ -55,7 +56,8 @@ export const createTabActions: StateCreator<
       if (!workspace) return
       const sourceControl = useSourceControl.getState()
       const session = sourceControl.sessions[workspace.id]
-      const tab = session?.closedTabs.at(-1)
+      if (!session) return
+      const tab = session.closedTabs.at(-1)
       if (!tab) return
       switch (tab.kind) {
         case 'terminal': {
@@ -85,9 +87,9 @@ export const createTabActions: StateCreator<
                   children: [remap(node.children[0]), remap(node.children[1])],
                 }
           const activePaneId = ids.get(tab.layout.activePaneId)!
-          set((state) => ({
+          set((currentState) => ({
             terminalLayouts: [
-              ...state.terminalLayouts,
+              ...currentState.terminalLayouts,
               {
                 id: ids.get(tab.panes[0].id)!,
                 root: remap(tab.layout.root),
@@ -121,10 +123,13 @@ export const createTabActions: StateCreator<
           break
       }
       sourceControl.update(workspace.id, { closedTabs: session.closedTabs.slice(0, -1) })
-      set((state) => ({
+      set((currentState) => ({
         selectedProject: workspace.projectPath,
-        selectedWorkspaces: { ...state.selectedWorkspaces, [workspace.projectPath]: workspace.id },
-        focusVersion: state.focusVersion + 1,
+        selectedWorkspaces: {
+          ...currentState.selectedWorkspaces,
+          [workspace.projectPath]: workspace.id,
+        },
+        focusVersion: currentState.focusVersion + 1,
       }))
     },
 
@@ -147,14 +152,14 @@ export const createTabActions: StateCreator<
       if (!sourceControl.sessions[workspaceId]?.tabOrder.includes(key)) return
       if (key.startsWith('terminal:')) {
         const id = key.slice('terminal:'.length)
-        const group = get().terminalLayouts.find((group) => group.id === id)
+        const group = get().terminalLayouts.find((candidateGroup) => candidateGroup.id === id)
         const panes = group
           ? terminalPaneIds(group.root).flatMap((paneId) => {
-              const tab = get().tabs.find((tab) => tab.id === paneId)
+              const tab = get().tabs.find((candidateTab) => candidateTab.id === paneId)
               return tab ? [tab] : []
             })
           : []
-        const focused = panes.find((pane) => pane.id === group?.activePaneId) || panes[0]
+        const focused = panes.find((pane) => pane.id === group?.activePaneId) || panes.at(0)
         const indicatorState =
           group && activeWorkspaceTab(get(), workspaceId) !== key
             ? workspaceTerminalSummary(panes)?.state
@@ -211,7 +216,7 @@ export const createTabActions: StateCreator<
       const order = [...(sourceControl.sessions[workspaceId]?.tabOrder || [])]
       const fromIndex = order.indexOf(`terminal:${id}`)
       const tab = terminalTabs(state).find(
-        (tab) => tab.workspaceId === workspaceId && tab.id === id,
+        (candidateTab) => candidateTab.workspaceId === workspaceId && candidateTab.id === id,
       )
       if (
         !tab ||
@@ -227,7 +232,7 @@ export const createTabActions: StateCreator<
       order.splice(toIndex, 0, key)
       sourceControl.update(workspaceId, { tabOrder: order })
       const ordered = state.tabs
-        .filter((tab) => tab.workspaceId === workspaceId)
+        .filter((candidateTab) => candidateTab.workspaceId === workspaceId)
         .sort(
           (a, b) =>
             order.indexOf(`terminal:${terminalTabId(state, a.id)}`) -

@@ -12,12 +12,13 @@ import 'monaco-editor/esm/vs/basic-languages/rust/rust.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution.js'
-import workerUrl from 'monaco-editor/esm/vs/editor/editor.worker.js?worker&url'
 import { monacoColor } from './monaco-color'
 import { observeDocumentTheme } from '../theme'
 
 // A same-origin module worker works under the existing CSP, without CDN or blob scripts.
-globalThis.MonacoEnvironment = { getWorker: () => new Worker(workerUrl, { type: 'module' }) }
+globalThis.MonacoEnvironment = {
+  getWorker: () => new Worker(new URL('./monaco.worker.ts', import.meta.url), { type: 'module' }),
+}
 
 export function configureMonacoTheme(): void {
   const tokens = getComputedStyle(document.documentElement)
@@ -51,9 +52,9 @@ export function languageForPath(path: string): string {
     monaco.languages
       .getLanguages()
       .find(
-        (language) =>
-          language.filenames?.includes(name) ||
-          language.extensions?.some((extension) => name.endsWith(extension)),
+        (candidateLanguage) =>
+          candidateLanguage.filenames?.includes(name) ||
+          candidateLanguage.extensions?.some((extension) => name.endsWith(extension)),
       )?.id || 'plaintext'
   // shortcut: JSON uses JS highlighting; use a dedicated tokenizer if JSON editing is added.
   return /\.jsonc?$/.test(name) ? 'javascript' : language

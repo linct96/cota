@@ -13,8 +13,8 @@ export function registerSettingsIPC(deps: {
   manager: HostClient
   agentSleep: AgentSleepPrevention
   fileWatches: FileExplorerWatches
-  updateWindowBackground(): void
-  updateMenu(): void
+  updateWindowBackground: () => void
+  updateMenu: () => void
 }): void {
   const { handle, config, manager, agentSleep, fileWatches } = deps
   handle('shell:default', () => resolveShell({ shellPath: null }))
@@ -37,6 +37,6 @@ export function registerSettingsIPC(deps: {
   handle('clipboard:write', (text: unknown) => {
     if (typeof text !== 'string' || text.length > 2 * 1024 * 1024)
       throw new Error('剪贴板文本无效。')
-    clipboard.writeText(text)
+    return clipboard.writeText(text)
   })
 }

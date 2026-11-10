@@ -14,11 +14,8 @@ import {
   portAccess,
   scanLocalPorts,
 } from '../src/main/ports/local-ports'
-import {
-  parseProcessSnapshot,
-  readProcessSnapshot,
-  type ProcessIdentity,
-} from '../src/main/system/process-snapshot'
+import { parseProcessSnapshot, readProcessSnapshot } from '../src/main/system/process-snapshot'
+import type { ProcessIdentity } from '../src/main/system/process-snapshot'
 import type { PortScanContext } from '../src/shared/workspace-ports'
 
 it('parses numeric TCP listeners without confusing connections, IPv6 or URLs', () => {
@@ -172,7 +169,7 @@ it.skipIf(process.platform !== 'darwin' && process.platform !== 'win32')(
     )
     const exited = once(child, 'exit')
     try {
-      const [output] = await once(child.stdout!, 'data')
+      const [output] = await once(child.stdout, 'data')
       const number = Number(String(output).trim())
       expect(number).toBeGreaterThan(0)
       const identity = (await readProcessSnapshot()).find((row) => row.pid === child.pid)

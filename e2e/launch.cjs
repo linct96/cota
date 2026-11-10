@@ -35,9 +35,21 @@ const blocked = (kind, value) => {
   throw new Error(`E2E 不允许 ${kind}: ${value}`)
 }
 for (const name of ['showOpenDialog', 'showSaveDialog', 'showMessageBox']) {
-  dialog[name] = async () => blocked('unexpected native dialog', name)
+  dialog[name] = () => {
+    try {
+      return Promise.resolve(blocked('unexpected native dialog', name))
+    } catch (cause) {
+      return Promise.reject(cause)
+    }
+  }
 }
-shell.openExternal = async (url) => blocked('openExternal', url)
+shell.openExternal = (url) => {
+  try {
+    return Promise.resolve(blocked('openExternal', url))
+  } catch (cause) {
+    return Promise.reject(cause)
+  }
+}
 app.on('session-created', (created) => {
   created.webRequest.onBeforeRequest(
     { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },

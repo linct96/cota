@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { unwrap, type WorkspaceTarget } from '../../../shared/contracts'
+import { unwrap } from '../../../shared/contracts'
+import type { WorkspaceTarget } from '../../../shared/contracts'
 import type { FileEntry } from '../../../shared/file-explorer'
 
 interface DirectoryState {
@@ -11,7 +12,7 @@ interface DirectoryState {
 }
 interface ExplorerSession {
   expanded: Record<string, boolean>
-  directories: Record<string, DirectoryState>
+  directories: Partial<Record<string, DirectoryState>>
   selected?: string
   scrollTop: number
 }
@@ -19,9 +20,9 @@ export const EMPTY_EXPLORER: ExplorerSession = { expanded: {}, directories: {}, 
 let nextRequest = 0
 
 interface ExplorerState {
-  sessions: Record<string, ExplorerSession>
-  update(id: string, patch: Partial<ExplorerSession>): void
-  load(target: WorkspaceTarget, path: string): Promise<void>
+  sessions: Partial<Record<string, ExplorerSession>>
+  update: (id: string, patch: Partial<ExplorerSession>) => void
+  load: (target: WorkspaceTarget, path: string) => Promise<void>
 }
 
 export const useFileExplorer = create<ExplorerState>((set, get) => ({

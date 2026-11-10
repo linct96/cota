@@ -74,7 +74,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
   )
   const globalCommands = commands.filter((entry) => entry.scope.type === 'global')
   const visible = [...projectCommands, ...globalCommands]
-  const recent = visible.find((entry) => entry.id === recentId) || visible[0]
+  const recent = visible.find((entry) => entry.id === recentId) || visible.at(0)
 
   function isRunning(command: QuickCommand) {
     return (
@@ -102,11 +102,7 @@ export function QuickCommandsButton({ workspace }: { workspace: ProjectWorkspace
 
   async function copy(entry: QuickCommand) {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(entry.command)
-      } else {
-        throw new Error('当前环境不支持剪贴板操作')
-      }
+      await navigator.clipboard.writeText(entry.command)
       setCopiedId(entry.id)
       if (copyTimer.current) clearTimeout(copyTimer.current)
       copyTimer.current = setTimeout(() => {

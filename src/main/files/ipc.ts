@@ -38,7 +38,7 @@ export function registerFilesIPC(deps: {
     return worktrees.withTerminalTarget(target, async (binding) => {
       const location = await files.location(binding.cwd, path)
       if (action === 'reveal') shell.showItemInFolder(location)
-      else clipboard.writeText(action === 'copy-relative' ? String(path) || '.' : location)
+      else await clipboard.writeText(action === 'copy-relative' ? String(path) || '.' : location)
     })
   })
   handle('files:watch', (target: WorkspaceTarget, paths: unknown, id: unknown) => {
@@ -46,7 +46,7 @@ export function registerFilesIPC(deps: {
     return fileWatches.start(
       id,
       paths,
-      () => worktrees.withTerminalTarget(target, async (binding) => binding.cwd),
+      () => worktrees.withTerminalTarget(target, (binding) => binding.cwd),
       (event) => renderer.send('files:changed', { id, event }),
     )
   })

@@ -73,8 +73,8 @@ export function SourceControlBranchPicker({
     defaultValues: { name: '' },
     validators: { onChange: createBranchFormSchema, onSubmit: createBranchFormSchema },
     onSubmitMeta: { switchBranch: switching },
-    onSubmit: async ({ value, meta }) => {
-      const name = value.name.trim()
+    onSubmit: async ({ value: formValue, meta }) => {
+      const name = formValue.name.trim()
       if (
         !status?.head ||
         !references ||
@@ -104,7 +104,7 @@ export function SourceControlBranchPicker({
   const validName = createBranchFormSchema.safeParse({ name }).success
 
   async function deleteBranch(branch: GitReferences['branches'][number]) {
-    if (!canDelete || !onDelete || pending || busy) return
+    if (!switching || !onDelete || pending || busy) return
     setDeleting(true)
     setError(undefined)
     try {
@@ -132,9 +132,9 @@ export function SourceControlBranchPicker({
             disabled={!references}
             open={open}
             inputValue={search}
-            onInputValueChange={(value, details) => {
+            onInputValueChange={(inputValue, details) => {
               if (busy || details.reason !== 'input-change') return
-              field.handleChange(value)
+              field.handleChange(inputValue)
               setError(undefined)
             }}
             onOpenChange={(next, details) => {

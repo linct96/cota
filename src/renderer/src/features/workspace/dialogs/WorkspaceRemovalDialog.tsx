@@ -1,7 +1,7 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useRef } from 'react'
 import { useWorkspace } from '@/state/workspace'
-import { type ProjectWorkspace } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,13 +29,13 @@ export function WorkspaceRemovalDialog({
   target: WorkspaceRemovalTarget | undefined
   dialog: Pick<ComponentProps<typeof AlertDialog>, 'open' | 'onOpenChangeComplete'>
   trigger: RefObject<HTMLElement | null>
-  onClose(): void
+  onClose: () => void
 }) {
   const state = useWorkspace(
-    useShallow((state) => ({
-      removingWorkspace: state.removingWorkspace,
-      removeProject: state.removeProject,
-      removeWorkspace: state.removeWorkspace,
+    useShallow((currentState) => ({
+      removingWorkspace: currentState.removingWorkspace,
+      removeProject: currentState.removeProject,
+      removeWorkspace: currentState.removeWorkspace,
     })),
   )
   const cancelWorkspaceRemoval = useRef<HTMLButtonElement | null>(null)

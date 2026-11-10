@@ -1,10 +1,11 @@
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import type { WindowsProcess } from './windows-processes'
+import type * as KoffiModule from 'koffi'
 
 const requireNative = createRequire(__filename)
 let nativeApi:
-  | { read(): WindowsProcess[]; terminate(pid: number, expectedStarted: string): void }
+  | { read: () => WindowsProcess[]; terminate: (pid: number, expectedStarted: string) => void }
   | undefined
 
 // Toolhelp32 enumerates identities without launching PowerShell or reading command lines.
@@ -20,7 +21,7 @@ export function terminateWindowsProcess(pid: number, expectedStarted: string): v
 }
 
 function createSnapshotReader(): NonNullable<typeof nativeApi> {
-  const koffi = requireNative('koffi') as typeof import('koffi')
+  const koffi = requireNative('koffi') as typeof KoffiModule
   const kernel = koffi.load(
     join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'kernel32.dll'),
   )

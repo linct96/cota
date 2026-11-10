@@ -9,10 +9,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { FieldGroup } from '@/components/ui/field'
-import {
-  useHostedReviewCreation,
-  type CreateHostedReviewDialogProps,
-} from '../hooks/use-hosted-review-creation'
+import { useHostedReviewCreation } from '../hooks/use-hosted-review-creation'
+import type { CreateHostedReviewDialogProps } from '../hooks/use-hosted-review-creation'
 import { HostedReviewBranchFields } from './HostedReviewBranchFields'
 import { HostedReviewDetailsFields } from './HostedReviewDetailsFields'
 import { HostedReviewPreflight } from './HostedReviewPreflight'

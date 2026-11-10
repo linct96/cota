@@ -26,6 +26,7 @@ export const createPreferencesActions: StateCreator<
       if (!saved.reusePreviewTabs) {
         const sourceControl = useSourceControl.getState()
         for (const [id, session] of Object.entries(sourceControl.sessions)) {
+          if (!session) continue
           const { file, selection } = session
           if (!file && !selection) continue
           sourceControl.update(id, {

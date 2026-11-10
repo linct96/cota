@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import { type HostingSnapshot } from '../../../../../shared/code-hosting'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
+import type { HostingSnapshot } from '../../../../../shared/code-hosting'
 import type { GitStatus } from '../../../../../shared/source-control'
 import { useSourceControl } from '@/state/source-control-store'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
@@ -61,10 +62,10 @@ export function useHostedReview({
       reading = true
       setInspecting(true)
       try {
-        const snapshot = unwrap(await window.desktop.codeHosting.inspect(target))
+        const nextSnapshot = unwrap(await window.desktop.codeHosting.inspect(target))
         if (version === epoch.current) {
           lastRead.current = { identity, at: Date.now() }
-          setResult({ identity, snapshot })
+          setResult({ identity, snapshot: nextSnapshot })
         }
       } catch (cause) {
         if (version === epoch.current)

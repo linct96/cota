@@ -1,4 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { constants } from 'node:fs'
 import {
   link,
@@ -15,11 +16,11 @@ import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { TerminalBinding, WorkspaceTarget } from '../../../shared/contracts'
-import {
-  worktreeSetupSchema,
-  type WorktreeSetupConfig,
-  type WorktreeSetupRun,
-  type WorktreeSetupSnapshot,
+import { worktreeSetupSchema } from '../../../shared/worktree-setup'
+import type {
+  WorktreeSetupConfig,
+  WorktreeSetupRun,
+  WorktreeSetupSnapshot,
 } from '../../../shared/worktree-setup'
 import type { ConfigStore } from '../../settings/config-store'
 import type { WorktreeManager } from './manager'
@@ -137,7 +138,7 @@ export class WorktreeSetupService {
         throw error
       }
       void this.execute(binding, job)
-        .then(async () => {
+        .then(() => {
           job.run.status = job.cancelled ? 'interrupted' : 'succeeded'
           this.append(
             job,
@@ -170,7 +171,7 @@ export class WorktreeSetupService {
 
   async stop(target: WorkspaceTarget): Promise<void> {
     // Do not hold the repository gate while waiting for the process to stop.
-    const id = await this.worktrees.withTerminalTarget(target, async (binding) => this.id(binding))
+    const id = await this.worktrees.withTerminalTarget(target, (binding) => this.id(binding))
     await this.stopJob(id)
   }
 
@@ -279,8 +280,8 @@ export class WorktreeSetupService {
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       job.child = child
-      child.stdout!.setEncoding('utf8').on('data', (data: string) => this.append(job, data))
-      child.stderr!.setEncoding('utf8').on('data', (data: string) => this.append(job, data))
+      child.stdout.setEncoding('utf8').on('data', (data: string) => this.append(job, data))
+      child.stderr.setEncoding('utf8').on('data', (data: string) => this.append(job, data))
       let cleanup = Promise.resolve()
       child.once('error', reject)
       child.once('exit', () => {

@@ -1,12 +1,32 @@
 import * as React from 'react'
 import { Menu as DropdownMenuPrimitive } from '@base-ui/react/menu'
-import { Check } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DropdownMenu = DropdownMenuPrimitive.Root
 const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger
 const DropdownMenuGroup = DropdownMenuPrimitive.Group
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+const DropdownMenuSub = DropdownMenuPrimitive.SubmenuRoot
+
+function DropdownMenuSubTrigger({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubmenuTrigger>) {
+  return (
+    <DropdownMenuPrimitive.SubmenuTrigger
+      className={cn(
+        'dropdown-menu-sub-trigger flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-popup-open:bg-accent data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRight className="dropdown-menu-sub-chevron ml-auto" aria-hidden="true" />
+    </DropdownMenuPrimitive.SubmenuTrigger>
+  )
+}
 
 function DropdownMenuLabel({
   className,
@@ -151,4 +171,6 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
 }

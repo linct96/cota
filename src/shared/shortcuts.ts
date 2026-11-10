@@ -27,7 +27,7 @@ export const TERMINAL_SHORTCUTS = [
 ] as const
 
 export type TerminalShortcut = (typeof TERMINAL_SHORTCUTS)[number][0]
-export type ShortcutBindings = Record<string, string>
+export type ShortcutBindings = Partial<Record<string, string>>
 export const SHORTCUT_DEFINITIONS = [...COTA_SHORTCUTS, ...TERMINAL_SHORTCUTS]
 const modifiers = ['CommandOrControl', 'Control', 'Alt', 'Shift', 'Super']
 const keyPattern =
@@ -105,7 +105,7 @@ export function validateShortcutBindings(value: unknown, platform: string): Shor
     validateShortcutBinding(binding, platform)
     result[id] = binding
   }
-  const [conflict] = shortcutConflicts(result, platform)
+  const conflict = shortcutConflicts(result, platform).at(0)
   if (conflict) {
     const [first, second] = conflict.map(
       (id) => SHORTCUT_DEFINITIONS.find(([key]) => key === id)?.[1] ?? id,

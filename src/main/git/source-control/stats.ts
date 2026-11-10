@@ -3,7 +3,7 @@ import { lstat } from 'node:fs/promises'
 import type { GitChange, GitReviewFile } from '../../../shared/source-control'
 import { runGitBytes } from '../git-runner'
 import { safeTarget, workingFile } from './files'
-import { filePath, MAX_FILE_BYTES, STATS_BUDGET_MS } from './shared'
+import { MAX_FILE_BYTES, STATS_BUDGET_MS, filePath } from './shared'
 
 export async function diffStats(
   root: string,

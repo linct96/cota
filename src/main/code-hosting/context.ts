@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
-import {
-  hostingProviderSchema,
-  type HostingContext,
-  type HostingProvider,
-  type HostingAccounts,
-} from '../../shared/code-hosting'
+import { hostingProviderSchema } from '../../shared/code-hosting'
+import type { HostingAccounts, HostingContext, HostingProvider } from '../../shared/code-hosting'
 import type { SourceControlService } from '../git/source-control/service'
 import { runGit } from '../git/git-runner'
 import { parseHostingRemote } from './remote'

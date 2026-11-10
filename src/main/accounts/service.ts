@@ -9,21 +9,24 @@ import {
   accountProductSchema,
   renameAccountSchema,
   switchAccountSchema,
-  type AccountOAuthProgress,
-  type AccountProduct,
-  type AccountProfile,
-  type AccountStatus,
 } from '../../shared/accounts'
-import { AccountStore, cortanaDatabase, readCortanaAccounts, type StoredAccount } from './store'
+import type {
+  AccountOAuthProgress,
+  AccountProduct,
+  AccountProfile,
+  AccountStatus,
+} from '../../shared/accounts'
+import { AccountStore, cortanaDatabase, readCortanaAccounts } from './store'
+import type { StoredAccount } from './store'
 import {
   AccountCredentials,
+  GROK_AUTH_KEY,
   credentialIdentity,
   fingerprint,
-  GROK_AUTH_KEY,
   normalizeCredential,
   relayCredential,
-  type CredentialDetails,
 } from './credentials'
+import type { CredentialDetails } from './credentials'
 import { object, parseObject, text } from './files'
 import { AccountOAuth } from './oauth'
 import {

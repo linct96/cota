@@ -21,7 +21,7 @@ export function registerCodeHostingIPC(deps: {
   const readHosting = git.readHosting
   handle('code-hosting:context', (target: WorkspaceTarget) => {
     assertReadable()
-    return readHosting(target, async (_cwd, context) => context)
+    return readHosting(target, (_cwd, context) => context)
   })
   handle('code-hosting:accounts', (provider: unknown) => {
     assertReadable()

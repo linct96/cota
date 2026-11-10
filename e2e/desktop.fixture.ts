@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict'
-import { execFile, type ChildProcess } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { connect } from 'node:net'
-import { join, resolve, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { test as base, expect, type ElectronApplication, type Page } from '@playwright/test'
-import { DEFAULT_CONFIG, type AppConfig, type TerminalSession } from '../src/shared/contracts'
+import electronBinary from 'electron'
+import { test as base, expect } from '@playwright/test'
+import type { ElectronApplication, Page } from '@playwright/test'
+import { DEFAULT_CONFIG } from '../src/shared/contracts'
+import type { AppConfig, TerminalSession } from '../src/shared/contracts'
 import { HostClient, hostDirectory } from '../src/main/host/host-client'
 import { HOST_PROTOCOL } from '../src/main/host/host-protocol'
 import { stopProcessTree } from '../src/main/system/process-tree'
 
 const exec = promisify(execFile)
-const electronPath = require('electron') as string
+// Under Node, Electron exports its binary path rather than the running app API.
+const electronPath = electronBinary as unknown as string
 const hostEntry = resolve('out/main/host.js')
 
 async function optionalText(path: string) {
@@ -41,13 +46,13 @@ export type Desktop = {
   hostPath: string
   readonly page: Page
   readonly electron: ElectronApplication
-  git(...args: string[]): Promise<string>
-  config(): Promise<AppConfig>
-  sessions(): Promise<TerminalSession[]>
-  openProject(path?: string | null): Promise<void>
-  terminalCommand(command: string): Promise<void>
-  close(): Promise<void>
-  restart(): Promise<void>
+  git: (...args: string[]) => Promise<string>
+  config: () => Promise<AppConfig>
+  sessions: () => Promise<TerminalSession[]>
+  openProject: (path?: string | null) => Promise<void>
+  terminalCommand: (command: string) => Promise<void>
+  close: () => Promise<void>
+  restart: () => Promise<void>
 }
 
 export const test = base.extend<{ desktop: Desktop }>({
@@ -212,10 +217,17 @@ export const test = base.extend<{ desktop: Desktop }>({
         async openProject(path = repo) {
           if (path !== null) assert.ok(!relative(root, await realpath(path)).startsWith('..'))
           await desktop.electron.evaluate(({ dialog }, selected) => {
-            const original = dialog.showOpenDialog
-            dialog.showOpenDialog = async () => {
-              dialog.showOpenDialog = original
-              return { canceled: selected === null, filePaths: selected === null ? [] : [selected] }
+            const original = dialog.showOpenDialog.bind(dialog)
+            dialog.showOpenDialog = () => {
+              try {
+                dialog.showOpenDialog = original
+                return Promise.resolve({
+                  canceled: selected === null,
+                  filePaths: selected === null ? [] : [selected],
+                })
+              } catch (cause) {
+                return Promise.reject(cause)
+              }
             }
           }, path)
           await desktop.page.getByRole('button', { name: '添加项目', exact: true }).click()
@@ -358,7 +370,7 @@ export const test = base.extend<{ desktop: Desktop }>({
           try {
             if (child && child.exitCode === null && child.signalCode === null) {
               const process = child
-              const exited = new Promise<void>((resolve) => process.once('exit', () => resolve()))
+              const exited = new Promise<void>((complete) => process.once('exit', () => complete()))
               process.kill('SIGKILL')
               await exited
             }

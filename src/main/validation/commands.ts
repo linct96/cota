@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import type { WorkspaceOpener, QuickCommand } from '../../shared/contracts'
+import type { QuickCommand, WorkspaceOpener } from '../../shared/contracts'
 import { parseArguments } from '../../shared/open-with'
 import { absolutePath } from './paths'
 
@@ -46,14 +46,14 @@ export function savedQuickCommands(value: unknown): QuickCommand[] {
   if (!Array.isArray(value) || value.length > 50) throw new Error('快捷命令最多配置 50 项。')
   const commands = value.map((entry: unknown): QuickCommand => {
     if (!entry || typeof entry !== 'object') throw new Error('快捷命令格式无效。')
-    const { id, name, command, scope, mode, port } = entry as Partial<QuickCommand>
+    const { id, name, command, scope, mode, port } = entry as Record<keyof QuickCommand, unknown>
     if (mode !== undefined && mode !== 'task' && mode !== 'service')
       throw new Error('快捷命令运行类型无效。')
     if (
       port !== undefined &&
       (mode !== 'service' ||
         (port !== 'auto' &&
-          (!Number.isInteger(port) || Number(port) < 1024 || Number(port) > 65535)))
+          (typeof port !== 'number' || !Number.isInteger(port) || port < 1024 || port > 65535)))
     )
       throw new Error('服务端口须为 auto 或 1024–65535 的整数。')
     if (typeof id !== 'string' || !/^[\w-]{1,64}$/.test(id)) throw new Error('快捷命令标识无效。')
@@ -61,18 +61,26 @@ export function savedQuickCommands(value: unknown): QuickCommand[] {
       throw new Error('请输入命令名称（上限 80 字符，不能包含换行）。')
     const text = startupCommand(command)
     if (text === undefined) throw new Error('请输入 Shell 命令。')
-    if (!scope || (scope.type !== 'global' && scope.type !== 'project'))
+    if (
+      !scope ||
+      typeof scope !== 'object' ||
+      !('type' in scope) ||
+      (scope.type !== 'global' && scope.type !== 'project')
+    )
       throw new Error('快捷命令作用域无效。')
     return {
       id,
       name: name.trim(),
       command: text,
-      ...(mode ? { mode } : {}),
+      ...(mode !== undefined ? { mode } : {}),
       ...(port !== undefined ? { port } : {}),
       scope:
         scope.type === 'global'
           ? { type: 'global' }
-          : { type: 'project', projectPath: absolutePath(scope.projectPath) },
+          : {
+              type: 'project',
+              projectPath: absolutePath('projectPath' in scope ? scope.projectPath : undefined),
+            },
     }
   })
   if (new Set(commands.map((entry) => entry.id)).size !== commands.length)

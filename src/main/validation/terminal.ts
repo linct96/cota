@@ -1,4 +1,5 @@
-import { AGENT_PROVIDERS, type AgentProvider, type TerminalLaunch } from '../../shared/contracts'
+import { AGENT_PROVIDERS } from '../../shared/contracts'
+import type { AgentProvider, TerminalLaunch } from '../../shared/contracts'
 
 export function terminalId(value: unknown): string {
   if (typeof value !== 'string' || !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(value)) {
@@ -15,7 +16,7 @@ export function agentProvider(value: unknown): AgentProvider {
 
 export function terminalLaunch(value: unknown): TerminalLaunch {
   if (!value || typeof value !== 'object') throw new Error('终端启动参数无效。')
-  const launch = value as Partial<TerminalLaunch>
+  const launch = value as Record<string, unknown>
   if (launch.kind === 'agent')
     return {
       kind: 'agent',

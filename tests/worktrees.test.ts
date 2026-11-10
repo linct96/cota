@@ -7,11 +7,12 @@ import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfigStore } from '../src/main/settings/config-store'
-import { GitService, gitEnvironment, WorktreeError } from '../src/main/git/worktrees/git'
+import { GitService, WorktreeError, gitEnvironment } from '../src/main/git/worktrees/git'
 import { WorktreeManager } from '../src/main/git/worktrees/manager'
 import { WorktreeSetupService } from '../src/main/git/worktrees/setup'
 import * as shells from '../src/main/system/shell'
-import { DEFAULT_CONFIG, type WorktreeRecord, type TerminalSession } from '../src/shared/contracts'
+import { DEFAULT_CONFIG } from '../src/shared/contracts'
+import type { TerminalSession, WorktreeRecord } from '../src/shared/contracts'
 import { worktreeBranchSegment } from '../src/shared/worktree-names'
 
 const execFileAsync = promisify(execFile)
@@ -36,9 +37,9 @@ const input = (projectPath: string, branchName = 'feature/中文') => ({
 })
 const removalOptions = () => ({
   deleteBranch: false,
-  sessions: vi.fn(async (): Promise<TerminalSession[]> => []),
+  sessions: vi.fn((): Promise<TerminalSession[]> => Promise.resolve([])),
   close: vi.fn(async (_id: string) => {}),
-  confirm: vi.fn(async (_check?: unknown, _force?: boolean) => true),
+  confirm: vi.fn((_check?: unknown, _force?: boolean) => Promise.resolve(true)),
 })
 const init = async (path: string, committed = true) => {
   await mkdir(path, { recursive: true })
@@ -171,11 +172,19 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
     it('resolves stored bindings, rejects a forged directory and never falls back after path loss', async () => {
       const { record, workspace } = await manager.createWorktree(input(repo))
       const target = { projectPath: repo, workspaceId: workspace.id, cwd: repo }
-      expect(await manager.withProjectTarget(repo, async (value) => value.cwd)).toBe(repo)
+      expect(
+        await manager.withProjectTarget(repo, (value) => {
+          try {
+            return Promise.resolve(value.cwd)
+          } catch (cause) {
+            return Promise.reject(cause)
+          }
+        }),
+      ).toBe(repo)
       await expect(manager.withProjectTarget(record.path, async () => {})).rejects.toThrow(
         '请先打开项目',
       )
-      expect(await manager.withTerminalTarget(target, async (value) => value)).toMatchObject({
+      expect(await manager.withTerminalTarget(target, (value) => value)).toMatchObject({
         cwd: record.path,
         workspaceKind: 'git-worktree',
         worktreeId: record.id,
@@ -184,7 +193,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
         manager.withTerminalTarget({ ...target, workspaceId: randomUUID() }, async () => {}),
       ).rejects.toThrow('工作区未保存')
       await git(record.path, 'switch', '--detach')
-      expect(await manager.withTerminalTarget(target, async (value) => value.cwd)).toBe(record.path)
+      expect(await manager.withTerminalTarget(target, (value) => value.cwd)).toBe(record.path)
       await rm(record.path, { recursive: true })
       const spawn = vi.fn()
       await expect(manager.withTerminalTarget(target, spawn)).rejects.toThrow()
@@ -387,8 +396,14 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       )
       expect(config.snapshot().worktreeRecords).toEqual([record])
       expect((await manager.scanWorktrees(repo)).entries[0].status).toBe('ready')
-      options.close.mockImplementation(async () => {
-        options.sessions.mockResolvedValue([])
+      options.close.mockImplementation(() => {
+        try {
+          options.sessions.mockResolvedValue([])
+
+          return Promise.resolve()
+        } catch (cause) {
+          return Promise.reject(cause)
+        }
       })
       expect(await manager.removeWorktree(record.id, options)).toMatchObject({ removed: true })
     }, 15000)
@@ -789,9 +804,9 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
         reason: { code: 'BRANCH_EXISTS' },
       })
       expect(config.snapshot().worktreeRecords).toHaveLength(1)
-      await expect(
-        manager.withRepositoryLock(join(repo, '.git'), async () => 'released'),
-      ).resolves.toBe('released')
+      await expect(manager.withRepositoryLock(join(repo, '.git'), () => 'released')).resolves.toBe(
+        'released',
+      )
     })
     describe('concurrent creation after an existing worktree', () => {
       let firstPath: string
@@ -961,11 +976,11 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
           }
           await config.saveWorktreeSetup(repo, definition)
           expect((await setup.inspect(target)).run).toBeUndefined()
-          expect(await setup.start(target, definition, async () => false)).toBe(false)
+          expect(await setup.start(target, definition, () => Promise.resolve(false))).toBe(false)
           await expect(lstat(join(record.path, '.env.local'))).rejects.toMatchObject({
             code: 'ENOENT',
           })
-          const confirm = vi.fn(async (_description: string) => true)
+          const confirm = vi.fn((_description: string) => Promise.resolve(true))
           expect(await setup.start(target, definition, confirm)).toBe(true)
           expect(confirm.mock.calls[0][0]).toContain(record.path)
           expect(confirm.mock.calls[0][0]).toContain(repo)
@@ -978,7 +993,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
           expect(await readFile(join(record.path, 'initialized.txt'), 'utf8')).toBe('ready')
           expect((await lstat(join(record.path, '.env.local'))).mode & 0o777).toBe(0o600)
           await writeFile(join(record.path, '.env.local'), 'edited')
-          await setup.start(target, definition, async () => true)
+          await setup.start(target, definition, () => Promise.resolve(true))
           expect((await settled(setup, target)).log).toContain('保留已有文件')
           expect(await readFile(join(record.path, '.env.local'), 'utf8')).toBe('edited')
           expect(await readFile(join(repo, '.env.local'), 'utf8')).toBe('local-secret')
@@ -1011,7 +1026,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
             copyFiles: ['linked.env'],
           }
           await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, async () => true)
+          await setup.start(target, definition, () => Promise.resolve(true))
           expect((await settled(setup, target)).status).toBe('failed')
           await mkdir(join(repo, 'config'))
           await writeFile(join(repo, 'config/secret'), 'secret')
@@ -1020,7 +1035,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
           await symlink(outsideDirectory, join(record.path, 'config'))
           definition = { ...definition, copyFiles: ['config/secret'] }
           await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, async () => true)
+          await setup.start(target, definition, () => Promise.resolve(true))
           expect((await settled(setup, target)).status).toBe('failed')
           await expect(lstat(join(record.path, 'should-not-exist'))).rejects.toMatchObject({
             code: 'ENOENT',
@@ -1044,14 +1059,14 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
             copyFiles: [],
           }
           await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, async () => true)
+          await setup.start(target, definition, () => Promise.resolve(true))
           await vi.waitFor(
             async () => expect((await setup.inspect(target)).run?.log).toContain('started'),
             { timeout: 5000 },
           )
-          await expect(setup.start(target, definition, async () => true)).rejects.toThrow(
-            '重复执行',
-          )
+          await expect(
+            setup.start(target, definition, () => Promise.resolve(true)),
+          ).rejects.toThrow('重复执行')
           expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('INITIALIZING')
           await expect(manager.removeWorktree(record.id, removalOptions())).rejects.toMatchObject({
             code: 'REMOVAL_BLOCKED',
@@ -1074,7 +1089,9 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
         const definition = { command: 'printf forbidden > should-not-exist', copyFiles: [] }
         await config.saveWorktreeSetup(repo, definition)
         await expect(
-          setup.start(target, { ...definition, command: 'old command' }, async () => true),
+          setup.start(target, { ...definition, command: 'old command' }, () =>
+            Promise.resolve(true),
+          ),
         ).rejects.toThrow('配置已改变')
         await expect(
           setup.start(target, definition, async () => {
@@ -1087,7 +1104,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
           setup.start(
             target,
             definition,
-            async () => true,
+            () => Promise.resolve(true),
             () => {
               throw new Error('正在退出')
             },

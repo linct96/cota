@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { toast } from 'sonner'
-import { unwrap, type Result, type WorkspaceTarget } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { Result, WorkspaceTarget } from '../../../../../shared/contracts'
 import {
   createHostedReviewSchema,
-  prepareHostedReviewSchema,
   hostingBranchesExpired,
-  type CreateHostedReview,
-  type HostedReview,
-  type HostedReviewCreationContext,
-  type HostedReviewPreparation,
+  prepareHostedReviewSchema,
+} from '../../../../../shared/code-hosting'
+import type {
+  CreateHostedReview,
+  HostedReview,
+  HostedReviewCreationContext,
+  HostedReviewPreparation,
 } from '../../../../../shared/code-hosting'
 import { useSourceControl } from '@/state/source-control-store'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
@@ -99,7 +102,7 @@ export function useHostedReviewCreation({
         if (mounted.current) {
           setError(cause instanceof Error ? cause.message : '创建失败，输入已保留，请核对后重试。')
           setPreparation(undefined)
-          setRevision((value) => value + 1)
+          setRevision((inputValue) => inputValue + 1)
         }
       }
     },

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, Upload, CloudDownload, RefreshCw } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, CloudDownload, RefreshCw, Upload } from 'lucide-react'
 import { useSourceControl } from '@/state/source-control-store'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { cn } from '@/lib/utils'
@@ -39,12 +39,12 @@ export function SourceControlNetworkActions({
   const pushDisabled =
     networkDisabled ||
     mergePending ||
-    !status?.branch ||
+    !status.branch ||
     (hasTracking
-      ? !references?.remotes.includes(status.tracking!.remote)
+      ? !references.remotes.includes(status.tracking!.remote)
       : !selectedRemote || !!status.upstream)
   const hasConflicts = status?.entries.some((entry) => entry.area === 'conflict')
-  const syncDisabled = pushDisabled || !status?.head || !status.tracking || hasConflicts
+  const syncDisabled = pushDisabled || !status.head || !status.tracking || hasConflicts
   async function remoteAction(action: 'fetch' | 'pull' | 'push' | 'publish' | 'sync') {
     if (action === 'fetch') return mutate({ ...target, action, remote: selectedRemote })
     if (!status?.branch || !status.head) return

@@ -54,7 +54,9 @@ export function shortcutSettingsFormSchema(platform: string) {
         for (const id of group) {
           const labels = group
             .filter((key) => key !== id)
-            .map((key) => `“${SHORTCUT_DEFINITIONS.find(([id]) => id === key)![1]}”`)
+            .map(
+              (key) => `“${SHORTCUT_DEFINITIONS.find(([candidateId]) => candidateId === key)![1]}”`,
+            )
           context.addIssue({
             code: 'custom',
             path: ['bindings', id],

@@ -1,14 +1,11 @@
-import { randomUUID, timingSafeEqual, createHash } from 'node:crypto'
-import {
-  AGENT_PROVIDERS,
-  type ManagedAgentEvent,
-  type AgentLifecycleEvent,
-} from '../../shared/contracts'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { AGENT_PROVIDERS } from '../../shared/contracts'
+import type { AgentLifecycleEvent, ManagedAgentEvent } from '../../shared/contracts'
 import { isWindows } from '../system/platform'
 import { agentCapability, resolveAgent } from '../agents/cli/registry'
-import { AgentSessionManager } from '../agents/runtime/session-manager'
+import type { AgentSessionManager } from '../agents/runtime/session-manager'
 import { validLifecycleEvent } from '../agents/runtime/events'
-import { agentProcesses, agentOwner, foregroundAgent } from '../agents/runtime/process-observation'
+import { agentOwner, agentProcesses, foregroundAgent } from '../agents/runtime/process-observation'
 import type { Session } from './session'
 
 export class TerminalAgentIntegration {
@@ -37,8 +34,8 @@ export class TerminalAgentIntegration {
     const context = session?.managed
     return !!(
       context &&
-      !session!.exited &&
-      !session!.closing &&
+      !session.exited &&
+      !session.closing &&
       typeof event.token === 'string' &&
       Buffer.byteLength(event.token) === 64 &&
       timingSafeEqual(Buffer.from(context.token), Buffer.from(event.token))
@@ -47,10 +44,14 @@ export class TerminalAgentIntegration {
 
   async receiveAgentEvent(value: unknown, channel: object): Promise<boolean> {
     if (!value || typeof value !== 'object' || !('managed' in value)) return false
-    const { managed, processId, sessionId, ...metadata } = value as ManagedAgentEvent
+    const { managed, processId, sessionId, ...metadata } = value as Record<
+      keyof ManagedAgentEvent,
+      unknown
+    >
     const event = { ...metadata, launchId: randomUUID() } as AgentLifecycleEvent
     if (
       managed !== true ||
+      typeof processId !== 'number' ||
       !Number.isSafeInteger(processId) ||
       processId <= 0 ||
       typeof sessionId !== 'string' ||
@@ -72,6 +73,8 @@ export class TerminalAgentIntegration {
       !timingSafeEqual(Buffer.from(context.token), Buffer.from(event.token))
     )
       return false
+    // Session state can change while process discovery or capability checks are awaiting.
+    const isUnavailable = () => session.exited || !!session.closing
     let rows = await agentProcesses(false, [session.child.pid])
     if (!rows.some((row) => row.pid === processId))
       rows = await agentProcesses(true, [session.child.pid])
@@ -89,7 +92,7 @@ export class TerminalAgentIntegration {
               row.pid === session.child!.pid && (isWindows || row.group === descendant.group),
           )
         : descendant
-    if (!owner || session.managed !== context || session.exited || session.closing) return false
+    if (!owner || session.managed !== context || isUnavailable()) return false
     const foreground =
       session.launch.kind === 'agent' ? undefined : foregroundAgent(rows, session.child.pid)
     if (
@@ -199,8 +202,7 @@ export class TerminalAgentIntegration {
       context.run !== run ||
       !run.token ||
       !session.agent ||
-      session.exited ||
-      session.closing
+      isUnavailable()
     )
       return false
     if (event.timestamp < run.eventStartedAt) return true
@@ -261,10 +263,12 @@ export class TerminalAgentIntegration {
             if (!run) continue
             const identity = run.process ?? run.owner
             const row = rows.find(
-              (row) => row.pid === identity.pid && row.started === identity.started,
+              (candidate) =>
+                candidate.pid === identity.pid && candidate.started === identity.started,
             )
             const owner = rows.find(
-              (row) => row.pid === run.owner.pid && row.started === run.owner.started,
+              (candidate) =>
+                candidate.pid === run.owner.pid && candidate.started === run.owner.started,
             )
             if (!row || !owner || row.stat.includes('Z') || owner.stat.includes('Z')) {
               if (session.launch.kind === 'agent') this.agents.uncertain(session.id)
@@ -277,7 +281,8 @@ export class TerminalAgentIntegration {
               row.stat.includes('T') ||
               owner.stat.includes('T') ||
               (!isWindows &&
-                rows.find((row) => row.pid === session.child!.pid)?.foreground !== row.group)
+                rows.find((candidate) => candidate.pid === session.child!.pid)?.foreground !==
+                  row.group)
             )
               this.agents.uncertain(session.id)
           }

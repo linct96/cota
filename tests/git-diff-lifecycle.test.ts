@@ -76,8 +76,8 @@ it('cancels queued reads without starting IPC and keeps an aborted in-flight rea
         release = resolve
       }),
   )
-  const queuedLoad = vi.fn(async () => 'stale')
-  const lastLoad = vi.fn(async () => 'current')
+  const queuedLoad = vi.fn(() => Promise.resolve('stale'))
+  const lastLoad = vi.fn(() => Promise.resolve('current'))
   const first = scheduleGitDiff(firstLoad, firstController.signal)
   const firstRejected = expect(first).rejects.toMatchObject({ name: 'AbortError' })
   const queued = scheduleGitDiff(queuedLoad, queuedController.signal)
@@ -91,10 +91,14 @@ it('cancels queued reads without starting IPC and keeps an aborted in-flight rea
   expect(lastLoad).not.toHaveBeenCalled()
   release()
   await expect(last).resolves.toBe('current')
-  const failed = scheduleGitDiff(async () => {
-    throw new Error('read failed')
-  }, new AbortController().signal)
-  const following = scheduleGitDiff(async () => 'recovered', new AbortController().signal)
+  const failed = scheduleGitDiff(
+    () => Promise.reject(new Error('read failed')),
+    new AbortController().signal,
+  )
+  const following = scheduleGitDiff(
+    () => Promise.resolve('recovered'),
+    new AbortController().signal,
+  )
   await expect(failed).rejects.toThrow('read failed')
   await expect(following).resolves.toBe('recovered')
 })

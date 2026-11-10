@@ -4,8 +4,8 @@ import type { AccountProduct } from '../../../../shared/accounts'
 interface CortanaState {
   activeProduct: AccountProduct
   agentSwitchBlocked: boolean
-  selectProduct(product: AccountProduct): void
-  setAgentSwitchBlocked(blocked: boolean): void
+  selectProduct: (product: AccountProduct) => void
+  setAgentSwitchBlocked: (blocked: boolean) => void
 }
 
 export const useCortana = create<CortanaState>((set, get) => ({

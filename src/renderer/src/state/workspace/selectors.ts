@@ -3,8 +3,8 @@ import {
   workspaceTerminalSummary,
 } from '../../features/agents/lib/agent-status'
 import { terminalPaneIds } from '../../../../shared/terminal-layout'
-import { type ProjectWorkspace } from '../../../../shared/contracts'
-import type { WorkspaceState, TerminalTab } from './types'
+import type { ProjectWorkspace } from '../../../../shared/contracts'
+import type { TerminalTab, WorkspaceState } from './types'
 
 export function nextWorkspaceName(path: string, workspaces: ProjectWorkspace[]): string {
   const numbers = workspaces
@@ -43,8 +43,8 @@ export function terminalTabs(
 ): (TerminalTab & { indicatorTab?: TerminalTab })[] {
   const seen = new Set<string>()
   return state.tabs.flatMap((tab) => {
-    const group = state.terminalLayouts.find((group) =>
-      terminalPaneIds(group.root).includes(tab.id),
+    const group = state.terminalLayouts.find((candidateGroup) =>
+      terminalPaneIds(candidateGroup.root).includes(tab.id),
     )
     const id = group?.id || tab.id
     if (seen.has(id)) return []

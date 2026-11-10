@@ -1,8 +1,10 @@
 import { create } from 'zustand'
-import { unwrap, type AgentProvider, type WorkspaceTarget } from '../../../shared/contracts'
+import { unwrap } from '../../../shared/contracts'
+import type { AgentProvider, WorkspaceTarget } from '../../../shared/contracts'
 import type { HostingContext } from '../../../shared/code-hosting'
 import type { TerminalLayout } from '../../../shared/terminal-layout'
-import { gitFileKey, type GitDiffSelection, type GitStatus } from '../../../shared/source-control'
+import { gitFileKey } from '../../../shared/source-control'
+import type { GitDiffSelection, GitStatus } from '../../../shared/source-control'
 
 export type ClosedTab =
   | { kind: 'terminal'; title: string; provider?: AgentProvider }
@@ -54,23 +56,23 @@ export const EMPTY_SOURCE_CONTROL: SourceControlSession = {
   refreshed: 0,
 }
 interface SourceControlState {
-  sessions: Record<string, SourceControlSession>
-  update(id: string, patch: Partial<SourceControlSession>): void
-  refreshHostingContext(target: WorkspaceTarget): Promise<void>
-  syncTerminals(id: string, terminalIds: string[]): void
-  openDiff(id: string, selection: GitDiffSelection, reusePreviewTabs: boolean): void
-  pinDiff(id: string): void
-  selectPinnedDiff(id: string, key: string): void
-  closePinnedDiff(id: string, key: string): void
-  openFile(id: string, path: string, reusePreviewTabs: boolean): void
-  pinFile(id: string): void
-  selectPinnedFile(id: string, path: string): void
-  closePinnedFile(id: string, path: string): void
-  openChanges(id: string): void
-  closeChanges(id: string): void
-  closePreview(id: string): void
-  rememberClosedTab(id: string, tab: ClosedTab): void
-  showTerminal(id: string): void
+  sessions: Partial<Record<string, SourceControlSession>>
+  update: (id: string, patch: Partial<SourceControlSession>) => void
+  refreshHostingContext: (target: WorkspaceTarget) => Promise<void>
+  syncTerminals: (id: string, terminalIds: string[]) => void
+  openDiff: (id: string, selection: GitDiffSelection, reusePreviewTabs: boolean) => void
+  pinDiff: (id: string) => void
+  selectPinnedDiff: (id: string, key: string) => void
+  closePinnedDiff: (id: string, key: string) => void
+  openFile: (id: string, path: string, reusePreviewTabs: boolean) => void
+  pinFile: (id: string) => void
+  selectPinnedFile: (id: string, path: string) => void
+  closePinnedFile: (id: string, path: string) => void
+  openChanges: (id: string) => void
+  closeChanges: (id: string) => void
+  closePreview: (id: string) => void
+  rememberClosedTab: (id: string, tab: ClosedTab) => void
+  showTerminal: (id: string) => void
 }
 
 export const useSourceControl = create<SourceControlState>((set, get) => ({
@@ -83,10 +85,10 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
         'status' in patch &&
         (!patch.status ||
           patch.status.rootPath !== previous.status?.rootPath ||
-          patch.status.branch !== previous.status?.branch ||
-          patch.status.head !== previous.status?.head ||
-          patch.status.tracking?.remote !== previous.status?.tracking?.remote ||
-          patch.status.tracking?.branch !== previous.status?.tracking?.branch)
+          patch.status.branch !== previous.status.branch ||
+          patch.status.head !== previous.status.head ||
+          patch.status.tracking?.remote !== previous.status.tracking?.remote ||
+          patch.status.tracking?.branch !== previous.status.tracking?.branch)
       )
         session.hosting = undefined
       if ('draft' in patch && patch.draft !== previous.draft)
@@ -111,8 +113,9 @@ export const useSourceControl = create<SourceControlState>((set, get) => ({
       if (patch.status && session.selection && session.selection.area !== 'review') {
         const selection = session.selection
         const entry =
-          patch.status.entries.find((entry) => gitFileKey(entry) === gitFileKey(selection)) ||
-          patch.status.entries.find((entry) => entry.path === selection.path)
+          patch.status.entries.find(
+            (candidateEntry) => gitFileKey(candidateEntry) === gitFileKey(selection),
+          ) || patch.status.entries.find((candidateEntry) => candidateEntry.path === selection.path)
         session.selection = entry ? { path: entry.path, area: entry.area } : undefined
         if (!entry) session.preview = false
       }

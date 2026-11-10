@@ -1,4 +1,5 @@
-import { app, dialog, nativeTheme, powerMonitor, type BrowserWindow } from 'electron'
+import { app, dialog, nativeTheme, powerMonitor } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
@@ -7,7 +8,8 @@ import { ConfigStore } from './settings/config-store'
 import { AccountService } from './accounts/service'
 import { registerAccountsIPC } from './accounts/ipc'
 import { SourceControlService } from './git/source-control/service'
-import { registerGitIPC, type GitResources } from './git/ipc'
+import { registerGitIPC } from './git/ipc'
+import type { GitResources } from './git/ipc'
 import { CodeHostingService } from './code-hosting/service'
 import { registerCodeHostingIPC } from './code-hosting/ipc'
 import { WorktreeManager } from './git/worktrees/manager'
@@ -23,7 +25,8 @@ import { createDesktopNotifications } from './agents/notifications/desktop'
 import { registerAgentsIPC } from './agents/ipc'
 import { AgentCliManagement } from './agents/cli/management'
 import { AgentCliInstallTerminals } from './agents/cli/install-terminal'
-import { connectTerminalHost, type HostClient } from './host/host-client'
+import { connectTerminalHost } from './host/host-client'
+import type { HostClient } from './host/host-client'
 import { registerTerminalIPC } from './terminal/ipc'
 import { registerSettingsIPC } from './settings/ipc'
 import { AppLifecycle } from './app/lifecycle'
@@ -34,13 +37,13 @@ import { createIPC } from './app/ipc'
 
 let window: BrowserWindow | undefined
 // Recovery IPC is installed without a Host; createIPC blocks Host-dependent calls on startup failure.
-let manager!: HostClient
+let manager: HostClient | undefined
 let config: ConfigStore
 let agentClis: AgentCliManagement
 let accounts: AccountService
 let worktrees: WorktreeManager
 let worktreeSetups: WorktreeSetupService
-let codeHosting: CodeHostingService
+let codeHosting: CodeHostingService | undefined
 let git: GitResources | undefined
 let fileWatches: FileExplorerWatches | undefined
 let workspacePorts: WorkspacePorts | undefined
@@ -185,7 +188,7 @@ if (!app.requestSingleInstanceLock()) {
           () => void lifecycle.requestExit(true),
         )
       }
-      const common = { handle, config, manager, worktrees, lifecycle, renderer }
+      const common = { handle, config, manager: manager!, worktrees, lifecycle, renderer }
       git = registerGitIPC({ ...common, sourceControl, codeHosting, commitMessages })
       fileWatches = registerFilesIPC(common)
       workspacePorts = registerPortsIPC(common)
@@ -196,7 +199,7 @@ if (!app.requestSingleInstanceLock()) {
       registerSettingsIPC({
         handle,
         config,
-        manager,
+        manager: common.manager,
         agentSleep,
         fileWatches,
         updateWindowBackground: desktop.updateBackground,

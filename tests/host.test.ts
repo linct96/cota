@@ -32,6 +32,7 @@ import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import { Terminal } from '@xterm/xterm'
 import { installTerminalInput } from '../src/renderer/src/features/terminal/lib/terminal-input'
+import type * as ShellModule from '../src/main/system/shell'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -40,32 +41,34 @@ const mocks = vi.hoisted(() => ({
   busy: vi.fn(),
 }))
 vi.mock('node:child_process', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('node:child_process')>()),
+  ...(await importOriginal<typeof childProcess>()),
   spawn: mocks.hostSpawn,
 }))
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
 vi.mock('../src/main/agents/cli/registry', () => ({
-  resolveAgent: async (provider: string) => ({
-    executable: `/fake/${provider}`,
-    args: [],
-    env: {},
-  }),
-  agentCapability: async () => 'partial',
+  resolveAgent: (provider: string) =>
+    Promise.resolve({
+      executable: `/fake/${provider}`,
+      args: [],
+      env: {},
+    }),
+  agentCapability: () => Promise.resolve('partial'),
 }))
 vi.mock('../src/main/agents/runtime/process-observation', async (original) => ({
   ...(await original<object>()),
-  agentProcesses: async () => [
-    { pid: 12345, parent: 1, group: 12345, foreground: 12345, stat: 'S', started: 'pty-root' },
-    { pid: 12346, parent: 12345, group: 12345, foreground: 12345, stat: 'S', started: 'hook' },
-  ],
+  agentProcesses: () =>
+    Promise.resolve([
+      { pid: 12345, parent: 1, group: 12345, foreground: 12345, stat: 'S', started: 'pty-root' },
+      { pid: 12346, parent: 12345, group: 12345, foreground: 12345, stat: 'S', started: 'hook' },
+    ]),
 }))
 vi.mock('../src/main/system/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
 }))
 vi.mock('../src/main/system/shell', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../src/main/system/shell')>()),
-  resolveShell: async () => '/bin/sh',
+  ...(await importOriginal<typeof ShellModule>()),
+  resolveShell: () => Promise.resolve('/bin/sh'),
   shellEnvironment: () => ({}),
 }))
 
@@ -145,7 +148,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     })
     const core = (
       terminal as unknown as {
-        _core: { coreService: { triggerBinaryEvent(data: string): void } }
+        _core: { coreService: { triggerBinaryEvent: (data: string) => void } }
       }
     )._core.coreService
     let active = true
@@ -545,8 +548,14 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         stopped = false
         await expect(forceStopTerminalHost(userData)).rejects.toThrow('尚未结束')
         expect(await readFile(file, 'utf8')).toBe(content)
-        mocks.stop.mockImplementationOnce(async () => {
-          stopped = true
+        mocks.stop.mockImplementationOnce(() => {
+          try {
+            stopped = true
+
+            return Promise.resolve()
+          } catch (cause) {
+            return Promise.reject(cause)
+          }
         })
         await forceStopTerminalHost(userData)
         for (const name of ['runtime.json', 'host.sock', 'agent.sock'])
@@ -669,8 +678,8 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         { mode: 0o600 },
       )
       await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('仍在运行')
-      const { readFile } = await import('node:fs/promises')
-      expect(JSON.parse(await readFile(join(runtime, 'runtime.json'), 'utf8')).pid).toBe(
+      const { readFile: readRuntimeFile } = await import('node:fs/promises')
+      expect(JSON.parse(await readRuntimeFile(join(runtime, 'runtime.json'), 'utf8')).pid).toBe(
         process.pid,
       )
     } finally {

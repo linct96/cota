@@ -1,11 +1,8 @@
 import { useRef, useState } from 'react'
 import { useRouter } from '@tanstack/react-router'
 import { ChevronDown, FolderOpen, Settings2 } from 'lucide-react'
-import {
-  unwrap,
-  type ProjectWorkspace,
-  type WorkspaceOpener,
-} from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace, WorkspaceOpener } from '../../../../../shared/contracts'
 import { preferredWorkspaceOpener } from '../../../../../shared/open-with'
 import { useWorkspace } from '@/state/workspace'
 import { OpenerIcon } from './OpenWithIcons'

@@ -14,12 +14,12 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import {
-  ACCOUNT_PRODUCTS,
-  type AccountProduct,
-  type AccountProfile,
-  type AccountStatus,
-  type AccountUsageWindow,
+import { ACCOUNT_PRODUCTS } from '../../../../../shared/accounts'
+import type {
+  AccountProduct,
+  AccountProfile,
+  AccountStatus,
+  AccountUsageWindow,
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
 import { abbreviateHomePath, cn } from '@/lib/utils'

@@ -1,4 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs'
+import { watch } from 'node:fs'
+import type { FSWatcher } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { join, normalize } from 'node:path'
 import type { GitWatchEvent } from '../../../shared/contracts'
@@ -53,7 +54,7 @@ export class SourceControlWatches {
 
   async start(
     value: unknown,
-    resolvePath: () => Promise<string>,
+    resolvePath: () => string | Promise<string>,
     notify: (event: GitWatchEvent) => void,
     metadataOnly = false,
   ): Promise<boolean> {
@@ -61,6 +62,7 @@ export class SourceControlWatches {
     if (this.subscriptions.has(id) || this.subscriptions.size >= 128)
       throw new Error('Git 监听请求过多。')
     let closed = false
+    const isClosed = () => closed
     let commonDir: string | undefined
     let cwd: string | undefined
     let checking = false
@@ -113,13 +115,16 @@ export class SourceControlWatches {
           path,
           { recursive, persistent: false },
           (event, file) => {
-            for (const consumer of [...listeners]) consumer.change(file, event)
+            // Callbacks may change subscriptions; keep this dispatch on its original snapshot.
+            const consumers = [...listeners]
+            for (const consumer of consumers) consumer.change(file, event)
           },
         )
         shared = { watcher, listeners }
         this.watched.set(key, shared)
         const failed = () => {
-          for (const consumer of [...listeners]) consumer.fail()
+          const consumers = [...listeners]
+          for (const consumer of consumers) consumer.fail()
         }
         watcher.on('error', failed)
         watcher.on('close', failed)
@@ -142,12 +147,12 @@ export class SourceControlWatches {
     }
     try {
       cwd = await resolvePath()
-      if (closed) return false
+      if (isClosed()) return false
       const repository = await this.git.requireRepository(cwd)
       const gitDir = normalize(
         (await runGit(cwd, ['rev-parse', '--absolute-git-dir'])).replace(/\n$/, ''),
       )
-      if (closed) return false
+      if (isClosed()) return false
       const { rootPath, repoCommonDir } = repository
       commonDir = repoCommonDir
       const scheduleFiles = () => {
@@ -241,7 +246,7 @@ export class SourceControlWatches {
           const path = join(directory, name)
           try {
             if ((await stat(path)).isDirectory()) {
-              if (closed) return false
+              if (isClosed()) return false
               add(path, true, (file) => {
                 if (file?.endsWith('.lock')) return
                 const metadataFile = file?.replaceAll('\\', '/').split('/').at(-1)
@@ -263,7 +268,7 @@ export class SourceControlWatches {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
           }
         }
-        if (closed) return false
+        if (isClosed()) return false
       }
       return true
     } catch {
@@ -277,7 +282,8 @@ export class SourceControlWatches {
   }
 
   close(): void {
-    for (const close of [...this.subscriptions.values()]) close()
+    const subscriptions = [...this.subscriptions.values()]
+    for (const close of subscriptions) close()
     for (const change of this.changes.values()) clearTimeout(change.timer)
     this.changes.clear()
   }

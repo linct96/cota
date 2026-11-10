@@ -1,7 +1,7 @@
-import { Socket } from 'node:net'
+import type { Socket } from 'node:net'
 import type {
-  AttachTerminal,
   AgentUpdate,
+  AttachTerminal,
   CreateTerminal,
   Preferences,
   TerminalAttachment,
@@ -12,11 +12,12 @@ import type {
 } from '../../shared/contracts'
 
 import type { TerminalProcessRoot } from '../../shared/workspace-ports'
+import type { AgentCliCache } from '../../shared/agent-cli'
 
 export const HOST_PROTOCOL = 15
 
 export type ResolvedTerminalCreate = CreateTerminal &
-  TerminalBinding & { agentCliCache?: import('../../shared/agent-cli').AgentCliCache }
+  TerminalBinding & { agentCliCache?: AgentCliCache }
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
 export const MAX_FRAME = 64 * 1024 * 1024
 

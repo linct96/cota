@@ -7,9 +7,8 @@ import {
   TERMINAL_SHORTCUTS,
   matchesShortcut,
   shortcutBinding,
-  type ShortcutBindings,
-  type TerminalShortcut,
 } from '../../../../../shared/shortcuts'
+import type { ShortcutBindings, TerminalShortcut } from '../../../../../shared/shortcuts'
 
 type TerminalKeyEvent = Pick<
   KeyboardEvent,
@@ -99,12 +98,12 @@ export function createTerminalInputHandler({
     send,
     reset,
     flushText,
-    compositionStart() {
+    compositionStart(this: void) {
       composing = true
       // A real composition takes ownership back from the initial printable/Process key.
       pendingText = undefined
     },
-    compositionEnd() {
+    compositionEnd(this: void) {
       composing = false
       settling = true
       compositionValue = textarea.value
@@ -138,16 +137,16 @@ export function createTerminalInputHandler({
       // Do not let xterm's deferred composition diff include text this module already owns.
       textarea.value = settling ? compositionValue : ''
     },
-    handleKeyEvent(event: TerminalKeyEvent): boolean {
+    handleKeyEvent(this: void, event: TerminalKeyEvent): boolean {
       if (disposed) return false
       const bindings = getShortcuts?.()
       if (bindings && !composing && !settling && !event.isComposing && event.keyCode !== 229) {
-        const keyId = event.code || event.key
-        if (event.type === 'keyup' && shortcutKeys.delete(keyId)) return false
-        if (event.type === 'keypress' && shortcutKeys.has(keyId)) return false
+        const encodedKey = event.code || event.key
+        if (event.type === 'keyup' && shortcutKeys.delete(encodedKey)) return false
+        if (event.type === 'keypress' && shortcutKeys.has(encodedKey)) return false
         if (
           COTA_SHORTCUTS.some(([id]) =>
-            matchesShortcut(event, shortcutBinding(bindings, id!, platform), platform),
+            matchesShortcut(event, shortcutBinding(bindings, id, platform), platform),
           )
         )
           return false
@@ -164,7 +163,7 @@ export function createTerminalInputHandler({
             return true
           if (event.type === 'keydown') {
             event.preventDefault()
-            shortcutKeys.add(keyId)
+            shortcutKeys.add(encodedKey)
             if (!event.repeat || action.startsWith('scroll-')) onShortcut?.(action)
           }
           return false
@@ -357,7 +356,7 @@ export function installTerminalInput(terminal: Terminal, options: TerminalInputO
   textarea.addEventListener('compositionend', input.compositionEnd)
   textarea.addEventListener('blur', input.reset)
   return {
-    dispose() {
+    dispose(this: void) {
       mouseReports = ''
       input.dispose()
       keyboard.dispose()

@@ -1,5 +1,6 @@
 import { Fragment, useRef, useState } from 'react'
-import { unwrap, type Preferences } from '../../../../../shared/contracts'
+import { unwrap } from '../../../../../shared/contracts'
+import type { Preferences } from '../../../../../shared/contracts'
 import { NOTIFICATION_SOUND_OPTIONS } from '../../../../../shared/notification-sounds'
 import { useWorkspace } from '@/state/workspace'
 import { abbreviateHomePath } from '@/lib/utils'
@@ -147,7 +148,7 @@ export function NotificationSettings() {
           aria-busy={testing}
           onClick={() => void sendTestNotification()}
         >
-          {testing ? '发送中…' : '发送测试通知'}
+          发送测试通知
         </Button>
       </header>
       <AlertDialog
@@ -194,7 +195,7 @@ export function NotificationSettings() {
                 aria-busy={openingSettings}
                 onClick={() => void openNotificationSettings()}
               >
-                {openingSettings ? '打开中…' : '打开系统通知设置'}
+                打开系统通知设置
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

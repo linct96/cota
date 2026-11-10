@@ -12,8 +12,8 @@ import {
   readOptional,
   text,
   withPiAuthLock,
-  type AccountFileChange,
 } from './files'
+import type { AccountFileChange } from './files'
 
 export const GROK_AUTH_KEY = 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828'
 export const CLAUDE_SCOPE =
@@ -92,7 +92,7 @@ export function normalizeCredential(
       text(claims.email) ||
       text(object(claims['https://api.openai.com/profile']).email)
     identity = `${providerKey}:${accountId}:${email}`
-  } else if (product === 'grok') {
+  } else {
     access = text(auth.key)
     if (auth.auth_mode !== 'oidc' || !access) throw new Error('Grok 认证信息缺少有效的 OIDC key。')
     const claims = jwtClaims(access)

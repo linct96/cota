@@ -1,4 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs'
+import { watch } from 'node:fs'
+import type { FSWatcher } from 'node:fs'
 import { lstat } from 'node:fs/promises'
 import type { FileWatchEvent } from '../../shared/file-explorer'
 import { FileExplorerService, explorerPath } from './file-explorer'
@@ -19,7 +20,7 @@ export class FileExplorerWatches {
   async start(
     value: unknown,
     values: unknown,
-    resolveRoot: () => Promise<string>,
+    resolveRoot: () => string | Promise<string>,
     notify: (event: FileWatchEvent) => void,
   ): Promise<boolean> {
     const id = terminalId(value)
@@ -29,6 +30,7 @@ export class FileExplorerWatches {
     if (this.subscriptions.has(id) || this.subscriptions.size >= 4)
       throw new Error('文件监听请求过多。')
     let closed = false
+    const isClosed = () => closed
     let timer: ReturnType<typeof setTimeout> | undefined
     const watchers: FSWatcher[] = []
     const dirty = new Set<string>()
@@ -49,15 +51,15 @@ export class FileExplorerWatches {
     try {
       const root = await resolveRoot()
       for (const path of paths) {
-        if (closed) return false
+        if (isClosed()) return false
         const target = await this.files.location(root, path, false)
         const before = await lstat(target)
         if (!before.isDirectory()) throw new Error('监听目标不是目录。')
         identities.set(path, before)
-        if (closed) return false
+        if (isClosed()) return false
         const watcher = this.watchDirectory(target, { persistent: false }, (_event, filename) => {
           if (closed) return
-          if (filename === null || filename?.toString() === '.gitignore') {
+          if (filename === null || filename.toString() === '.gitignore') {
             for (const watched of paths) dirty.add(watched)
           } else dirty.add(path)
           if (timer !== undefined) return
@@ -67,10 +69,10 @@ export class FileExplorerWatches {
             dirty.clear()
             try {
               // Some platforms keep watching the old inode after a directory is replaced.
-              for (const path of changed) {
-                const current = await this.files.location(root, path, false)
+              for (const filePath of changed) {
+                const current = await this.files.location(root, filePath, false)
                 const info = await lstat(current)
-                const expected = identities.get(path)!
+                const expected = identities.get(filePath)!
                 if (info.ino !== expected.ino || info.dev !== expected.dev) {
                   fail()
                   return

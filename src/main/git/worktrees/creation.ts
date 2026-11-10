@@ -4,9 +4,9 @@ import { basename } from 'node:path'
 import type {
   CreateWorktreeResult,
   GitWorktreeInfo,
-  WorktreeRecord,
-  WorktreePlan,
   WorktreeNameSuggestion,
+  WorktreePlan,
+  WorktreeRecord,
 } from '../../../shared/contracts'
 import { suggestWorktreeName } from '../../../shared/worktree-names'
 import { createWorktreeInput, projectDirectory } from '../../validation'
@@ -263,7 +263,7 @@ export class WorktreeCreation {
               (branch.startsWith(`${branchPrefix}/`)
                 ? branch.slice(branchPrefix.length + 1)
                 : branch
-              ).split('/')[0]!,
+              ).split('/')[0],
           ),
           ...(await readdir(parent)),
         ]),

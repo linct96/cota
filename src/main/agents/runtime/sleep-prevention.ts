@@ -1,5 +1,6 @@
 import { powerSaveBlocker } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import type { AgentUpdate } from '../../../shared/contracts'
 
 export class AgentSleepPrevention {

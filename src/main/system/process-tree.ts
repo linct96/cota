@@ -1,10 +1,9 @@
 import { execFile } from 'node:child_process'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 import { isWindows } from './platform'
-import { join } from 'node:path'
-import { windowsProcesses, windowsDescendants } from './windows-processes'
+import { windowsDescendants, windowsProcesses } from './windows-processes'
 
 const exec = promisify(execFile)
 

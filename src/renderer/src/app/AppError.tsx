@@ -18,8 +18,8 @@ export function AppError({ error }: ErrorComponentProps) {
     setCleanupError(undefined)
     try {
       unwrap(await window.desktop.forceExitApp())
-    } catch (error) {
-      setCleanupError(error instanceof Error ? error.message : String(error))
+    } catch (cause) {
+      setCleanupError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setClosing(false)
     }

@@ -28,7 +28,7 @@ interface TopStatusBarProps {
   gitAvailable: boolean
   sidebarWidth: number
   leftPanelId: string
-  onBack(): void
+  onBack: () => void
   children?: ReactNode
 }
 

@@ -6,9 +6,11 @@ import {
   ACCOUNT_PRODUCTS,
   accountFormSchema,
   renameAccountSchema,
-  type AccountOAuthProgress,
-  type AccountProduct,
-  type AccountProfile,
+} from '../../../../../shared/accounts'
+import type {
+  AccountOAuthProgress,
+  AccountProduct,
+  AccountProfile,
 } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -36,8 +38,8 @@ export function AddAccountDialog({
   onSaved,
 }: {
   product: AccountProduct
-  onClose(): void
-  onSaved(): void
+  onClose: () => void
+  onSaved: () => void
 }) {
   const [open, setOpen] = useState(true)
   const saved = useRef(false)
@@ -367,7 +369,7 @@ export function AddAccountDialog({
             <Alert className="account-oauth-progress">
               <LoaderCircle className="account-oauth-spinner animate-spin" aria-hidden="true" />
               <AlertDescription className="account-oauth-message">
-                {progress?.message}
+                {progress.message}
               </AlertDescription>
             </Alert>
           )}
@@ -423,8 +425,8 @@ export function RenameAccountDialog({
   onSaved,
 }: {
   account: AccountProfile
-  onClose(): void
-  onSaved(): void
+  onClose: () => void
+  onSaved: () => void
 }) {
   const [open, setOpen] = useState(true)
   const [error, setError] = useState<string>()

@@ -19,8 +19,8 @@ import {
   Keyboard,
   Play,
   Settings as SettingsIcon,
-  Sun,
   SquareTerminal,
+  Sun,
 } from 'lucide-react'
 
 interface SettingItem {

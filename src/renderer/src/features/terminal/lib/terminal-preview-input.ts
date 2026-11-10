@@ -27,11 +27,11 @@ export function installTerminalPreviewInput(
     let budget = Math.max(0, terminal.cols * Math.max(1, terminal.rows - 1) - promptLength - 1)
     let start = cursor
     let end = cursor
-    while (start > 0 && characters[start - 1]!.length * 2 <= budget) {
-      budget -= characters[--start]!.length * 2
+    while (start > 0 && characters[start - 1].length * 2 <= budget) {
+      budget -= characters[--start].length * 2
     }
-    while (end < characters.length && characters[end]!.length * 2 <= budget) {
-      budget -= characters[end++]!.length * 2
+    while (end < characters.length && characters[end].length * 2 <= budget) {
+      budget -= characters[end++].length * 2
     }
     const prefix = characters.slice(start, cursor).join('')
     await write(

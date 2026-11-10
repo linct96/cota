@@ -24,7 +24,7 @@ it('kills a real owned process tree, including a background child', async () => 
     },
   )
   const exited = once(child, 'exit')
-  const [data] = await once(child.stdout!, 'data')
+  const [data] = await once(child.stdout, 'data')
   const grandchild = Number(data.toString().trim())
   try {
     if (process.platform === 'win32') {
@@ -74,11 +74,11 @@ it.skipIf(process.platform === 'win32')(
     const child = spawn('/bin/zsh', ['-f'], { detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const exited = once(child, 'exit')
     try {
-      const ready = once(child.stdout!, 'data')
-      child.stdin!.write('echo READY\n')
+      const ready = once(child.stdout, 'data')
+      child.stdin.write('echo READY\n')
       await ready
       expect(await hasRunningJob(child.pid!, '/bin/zsh')).toBe(false)
-      child.stdin!.write('exec /bin/sleep 120\n')
+      child.stdin.write('exec /bin/sleep 120\n')
       await expect.poll(() => hasRunningJob(child.pid!, '/bin/zsh')).toBe(true)
     } finally {
       await stopProcessTree(child.pid!)

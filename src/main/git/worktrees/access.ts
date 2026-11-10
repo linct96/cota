@@ -1,8 +1,9 @@
-import type { WorkspaceTarget, TerminalBinding } from '../../../shared/contracts'
-import { ConfigStore } from '../../settings/config-store'
-import { GitService, WorktreeError } from './git'
+import type { TerminalBinding, WorkspaceTarget } from '../../../shared/contracts'
+import type { ConfigStore } from '../../settings/config-store'
+import { WorktreeError } from './git'
 import { absolutePath, projectDirectory, workspaceTarget } from '../../validation'
 import { validateTerminalBinding } from '../../terminal/terminal-binding'
+import type { GitService } from './git'
 
 export class WorktreeAccess {
   private readonly operations = new Map<string, Promise<unknown>>()
@@ -15,7 +16,7 @@ export class WorktreeAccess {
   }
 
   // Terminal creation and destructive operations share one repository gate.
-  async withRepositoryLock<T>(repoCommonDir: string, action: () => Promise<T>): Promise<T> {
+  async withRepositoryLock<T>(repoCommonDir: string, action: () => T | Promise<T>): Promise<T> {
     const previous = this.operations.get(repoCommonDir) || Promise.resolve()
     const operation = previous.catch(() => {}).then(action)
     this.operations.set(repoCommonDir, operation)
@@ -54,7 +55,7 @@ export class WorktreeAccess {
 
   async withTerminalTarget<T>(
     value: WorkspaceTarget,
-    action: (binding: TerminalBinding) => Promise<T>,
+    action: (binding: TerminalBinding) => T | Promise<T>,
   ): Promise<T> {
     const target = workspaceTarget(value)
     await this.config.flush()

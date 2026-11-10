@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import type * as KoffiModule from 'koffi'
 
 const requireNative = createRequire(__filename)
 let readIdentity: ((pid: number) => MacProcessIdentity | undefined) | undefined
@@ -16,7 +17,7 @@ export function macProcessIdentity(pid: number): MacProcessIdentity | undefined 
 }
 
 function createIdentityReader(): (pid: number) => MacProcessIdentity | undefined {
-  const koffi = requireNative('koffi') as typeof import('koffi')
+  const koffi = requireNative('koffi') as typeof KoffiModule
   const library = koffi.load('/usr/lib/libproc.dylib')
   const info = library.func(
     'int proc_pidinfo(int pid, int flavor, uint64_t arg, void *buffer, int size)',

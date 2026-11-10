@@ -1,4 +1,5 @@
-import { dialog, Notification, shell, type BrowserWindow } from 'electron'
+import { Notification, dialog, shell } from 'electron'
+import type { BrowserWindow } from 'electron'
 import { basename } from 'node:path'
 import type { AgentSession } from '../../../shared/contracts'
 import { NOTIFICATION_SOUND_EXTENSIONS } from '../../../shared/notification-sounds'
@@ -13,8 +14,8 @@ import { AgentNotifications } from './agent-notifications'
 export function createDesktopNotifications(deps: {
   config: ConfigStore
   renderer: AppRenderer
-  getWindow(): BrowserWindow | undefined
-  getManager(): HostClient
+  getWindow: () => BrowserWindow | undefined
+  getManager: () => HostClient | undefined
 }) {
   const { config, renderer } = deps
   function createDesktopNotification(
@@ -59,7 +60,7 @@ export function createDesktopNotifications(deps: {
       return `${basename(session.projectPath)} · ${workspace?.name || basename(session.cwd)}`
     },
     activate: async (session: AgentSession) => {
-      const current = (await deps.getManager().request('list', [])).find(
+      const current = (await deps.getManager()?.request('list', []))?.find(
         (entry) => entry.id === session.terminalId && entry.agent?.launchId === session.launchId,
       )
       const window = deps.getWindow()
