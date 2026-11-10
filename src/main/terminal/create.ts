@@ -1,12 +1,13 @@
 import * as pty from 'node-pty'
 import { Terminal } from '@xterm/headless'
 import { randomBytes } from 'node:crypto'
-import { dirname } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import { agentCliCacheSchema } from '../../shared/agent-cli'
 import { prepareAgentShell } from '../agents/hooks/shell-integration'
-import { MAX_TERMINALS, type Preferences, type TerminalEvent } from '../../shared/contracts'
-import { dimensions, preferences, terminalId, terminalLaunch, startupCommand } from '../validation'
+import { MAX_TERMINALS } from '../../shared/contracts'
+import type { Preferences, TerminalEvent } from '../../shared/contracts'
+import { dimensions, preferences, startupCommand, terminalId, terminalLaunch } from '../validation'
 import { resolveShell, shellArguments, shellEnvironment } from '../system/shell'
 import { resolveAgent } from '../agents/cli/registry'
 import type { AgentSessionManager } from '../agents/runtime/session-manager'
@@ -18,23 +19,26 @@ import { readProcessSnapshot } from '../system/process-snapshot'
 import type { Session } from './session'
 import type { TerminalAgentIntegration } from './agent-integration'
 import { flow, flush } from './output'
+import { prepareFishStartupInput } from './fish-startup'
 
 interface TerminalCreationRuntime {
   sessions: Map<string, Session>
   agents: AgentSessionManager
   agentSocketPath?: string
-  isStopping(): boolean
+  isStopping: () => boolean
   integration: TerminalAgentIntegration
-  send(event: TerminalEvent): void
+  send: (event: TerminalEvent) => void
 }
 
 export function createTerminal(
-  options: ResolvedTerminalCreate,
+  value: unknown,
   settings: Preferences,
   runtime: TerminalCreationRuntime,
 ): Promise<void> {
   if (runtime.isStopping()) return Promise.reject(new Error('应用正在退出。'))
-  const id = terminalId(options?.id)
+  if (!value || typeof value !== 'object') throw new Error('终端参数无效。')
+  const options = value as ResolvedTerminalCreate
+  const id = terminalId(options.id)
   const target = terminalBinding(options)
   const launch = terminalLaunch(options)
   const cliCache =
@@ -123,6 +127,7 @@ export function createTerminal(
   runtime.sessions.set(id, session)
   const operation = (async () => {
     let claimed: Awaited<ReturnType<typeof claimServicePort>> | undefined
+    let fishStartup: ReturnType<typeof prepareFishStartupInput> | undefined
     try {
       if (definition?.port !== undefined) {
         if (
@@ -202,6 +207,32 @@ export function createTerminal(
         .catch(() => undefined)
       if (session.agent) runtime.agents.runtime(id, 'running')
       if (session.managed) runtime.integration.observeAgents()
+      const onOutput = (data: string) => {
+        session.parsing += data.length
+        screen.write(data, () => {
+          session.parsing -= data.length
+          fishStartup?.notifyOutput()
+          // Route parsed output so writes queued after an attach barrier cannot disappear.
+          if (session.attachmentId) {
+            session.inFlight += data.length
+            session.pending.push(data)
+            if (!session.timer) session.timer = setTimeout(() => flush(session, runtime.send), 12)
+          }
+          flow(session)
+        })
+        flow(session)
+      }
+      if (startup !== undefined && !definition && basename(command.executable) === 'fish') {
+        fishStartup = prepareFishStartupInput({
+          screen,
+          child: session.child,
+          command: startup,
+          token: command.env.COTA_SHELL_ACTIVITY,
+          isLive: () => !session.exited && !session.closing && !runtime.isStopping(),
+          onError: (message) => onOutput(`\r\n[Cota] ${message}\r\n`),
+        })
+        session.subscriptions.push(fishStartup)
+      }
       session.subscriptions.push(
         screen.parser.registerOscHandler(133, (data) => {
           if (session.managed && /^[CD](?:;|$)/.test(data)) runtime.integration.observeAgents()
@@ -226,21 +257,9 @@ export function createTerminal(
           if (!session.attachmentId && !session.exited && !session.closing)
             session.child?.write(data)
         }),
-        session.child.onData((data) => {
-          session.parsing += data.length
-          screen.write(data, () => {
-            session.parsing -= data.length
-            // Route parsed output so writes queued after an attach barrier cannot disappear.
-            if (session.attachmentId) {
-              session.inFlight += data.length
-              session.pending.push(data)
-              if (!session.timer) session.timer = setTimeout(() => flush(session, runtime.send), 12)
-            }
-            flow(session)
-          })
-          flow(session)
-        }),
+        session.child.onData(onOutput),
         session.child.onExit(({ exitCode, signal }) => {
+          fishStartup?.dispose()
           session.exitCode = exitCode
           if (session.service && (session.stoppingService || session.exited)) return
           session.exited = true
@@ -261,6 +280,7 @@ export function createTerminal(
         }),
       )
     } catch (error) {
+      fishStartup?.dispose()
       if (claimed) await claimed.release().catch(() => {})
       if (session.agent) {
         runtime.agents.runtime(id, 'error')

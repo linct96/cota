@@ -2,13 +2,14 @@ import type * as pty from 'node-pty'
 import type { Terminal } from '@xterm/headless'
 import type { SerializeAddon } from '@xterm/addon-serialize'
 import type {
-  TerminalSession,
-  TerminalLaunch,
-  Preferences,
   ManagedAgentEvent,
+  Preferences,
+  TerminalLaunch,
+  TerminalSession,
 } from '../../shared/contracts'
 import type { AgentProcessRow } from '../agents/runtime/process-observation'
 import type { createTerminalKeyboardState } from '../../shared/terminal-keyboard-state'
+import type { AgentCliCache } from '../../shared/agent-cli'
 
 export interface Session extends TerminalSession {
   launch: TerminalLaunch
@@ -19,7 +20,7 @@ export interface Session extends TerminalSession {
   managed?: {
     token: string
     settings: Preferences
-    cliCache?: import('../../shared/agent-cli').AgentCliCache
+    cliCache?: AgentCliCache
     run?: {
       owner: AgentProcessRow
       process?: AgentProcessRow
