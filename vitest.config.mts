@@ -11,7 +11,6 @@ const gitIntegrationTests = [
 ]
 const nativeIntegrationTests = [
   'tests/native/**/*.test.ts',
-  'tests/open-with.test.ts',
   'tests/process-tree.test.ts',
   'tests/workspace-ports.test.ts',
 ]
