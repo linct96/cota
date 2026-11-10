@@ -4,12 +4,8 @@ import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentCliCache } from '../../../shared/agent-cli'
 import { promisify } from 'node:util'
-import {
-  AGENT_PROVIDERS,
-  type AgentAvailability,
-  type AgentProvider,
-  type Preferences,
-} from '../../../shared/contracts'
+import { AGENT_PROVIDERS } from '../../../shared/contracts'
+import type { AgentAvailability, AgentProvider, Preferences } from '../../../shared/contracts'
 import { agentProvider } from '../../validation'
 import {
   ExecutableNotFoundError,
@@ -106,14 +102,14 @@ export async function detectAgents(
   const providers =
     provider === undefined ? (Object.keys(AGENT_PROVIDERS) as AgentProvider[]) : [provider]
   return Promise.all(
-    providers.map(async (provider) => {
+    providers.map(async (id) => {
       try {
-        const executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
+        const executable = await findExecutable(AGENT_PROVIDERS[id].command, env)
         const version = await agentVersion(executable, env)
-        return { provider, executable, version }
+        return { provider: id, executable, version }
       } catch (error) {
-        if (error instanceof ExecutableNotFoundError) return { provider }
-        return { provider, error: error instanceof Error ? error.message : String(error) }
+        if (error instanceof ExecutableNotFoundError) return { provider: id }
+        return { provider: id, error: error instanceof Error ? error.message : String(error) }
       }
     }),
   )

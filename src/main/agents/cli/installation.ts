@@ -3,8 +3,8 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import type { AgentProvider } from '../../../shared/contracts'
 import { AGENT_CLI_PACKAGES } from '../../../shared/agent-cli'
-import { findExecutable, resolveCommand } from '../../system/shell'
-import { isWindows, powershell } from '../../system/platform'
+import { resolveCommand } from '../../system/shell'
+import { isWindows } from '../../system/platform'
 
 const agentPackageNames: Record<AgentProvider, string> = {
   pi: 'pi-coding-agent',
@@ -16,7 +16,6 @@ export type AgentCliInstallation =
   | { method: 'brew'; prefix: string; packageName: string; cask: boolean; latestUrl: string }
   | { method: 'npm'; prefix: string; latestUrl: string }
   | { method: 'scoop'; root: string; global: boolean; packageName: string; latestUrl: string }
-  | { method: 'native'; executable: string; latestUrl: string }
 
 export async function detectAgentInstallation(
   provider: AgentProvider,
@@ -47,13 +46,13 @@ export async function detectAgentInstallation(
   const packageName = agentPackageNames[provider]
   // Node itself may be managed by Brew/Scoop; that does not make its global npm packages theirs.
   if (brew && (brew[3] === packageName || brew[3] === `${packageName}@latest`)) {
-    const [, prefix, location, packageName, version] = brew
+    const [, prefix, location, installedPackageName, version] = brew
     const cask = location.toLowerCase() === 'caskroom'
     const receipt = JSON.parse(
       await readFile(
         cask
-          ? join(prefix, location, packageName, '.metadata', 'INSTALL_RECEIPT.json')
-          : join(prefix, location, packageName, version, 'INSTALL_RECEIPT.json'),
+          ? join(prefix, location, installedPackageName, '.metadata', 'INSTALL_RECEIPT.json')
+          : join(prefix, location, installedPackageName, version, 'INSTALL_RECEIPT.json'),
         'utf8',
       ),
     )
@@ -62,22 +61,22 @@ export async function detectAgentInstallation(
     return {
       method: 'brew',
       prefix,
-      packageName,
+      packageName: installedPackageName,
       cask,
-      latestUrl: `https://formulae.brew.sh/api/${cask ? 'cask' : 'formula'}/${encodeURIComponent(packageName)}.json`,
+      latestUrl: `https://formulae.brew.sh/api/${cask ? 'cask' : 'formula'}/${encodeURIComponent(installedPackageName)}.json`,
     }
   }
   if (isWindows) {
     const scoop = /^(.*)\/apps\/([a-z0-9][\w.-]*)\/([^/]+)\//i.exec(normalized)
     if (scoop && scoop[2] === packageName) {
-      const [, root, packageName, version] = scoop
+      const [, root, installedPackageName, version] = scoop
       const userRoot = env.SCOOP || join(homedir(), 'scoop')
       const globalRoot = env.SCOOP_GLOBAL || join(env.ProgramData || 'C:\\ProgramData', 'scoop')
       const same = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase()
       const global = same(root, globalRoot)
       if (!global && !same(root, userRoot)) return
       const info = JSON.parse(
-        await readFile(join(root, 'apps', packageName, version, 'install.json'), 'utf8'),
+        await readFile(join(root, 'apps', installedPackageName, version, 'install.json'), 'utf8'),
       )
       if (typeof info.bucket !== 'string' || !/^[a-z0-9][\w.-]*$/i.test(info.bucket)) return
       const git = join(userRoot, 'buckets', info.bucket, '.git')
@@ -97,8 +96,8 @@ export async function detectAgentInstallation(
         method: 'scoop',
         root,
         global,
-        packageName,
-        latestUrl: `https://raw.githubusercontent.com/${repo}/${head}/bucket/${packageName}.json`,
+        packageName: installedPackageName,
+        latestUrl: `https://raw.githubusercontent.com/${repo}/${head}/bucket/${installedPackageName}.json`,
       }
     }
   }
@@ -128,82 +127,5 @@ export async function detectAgentInstallation(
         }
       }
     }
-  }
-  if (provider === 'claude') {
-    const versions = await realpath(
-      join(env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'claude', 'versions'),
-    ).catch(() => '')
-    if (versions && dirname(target) === versions) {
-      const settings = await readFile(
-        join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json'),
-        'utf8',
-      )
-        .then(JSON.parse)
-        .catch(() => undefined)
-      const channel = settings?.autoUpdatesChannel === 'stable' ? 'stable' : 'latest'
-      return {
-        method: 'native',
-        executable,
-        latestUrl: `https://downloads.claude.ai/claude-code-releases/${channel}`,
-      }
-    }
-  }
-}
-
-export async function agentUpdateCommand(
-  provider: AgentProvider,
-  installation: AgentCliInstallation,
-  env: Record<string, string>,
-) {
-  if (installation.method === 'brew') {
-    const brew = await findExecutable(join(installation.prefix, 'bin', 'brew'), env)
-    return resolveCommand(
-      brew,
-      ['upgrade', installation.cask ? '--cask' : '--formula', installation.packageName],
-      env,
-    )
-  }
-  if (installation.method === 'npm') {
-    const npm = await findExecutable(
-      join(installation.prefix, ...(isWindows ? [] : ['bin']), 'npm'),
-      env,
-    ).catch(() => findExecutable('npm', env))
-    return resolveCommand(
-      npm,
-      [
-        'install',
-        '--global',
-        '--prefix',
-        installation.prefix,
-        ...(provider === 'pi' ? ['--ignore-scripts'] : []),
-        `${AGENT_CLI_PACKAGES[provider]}@latest`,
-      ],
-      env,
-    )
-  }
-  if (installation.method === 'native')
-    return resolveCommand(installation.executable, ['update'], env)
-  const root = env.SCOOP || join(homedir(), 'scoop')
-  const scoop = await findExecutable(
-    join(root, 'apps', 'scoop', 'current', 'bin', 'scoop.ps1'),
-    env,
-  )
-  const quote = (value: string) => `'${value.replaceAll("'", "''")}'`
-  const invoke = `& ${quote(scoop)} 'update'`
-  const script = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); ${invoke}; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; ${invoke} ${quote(installation.packageName)}${installation.global ? " '--global'" : ''}; exit $LASTEXITCODE`
-  return {
-    executable: powershell,
-    args: [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-EncodedCommand',
-      Buffer.from(script, 'utf16le').toString('base64'),
-    ],
-    env: {
-      ...env,
-      SCOOP: root,
-      ...(installation.global ? { SCOOP_GLOBAL: installation.root } : {}),
-    },
   }
 }

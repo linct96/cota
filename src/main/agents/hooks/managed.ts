@@ -2,13 +2,10 @@ import { lstat, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import {
-  AGENT_PROVIDERS,
-  type AgentHookStatus,
-  type AgentProvider,
-} from '../../../shared/contracts'
+import { AGENT_PROVIDERS } from '../../../shared/contracts'
+import type { AgentHookStatus, AgentProvider } from '../../../shared/contracts'
 import { findExecutable } from '../../system/shell'
-import { trustCodexHooks } from './codex-trust'
+import { codexHookTrust } from './codex-trust'
 import { isWindows } from '../../system/platform'
 
 const marker = 'cota-managed-agent-hook:v1'
@@ -126,7 +123,7 @@ function configuration(raw: string | undefined) {
   const config: unknown = raw === undefined ? {} : JSON.parse(raw)
   if (!object(config) || (config.hooks !== undefined && !object(config.hooks)))
     throw new Error('Hooks 配置格式无效；请先修复原文件。')
-  const hooks = (config.hooks || {}) as Record<string, unknown>
+  const hooks = config.hooks || {}
   for (const groups of Object.values(hooks)) {
     if (
       !Array.isArray(groups) ||
@@ -146,6 +143,7 @@ export async function inspectAgentHook(
   provider: AgentProvider,
   env: Record<string, string>,
   version?: string,
+  executable?: string,
 ): Promise<AgentHookStatus> {
   const status: AgentHookStatus = {
     provider,
@@ -156,11 +154,6 @@ export async function inspectAgentHook(
   try {
     const { config, loader, command } = hookFiles(provider, env)
     status.paths = provider === 'pi' ? [config] : [config, loader]
-    if (provider === 'codex') {
-      const trustConfig = join(dirname(config), 'config.toml')
-      status.paths = [loader, config, trustConfig]
-      await contents(trustConfig)
-    }
     const raw = await contents(config)
     if (provider === 'pi') {
       status.state =
@@ -193,13 +186,30 @@ export async function inspectAgentHook(
     status.detail = {
       installed:
         provider === 'codex'
-          ? '文件已安装；检测不读取信任状态。如需审核信任，请在 Codex /hooks 中处理，仍需 CLI / 企业策略允许 Hooks。'
+          ? '文件已安装；信任状态尚未检测。可单独点击“信任”，或在 Codex /hooks 中审核。'
           : '文件已安装；是否实际加载以新终端的原生事件为准。',
       missing: '尚未安装 Cota 集成。',
       outdated: 'Cota 集成不完整或需要更新；不会自动修复。',
       conflict: '目标文件不属于 Cota；请手动处理，不会覆盖。',
       error: '',
     }[status.state]
+    // Shell setup checks files only; Settings can also query native trust without writing.
+    if (provider === 'codex' && status.state === 'installed' && executable) {
+      try {
+        const trusted = await codexHookTrust(
+          executable,
+          env,
+          config,
+          command,
+          eventNames(provider, version),
+        )
+        status.trust = trusted ? 'trusted' : 'untrusted'
+        status.detail = trusted ? '已安装并信任 Cota Hooks。' : 'Cota Hooks 已安装，尚未信任。'
+      } catch (error) {
+        status.trust = 'unknown'
+        status.detail = `文件已安装，但无法读取信任状态。${error instanceof Error ? error.message : String(error)} 可重新检测，或在 Codex /hooks 中审核。`
+      }
+    }
   } catch (error) {
     status.state = 'error'
     status.detail = error instanceof Error ? error.message : String(error)
@@ -253,22 +263,17 @@ async function replaceFile(
   }
 }
 
-// This is intentionally called only by the confirmed Settings install action, never startup/detection.
+// Only the explicit Settings install action writes files, never startup/detection.
 export async function installAgentHook(
   provider: AgentProvider,
   env: Record<string, string>,
   version?: string,
-  executable?: string,
 ): Promise<AgentHookStatus> {
   if (!Object.hasOwn(AGENT_PROVIDERS, provider)) throw new Error('Agent 类型无效。')
   const status = await inspectAgentHook(provider, env, version)
   if (status.state === 'conflict' || status.state === 'error') throw new Error(status.detail)
   if (isWindows && provider !== 'pi') await findExecutable('node.exe', env)
   const { config, loader, command } = hookFiles(provider, env)
-  const trustConfig = join(dirname(config), 'config.toml')
-  const trustRaw = provider === 'codex' ? await contents(trustConfig) : undefined
-  const codex =
-    provider === 'codex' ? executable || (await findExecutable('codex', env)) : undefined
   const raw = await contents(config)
   if (provider === 'pi') {
     if (raw !== undefined && !raw.includes('cota-managed-agent-hook:'))
@@ -293,26 +298,41 @@ export async function installAgentHook(
     }
     const installed = `${JSON.stringify({ ...data, hooks }, null, 2)}\n`
     await replaceFile(config, raw, installed)
-    if (codex) {
-      try {
-        await trustCodexHooks(codex, env, config, command, eventNames(provider, version), (write) =>
-          replaceFile(trustConfig, trustRaw, async () => {
-            if ((await contents(config)) !== installed || (await contents(loader)) !== launcher)
-              throw new Error('Cota Hooks 已被其他程序修改。')
-            await write()
-          }),
-        )
-      } catch (error) {
-        throw new Error(
-          `Codex Hooks 文件已安装，但未确认信任成功。${error instanceof Error ? error.message : String(error)} 请点击“安装并信任”重试，或在 Codex /hooks 中审核。`,
-        )
-      }
-    }
   }
-  const installedStatus = await inspectAgentHook(provider, env, version)
-  if (provider === 'codex' && installedStatus.state === 'installed')
-    installedStatus.detail = '已安装并信任 Cota Hooks；请新建终端。仍需 CLI / 企业策略允许 Hooks。'
-  return installedStatus
+  return inspectAgentHook(provider, env, version)
+}
+
+export async function trustAgentHook(
+  provider: AgentProvider,
+  env: Record<string, string>,
+  version?: string,
+  executable?: string,
+): Promise<AgentHookStatus> {
+  if (provider !== 'codex') throw new Error('仅 Codex 支持单独信任 Hooks。')
+  const status = await inspectAgentHook(provider, env, version)
+  if (status.state !== 'installed')
+    throw new Error('请先安装或更新 Codex 的 Cota Hooks，再授予信任。')
+  const { config, loader, command } = hookFiles(provider, env)
+  const installed = await contents(config)
+  const trustConfig = join(dirname(config), 'config.toml')
+  const trustRaw = await contents(trustConfig)
+  const codex = executable || (await findExecutable('codex', env))
+  try {
+    await codexHookTrust(codex, env, config, command, eventNames(provider, version), (write) =>
+      replaceFile(trustConfig, trustRaw, async () => {
+        if ((await contents(config)) !== installed || (await contents(loader)) !== launcher)
+          throw new Error('Cota Hooks 已被其他程序修改。')
+        await write()
+      }),
+    )
+  } catch (error) {
+    throw new Error(
+      `未确认 Codex Hooks 信任成功。${error instanceof Error ? error.message : String(error)} 请点击“信任”重试，或在 Codex /hooks 中审核。`,
+    )
+  }
+  status.trust = 'trusted'
+  status.detail = '已信任 Cota Hooks；请新建终端。仍需 CLI / 企业策略允许 Hooks。'
+  return status
 }
 
 // Keep the shared loader: another provider or Cota Dev/release may still reference it.

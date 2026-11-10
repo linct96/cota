@@ -1,11 +1,11 @@
-import { AGENT_PROVIDERS, type AgentProvider, type Preferences } from '../../../shared/contracts'
+import { AGENT_PROVIDERS } from '../../../shared/contracts'
+import type { AgentProvider, Preferences } from '../../../shared/contracts'
 import type { ConfigStore } from '../../settings/config-store'
-import {
-  AGENT_CLI_PACKAGES,
-  isNewerVersion,
-  type AgentCliStatus,
-  type AgentCliInstallResult,
-  type AgentCliCache,
+import { AGENT_CLI_PACKAGES, isNewerVersion } from '../../../shared/agent-cli'
+import type {
+  AgentCliCache,
+  AgentCliInstallResult,
+  AgentCliStatus,
 } from '../../../shared/agent-cli'
 import { detectAgents, resolveAgent } from './registry'
 import {
@@ -14,7 +14,7 @@ import {
   loginShellEnvironment,
   resolveCommand,
 } from '../../system/shell'
-import { agentUpdateCommand, detectAgentInstallation } from './installation'
+import { detectAgentInstallation } from './installation'
 import type { ExecuteCliInstall } from './install-terminal'
 
 export class AgentCliManagement {
@@ -65,9 +65,9 @@ export class AgentCliManagement {
       cache: AgentCliCache,
     ) => Promise<T>,
   ): Promise<T> {
-    if (this.installing.has(provider)) throw new Error('该 Agent CLI 正在安装或更新，请稍后重试。')
+    if (this.installing.has(provider)) throw new Error('该 Agent CLI 正在更新，请稍后重试。')
     const cache = this.read()
-    const entry = cache.entries.find((entry) => entry.provider === provider)!
+    const entry = cache.entries.find((candidateEntry) => candidateEntry.provider === provider)!
     if (!entry.executable)
       throw new Error(`${AGENT_PROVIDERS[provider].name} 未安装，请在设置中安装或重新检测。`)
     const running = { provider }
@@ -177,13 +177,11 @@ export class AgentCliManagement {
               { signal: AbortSignal.timeout(10000), redirect: 'error' },
             )
             if (!response.ok) throw new Error(`版本服务返回 ${response.status}`)
-            const metadata = installation?.method === 'native' ? undefined : await response.json()
+            const metadata = await response.json()
             const version =
-              installation?.method === 'native'
-                ? (await response.text()).trim()
-                : installation?.method === 'brew' && !installation.cask
-                  ? metadata?.versions?.stable
-                  : metadata?.version
+              installation?.method === 'brew' && !installation.cask
+                ? metadata?.versions?.stable
+                : metadata?.version
             if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version))
               throw new Error('版本服务返回了无效版本号。')
             status.latestVersion = version
@@ -212,13 +210,13 @@ export class AgentCliManagement {
     )
   }
 
-  async install(
+  async update(
     provider: AgentProvider,
     settings: Preferences,
     assertIdle: () => Promise<void>,
     execute: ExecuteCliInstall,
   ): Promise<AgentCliInstallResult> {
-    if (this.installing.size) throw new Error('已有 CLI 正在安装或更新，请等待完成。')
+    if (this.installing.size) throw new Error('已有 CLI 正在更新，请等待完成。')
     if ([...this.running].some((entry) => entry.provider === provider))
       throw new Error('该 Agent CLI 正在启动或执行，请稍后更新。')
     this.installing.add(provider)
@@ -226,45 +224,23 @@ export class AgentCliManagement {
       try {
         await assertIdle()
         const env = await loginShellEnvironment(settings)
-        const installed = this.read().entries.find(
-          (entry) => entry.provider === provider,
-        )?.executable
-        let command
-        if (installed) {
-          let executable: string
-          try {
-            executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
-          } catch (error) {
-            if (!(error instanceof ExecutableNotFoundError)) throw error
-            const status = { provider }
-            await this.save(
-              this.read().entries.map((entry) => (entry.provider === provider ? status : entry)),
-              env.PATH || '',
-            )
-            return { status, output: '' }
-          }
-          const installation = await detectAgentInstallation(provider, executable, env).catch(
-            () => undefined,
+        let executable: string
+        try {
+          executable = await findExecutable(AGENT_PROVIDERS[provider].command, env)
+        } catch (error) {
+          if (!(error instanceof ExecutableNotFoundError)) throw error
+          const status = { provider }
+          await this.save(
+            this.read().entries.map((entry) => (entry.provider === provider ? status : entry)),
+            env.PATH || '',
           )
-          if (!installation) throw new Error('无法确认 CLI 的安装来源，请使用原安装方式手动更新。')
-          command = await agentUpdateCommand(provider, installation, env)
-        } else {
-          const npm = await findExecutable('npm', env)
-          command = await resolveCommand(
-            npm,
-            [
-              'install',
-              '--global',
-              ...(provider === 'pi' ? ['--ignore-scripts'] : []),
-              `${AGENT_CLI_PACKAGES[provider]}@latest`,
-            ],
-            env,
-          )
+          return { status, output: '' }
         }
+        const command = await resolveCommand(executable, ['update'], env)
         await assertIdle()
         const { stdout, stderr } = await execute(command).catch((cause: unknown) => {
           const error = cause as Error & { stderr?: string }
-          throw new Error(`安装或更新失败：${(error.stderr || error.message).slice(-8000)}`)
+          throw new Error(`更新失败：${(error.stderr || error.message).slice(-8000)}`)
         })
         const detected = (await this.inspectNow(settings, true, provider)).find(
           (entry) => entry.provider === provider,

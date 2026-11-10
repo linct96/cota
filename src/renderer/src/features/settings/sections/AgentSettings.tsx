@@ -1,17 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCw, Download } from 'lucide-react'
-import {
-  AGENT_PROVIDERS,
-  unwrap,
-  type AgentHookStatus,
-  type AgentProvider,
-} from '../../../../../shared/contracts'
-import {
-  AGENT_CLI_INSTALL_METHOD_LABELS,
-  type AgentCliInstallRun,
-} from '../../../../../shared/agent-cli'
+import { Download, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react'
+import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
+import type { AgentHookStatus, AgentProvider } from '../../../../../shared/contracts'
+import { AGENT_CLI_INSTALL_METHOD_LABELS } from '../../../../../shared/agent-cli'
+import type { AgentCliInstallRun, AgentCliStatus } from '../../../../../shared/agent-cli'
 import { useAgentClis } from '@/state/agent-cli-store'
-import { abbreviateHomePath } from '@/lib/utils'
+import { abbreviateHomePath, cn } from '@/lib/utils'
+import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { useDialogState } from '@/hooks/use-dialog-state'
 import { AgentCliInstallDialog } from '@/features/agents/components/AgentCliInstallDialog'
 import { AgentIcon } from '@/features/agents/components/AgentIcon'
@@ -35,6 +30,58 @@ function joinErrors(...messages: (string | undefined)[]) {
   return [...new Set(messages.filter(Boolean))].join('\n\n')
 }
 
+function AgentCliActionButton({
+  agent,
+  installing,
+  checking,
+  disabled,
+  onClick,
+}: {
+  agent: AgentCliStatus
+  installing: boolean
+  checking: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  const checkingVisible = useLoadingIndicator(checking)
+  const canCompare = agent.updateAvailable !== undefined
+  return (
+    <Button
+      className="agent-settings-install"
+      variant={agent.executable && !canCompare ? 'ghost' : 'outline'}
+      disabled={!installing && (disabled || checkingVisible)}
+      aria-busy={checking || checkingVisible}
+      aria-label={
+        !agent.executable ? `打开 ${AGENT_PROVIDERS[agent.provider].name} 官方安装指南` : undefined
+      }
+      onClick={onClick}
+    >
+      {checkingVisible ? (
+        <LoaderCircle
+          className="agent-settings-check-spinner motion-safe:animate-spin"
+          data-icon="inline-start"
+          aria-hidden="true"
+        />
+      ) : !installing && !agent.executable ? (
+        <ExternalLink className="agent-settings-install-guide-icon" data-icon="inline-start" />
+      ) : !installing && canCompare ? (
+        <Download className="agent-settings-install-icon" data-icon="inline-start" />
+      ) : null}
+      {installing
+        ? '查看更新进度'
+        : checkingVisible
+          ? '检查中…'
+          : !agent.executable
+            ? '安装'
+            : !canCompare
+              ? '检查更新'
+              : agent.updateAvailable === false
+                ? '已是最新版本'
+                : '更新'}
+    </Button>
+  )
+}
+
 export function AgentSettings() {
   const cache = useAgentClis((state) => state.cache)
   const cacheError = useAgentClis((state) => state.error)
@@ -46,7 +93,9 @@ export function AgentSettings() {
   const [hookError, setHookError] = useState<string>()
   const [installRuns, setInstallRuns] = useState<AgentCliInstallRun[]>([])
   const activeInstall = installRuns.find((run) => run.status === 'running')
-  const isBusy = !!busy || !!activeInstall
+  const updatesVisible = useLoadingIndicator(busy === 'updates')
+  const detectingVisible = useLoadingIndicator(busy === 'detect')
+  const isBusy = !!busy || !!activeInstall || updatesVisible || detectingVisible
   const [progressProvider, setProgressProvider, progressDialog] = useDialogState<AgentProvider>()
   const [error, setError] = useState<string>()
   const [operationErrors, setOperationErrors] = useState<Partial<Record<AgentProvider, string>>>({})
@@ -110,7 +159,7 @@ export function AgentSettings() {
     }
   }, [])
   async function inspect(updates: boolean) {
-    if (pending.current || pendingChecks.current.size > 0 || initialPending || activeInstall) return
+    if (pending.current || pendingChecks.current.size > 0 || initialPending || isBusy) return
     pending.current = true
     setBusy(updates ? 'updates' : 'detect')
     setOperationErrors({})
@@ -125,8 +174,7 @@ export function AgentSettings() {
     }
   }
   async function checkUpdate(provider: AgentProvider) {
-    if (pending.current || pendingChecks.current.has(provider) || initialPending || activeInstall)
-      return
+    if (pending.current || pendingChecks.current.has(provider) || initialPending || isBusy) return
     pendingChecks.current.add(provider)
     setCheckingProviders([...pendingChecks.current])
     setOperationErrors((current) => ({ ...current, [provider]: undefined }))
@@ -142,13 +190,24 @@ export function AgentSettings() {
       setCheckingProviders([...pendingChecks.current])
     }
   }
-  async function install(provider: AgentProvider) {
-    if (pending.current || pendingChecks.current.size > 0 || initialPending || activeInstall) return
+  async function openInstallGuide(provider: AgentProvider) {
+    setOperationErrors((current) => ({ ...current, [provider]: undefined }))
+    try {
+      unwrap(await window.desktop.openAgentCliInstallGuide(provider))
+    } catch (cause) {
+      setOperationErrors((current) => ({
+        ...current,
+        [provider]: cause instanceof Error ? cause.message : String(cause),
+      }))
+    }
+  }
+  async function update(provider: AgentProvider) {
+    if (pending.current || pendingChecks.current.size > 0 || initialPending || isBusy) return
     pending.current = true
     setBusy(provider)
     setOperationErrors((current) => ({ ...current, [provider]: undefined }))
     try {
-      unwrap(await window.desktop.installAgentCli(provider))
+      unwrap(await window.desktop.updateAgentCli(provider))
     } catch (cause) {
       setOperationErrors((current) => ({
         ...current,
@@ -197,18 +256,27 @@ export function AgentSettings() {
                       className="agent-settings-check-updates"
                       variant="ghost"
                       disabled={isBusy || checkingProviders.length > 0}
+                      aria-busy={busy === 'updates' || updatesVisible}
                       onClick={() => void inspect(true)}
                     >
-                      {busy === 'updates' ? '检查中…' : '检查更新'}
+                      {updatesVisible ? '检查中…' : '检查更新'}
                     </Button>
                     <Button
                       className="agent-settings-detect"
                       variant="outline"
                       disabled={isBusy || checkingProviders.length > 0}
+                      aria-busy={busy === 'detect' || detectingVisible}
                       onClick={() => void inspect(false)}
                     >
-                      <RefreshCw className="agent-settings-detect-icon" data-icon="inline-start" />
-                      {busy === 'detect' ? '检测中…' : '重新检测'}
+                      <RefreshCw
+                        className={cn(
+                          'agent-settings-detect-icon',
+                          detectingVisible && 'motion-safe:animate-spin',
+                        )}
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
+                      {detectingVisible ? '检测中…' : '重新检测'}
                     </Button>
                     {globalErrors && (
                       <Button
@@ -235,7 +303,6 @@ export function AgentSettings() {
                   const { provider } = agent
                   const canCompare = agent.updateAvailable !== undefined
                   const upToDate = agent.updateAvailable === false
-                  const manualUpdate = agent.installMethod === 'unknown'
                   const run = installRuns.find((item) => item.provider === provider)
                   const installing = busy === provider || run?.status === 'running'
                   const rowErrors = joinErrors(
@@ -269,7 +336,7 @@ export function AgentSettings() {
                               未安装
                             </Badge>
                           )}
-                          {agent?.version && (
+                          {agent.version && (
                             <Badge
                               className="agent-settings-item-status tabular-nums"
                               variant="secondary"
@@ -277,12 +344,12 @@ export function AgentSettings() {
                               {agent.version}
                             </Badge>
                           )}
-                          {agent.installMethod && agent.installMethod !== 'native' && (
+                          {agent.installMethod && agent.installMethod !== 'unknown' && (
                             <Badge className="agent-settings-install-source" variant="outline">
                               {AGENT_CLI_INSTALL_METHOD_LABELS[agent.installMethod]}
                             </Badge>
                           )}
-                          {agent?.updateAvailable && agent.latestVersion && (
+                          {agent.updateAvailable && agent.latestVersion && (
                             <Badge
                               className="agent-settings-update-status tabular-nums"
                               variant="warning"
@@ -291,55 +358,37 @@ export function AgentSettings() {
                             </Badge>
                           )}
                         </div>
-                        <p className="agent-settings-cli-path break-all font-mono text-xs text-muted-foreground select-text">
-                          {agent.executable
-                            ? abbreviateHomePath(agent.executable)
-                            : '通过 npm 全局安装（需先安装 Node.js）'}
-                        </p>
+                        {agent.executable && (
+                          <p className="agent-settings-cli-path break-all font-mono text-xs text-muted-foreground select-text">
+                            {abbreviateHomePath(agent.executable)}
+                          </p>
+                        )}
                       </div>
                       <div className="agent-settings-item-control flex min-w-0 flex-col gap-1.5">
                         <div className="agent-settings-item-actions flex min-h-7 flex-wrap items-center gap-2">
-                          <Button
-                            className="agent-settings-install"
-                            variant={agent.executable && !canCompare ? 'ghost' : 'outline'}
+                          <AgentCliActionButton
+                            agent={agent}
+                            installing={installing}
+                            checking={
+                              !!agent.executable &&
+                              (busy === 'updates' || checkingProviders.includes(provider))
+                            }
                             disabled={
-                              !installing &&
-                              (isBusy ||
-                                checkingProviders.includes(provider) ||
-                                (canCompare && checkingProviders.length > 0) ||
-                                upToDate ||
-                                (canCompare && manualUpdate))
+                              isBusy ||
+                              checkingProviders.includes(provider) ||
+                              (canCompare && checkingProviders.length > 0) ||
+                              upToDate
                             }
                             onClick={() =>
                               installing
                                 ? setProgressProvider(provider)
-                                : void (!agent.executable || canCompare
-                                    ? install(provider)
-                                    : checkUpdate(provider))
+                                : void (!agent.executable
+                                    ? openInstallGuide(provider)
+                                    : canCompare
+                                      ? update(provider)
+                                      : checkUpdate(provider))
                             }
-                          >
-                            {!installing && (!agent.executable || canCompare) && (
-                              <Download
-                                className="agent-settings-install-icon"
-                                data-icon="inline-start"
-                              />
-                            )}
-                            {installing
-                              ? agent.executable
-                                ? '查看更新进度'
-                                : '查看安装进度'
-                              : !agent.executable
-                                ? '安装'
-                                : !canCompare
-                                  ? busy === 'updates' || checkingProviders.includes(provider)
-                                    ? '检查中…'
-                                    : '检查更新'
-                                  : upToDate
-                                    ? '已是最新版本'
-                                    : manualUpdate
-                                      ? '请手动更新'
-                                      : '更新'}
-                          </Button>
+                          />
                           {run && run.status !== 'running' && !installing && (
                             <Button
                               className="agent-settings-view-install-log"
@@ -372,7 +421,11 @@ export function AgentSettings() {
                 })}
               </Card>
             </section>
-            <AgentHookSettings initialStatuses={hookStatuses} initialError={hookError} />
+            <AgentHookSettings
+              initialStatuses={hookStatuses}
+              initialError={hookError}
+              onShowError={(title, detail) => setErrorDetails({ title, detail })}
+            />
           </FieldGroup>
         )}
       </LoadingContent>

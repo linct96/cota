@@ -4,12 +4,12 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import type { AgentProvider } from '../../../shared/contracts'
-import {
-  AGENT_CLI_INSTALL_SCROLLBACK,
-  type AgentCliInstallEvent,
-  type AgentCliInstallResult,
-  type AgentCliInstallRun,
-  type AgentCliInstallTerminal,
+import { AGENT_CLI_INSTALL_SCROLLBACK } from '../../../shared/agent-cli'
+import type {
+  AgentCliInstallEvent,
+  AgentCliInstallResult,
+  AgentCliInstallRun,
+  AgentCliInstallTerminal,
 } from '../../../shared/agent-cli'
 import { dimensions, terminalId } from '../../validation'
 import { stopProcessTree } from '../../system/process-tree'
@@ -54,7 +54,7 @@ export class AgentCliInstallTerminals {
     provider: AgentProvider,
     operation: (execute: ExecuteCliInstall) => Promise<AgentCliInstallResult>,
   ): Promise<AgentCliInstallResult> {
-    if (this.running) throw new Error('已有 CLI 正在安装或更新，请等待完成。')
+    if (this.running) throw new Error('已有 CLI 正在更新，请等待完成。')
     const previous = this.jobs.get(provider)
     if (previous) {
       this.resetAttachment(previous)
@@ -85,7 +85,7 @@ export class AgentCliInstallTerminals {
     })
     this.jobs.set(provider, job)
     this.publish({ run: { ...job.run }, revision: job.revision })
-    this.append(job, '正在准备安装或更新…\r\n')
+    this.append(job, '正在准备更新…\r\n')
     const done = (async () => {
       try {
         const result = await operation((command) => this.execute(job, command))
@@ -93,7 +93,7 @@ export class AgentCliInstallTerminals {
         this.append(
           job,
           result.status.executable
-            ? '\r\n安装或更新完成。\r\n'
+            ? '\r\n更新完成。\r\n'
             : '\r\n未检测到 CLI，当前状态为未安装。\r\n',
         )
         return result
@@ -196,8 +196,10 @@ export class AgentCliInstallTerminals {
   }
 
   private find(id: string): Job {
-    const job = [...this.jobs.values()].find((job) => job.run.id === terminalId(id))
-    if (!job) throw new Error('安装或更新终端已失效。')
+    const job = [...this.jobs.values()].find(
+      (candidateJob) => candidateJob.run.id === terminalId(id),
+    )
+    if (!job) throw new Error('更新终端已失效。')
     return job
   }
 
@@ -242,7 +244,7 @@ export class AgentCliInstallTerminals {
     job: Job,
     command: Parameters<ExecuteCliInstall>[0],
   ): ReturnType<ExecuteCliInstall> {
-    if (job.cancelled) return Promise.reject(new Error('安装或更新已中断。'))
+    if (job.cancelled) return Promise.reject(new Error('更新已中断。'))
     return new Promise((resolve, reject) => {
       let output = ''
       let timedOut = false
@@ -259,8 +261,8 @@ export class AgentCliInstallTerminals {
         this.append(job, text)
       })
       let exited!: () => void
-      const exitDone = new Promise<void>((resolve) => {
-        exited = resolve
+      const exitDone = new Promise<void>((complete) => {
+        exited = complete
       })
       let stopping: Promise<void> | undefined
       job.stop = () =>
@@ -269,7 +271,7 @@ export class AgentCliInstallTerminals {
             await exitDone
             job.child = undefined
             job.stop = undefined
-            reject(new Error(timedOut ? '安装或更新超时。' : '安装或更新已中断。'))
+            reject(new Error(timedOut ? '更新超时。' : '更新已中断。'))
           })
           .catch((error) => {
             stopping = undefined
@@ -295,8 +297,8 @@ export class AgentCliInstallTerminals {
         job.child = undefined
         job.stop = undefined
         this.append(job, '\r\n命令已退出，正在检测 CLI…\r\n')
-        if (signal) reject(new Error(`安装或更新被信号 ${signal} 中断。`))
-        else if (exitCode !== 0) reject(new Error(`安装或更新失败，退出码 ${exitCode}。`))
+        if (signal) reject(new Error(`更新被信号 ${signal} 中断。`))
+        else if (exitCode !== 0) reject(new Error(`更新失败，退出码 ${exitCode}。`))
         else resolve({ stdout: output, stderr: '' })
       })
     })

@@ -6,14 +6,14 @@ const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 
 // Use Codex's own hashes and TOML writer, like its /hooks UI; never start a thread or run hooks.
-export async function trustCodexHooks(
+export async function codexHookTrust(
   executable: string,
   env: Record<string, string>,
   config: string,
   command: string,
   events: string[],
-  persist: (write: () => Promise<void>) => Promise<void>,
-): Promise<void> {
+  persist?: (write: () => Promise<void>) => Promise<void>,
+): Promise<boolean> {
   const cwd = dirname(config)
   const configPath = resolve(cwd, 'config.toml')
   const launch = await resolveCommand(executable, ['app-server'], { ...env, CODEX_HOME: cwd })
@@ -66,8 +66,8 @@ export async function trustCodexHooks(
   })
   const request = (method: string, params: unknown): Promise<unknown> => {
     if (failure) return Promise.reject(failure)
-    return new Promise((resolve, reject) => {
-      pending = { id: ++id, resolve, reject }
+    return new Promise((complete, reject) => {
+      pending = { id: ++id, resolve: complete, reject }
       child.stdin.write(`${JSON.stringify({ id, method, params })}\n`)
     })
   }
@@ -120,7 +120,8 @@ export async function trustCodexHooks(
       )
     )
       throw new Error('无法核对本次安装的 Cota Hooks；未授予信任。')
-    if (hooks.every((hook) => hook.trustStatus === 'trusted')) return
+    const trusted = hooks.every((hook) => hook.trustStatus === 'trusted')
+    if (trusted || !persist) return trusted
     const snapshot = await request('config/read', { includeLayers: true })
     if (!object(snapshot) || !Array.isArray(snapshot.layers))
       throw new Error('无法读取 Codex 配置版本。')
@@ -150,6 +151,7 @@ export async function trustCodexHooks(
       if (!object(written) || written.status !== 'ok' || written.filePath !== configPath)
         throw new Error('Codex 未确认信任写入成功，或设置被管理策略覆盖。')
     })
+    return true
   } finally {
     clearTimeout(timeout)
     child.stdin.destroy()

@@ -1,17 +1,17 @@
 import { useState } from 'react'
-import { RefreshCw } from 'lucide-react'
-import {
-  AGENT_PROVIDERS,
-  unwrap,
-  type AgentHookStatus,
-  type AgentProvider,
-} from '../../../../../shared/contracts'
-import { abbreviateHomePath } from '@/lib/utils'
+import { Download, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
+import { toast } from 'sonner'
+import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
+import type { AgentHookStatus, AgentProvider } from '../../../../../shared/contracts'
+import { cn } from '@/lib/utils'
+import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { AgentIcon } from '@/features/agents/components/AgentIcon'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Field, FieldDescription, FieldError } from '@/components/ui/field'
+import { Field, FieldDescription } from '@/components/ui/field'
+
+type HookAction = 'install' | 'trust' | 'uninstall'
 
 const labels: Record<AgentHookStatus['state'], string> = {
   installed: '已安装',
@@ -24,22 +24,25 @@ const labels: Record<AgentHookStatus['state'], string> = {
 export function AgentHookSettings({
   initialStatuses,
   initialError,
+  onShowError,
 }: {
   initialStatuses: AgentHookStatus[]
   initialError?: string
+  onShowError: (title: string, detail: string) => void
 }) {
   const [statuses, setStatuses] = useState(initialStatuses)
-  const [busy, setBusy] = useState<'detect' | AgentProvider | undefined>()
+  const [busy, setBusy] = useState<'detect' | { provider: AgentProvider; action: HookAction }>()
   const [error, setError] = useState(initialError)
-  const [notice, setNotice] = useState<string>()
   const [feedbackProvider, setFeedbackProvider] = useState<AgentProvider>()
+  const detectingVisible = useLoadingIndicator(busy === 'detect')
+  const trustingVisible = useLoadingIndicator(typeof busy === 'object' && busy.action === 'trust')
+  const blocked = !!busy || detectingVisible || trustingVisible
 
   async function detect() {
-    if (busy) return
+    if (blocked) return
     setBusy('detect')
     setFeedbackProvider(undefined)
     setError(undefined)
-    setNotice(undefined)
     try {
       setStatuses(unwrap(await window.desktop.detectAgentHooks()))
     } catch (cause) {
@@ -49,27 +52,29 @@ export function AgentHookSettings({
     }
   }
 
-  async function manage(provider: AgentProvider, action: 'install' | 'uninstall') {
-    if (busy) return
-    setBusy(provider)
+  async function manage(provider: AgentProvider, action: HookAction) {
+    if (blocked) return
+    setBusy({ provider, action })
     setFeedbackProvider(provider)
     setError(undefined)
-    setNotice(undefined)
     try {
       const status = unwrap(
         await (action === 'uninstall'
           ? window.desktop.uninstallAgentHook(provider)
-          : window.desktop.installAgentHook(provider)),
+          : action === 'trust'
+            ? window.desktop.trustAgentHook(provider)
+            : window.desktop.installAgentHook(provider)),
       )
-      if (status)
+      if (status) {
         setStatuses((current) => [...current.filter((item) => item.provider !== provider), status])
-      setNotice(
-        status
-          ? action === 'uninstall' && status.state === 'missing'
-            ? `${AGENT_PROVIDERS[provider].name}：已卸载。已运行的 CLI 请重启后生效。`
-            : `${AGENT_PROVIDERS[provider].name}：${status.detail}`
-          : undefined,
-      )
+        if (action === 'install')
+          toast.success(
+            provider === 'codex'
+              ? 'Hooks 已安装，请点击“信任”或在 Codex 中审核。'
+              : '状态集成已安装，请新建终端。',
+          )
+        if (action === 'trust') toast.success('已信任 Hooks，将在新 Codex Agent 生效。')
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -99,33 +104,51 @@ export function AgentHookSettings({
             安装 Hooks 或 Extension 后，可在终端标签上查看 Agent 的运行、等待输入、完成或失败状态。
           </FieldDescription>
         </div>
-        <div className="agent-hook-detect-control flex min-w-0 flex-col gap-1.5">
+        <div className="agent-hook-detect-control flex min-w-0 flex-wrap items-center gap-1.5">
           <Button
             className="agent-hook-detect"
             variant="outline"
-            disabled={!!busy}
+            disabled={blocked}
+            aria-busy={busy === 'detect' || detectingVisible}
             onClick={() => void detect()}
           >
-            <RefreshCw className="agent-hook-detect-icon" data-icon="inline-start" />
-            重新检测
+            <RefreshCw
+              className={cn(
+                'agent-hook-detect-icon',
+                detectingVisible && 'motion-safe:animate-spin',
+              )}
+              data-icon="inline-start"
+              aria-hidden="true"
+            />
+            {detectingVisible ? '检测中…' : '重新检测'}
           </Button>
-          <FieldError className="agent-hook-detect-error max-w-60">
-            {feedbackProvider === undefined ? error : undefined}
-          </FieldError>
+          {feedbackProvider === undefined && error && (
+            <Button
+              className="agent-hook-detect-error"
+              variant="destructive"
+              aria-label="查看状态集成检测错误详情"
+              aria-haspopup="dialog"
+              onClick={() => onShowError('状态集成检测失败', error)}
+            >
+              错误
+            </Button>
+          )}
         </div>
       </div>
       <Card size="sm" className="agent-hook-settings-card gap-0 divide-y divide-border py-0">
         {(Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) => {
           const status = statuses.find((item) => item.provider === provider)
-          const installLabel =
-            provider === 'codex'
-              ? status?.state === 'outdated'
-                ? '更新并信任'
-                : '安装并信任'
-              : status?.state === 'outdated'
-                ? '更新'
-                : '安装'
+          const pendingAction =
+            busy && busy !== 'detect' && busy.provider === provider ? busy.action : undefined
+          const TrustIcon = trustingVisible ? LoaderCircle : ShieldCheck
+          const installLabel = status?.state === 'outdated' ? '更新' : '安装'
           const invalidStatus = status?.state === 'error' || status?.state === 'conflict'
+          const rowError = [
+            invalidStatus || status?.trust === 'unknown' ? status.detail : undefined,
+            feedbackProvider === provider ? error : undefined,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
           const badgeVariant =
             status?.state === 'installed'
               ? 'success'
@@ -158,63 +181,76 @@ export function AgentHookSettings({
                     {status.detail}
                   </p>
                 )}
-                {status?.state !== 'missing' &&
-                  status?.paths.map((path) => (
-                    <p
-                      key={path}
-                      className="agent-hook-path break-all font-mono text-xs text-muted-foreground select-text"
-                    >
-                      {abbreviateHomePath(path)}
-                    </p>
-                  ))}
               </div>
               <div className="agent-hook-control flex min-w-0 flex-col gap-1.5" aria-live="polite">
                 <div className="agent-hook-actions flex min-h-7 flex-wrap items-center gap-1.5">
+                  {(status?.state === 'installed' || status?.state === 'outdated') && (
+                    <Button
+                      className="agent-hook-uninstall text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      variant="ghost"
+                      aria-label={`卸载 ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
+                      disabled={blocked}
+                      aria-busy={pendingAction === 'uninstall'}
+                      onClick={() => void manage(provider, 'uninstall')}
+                    >
+                      卸载
+                    </Button>
+                  )}
                   {status?.state !== 'installed' && (
                     <Button
                       className="agent-hook-install"
                       variant="outline"
                       aria-label={`${installLabel} ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
                       disabled={
-                        !!busy || (!!status && !['missing', 'outdated'].includes(status.state))
+                        blocked || (!!status && !['missing', 'outdated'].includes(status.state))
                       }
+                      aria-busy={pendingAction === 'install'}
                       onClick={() => void manage(provider, 'install')}
                     >
+                      <Download
+                        className="agent-hook-install-icon"
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
                       {installLabel}
                     </Button>
                   )}
-                  {(status?.state === 'installed' || status?.state === 'outdated') && (
+                  {provider === 'codex' &&
+                    status?.state === 'installed' &&
+                    (status.trust !== 'trusted' || trustingVisible) && (
+                      <Button
+                        className="agent-hook-trust"
+                        variant="outline"
+                        aria-label="信任 Codex Cota Hooks"
+                        disabled={blocked}
+                        aria-busy={pendingAction === 'trust' || trustingVisible}
+                        onClick={() => void manage(provider, 'trust')}
+                      >
+                        <TrustIcon
+                          className={cn(
+                            'agent-hook-trust-icon',
+                            trustingVisible && 'motion-safe:animate-spin',
+                          )}
+                          data-icon="inline-start"
+                          aria-hidden="true"
+                        />
+                        {trustingVisible ? '信任中…' : '信任'}
+                      </Button>
+                    )}
+                  {rowError && (
                     <Button
-                      className="agent-hook-uninstall text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      variant="ghost"
-                      aria-label={`卸载 ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
-                      disabled={!!busy}
-                      onClick={() => void manage(provider, 'uninstall')}
+                      className="agent-hook-row-error"
+                      variant="destructive"
+                      aria-label={`查看 ${AGENT_PROVIDERS[provider].name} 状态集成错误详情`}
+                      aria-haspopup="dialog"
+                      onClick={() =>
+                        onShowError(`${AGENT_PROVIDERS[provider].name} 状态集成错误详情`, rowError)
+                      }
                     >
-                      卸载
+                      错误
                     </Button>
                   )}
                 </div>
-                {invalidStatus && status?.detail && (
-                  <p
-                    className="agent-hook-status-error max-w-60 text-right text-xs text-destructive"
-                    role="alert"
-                  >
-                    {status?.detail}
-                  </p>
-                )}
-                {feedbackProvider === provider && (notice || error) && (
-                  <div className="agent-hook-feedback max-w-60 text-right">
-                    {notice && (
-                      <p className="agent-hook-notice text-xs text-muted-foreground">{notice}</p>
-                    )}
-                    {error && (
-                      <p className="agent-hook-error text-xs text-destructive" role="alert">
-                        {error}
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             </Field>
           )

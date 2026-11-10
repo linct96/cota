@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { AGENT_PROVIDERS, type AgentAvailability, type AgentProvider } from './contracts'
+import { AGENT_PROVIDERS } from './contracts'
+import type { AgentAvailability, AgentProvider } from './contracts'
 
 export const AGENT_CLI_PACKAGES: Record<AgentProvider, string> = {
   pi: '@earendil-works/pi-coding-agent',
@@ -10,8 +11,7 @@ export const AGENT_CLI_INSTALL_METHOD_LABELS = {
   brew: 'Homebrew',
   npm: 'npm',
   scoop: 'Scoop',
-  native: '原生安装',
-  unknown: '未知来源',
+  unknown: '其他来源',
 } as const
 
 export interface AgentCliStatus extends AgentAvailability {
@@ -31,7 +31,10 @@ const agentCliStatusSchema = z
       .optional(),
     version: z.string().max(100).optional(),
     error: z.string().max(8000).optional(),
-    installMethod: z.enum(['brew', 'npm', 'scoop', 'native', 'unknown']).optional(),
+    installMethod: z
+      .enum(['brew', 'npm', 'scoop', 'native', 'unknown'])
+      .transform((method) => (method === 'native' ? 'unknown' : method))
+      .optional(),
     latestVersion: z.string().max(100).optional(),
     updateAvailable: z.boolean().optional(),
     updateError: z.string().max(8000).optional(),
@@ -100,5 +103,5 @@ export function isNewerVersion(current: string, latest: string): boolean {
     const difference = Number(b[index]) - Number(a[index])
     if (difference) return difference > 0
   }
-  return a[4]!.startsWith('-') && !b[4]!.startsWith('-')
+  return a[4].startsWith('-') && !b[4].startsWith('-')
 }

@@ -4,12 +4,11 @@ import { z } from 'zod'
 import { Copy, LoaderCircle, MoreHorizontal, Plus, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { unwrap } from '../../../../../shared/contracts'
-import {
-  hostingHostSchema,
-  hostingProviderSchema,
-  type HostingProvider,
-  type HostingConnection,
-  type HostingAccounts,
+import { hostingHostSchema, hostingProviderSchema } from '../../../../../shared/code-hosting'
+import type {
+  HostingAccounts,
+  HostingConnection,
+  HostingProvider,
 } from '../../../../../shared/code-hosting'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { LoadingContent } from '@/components/LoadingContent'
@@ -139,6 +138,7 @@ export function CodeHostingSettings() {
           className="code-hosting-detect shrink-0"
           variant="outline"
           disabled={detecting || detectingVisible || !!configuring || initialPending}
+          aria-busy={detecting || detectingVisible}
           onClick={() => void detect()}
         >
           <RefreshCw className="code-hosting-detect-icon" data-icon="inline-start" />
@@ -234,7 +234,7 @@ function CodeHostingConnectionRow({
   const view = connectionStates[connection.status]
   const allAccounts = connection.status === 'detected' ? connection.accounts : []
   const accounts = allAccounts.filter((account) => account.status === 'connected')
-  const primaryAccount = accounts.find((account) => account.active) ?? accounts[0]
+  const primaryAccount = accounts.find((account) => account.active) ?? accounts.at(0)
   const action = primaryAccount ? '管理连接' : '连接'
   const checkingVisible = useLoadingIndicator(!!connection.checking)
   const [adding, setAdding] = useState(false)
@@ -616,7 +616,19 @@ function CodeHostingConnectionRow({
           </output>
         )}
         <FieldError className="code-hosting-connect-error break-all">{error}</FieldError>
-        <DialogFooter className="code-hosting-connect-footer">
+        <DialogFooter className="code-hosting-connect-footer items-center sm:justify-between">
+          <output className="code-hosting-connect-progress flex items-center gap-1 text-xs text-muted-foreground">
+            {connectingVisible && (
+              <>
+                <LoaderCircle
+                  className="code-hosting-connect-spinner motion-safe:animate-spin"
+                  data-icon="inline-start"
+                  aria-hidden="true"
+                />
+                检测中…
+              </>
+            )}
+          </output>
           <Button
             className="code-hosting-connect-done"
             disabled={blocked}
@@ -624,14 +636,7 @@ function CodeHostingConnectionRow({
               if (!lock.current && !blocked) onOpenChange(false)
             }}
           >
-            {connectingVisible && (
-              <LoaderCircle
-                className="code-hosting-connect-spinner motion-safe:animate-spin"
-                data-icon="inline-start"
-                aria-hidden="true"
-              />
-            )}
-            {connectingVisible ? '检测中…' : '完成'}
+            完成
           </Button>
         </DialogFooter>
       </DialogContent>
