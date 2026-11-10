@@ -3,6 +3,7 @@ import { Download, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
 import type { AgentHookStatus, AgentProvider } from '../../../../../shared/contracts'
+import type { AgentCliStatus } from '../../../../../shared/agent-cli'
 import { cn } from '@/lib/utils'
 import { useLoadingIndicator } from '@/hooks/use-loading-indicator'
 import { AgentIcon } from '@/features/agents/components/AgentIcon'
@@ -22,10 +23,12 @@ const labels: Record<AgentHookStatus['state'], string> = {
 }
 
 export function AgentHookSettings({
+  agents,
   initialStatuses,
   initialError,
   onShowError,
 }: {
+  agents: AgentCliStatus[]
   initialStatuses: AgentHookStatus[]
   initialError?: string
   onShowError: (title: string, detail: string) => void
@@ -202,7 +205,9 @@ export function AgentHookSettings({
                       variant="outline"
                       aria-label={`${installLabel} ${AGENT_PROVIDERS[provider].name} ${provider === 'pi' ? 'Extension' : 'Hooks'}`}
                       disabled={
-                        blocked || (!!status && !['missing', 'outdated'].includes(status.state))
+                        blocked ||
+                        !agents.find((agent) => agent.provider === provider)?.executable ||
+                        (!!status && !['missing', 'outdated'].includes(status.state))
                       }
                       aria-busy={pendingAction === 'install'}
                       onClick={() => void manage(provider, 'install')}

@@ -422,6 +422,7 @@ export function AgentSettings() {
               </Card>
             </section>
             <AgentHookSettings
+              agents={agents}
               initialStatuses={hookStatuses}
               initialError={hookError}
               onShowError={(title, detail) => setErrorDetails({ title, detail })}
