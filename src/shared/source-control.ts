@@ -1,5 +1,12 @@
 import type { WorkspaceTarget } from './contracts'
 
+export interface GitFailureDetails {
+  kind: 'dirty-worktree' | 'command-failed'
+  command: string
+  output: string
+  log: string
+}
+
 export type GitArea = 'conflict' | 'staged' | 'unstaged' | 'untracked'
 export interface GitChange {
   path: string
@@ -27,6 +34,7 @@ export interface GitFileSelection {
 }
 export type GitDiff =
   | { kind: 'text'; original: string; modified: string }
+  | { kind: 'conflict'; ours: string | null; theirs: string | null; working: string | null }
   | { kind: 'unavailable'; reason: string }
 
 export interface GitTracking {

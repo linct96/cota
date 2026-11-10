@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import type { GitMutation } from '../../../../../shared/source-control'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
+import type { GitFailureDetails, GitMutation } from '../../../../../shared/source-control'
 import { useGitBranches } from '@/state/git-branches-store'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { createSourceControlRefreshQueue } from '@/features/source-control/lib/source-control-refresh'
@@ -16,11 +17,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { SourceControlChangesPanel } from './SourceControlChangesPanel'
 import { SourceControlComparePanel } from './SourceControlComparePanel'
 import { SourceControlHistoryPanel } from './SourceControlHistoryPanel'
 import { HostedReviewPanel } from './HostedReviewPanel'
+
+type SourceControlError = {
+  message: string
+  git?: GitFailureDetails
+}
 
 export function SourceControlPanel({
   workspace,
@@ -34,7 +40,7 @@ export function SourceControlPanel({
   const session = useSourceControl((state) => state.sessions[workspace.id] || EMPTY_SOURCE_CONTROL)
   const update = useSourceControl((state) => state.update)
   const refreshHostingContext = useSourceControl((state) => state.refreshHostingContext)
-  const [error, setError] = useState<string>()
+  const [error, setError] = useState<SourceControlError>()
   const [readError, setReadError] = useState<string>()
   const [pending, setPending] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -56,16 +62,17 @@ export function SourceControlPanel({
     setBranchView({ references: currentReferences, snapshot })
   const references = currentReferences || branchView.references
   const branchTips = snapshot?.branches || branchView.snapshot?.branches
-  const [dialogError, setDialogError, errorDialog] = useDialogState<string>()
-  const currentError = error || readError || referencesError
+  const [dialogError, setDialogError, errorDialog] = useDialogState<SourceControlError>()
+  const currentError = error?.message || readError || referencesError
   useEffect(() => {
     // Preserve asynchronous IPC errors in the dismissible dialog until the user closes it.
     // oxlint-disable-next-line react/set-state-in-effect
-    if (currentError) setDialogError(currentError)
-  }, [currentError, setDialogError])
+    if (currentError) setDialogError(error || { message: currentError })
+  }, [currentError, error, setDialogError])
   const readTask = useRef<Promise<void> | undefined>(undefined)
   const writing = useRef(false)
   const mounted = useRef(true)
+  const isMounted = () => mounted.current
   const activeRef = useRef(active)
   useEffect(() => {
     activeRef.current = active
@@ -77,14 +84,14 @@ export function SourceControlPanel({
     if (writing.current) return
     try {
       const next = unwrap(await window.desktop.gitStatus(target))
-      if (!mounted.current) return
+      if (!isMounted()) return
       update(workspace.id, { status: next, refreshed: Date.now() })
       void refreshHostingContext(target)
       setReadError(undefined)
-    } catch (error) {
-      if (mounted.current) {
+    } catch (cause) {
+      if (isMounted()) {
         update(workspace.id, { status: undefined })
-        setReadError(error instanceof Error ? error.message : String(error))
+        setReadError(cause instanceof Error ? cause.message : String(cause))
       }
     }
   }
@@ -94,7 +101,7 @@ export function SourceControlPanel({
   const [refreshQueue] = useState(() =>
     createSourceControlRefreshQueue(
       () => (readTask.current = refresh()),
-      () => mounted.current && activeRef.current && !document.hidden && !writing.current,
+      () => isMounted() && activeRef.current && !document.hidden && !writing.current,
     ),
   )
 
@@ -114,19 +121,22 @@ export function SourceControlPanel({
     setPending(true)
     setSyncing(input.action === 'sync')
     setError(undefined)
+    let failure: GitFailureDetails | undefined
     try {
       await generation.cancel()
       // Keep background reads silent without overlapping them with writes.
       await readTask.current
-      if (!mounted.current) return false
-      const done = unwrap(await window.desktop.gitMutate(input))
+      if (!isMounted()) return false
+      const result = await window.desktop.gitMutate(input)
+      if (!result.ok) failure = result.details?.git
+      const done = unwrap(result)
       if (
         done &&
         input.action === 'commit' &&
         useSourceControl.getState().sessions[workspace.id]?.draft === input.message
       )
         update(workspace.id, { draft: '' })
-      if (!mounted.current) return false
+      if (!isMounted()) return false
       if (done && (input.action === 'switch-branch' || input.action === 'create-and-switch-branch'))
         update(workspace.id, {
           selection: undefined,
@@ -134,35 +144,36 @@ export function SourceControlPanel({
           activePinnedDiff: undefined,
         })
       return done
-    } catch (error) {
+    } catch (cause) {
       if (
         throwOnError ||
         input.action === 'create-branch' ||
         input.action === 'create-and-switch-branch' ||
         input.action === 'delete-branch'
       )
-        throw error
-      if (mounted.current) setError(error instanceof Error ? error.message : String(error))
+        throw cause
+      if (isMounted())
+        setError({ message: cause instanceof Error ? cause.message : String(cause), git: failure })
       return false
     } finally {
       // Refresh partial writes too, without hiding a commit/hook failure behind a successful status read.
       try {
-        if (mounted.current) {
+        if (isMounted()) {
           const next = unwrap(await window.desktop.gitStatus(target))
-          if (mounted.current) {
+          if (isMounted()) {
             update(workspace.id, { status: next, refreshed: Date.now() })
             void refreshHostingContext(target)
             setReadError(undefined)
           }
         }
-      } catch (error) {
-        if (mounted.current) {
+      } catch (cause) {
+        if (isMounted()) {
           update(workspace.id, { status: undefined })
-          setReadError(error instanceof Error ? error.message : String(error))
+          setReadError(cause instanceof Error ? cause.message : String(cause))
         }
       } finally {
         writing.current = false
-        if (mounted.current) {
+        if (isMounted()) {
           setPending(false)
           setSyncing(false)
         }
@@ -170,6 +181,8 @@ export function SourceControlPanel({
       }
     }
   }
+
+  const dirtyWorktree = dialogError?.git?.kind === 'dirty-worktree'
 
   return (
     <section
@@ -223,7 +236,7 @@ export function SourceControlPanel({
             generation={generation}
             writing={writing}
             mutate={mutate}
-            onError={setError}
+            onError={(message) => setError({ message })}
           />
         </TabsContent>
         <TabsContent
@@ -274,15 +287,51 @@ export function SourceControlPanel({
           if (!open) setDialogError(undefined)
         }}
       >
-        <AlertDialogContent className="source-control-error-dialog">
-          <AlertDialogHeader className="source-control-error-header min-w-0">
-            <AlertDialogTitle className="source-control-error-title">操作未完成</AlertDialogTitle>
-            <AlertDialogDescription className="source-control-error-detail max-h-[60vh] w-full overflow-auto whitespace-pre-wrap break-words select-text">
-              {dialogError}
+        <AlertDialogContent className="source-control-error-dialog max-h-[calc(100dvh-2rem)] overflow-y-auto data-[size=default]:max-w-[calc(100%-2rem)] data-[size=default]:sm:max-w-lg">
+          <AlertDialogHeader className="source-control-error-header min-w-0 place-items-start text-left">
+            <AlertDialogTitle className="source-control-error-title">
+              {dirtyWorktree ? '请先处理本地改动' : '操作未完成'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="source-control-error-detail max-h-32 w-full overflow-auto whitespace-pre-wrap break-words select-text">
+              {dirtyWorktree
+                ? '请提交相关更改，或使用 git stash 保存后重试。'
+                : dialogError?.message}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {dialogError?.git && (
+            <Tabs defaultValue="log" className="source-control-error-diagnostics min-h-0 min-w-0">
+              <TabsList className="source-control-error-diagnostic-tabs" aria-label="Git 诊断">
+                <TabsTrigger className="source-control-error-log-tab" value="log">
+                  Git 日志
+                </TabsTrigger>
+                <TabsTrigger className="source-control-error-output-tab" value="output">
+                  命令输出
+                </TabsTrigger>
+              </TabsList>
+              <div className="source-control-error-diagnostic-panels h-[min(35vh,18rem)] min-w-0">
+                <TabsContent
+                  className="source-control-error-log-panel h-full overflow-auto rounded-md border bg-muted p-3"
+                  value="log"
+                >
+                  <pre className="source-control-error-log font-mono whitespace-pre-wrap break-words select-text">
+                    {dialogError.git.log}
+                  </pre>
+                </TabsContent>
+                <TabsContent
+                  className="source-control-error-output-panel h-full overflow-auto rounded-md border bg-muted p-3"
+                  value="output"
+                >
+                  <pre className="source-control-error-output font-mono whitespace-pre-wrap break-words select-text">
+                    {`> ${dialogError.git.command}\n\n${dialogError.git.output || '命令未返回输出。'}`}
+                  </pre>
+                </TabsContent>
+              </div>
+            </Tabs>
+          )}
           <AlertDialogFooter className="source-control-error-footer">
-            <AlertDialogCancel className="source-control-error-dismiss">知道了</AlertDialogCancel>
+            <AlertDialogCancel className="source-control-error-dismiss self-end" variant="default">
+              关闭
+            </AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,18 +1,20 @@
 import { z } from 'zod'
 import {
   createHostedReviewSchema,
-  hostingHostSchema,
   hostingBranchSchema,
+  hostingHostSchema,
   hostingProviderSchema,
   mergeHostedReviewSchema,
   prepareHostedReviewSchema,
-  type PrepareHostedReview,
-  type HostedReviewPreparation,
-  type HostedReviewCreationContext,
-  type HostedReview,
-  type HostingContext,
-  type HostingConnection,
-  type HostingSnapshot,
+} from '../../shared/code-hosting'
+import type {
+  HostedReview,
+  HostedReviewCreationContext,
+  HostedReviewPreparation,
+  HostingConnection,
+  HostingContext,
+  HostingSnapshot,
+  PrepareHostedReview,
 } from '../../shared/code-hosting'
 import type { ConfigStore } from '../settings/config-store'
 import type { SourceControlService } from '../git/source-control/service'
@@ -189,6 +191,7 @@ export class CodeHostingService {
     account: string,
     defaultBranch: string,
     activeReviews: HostedReview[],
+    latestReview: HostedReview | null,
     adapter: HostingAdapter,
     scope: ReviewScope,
   ): Promise<HostingSnapshot> {
@@ -213,6 +216,8 @@ export class CodeHostingService {
       account,
       defaultBranch,
       activeReviews,
+      latestReview:
+        activeReviews.find((review) => review.number === latestReview?.number) || latestReview,
       fetchedAt: Date.now(),
       creationBlocked: !!this.pending(context),
     }
@@ -271,11 +276,24 @@ export class CodeHostingService {
   async inspect(cwd: string, resolvedContext?: HostingContext): Promise<HostingSnapshot> {
     const context = resolvedContext || (await this.context(cwd))
     const { adapter, scope, account } = await this.scope(context)
+    const [activeReviews, firstPage] = await Promise.all([
+      scope.branch ? adapter.listOpen(scope) : [],
+      scope.branch ? adapter.history(scope, 1) : null,
+    ])
+    let history = firstPage
+    // Forks can leave pages containing only same-named branches from other repositories.
+    while (history && !history.items.length && history.nextPage)
+      history = await adapter.history(scope, history.nextPage)
+    const latestReview =
+      [...activeReviews, ...(history?.items || [])].sort(
+        (a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || b.number - a.number,
+      )[0] || null
     return this.snapshot(
       context,
       account,
       scope.targetInfo.defaultBranch,
-      scope.branch ? await adapter.listOpen(scope) : [],
+      activeReviews,
+      latestReview,
       adapter,
       scope,
     )
@@ -395,7 +413,7 @@ export class CodeHostingService {
         reviews,
         true,
       )
-      if (preparation.status === 'existing') return preparation.existingReviews[0]!
+      if (preparation.status === 'existing') return preparation.existingReviews[0]
       if (preparation.status !== 'ready') throw new Error(preparation.message)
       if ((await this.context(cwd)).key !== input.key)
         throw new Error('创建前仓库或远端已改变，请刷新后重试。')
@@ -429,7 +447,7 @@ export class CodeHostingService {
         )
         if (matches.length === 1) {
           await this.config.saveCodeHostingPending(key, null)
-          return matches[0]!
+          return matches[0]
         }
         if (error instanceof HostingError && error.kind === 'rejected') {
           await this.config.saveCodeHostingPending(key, null)

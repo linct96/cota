@@ -5,19 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseHostingRemote } from '../src/main/code-hosting/remote'
 import { HostingBranches } from '../src/main/code-hosting/branches'
 import { parseHostingAccounts } from '../src/main/code-hosting/accounts'
-import { HostingError, type HostingRequest } from '../src/main/code-hosting/cli-runner'
+import { HostingError } from '../src/main/code-hosting/cli-runner'
+import type { HostingRequest } from '../src/main/code-hosting/cli-runner'
 import type { ReviewScope } from '../src/main/code-hosting/adapter'
 import { GitHubAdapter } from '../src/main/code-hosting/github'
 import { GitLabAdapter } from '../src/main/code-hosting/gitlab'
 import { CodeHostingService } from '../src/main/code-hosting/service'
 import { ConfigStore } from '../src/main/settings/config-store'
 import { SourceControlService } from '../src/main/git/source-control/service'
-import {
-  hostingBranchesExpired,
-  type HostedReview,
-  type HostingContext,
-  type HostingRepository,
-} from '../src/shared/code-hosting'
+import { hostingBranchesExpired } from '../src/shared/code-hosting'
+import type { HostedReview, HostingContext, HostingRepository } from '../src/shared/code-hosting'
 import { projectBranch } from '../src/main/git/branches/project-branch'
 import { parseGitStatus } from '../src/main/git/source-control/status'
 import { createBranchFormSchema } from '../src/renderer/src/features/source-control/lib/form-schemas'
@@ -232,14 +229,24 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
         Array.from({ length: 20 }, (_, index) => payload(index + 30, 'closed', 'other')),
       )
       expect(await adapter.history(scope, 1)).toMatchObject({ items: [], nextPage: 2 })
-      request.mockResolvedValueOnce([payload(12, 'merged'), payload(9, 'closed')])
+      request.mockResolvedValueOnce([
+        payload(15, 'open'),
+        payload(12, 'merged'),
+        payload(9, 'closed'),
+        payload(8, 'closed', scope.branch, 'main', 2),
+      ])
       const history = await adapter.history(scope, 2)
       expect(history.nextPage).toBeNull()
       expect(history.items.map((review) => [review.number, review.state])).toEqual([
+        [15, 'open'],
         [12, 'merged'],
         [9, 'closed'],
       ])
-      expect(history.items[0]).toMatchObject({ createdAt: time, mergedAt: time })
+      expect(history.items[1]).toMatchObject({ createdAt: time, mergedAt: time })
+      expect(request.mock.calls[2]?.[1]).toContain('state=all')
+      expect(request.mock.calls[2]?.[1]).toContain(
+        provider === 'github' ? 'sort=created&direction=desc' : 'order_by=created_at&sort=desc',
+      )
       expect(request.mock.calls[2]?.[1]).toContain('page=2')
       expect(request.mock.calls[2]?.[1]).toContain('feature%2Freview')
       request.mockResolvedValueOnce(payload(12, 'merged'))

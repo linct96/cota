@@ -1,28 +1,24 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, ExternalLink, FoldVertical } from 'lucide-react'
-import { unwrap, type ProjectWorkspace } from '../../../../../shared/contracts'
-import {
-  gitFileKey,
-  type GitDiff,
-  type GitDiffSelection,
-} from '../../../../../shared/source-control'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace } from '../../../../../shared/contracts'
+import { gitFileKey } from '../../../../../shared/source-control'
+import type { GitDiff, GitDiffSelection } from '../../../../../shared/source-control'
 import { EMPTY_SOURCE_CONTROL, useSourceControl } from '@/state/source-control-store'
 import { useWorkspace } from '@/state/workspace'
 import { preferredWorkspaceOpener } from '../../../../../shared/open-with'
 import { useRightPanel } from '@/state/right-panel-store'
 import { useSourceControlWatch } from '@/features/source-control/hooks/use-source-control-watch'
 import { Button } from '@/components/ui/button'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { abbreviateHomePath, cn } from '@/lib/utils'
 import { scheduleGitDiff } from '@/features/source-control/lib/git-diff-loader'
 import { errorDetails } from '@/lib/error-details'
-import {
-  DEFAULT_DIFF_DISPLAY_OPTIONS,
-  GitDiffOptions,
-  type DiffDisplayOptions,
-} from './GitDiffOptions'
+import { DEFAULT_DIFF_DISPLAY_OPTIONS, GitDiffOptions } from './GitDiffOptions'
+import type { DiffDisplayOptions } from './GitDiffOptions'
 import type { GitDiffEditorHandle } from './GitDiffEditor'
 
 const DiffEditor = lazy(() => import('./GitDiffEditor'))
@@ -49,6 +45,7 @@ export function SourceControlDiff({
   )
   const [result, setResult] = useState<{ key: string; diff: GitDiff }>()
   const [stats, setStats] = useState<{ key: string; additions: number; deletions: number }>()
+  const [conflictView, setConflictView] = useState<{ key: string; mode: 'sides' | 'working' }>()
   const [error, setError] = useState<string>()
   const loadedVersion = useRef('')
   const [options, setOptions] = useState(DEFAULT_DIFF_DISPLAY_OPTIONS)
@@ -66,18 +63,20 @@ export function SourceControlDiff({
     [workspace.projectPath, workspace.id],
   )
   const key = selection ? `${workspace.id}:${gitFileKey(selection)}` : ''
+  const conflictMode = conflictView?.key === key ? conflictView.mode : 'sides'
+  const diffKey = selection?.area === 'conflict' ? `${key}:${conflictMode}` : key
   const onStatsChange = useCallback(
-    (stats: { additions: number; deletions: number }) => {
-      setStats({ key, ...stats })
+    (nextStats: { additions: number; deletions: number }) => {
+      setStats({ key: diffKey, ...nextStats })
       onReady?.()
     },
-    [key, onReady],
+    [diffKey, onReady],
   )
   const onEditorError = useCallback(
-    (error: unknown) => {
-      console.error('[monaco] Diff 编辑器失败', error)
+    (cause: unknown) => {
+      console.error('[monaco] Diff 编辑器失败', cause)
       loadedVersion.current = ''
-      setError(errorDetails(error))
+      setError(errorDetails(cause))
       onReady?.()
     },
     [onReady],
@@ -108,9 +107,9 @@ export function SourceControlDiff({
         setResult({ key, diff })
         if (diff.kind === 'unavailable') onReady?.()
       })
-      .catch((error) => {
+      .catch((cause) => {
         if (controller.signal.aborted) return
-        setError(error instanceof Error ? error.message : String(error))
+        setError(cause instanceof Error ? cause.message : String(cause))
         onReady?.()
       })
     return () => {
@@ -120,6 +119,24 @@ export function SourceControlDiff({
 
   if (!selection) return null
   const current = result?.key === key ? result.diff : undefined
+  const conflict = current?.kind === 'conflict' ? current : undefined
+  const hasText = !!current && current.kind !== 'unavailable'
+  const original = conflict
+    ? conflict.ours
+    : current?.kind === 'text'
+      ? current.original
+      : undefined
+  const modified = conflict
+    ? conflictMode === 'sides'
+      ? conflict.theirs
+      : conflict.working
+    : current?.kind === 'text'
+      ? current.modified
+      : undefined
+  const originalLabel = conflict ? `Git stage 2${original === null ? '（不存在）' : ''}` : '更改前'
+  const modifiedLabel = conflict
+    ? `${conflictMode === 'sides' ? 'Git stage 3' : '工作区'}${modified === null ? '（不存在）' : ''}`
+    : '更改后'
   const rootPath = session.status?.rootPath || worktreePath || workspace.projectPath
   const fullPath = `${rootPath.replace(/[\\/]$/, '')}/${selection.path}`
   const placeholder = (
@@ -151,12 +168,14 @@ export function SourceControlDiff({
   ) : (
     <DiffEditor
       ref={editor}
-      identity={key}
+      identity={diffKey}
       embedded={embedded}
       initialHeight={placeholderHeight}
       path={selection.path}
-      original={current.original}
-      modified={current.modified}
+      original={original ?? ''}
+      modified={modified ?? ''}
+      originalLabel={originalLabel}
+      modifiedLabel={modifiedLabel}
       sideBySide={sideBySide}
       wordWrap={wordWrap}
       showWhitespace={showWhitespace}
@@ -196,7 +215,7 @@ export function SourceControlDiff({
             >
               {abbreviateHomePath(fullPath)}
             </h2>
-            {!error && current?.kind === 'text' && stats?.key === key && (
+            {!error && hasText && stats?.key === diffKey && (
               <span
                 className="source-control-diff-stats flex shrink-0 items-center gap-1.5 text-xs tabular-nums"
                 aria-label={`新增 ${stats.additions} 行，删除 ${stats.deletions} 行`}
@@ -221,7 +240,7 @@ export function SourceControlDiff({
                 void window.desktop
                   .openWorkspaceWith(target, opener.id)
                   .then(unwrap)
-                  .catch((error) => setError(error.message))
+                  .catch((cause) => setError(cause.message))
               }}
             >
               <ExternalLink className="source-control-open-editor-icon" />
@@ -234,7 +253,7 @@ export function SourceControlDiff({
               className="source-control-diff-previous"
               title="上一个变更"
               aria-label="上一个变更"
-              disabled={!!error || !current || current.kind !== 'text'}
+              disabled={!!error || !hasText}
               onClick={() => editor.current?.goToDiff('previous')}
             >
               <ChevronUp className="source-control-diff-previous-icon" />
@@ -245,7 +264,7 @@ export function SourceControlDiff({
               className="source-control-diff-next"
               title="下一个变更"
               aria-label="下一个变更"
-              disabled={!!error || !current || current.kind !== 'text'}
+              disabled={!!error || !hasText}
               onClick={() => editor.current?.goToDiff('next')}
             >
               <ChevronDown className="source-control-diff-next-icon" />
@@ -256,18 +275,44 @@ export function SourceControlDiff({
               className="source-control-diff-collapse"
               title="折叠未改动行"
               aria-label="折叠未改动行"
-              disabled={!!error || !current || current.kind !== 'text'}
+              disabled={!!error || !hasText}
               onClick={() => editor.current?.collapseUnchangedRegions()}
             >
               <FoldVertical className="source-control-diff-collapse-icon" />
             </Button>
           </div>
-          <GitDiffOptions
-            value={options}
-            onChange={setOptions}
-            disabled={!!error || !current || current.kind !== 'text'}
-          />
+          <GitDiffOptions value={options} onChange={setOptions} disabled={!!error || !hasText} />
         </header>
+      )}
+      {!error && conflict && (
+        <div className="source-control-conflict-toolbar flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-1.5">
+          <ToggleGroup
+            className="source-control-conflict-views"
+            aria-label="冲突对比视图"
+            variant="outline"
+            size="sm"
+            spacing={0}
+            value={[conflictMode]}
+            onValueChange={([mode]) => {
+              if (mode === 'sides' || mode === 'working') setConflictView({ key, mode })
+            }}
+          >
+            <ToggleGroupItem className="source-control-conflict-sides" value="sides">
+              冲突双方
+            </ToggleGroupItem>
+            <ToggleGroupItem className="source-control-conflict-working" value="working">
+              当前处理结果
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <div className="source-control-conflict-labels flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="source-control-conflict-original-label">
+              {sideBySide ? '左侧' : '原始侧'}：{originalLabel}
+            </span>
+            <span className="source-control-conflict-modified-label">
+              {sideBySide ? '右侧' : '比较侧'}：{modifiedLabel}
+            </span>
+          </div>
+        </div>
       )}
       {embedded ? (
         <Suspense fallback={placeholder}>{content}</Suspense>

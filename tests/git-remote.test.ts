@@ -1,12 +1,12 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, realpath, readFile, writeFile, rename, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SourceControlService } from '../src/main/git/source-control/service'
 import { BranchService } from '../src/main/git/branches/service'
-import { gitEnvironment } from '../src/main/git/git-runner'
+import { gitEnvironment, withGitDiagnostics } from '../src/main/git/git-runner'
 import * as gitRunner from '../src/main/git/git-runner'
 import { gitAvailable } from './helpers/git'
 
@@ -70,7 +70,7 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         head: renameHead,
       }
       await expect(
-        sourceControl.mutate(worktree, { ...publish, remote: peer }, async () => true),
+        sourceControl.mutate(worktree, { ...publish, remote: peer }, () => Promise.resolve(true)),
       ).rejects.toThrow('已配置')
       const noConfirmation = vi.fn().mockResolvedValue(false)
       const branchOperations = new BranchService()
@@ -99,7 +99,7 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
       expect(
         (await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')).stdout.trim(),
       ).toBe(renameHead)
-      let current = await sourceControl.status(worktree)
+      const current = await sourceControl.status(worktree)
       expect(current.tracking).toEqual({ remote: 'review', branch: 'feature/worktree' })
     }, 30000)
     describe('published branch and peer', () => {
@@ -117,7 +117,6 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await git('-C', peer, 'config', 'core.hooksPath', '/dev/null')
       })
       it('fetches into remote refs and pulls without losing staged, unstaged or ignored files', async () => {
-        let current
         await writeFile(join(peer, 'renamed 空格.txt'), 'peer\n')
         await writeFile(join(peer, 'ignored.txt'), 'from remote\n')
         await git('-C', peer, 'add', '-A')
@@ -131,10 +130,8 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           'remote.review.fetch',
           '+refs/heads/*:refs/heads/unsafe/*',
         )
-        await sourceControl.mutate(
-          worktree,
-          { ...target, action: 'fetch', remote: 'review' },
-          async () => true,
+        await sourceControl.mutate(worktree, { ...target, action: 'fetch', remote: 'review' }, () =>
+          Promise.resolve(true),
         )
         await expect(
           git('show-ref', '--verify', 'refs/heads/unsafe/feature/worktree'),
@@ -146,7 +143,7 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           'remote.review.fetch',
           '+refs/heads/*:refs/remotes/review/*',
         )
-        current = await sourceControl.status(worktree)
+        const current = await sourceControl.status(worktree)
         expect(current.head).toBe(renameHead)
         expect(current.behind).toBe(1)
         const pull = {
@@ -159,9 +156,29 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await writeFile(join(worktree, 'dirty.txt'), 'keep me')
         await writeFile(join(worktree, 'local.txt'), 'uncommitted local changes\n')
         await writeFile(join(worktree, 'renamed 空格.txt'), 'overlapping local changes\n')
-        await expect(sourceControl.mutate(worktree, pull, async () => true)).rejects.toThrow(
-          'would be overwritten by merge',
-        )
+        const blocked = await withGitDiagnostics(async () => {
+          await gitRunner.runGit(
+            worktree,
+            ['config', 'cota.diagnostic-test', 'https://alice:private-password@example.test/repo'],
+            true,
+          )
+          await gitRunner.runGit(worktree, ['config', '--get', 'cota.diagnostic-test'])
+          return sourceControl.mutate(worktree, pull, () => Promise.resolve(true))
+        }).catch((error: unknown) => error)
+        expect(blocked).toMatchObject({
+          code: 'GIT_COMMAND_FAILED',
+          message: '请先清理仓库工作区改动，提交更改或使用 git stash 保存后再重试。',
+          details: {
+            git: {
+              kind: 'dirty-worktree',
+              command: expect.stringContaining(' pull '),
+              output: expect.stringContaining('would be overwritten by merge'),
+              log: expect.stringContaining('status --porcelain=v2'),
+            },
+          },
+        })
+        expect(JSON.stringify(blocked)).toContain('https://***@example.test/repo')
+        expect(JSON.stringify(blocked)).not.toContain('private-password')
         expect((await sourceControl.status(worktree)).head).toBe(renameHead)
         expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe(
           'overlapping local changes\n',
@@ -183,13 +200,15 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await writeFile(join(worktree, 'ignored.txt'), 'precious ignored content')
         await git('-C', worktree, 'config', 'pull.rebase', 'true')
         await git('-C', worktree, 'config', 'merge.autoStash', 'true')
-        await expect(sourceControl.mutate(worktree, pull, async () => true)).rejects.toThrow()
+        await expect(
+          sourceControl.mutate(worktree, pull, () => Promise.resolve(true)),
+        ).rejects.toThrow()
         expect(await readFile(join(worktree, 'ignored.txt'), 'utf8')).toBe(
           'precious ignored content',
         )
         expect((await sourceControl.status(worktree)).head).toBe(renameHead)
         await rm(join(worktree, 'ignored.txt'))
-        await sourceControl.mutate(worktree, pull, async () => true)
+        await sourceControl.mutate(worktree, pull, () => Promise.resolve(true))
         expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe('peer\n')
         expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep me')
         expect(await readFile(join(worktree, 'local.txt'), 'utf8')).toBe('unstaged local changes\n')
@@ -256,7 +275,6 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await git('-C', worktree, 'restore', '--staged', '--worktree', '--', 'local.txt')
       }, 30000)
       it('refuses divergent push/pull and syncs without losing local changes', async () => {
-        let current
         const noConfirmation = vi.fn().mockResolvedValue(false)
         const push = {
           ...target,
@@ -270,14 +288,18 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await git('-C', peer, 'commit', '--allow-empty', '-m', 'peer diverged')
         await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
         await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local diverged')
-        current = await sourceControl.status(worktree)
+        const current = await sourceControl.status(worktree)
         const divergence = { ...push, head: current.head! }
         await expect(
-          sourceControl.mutate(worktree, { ...divergence, action: 'pull' }, async () => true),
+          sourceControl.mutate(worktree, { ...divergence, action: 'pull' }, () =>
+            Promise.resolve(true),
+          ),
         ).rejects.toThrow()
         expect((await sourceControl.status(worktree)).head).toBe(current.head)
         await git('-C', worktree, 'config', 'remote.review.mirror', 'true')
-        await expect(sourceControl.mutate(worktree, divergence, async () => true)).rejects.toThrow()
+        await expect(
+          sourceControl.mutate(worktree, divergence, () => Promise.resolve(true)),
+        ).rejects.toThrow()
         await expect(git('-C', worktree, 'rev-parse', '--verify', 'MERGE_HEAD')).rejects.toThrow()
         expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
 
@@ -290,9 +312,27 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await writeFile(join(worktree, 'local.txt'), 'keep during sync\n')
         await writeFile(join(worktree, 'dirty.txt'), 'keep untracked during sync\n')
         await git('-C', worktree, 'add', '--', 'local.txt')
-        await expect(sourceControl.mutate(worktree, sync, noConfirmation)).rejects.toThrow(
-          '拉取合并未完成，未执行推送',
-        )
+        const blocked = await withGitDiagnostics(() =>
+          sourceControl.mutate(worktree, sync, noConfirmation),
+        ).catch((error: unknown) => error)
+        expect(blocked).toMatchObject({
+          code: 'GIT_COMMAND_FAILED',
+          message: '请先清理仓库工作区改动，提交更改或使用 git stash 保存后再重试。',
+          details: {
+            git: {
+              kind: 'dirty-worktree',
+              command: expect.stringContaining(' pull '),
+              output: expect.stringContaining('would be overwritten by merge'),
+              log: expect.not.stringContaining('> git push '),
+            },
+          },
+        })
+        expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
+        expect(
+          (
+            await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+          ).stdout.trim(),
+        ).toBe(syncRemoteHead)
         expect(noConfirmation).not.toHaveBeenCalled()
         expect((await sourceControl.status(worktree)).head).toBe(current.head)
         expect((await sourceControl.status(worktree)).entries).toContainEqual(
@@ -421,7 +461,11 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         expect(noConfirmation).not.toHaveBeenCalled()
       }, 30000)
       it('preserves merge conflicts and never pushes a failed sync', async () => {
-        let current
+        const added = '双方 [新增].txt'
+        await writeFile(join(worktree, 'deleted-by-us.txt'), 'shared baseline\n')
+        await git('-C', worktree, 'add', '--', 'deleted-by-us.txt')
+        await git('-C', worktree, 'commit', '-m', 'conflict baseline')
+        await git('-C', worktree, 'push', 'review', 'HEAD:refs/heads/feature/worktree')
         const sync = {
           ...target,
           action: 'sync' as const,
@@ -431,19 +475,41 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await git('-C', peer, 'fetch', 'origin')
         await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
         await writeFile(join(peer, 'renamed 空格.txt'), 'remote conflict\n')
-        await git('-C', peer, 'commit', '-am', 'remote conflict')
+        await rm(join(peer, 'local.txt'))
+        await writeFile(join(peer, 'deleted-by-us.txt'), 'remote modified\n')
+        await writeFile(join(peer, added), 'remote added\n')
+        await writeFile(join(peer, 'binary.dat'), Buffer.from([0, 1]))
+        await git('-C', peer, 'add', '-A')
+        await git('-C', peer, 'commit', '-m', 'remote conflict')
         await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
         const conflictRemote = (
           await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
         ).stdout.trim()
         await writeFile(join(worktree, 'renamed 空格.txt'), 'local conflict\n')
-        await git('-C', worktree, 'commit', '-am', 'local conflict')
-        current = await sourceControl.status(worktree)
+        await writeFile(join(worktree, 'local.txt'), '')
+        await rm(join(worktree, 'deleted-by-us.txt'))
+        await writeFile(join(worktree, added), 'local added\n')
+        await writeFile(join(worktree, 'binary.dat'), Buffer.from([0, 2]))
+        await git('-C', worktree, 'add', '-A')
+        await git('-C', worktree, 'commit', '-m', 'local conflict')
+        const current = await sourceControl.status(worktree)
         const noPushOnConflict = vi.fn().mockResolvedValue(true)
         await writeFile(join(worktree, 'dirty.txt'), 'keep local changes\n')
         await expect(
-          sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
-        ).rejects.toThrow('拉取合并未完成，未执行推送')
+          withGitDiagnostics(() =>
+            sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
+          ),
+        ).rejects.toMatchObject({
+          message: expect.stringContaining('拉取合并未完成，未执行推送'),
+          details: {
+            git: {
+              kind: 'command-failed',
+              command: expect.stringContaining(' pull '),
+              output: expect.stringContaining('CONFLICT'),
+              log: expect.not.stringContaining('> git push '),
+            },
+          },
+        })
         expect(await readFile(join(worktree, 'dirty.txt'), 'utf8')).toBe('keep local changes\n')
         await expect(
           sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
@@ -461,6 +527,60 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         const conflicted = await sourceControl.status(worktree)
         expect(conflicted.merge?.heads).toEqual([conflictRemote])
         expect(conflicted.merge?.message).not.toContain('# Conflicts:')
+        const indexBeforeDiff = (await git('-C', worktree, 'ls-files', '--stage', '-z')).stdout
+        const marked = await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')
+        const selection = { path: 'renamed 空格.txt', area: 'conflict' as const }
+        expect(marked).toContain('<<<<<<<')
+        expect(await sourceControl.diff(worktree, selection)).toEqual({
+          kind: 'conflict',
+          ours: 'local conflict\n',
+          theirs: 'remote conflict\n',
+          working: marked,
+        })
+        expect(await sourceControl.diff(worktree, { path: 'local.txt', area: 'conflict' })).toEqual(
+          {
+            kind: 'conflict',
+            ours: '',
+            theirs: null,
+            working: '',
+          },
+        )
+        expect(
+          await sourceControl.diff(worktree, { path: 'deleted-by-us.txt', area: 'conflict' }),
+        ).toEqual({
+          kind: 'conflict',
+          ours: null,
+          theirs: 'remote modified\n',
+          working: 'remote modified\n',
+        })
+        expect(await sourceControl.diff(worktree, { path: added, area: 'conflict' })).toMatchObject(
+          {
+            kind: 'conflict',
+            ours: 'local added\n',
+            theirs: 'remote added\n',
+          },
+        )
+        expect(
+          await sourceControl.diff(worktree, { path: 'binary.dat', area: 'conflict' }),
+        ).toMatchObject({
+          kind: 'unavailable',
+          reason: expect.stringContaining('二进制'),
+        })
+        expect((await git('-C', worktree, 'ls-files', '--stage', '-z')).stdout).toBe(
+          indexBeforeDiff,
+        )
+        expect((await sourceControl.status(worktree)).indexVersion).toBe(conflicted.indexVersion)
+        expect(await readFile(join(worktree, selection.path), 'utf8')).toBe(marked)
+        await rm(join(worktree, selection.path))
+        expect(await sourceControl.diff(worktree, selection)).toMatchObject({
+          kind: 'conflict',
+          working: null,
+        })
+        await writeFile(join(worktree, selection.path), Buffer.from([0xff]))
+        expect(await sourceControl.diff(worktree, selection)).toMatchObject({ kind: 'unavailable' })
+        await writeFile(join(worktree, selection.path), Buffer.alloc(2 * 1024 * 1024 + 1, 65))
+        await expect(sourceControl.diff(worktree, selection)).rejects.toThrow('超过 2 MiB')
+        await writeFile(join(worktree, selection.path), marked)
         await expect(
           sourceControl.mutate(
             worktree,
@@ -474,14 +594,31 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           ),
         ).rejects.toThrow('请先解决所有合并冲突')
         await writeFile(join(worktree, 'renamed 空格.txt'), 'resolved conflict\n')
+        expect(await sourceControl.diff(worktree, selection)).toMatchObject({
+          kind: 'conflict',
+          working: 'resolved conflict\n',
+        })
+        await writeFile(join(worktree, added), 'resolved added\n')
+        await rm(join(worktree, 'deleted-by-us.txt'))
+        await rm(join(worktree, 'binary.dat'))
         await sourceControl.mutate(
           worktree,
-          { ...target, action: 'stage', files: [{ path: 'renamed 空格.txt', area: 'conflict' }] },
+          {
+            ...target,
+            action: 'stage',
+            files: conflicted.entries.filter((entry) => entry.area === 'conflict'),
+          },
           noPushOnConflict,
         )
         const resolved = await sourceControl.status(worktree)
         expect(resolved.entries.some((entry) => entry.area === 'conflict')).toBe(false)
         expect(resolved.merge).toBeDefined()
+        await expect(sourceControl.diff(worktree, selection)).rejects.toThrow('状态已改变')
+        expect(await sourceControl.diff(worktree, { ...selection, area: 'staged' })).toEqual({
+          kind: 'text',
+          original: 'local conflict\n',
+          modified: 'resolved conflict\n',
+        })
         await expect(
           sourceControl.mutate(worktree, { ...sync, head: resolved.head! }, noPushOnConflict),
         ).rejects.toThrow('当前合并尚未提交')

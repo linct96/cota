@@ -1,13 +1,14 @@
 import { z } from 'zod'
 import type { HostingAdapter, ReviewScope } from './adapter'
 import { reviewUrl } from './adapter'
-import { hostingRequest, type HostingRequest } from './cli-runner'
+import { hostingRequest } from './cli-runner'
+import type { HostingRequest } from './cli-runner'
 import type {
   CreateHostedReview,
   HostedReview,
+  HostingBranch,
   HostingCheckState,
   HostingComparison,
-  HostingBranch,
   HostingRepository,
 } from '../../shared/code-hosting'
 
@@ -120,14 +121,13 @@ export class GitLabAdapter implements HostingAdapter {
       .parse(
         await this.request(
           scope.target,
-          `${endpoint(scope.target)}/merge_requests?state=all&scope=all&order_by=updated_at&sort=desc&per_page=20&page=${page}&source_branch=${encodeURIComponent(scope.branch)}`,
+          `${endpoint(scope.target)}/merge_requests?state=all&scope=all&order_by=created_at&sort=desc&per_page=20&page=${page}&source_branch=${encodeURIComponent(scope.branch)}`,
         ),
       )
     return {
       items: data
         .filter(
           (merge) =>
-            (merge.state === 'merged' || merge.state === 'closed') &&
             merge.source_project_id === scope.sourceInfo.id &&
             merge.target_project_id === scope.targetInfo.id &&
             merge.source_branch === scope.branch,
@@ -216,14 +216,16 @@ export class GitLabAdapter implements HostingAdapter {
         ].flatMap((email) => (email ? [email.trim().toLowerCase()] : [])),
       )
       commit = data.commits
-        .filter((commit) => emails.has(commit.author_email.trim().toLowerCase()))
+        .filter((candidateCommit) => emails.has(candidateCommit.author_email.trim().toLowerCase()))
         .sort((a, b) => Date.parse(a.authored_date) - Date.parse(b.authored_date))[0]
     }
     let defaultTitle = commit?.title
     const issueId = scope.branch.match(/^(\d+)-/)?.[1]
     if (!defaultTitle && issueId) {
       const issue = await this.request(scope.target, `${endpoint(scope.target)}/issues/${issueId}`)
-        .then((data) => z.object({ title: z.string(), confidential: z.boolean() }).parse(data))
+        .then((response) =>
+          z.object({ title: z.string(), confidential: z.boolean() }).parse(response),
+        )
         .catch(() => undefined)
       if (issue && !issue.confidential) defaultTitle = `Resolve "${issue.title}"`
     }

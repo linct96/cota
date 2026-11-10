@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { unwrap } from '../../../../../shared/contracts'
-import { type HostedReviewHistory, type HostingSnapshot } from '../../../../../shared/code-hosting'
+import type { HostedReviewHistory, HostingSnapshot } from '../../../../../shared/code-hosting'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -91,6 +91,7 @@ export function HostedReviewHistoryPanel({
       disposed = true
     }
   }, [open, active, target, snapshot.context.key, snapshot.fetchedAt])
+  const items = history?.items.filter((review) => review.number !== snapshot.latestReview?.number)
   return (
     <SourceControlSection
       open={open}
@@ -98,10 +99,10 @@ export function HostedReviewHistoryPanel({
       disabled={!active}
       title={
         <>
-          <span className="hosted-review-history-label">同名来源分支历史</span>
-          {history && (
+          <span className="hosted-review-history-label">历史评审记录</span>
+          {!!items?.length && (
             <Badge variant="secondary" className="hosted-review-history-count">
-              {history.items.length}
+              {items.length}
             </Badge>
           )}
         </>
@@ -111,7 +112,7 @@ export function HostedReviewHistoryPanel({
         <div className="hosted-review-history-flow flex flex-col gap-2">
           <LoadingContent pending={loading && !history} label="评审历史读取中..." showLabel>
             <div className="hosted-review-history-list flex flex-col gap-1">
-              {history?.items.map((review) => (
+              {items?.map((review) => (
                 <HostedReviewItem
                   key={review.number}
                   review={review}
@@ -120,9 +121,9 @@ export function HostedReviewHistoryPanel({
                   onOpen={() => onOpen(review.number)}
                 />
               ))}
-              {history && !history.items.length && (
+              {history && !items?.length && (
                 <p className="hosted-review-history-empty px-2 text-muted-foreground">
-                  {history.nextPage ? '本页没有匹配记录，可继续加载。' : '暂无匹配的历史记录。'}
+                  {history.nextPage ? '本页没有更早的记录，可继续加载。' : '暂无更早的评审记录。'}
                 </p>
               )}
             </div>

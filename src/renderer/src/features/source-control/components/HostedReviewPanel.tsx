@@ -1,16 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowRight, GitPullRequest, RefreshCw } from 'lucide-react'
-import {
-  unwrap,
-  type ProjectWorkspace,
-  type WorkspaceTarget,
-} from '../../../../../shared/contracts'
-import {
-  resolveTargetBranchRef,
-  type HostedReview,
-  type MergeHostedReview,
-} from '../../../../../shared/code-hosting'
+import { unwrap } from '../../../../../shared/contracts'
+import type { ProjectWorkspace, WorkspaceTarget } from '../../../../../shared/contracts'
+import { resolveTargetBranchRef } from '../../../../../shared/code-hosting'
+import type { HostedReview, MergeHostedReview } from '../../../../../shared/code-hosting'
 import type { GitReferences, GitStatus } from '../../../../../shared/source-control'
 import { useSourceControl } from '@/state/source-control-store'
 import { cn } from '@/lib/utils'
@@ -39,7 +33,7 @@ import {
 } from '@/components/ui/empty'
 import { SourceControlSectionLayout } from './SourceControlSection'
 import { useHostedReview } from '../hooks/use-hosted-review'
-import { HostedReviewItem } from './HostedReviewItem'
+import { HostedReviewDetails } from './HostedReviewDetails'
 import { HostedReviewHistoryPanel } from './HostedReviewHistoryPanel'
 
 export function HostedReviewPanel({
@@ -71,6 +65,10 @@ export function HostedReviewPanel({
     refresh,
     run,
   } = useHostedReview({ workspace, active, status, pending })
+  const review = snapshot?.latestReview
+  const targetRef = review
+    ? resolveTargetBranchRef(snapshot.context, references, review.targetBranch)
+    : undefined
   const [creating, setCreating] = useState<WorkspaceTarget>()
   const [merging, setMerging, mergeDialog] = useDialogState<{
     target: WorkspaceTarget
@@ -111,7 +109,7 @@ export function HostedReviewPanel({
           size="sm"
           className="hosted-review-create"
           disabled={disabled || !snapshot}
-          onClick={() => void openCreate()}
+          onClick={openCreate}
         >
           <GitPullRequest
             className="hosted-review-create-icon"
@@ -144,7 +142,7 @@ export function HostedReviewPanel({
       <SourceControlSectionLayout
         defaultOpen={false}
         defaultExpandedSize="50%"
-        resizeLabel="调整开放评审与同名来源分支历史区域高度"
+        resizeLabel="调整最新评审与历史评审记录区域高度"
         section={
           snapshot
             ? (open, onOpenChange) => (
@@ -167,7 +165,7 @@ export function HostedReviewPanel({
             : undefined
         }
       >
-        <div className="hosted-review-body flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-2 py-2 text-xs">
+        <div className="hosted-review-body flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-3 py-4 text-xs">
           {(hosting?.error || data?.error || actionError) && (
             <Alert variant="destructive" className="hosted-review-error">
               <AlertDescription className="hosted-review-error-description whitespace-pre-wrap break-words select-text">
@@ -233,78 +231,62 @@ export function HostedReviewPanel({
                       </AlertDescription>
                     </Alert>
                   )}
-                  {snapshot.activeReviews.length > 0 ? (
-                    <div className="hosted-review-active-list flex flex-col gap-1.5">
-                      {snapshot.activeReviews.map((review) => {
-                        const targetRef = resolveTargetBranchRef(
-                          snapshot.context,
-                          references,
-                          review.targetBranch,
-                        )
-                        return (
-                          <div
-                            key={review.number}
-                            className="hosted-review-active-item flex flex-col gap-1"
+                  {review ? (
+                    <div className="hosted-review-latest flex min-w-0 flex-col gap-4">
+                      <HostedReviewDetails
+                        review={review}
+                        label={label}
+                        disabled={disabled}
+                        onMerge={() => {
+                          setMergeError(undefined)
+                          setMerging({
+                            target,
+                            review,
+                            input: {
+                              key: snapshot.context.key,
+                              account: snapshot.account,
+                              number: review.number,
+                              sourceBranch: review.sourceBranch,
+                              targetBranch: review.targetBranch,
+                              head: review.head,
+                            },
+                          })
+                        }}
+                        onOpen={() =>
+                          void run(async () => {
+                            unwrap(await window.desktop.codeHosting.open(target, review.number))
+                          })
+                        }
+                      />
+                      {review.state === 'open' && review.head !== snapshot.context.head && (
+                        <div className="hosted-review-unpushed flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-2 text-muted-foreground">
+                          <span className="hosted-review-unpushed-text min-w-0 flex-1 basis-40">
+                            本地 HEAD 与评审版本不同，请先推送再刷新。
+                            {!targetRef && '目标分支尚未获取，请先 Fetch 后再比较。'}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            className="hosted-review-compare-button shrink-0"
+                            disabled={disabled || !targetRef}
+                            title={
+                              !targetRef
+                                ? '目标仓库的分支引用尚未获取，请先 Fetch 后再比较。'
+                                : undefined
+                            }
+                            onClick={() => {
+                              if (targetRef)
+                                useSourceControl.getState().update(workspace.id, {
+                                  mode: 'compare',
+                                  baseRef: targetRef,
+                                })
+                            }}
                           >
-                            <HostedReviewItem
-                              review={review}
-                              label={label}
-                              disabled={disabled}
-                              onMerge={() => {
-                                setMergeError(undefined)
-                                setMerging({
-                                  target,
-                                  review,
-                                  input: {
-                                    key: snapshot.context.key,
-                                    account: snapshot.account,
-                                    number: review.number,
-                                    sourceBranch: review.sourceBranch,
-                                    targetBranch: review.targetBranch,
-                                    head: review.head,
-                                  },
-                                })
-                              }}
-                              onOpen={() =>
-                                void run(async () => {
-                                  unwrap(
-                                    await window.desktop.codeHosting.open(target, review.number),
-                                  )
-                                })
-                              }
-                            />
-                            {review.head !== snapshot.context.head && (
-                              <div className="hosted-review-unpushed flex items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-1 text-muted-foreground">
-                                <span className="hosted-review-unpushed-text min-w-0 flex-1">
-                                  本地 HEAD 与评审版本不同，请先推送再刷新。
-                                  {!targetRef && '目标分支尚未获取，请先 Fetch 后再比较。'}
-                                </span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="xs"
-                                  className="hosted-review-compare-button shrink-0"
-                                  disabled={disabled || !targetRef}
-                                  title={
-                                    !targetRef
-                                      ? '目标仓库的分支引用尚未获取，请先 Fetch 后再比较。'
-                                      : undefined
-                                  }
-                                  onClick={() => {
-                                    if (targetRef)
-                                      useSourceControl.getState().update(workspace.id, {
-                                        mode: 'compare',
-                                        baseRef: targetRef,
-                                      })
-                                  }}
-                                >
-                                  比较差异
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
+                            比较差异
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <Empty className="hosted-review-empty flex-none py-6">
@@ -313,31 +295,9 @@ export function HostedReviewPanel({
                           <GitPullRequest className="hosted-review-empty-icon" aria-hidden="true" />
                         </EmptyMedia>
                         <EmptyTitle className="hosted-review-empty-title">
-                          暂无开放的 {label}
+                          当前分支暂无评审记录
                         </EmptyTitle>
-                        <EmptyDescription className="hosted-review-empty-description">
-                          当前分支没有开放的 {label}。已合并或关闭的记录保留在历史中。
-                        </EmptyDescription>
                       </EmptyHeader>
-                      {!snapshot.creationBlocked && (
-                        <EmptyContent className="hosted-review-empty-content">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="hosted-review-empty-create"
-                            disabled={disabled}
-                            onClick={() => void openCreate()}
-                          >
-                            <GitPullRequest
-                              className="hosted-review-empty-create-icon"
-                              data-icon="inline-start"
-                              aria-hidden="true"
-                            />
-                            创建 {label}
-                          </Button>
-                        </EmptyContent>
-                      )}
                     </Empty>
                   )}
                 </>

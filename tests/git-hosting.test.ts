@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, realpath, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -9,12 +9,8 @@ import { SourceControlService } from '../src/main/git/source-control/service'
 import { CodeHostingService } from '../src/main/code-hosting/service'
 import { HostingError } from '../src/main/code-hosting/cli-runner'
 import type { HostingAdapter, ReviewScope } from '../src/main/code-hosting/adapter'
-import {
-  resolveTargetBranchRef,
-  type HostedReview,
-  type HostingComparison,
-  type HostingRepository,
-} from '../src/shared/code-hosting'
+import { resolveTargetBranchRef } from '../src/shared/code-hosting'
+import type { HostedReview, HostingComparison, HostingRepository } from '../src/shared/code-hosting'
 import { gitEnvironment } from '../src/main/git/git-runner'
 import { gitAvailable } from './helpers/git'
 
@@ -71,26 +67,44 @@ async function hostingFixture() {
     date: '2026-10-28T00:00:00Z',
   }))
   const adapter = {
-    account: vi.fn(async () => 'fixture-user'),
-    repository: vi.fn(async () => ({ id: 1, path: 'team/repo', defaultBranch: 'main' })),
-    branches: vi.fn(async () => remoteBranches),
-    listOpen: vi.fn(async (): Promise<HostedReview[]> => []),
-    history: vi.fn(async () => ({
-      items: [] as HostedReview[],
-      nextPage: null as number | null,
-      fetchedAt: Date.now(),
-    })),
-    get: vi.fn(async (_scope: ReviewScope, number: number) => review(number, 'main', 'merged')),
-    merge: vi.fn(async (_scope: ReviewScope, current: HostedReview): Promise<HostedReview> => ({
-      ...current,
-      state: 'merged',
-    })),
-    compare: vi.fn(async (): Promise<HostingComparison> => ({ status: 'changes' })),
-    branchHead: vi.fn(async (_repository: HostingRepository, _branch: string) => 'not-pushed'),
-    checks: vi.fn(async () => 'success' as const),
-    create: vi.fn(async (): Promise<HostedReview> => {
-      throw new Error('timeout')
+    account: vi.fn(() => Promise.resolve('fixture-user')),
+    repository: vi.fn(() => Promise.resolve({ id: 1, path: 'team/repo', defaultBranch: 'main' })),
+    branches: vi.fn(() => Promise.resolve(remoteBranches)),
+    listOpen: vi.fn((): Promise<HostedReview[]> => Promise.resolve([])),
+    history: vi.fn(() => {
+      try {
+        return Promise.resolve({
+          items: [] as HostedReview[],
+          nextPage: null as number | null,
+          fetchedAt: Date.now(),
+        })
+      } catch (cause) {
+        return Promise.reject(cause)
+      }
     }),
+    get: vi.fn((_scope: ReviewScope, number: number) => {
+      try {
+        return Promise.resolve(review(number, 'main', 'merged'))
+      } catch (cause) {
+        return Promise.reject(cause)
+      }
+    }),
+    merge: vi.fn((_scope: ReviewScope, current: HostedReview): Promise<HostedReview> => {
+      try {
+        return Promise.resolve({
+          ...current,
+          state: 'merged',
+        })
+      } catch (cause) {
+        return Promise.reject(cause)
+      }
+    }),
+    compare: vi.fn((): Promise<HostingComparison> => Promise.resolve({ status: 'changes' })),
+    branchHead: vi.fn((_repository: HostingRepository, _branch: string) =>
+      Promise.resolve('not-pushed'),
+    ),
+    checks: vi.fn(() => Promise.resolve('success' as const)),
+    create: vi.fn((): Promise<HostedReview> => Promise.reject(new Error('timeout'))),
   } satisfies HostingAdapter
   const service = new CodeHostingService(config, sourceControl, {
     github: adapter,
@@ -101,12 +115,15 @@ async function hostingFixture() {
 
 describe.skipIf(!gitAvailable)('Hosting context and creation integration (requires Git)', () => {
   let fixture: Awaited<ReturnType<typeof hostingFixture>>
+  let closeFixture: (() => void) | undefined
   beforeEach(async () => {
+    closeFixture = undefined
     directory = await realpath(await mkdtemp(join(tmpdir(), 'cota-hosting-')))
     fixture = await hostingFixture()
+    closeFixture = () => fixture.service.close()
   })
   afterEach(async () => {
-    fixture?.service.close()
+    closeFixture?.()
     vi.unstubAllEnvs()
     await rm(directory, { recursive: true, force: true })
   })
@@ -376,7 +393,7 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         afterRestart.prepare(directory, { ...prepareInput, sourceBranch: 'remote/feature' }),
       ).resolves.toMatchObject({ status: 'ready' })
       expect(adapter.create).toHaveBeenCalledOnce()
-      const pending = reopened.snapshot().codeHostingPendingCreates![0]!
+      const pending = reopened.snapshot().codeHostingPendingCreates![0]
       if (typeof pending === 'string') throw new Error('Expected structured creation protection')
       expect(pending).toMatchObject({
         sourceBranch: input.sourceBranch,
@@ -396,6 +413,23 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
       expect(recovered.activeReviews.map((item) => item.number)).toEqual([1, 8])
       expect(recovered.creationBlocked).toBe(false)
       expect(reopened.snapshot().codeHostingPendingCreates).toEqual([])
+      expect(recovered.latestReview).toMatchObject({ number: 8, checks: 'success' })
+      for (const state of ['merged', 'closed', 'open'] as const) {
+        adapter.history
+          .mockResolvedValueOnce({ items: [], nextPage: 2, fetchedAt: Date.now() })
+          .mockResolvedValueOnce({
+            items: [{ ...review(10, 'main', state), createdAt: '2026-11-05T00:00:00Z' }],
+            nextPage: null,
+            fetchedAt: Date.now(),
+          })
+        expect((await afterRestart.inspect(directory)).latestReview).toMatchObject({
+          number: 10,
+          state,
+        })
+        expect(adapter.history).toHaveBeenLastCalledWith(expect.anything(), 2)
+      }
+      adapter.listOpen.mockResolvedValueOnce([])
+      expect((await afterRestart.inspect(directory)).latestReview).toBeNull()
       await afterRestart.create(directory, input)
       expect(adapter.create).toHaveBeenCalledOnce()
 
@@ -442,8 +476,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         return (await git('rev-parse', 'HEAD')).stdout.trim()
       }
       const secondHead = await commit('second review round')
-      adapter.branchHead.mockImplementation(async (_repository, branch) =>
-        branch === 'feature/review' ? secondHead : head,
+      adapter.branchHead.mockImplementation((_repository, branch) =>
+        Promise.resolve(branch === 'feature/review' ? secondHead : head),
       )
       const secondInput = { ...input, key: (await afterRestart.context(directory)).key }
       adapter.create.mockResolvedValueOnce({ ...review(18), head: secondHead })
@@ -461,8 +495,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         fetchedAt: Date.now(),
       })
       const thirdHead = await commit('third review round')
-      adapter.branchHead.mockImplementation(async (_repository, branch) =>
-        branch === 'feature/review' ? thirdHead : head,
+      adapter.branchHead.mockImplementation((_repository, branch) =>
+        Promise.resolve(branch === 'feature/review' ? thirdHead : head),
       )
       const thirdInput = { ...input, key: (await afterRestart.context(directory)).key }
       let finish!: (review: HostedReview) => void
@@ -497,7 +531,7 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
       await expect(service.create(directory, input)).rejects.toThrow('重复创建保护')
       const reopened = new ConfigStore(file)
       await reopened.load()
-      const pending = reopened.snapshot().codeHostingPendingCreates![0]!
+      const pending = reopened.snapshot().codeHostingPendingCreates![0]
       if (typeof pending === 'string') throw new Error('Expected structured creation protection')
       const afterRestart = new CodeHostingService(reopened, sourceControl, {
         github: adapter,
@@ -547,8 +581,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
       } = current
       // A remote-only source is independent of the checked-out branch and its HEAD.
       adapter.listOpen.mockResolvedValue([])
-      adapter.branchHead.mockImplementation(async (_repository, branch) =>
-        branch === 'remote/feature' ? 'remote-head' : head,
+      adapter.branchHead.mockImplementation((_repository, branch) =>
+        Promise.resolve(branch === 'remote/feature' ? 'remote-head' : head),
       )
       const remoteInput = { ...input, sourceBranch: 'remote/feature' }
       await afterRestart.creationContext(directory)

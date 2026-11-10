@@ -161,6 +161,7 @@ export interface HostingSnapshot {
   account: string
   defaultBranch: string
   activeReviews: HostedReview[]
+  latestReview: HostedReview | null
   fetchedAt: number
   creationBlocked: boolean
 }
@@ -195,22 +196,30 @@ export type HostingAccounts =
   | { status: 'disconnected' | 'cli-unavailable'; message: string }
 
 export interface CodeHostingAPI {
-  context(target: WorkspaceTarget): Promise<Result<HostingContext>>
-  accounts(provider: HostingProvider): Promise<Result<HostingAccounts>>
-  connection(provider: HostingProvider, host: string): Promise<Result<HostingConnection>>
-  inspect(target: WorkspaceTarget): Promise<Result<HostingSnapshot>>
-  creationContext(target: WorkspaceTarget): Promise<Result<HostedReviewCreationContext>>
-  refreshBranches(
+  context: (target: WorkspaceTarget) => Promise<Result<HostingContext>>
+  accounts: (provider: HostingProvider) => Promise<Result<HostingAccounts>>
+  connection: (provider: HostingProvider, host: string) => Promise<Result<HostingConnection>>
+  inspect: (target: WorkspaceTarget) => Promise<Result<HostingSnapshot>>
+  creationContext: (target: WorkspaceTarget) => Promise<Result<HostedReviewCreationContext>>
+  refreshBranches: (
     target: WorkspaceTarget,
     input: Pick<PrepareHostedReview, 'key' | 'account'>,
-  ): Promise<Result<HostedReviewBranchLists>>
-  history(target: WorkspaceTarget, key: string, page: number): Promise<Result<HostedReviewHistory>>
-  prepare(
+  ) => Promise<Result<HostedReviewBranchLists>>
+  history: (
+    target: WorkspaceTarget,
+    key: string,
+    page: number,
+  ) => Promise<Result<HostedReviewHistory>>
+  prepare: (
     target: WorkspaceTarget,
     input: PrepareHostedReview,
-  ): Promise<Result<HostedReviewPreparation>>
-  create(target: WorkspaceTarget, input: CreateHostedReview): Promise<Result<HostedReview>>
-  merge(target: WorkspaceTarget, input: MergeHostedReview): Promise<Result<HostedReview>>
-  open(target: WorkspaceTarget, number: number, sourceBranch?: string): Promise<Result<void>>
-  clearCreation(target: WorkspaceTarget, key: string, sourceBranch?: string): Promise<Result<void>>
+  ) => Promise<Result<HostedReviewPreparation>>
+  create: (target: WorkspaceTarget, input: CreateHostedReview) => Promise<Result<HostedReview>>
+  merge: (target: WorkspaceTarget, input: MergeHostedReview) => Promise<Result<HostedReview>>
+  open: (target: WorkspaceTarget, number: number, sourceBranch?: string) => Promise<Result<void>>
+  clearCreation: (
+    target: WorkspaceTarget,
+    key: string,
+    sourceBranch?: string,
+  ) => Promise<Result<void>>
 }

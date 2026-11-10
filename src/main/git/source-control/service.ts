@@ -1,34 +1,37 @@
 import { isUtf8 } from 'node:buffer'
 import type { CommitMessageContext } from '../../../shared/commit-message'
 import type {
-  GitStatus,
-  GitReferences,
-  GitHistory,
-  GitHistoryRequest,
-  GitComparison,
   GitCompareRequest,
-  GitReviewSelection,
+  GitComparison,
   GitDiff,
   GitDiffSelection,
+  GitHistory,
+  GitHistoryRequest,
   GitMutation,
+  GitReferences,
+  GitReviewSelection,
+  GitStatus,
 } from '../../../shared/source-control'
 import { branchReferences } from '../../../shared/git-branches'
 import { readBranchData, readBranchRemotes } from '../branches/read'
 import { GitService } from '../worktrees/git'
-import { runGit, runGitBytes, WorktreeError, explainGitError as explain } from '../git-runner'
-import { parseGitStatus, tracking, mergeState, indexVersion } from './status'
+import { WorktreeError, explainGitError as explain, runGit, runGitBytes } from '../git-runner'
+import { indexVersion, mergeState, parseGitStatus, tracking } from './status'
 import { fileStats } from './stats'
-import { blob, workingFile, textDiff } from './files'
-import { checkedCommit, history, compare } from './history'
+import { blob, conflictDiff, textDiff, workingFile } from './files'
+import { checkedCommit, compare, history } from './history'
 import { filePath } from './shared'
-import { selectFiles, mutate } from './mutations'
+import { mutate, selectFiles } from './mutations'
 
 export class SourceControlService {
   private readonly git = new GitService()
 
-  async commitMessageContext(cwd: string, indexVersion: string): Promise<CommitMessageContext> {
+  async commitMessageContext(
+    cwd: string,
+    expectedIndexVersion: string,
+  ): Promise<CommitMessageContext> {
     const status = await this.status(cwd)
-    this.checkCommitMessageStatus(status, indexVersion)
+    this.checkCommitMessageStatus(status, expectedIndexVersion)
     let patch = ''
     try {
       patch = await runGit(status.rootPath, [
@@ -76,12 +79,12 @@ export class SourceControlService {
       throw new Error('工作目录或分支已改变，请刷新后重新生成提交信息。')
   }
 
-  private checkCommitMessageStatus(status: GitStatus, indexVersion: string): void {
+  private checkCommitMessageStatus(status: GitStatus, expectedIndexVersion: string): void {
     if (status.entries.some((entry) => entry.area === 'conflict'))
       throw new Error('请先解决所有合并冲突。')
     if (!status.entries.some((entry) => entry.area === 'staged'))
       throw new Error('没有已暂存的更改。')
-    if (status.indexVersion !== indexVersion)
+    if (status.indexVersion !== expectedIndexVersion)
       throw new Error('暂存区或 HEAD 已改变，请刷新后重新生成提交信息。')
   }
 
@@ -176,11 +179,7 @@ export class SourceControlService {
       const [entry] = selectFiles(status, [selection])
       if (entry.submodule)
         return { kind: 'unavailable', reason: '子模块变更请在外部编辑器或终端查看。' }
-      if (entry.area === 'conflict')
-        return {
-          kind: 'unavailable',
-          reason: '文件存在合并冲突。请在外部编辑器解决，之后暂存以标记已解决。',
-        }
+      if (entry.area === 'conflict') return await conflictDiff(status.rootPath, entry.path)
       const original =
         entry.area === 'untracked'
           ? Buffer.alloc(0)

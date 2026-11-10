@@ -1,7 +1,9 @@
-import { useEffect, useEffectEvent, useImperativeHandle, useRef, type Ref } from 'react'
+import { useEffect, useEffectEvent, useImperativeHandle, useRef } from 'react'
+import type { Ref } from 'react'
 import { configureMonacoTheme, languageForPath, monaco } from '@/lib/editor/monaco'
 import { cn } from '@/lib/utils'
 import { DiffEditorResources } from '@/features/source-control/lib/diff-editor-resources'
+
 const views = new Map<string, monaco.editor.IDiffEditorViewState>()
 
 export type GitDiffEditorHandle = {
@@ -17,6 +19,8 @@ export default function GitDiffEditor({
   path,
   original,
   modified,
+  originalLabel = '更改前',
+  modifiedLabel = '更改后',
   sideBySide,
   wordWrap,
   showWhitespace,
@@ -30,6 +34,8 @@ export default function GitDiffEditor({
   path: string
   original: string
   modified: string
+  originalLabel?: string
+  modifiedLabel?: string
   sideBySide: boolean
   wordWrap: boolean
   showWhitespace: boolean
@@ -105,15 +111,19 @@ export default function GitDiffEditor({
         container.style.opacity = '0'
         container.inert = true
         configureMonacoTheme()
-        const { sideBySide, wordWrap, showWhitespace } = initialOptions()
+        const {
+          sideBySide: initialSideBySide,
+          wordWrap: initialWordWrap,
+          showWhitespace: initialShowWhitespace,
+        } = initialOptions()
         const editor = monaco.editor.createDiffEditor(container, {
           theme: 'cota-editor',
           readOnly: true,
           originalEditable: false,
           automaticLayout: !embedded,
-          renderSideBySide: sideBySide,
-          diffWordWrap: wordWrap ? 'on' : 'off',
-          renderWhitespace: showWhitespace ? 'all' : 'none',
+          renderSideBySide: initialSideBySide,
+          diffWordWrap: initialWordWrap ? 'on' : 'off',
+          renderWhitespace: initialShowWhitespace ? 'all' : 'none',
           useInlineViewWhenSpaceIsLimited: false,
           minimap: { enabled: false },
           fontSize: 13,
@@ -126,12 +136,12 @@ export default function GitDiffEditor({
           renderOverviewRuler: false,
           links: false,
           accessibilityVerbose: true,
-          originalAriaLabel: '更改前，只读',
-          modifiedAriaLabel: '更改后，只读',
+          originalAriaLabel: `${originalLabel}，只读`,
+          modifiedAriaLabel: `${modifiedLabel}，只读`,
           padding: { top: 12 },
         })
         resources.editor = editor
-        editor.getOriginalEditor().updateOptions({ lineNumbers: sideBySide ? 'on' : 'off' })
+        editor.getOriginalEditor().updateOptions({ lineNumbers: initialSideBySide ? 'on' : 'off' })
         const syntax = languageForPath(path)
         const originalModel = monaco.editor.createModel(content.original, syntax)
         resources.models.push(originalModel)
@@ -244,7 +254,7 @@ export default function GitDiffEditor({
     observer?.observe(container)
     mountEditor()
     return () => resources.dispose()
-  }, [identity, path, onStatsChange, onError, embedded])
+  }, [identity, path, onStatsChange, onError, embedded, originalLabel, modifiedLabel])
 
   useEffect(() => {
     const current = models.current

@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import type { HostingAdapter, ReviewScope } from './adapter'
 import { combineChecks, reviewUrl } from './adapter'
-import { HostingError, hostingRequest, type HostingRequest } from './cli-runner'
+import { HostingError, hostingRequest } from './cli-runner'
+import type { HostingRequest } from './cli-runner'
 import type {
   CreateHostedReview,
   HostedReview,
-  HostingComparison,
   HostingBranch,
+  HostingComparison,
   HostingRepository,
 } from '../../shared/code-hosting'
 
@@ -157,14 +158,13 @@ export class GitHubAdapter implements HostingAdapter {
       .parse(
         await this.request(
           scope.target,
-          `${endpoint(scope.target)}/pulls?state=closed&sort=updated&direction=desc&per_page=20&page=${page}&head=${encodeURIComponent(head)}`,
+          `${endpoint(scope.target)}/pulls?state=all&sort=created&direction=desc&per_page=20&page=${page}&head=${encodeURIComponent(head)}`,
         ),
       )
     return {
       items: data
         .filter(
           (pull) =>
-            pull.state === 'closed' &&
             pull.head.repo?.id === scope.sourceInfo.id &&
             pull.base.repo.id === scope.targetInfo.id &&
             pull.head.ref === scope.branch,
@@ -232,7 +232,7 @@ export class GitHubAdapter implements HostingAdapter {
       status: data.files.length ? 'changes' : 'empty',
       defaultTitle:
         data.commits?.length === 1
-          ? data.commits[0]!.commit.message.split('\n')[0]
+          ? data.commits[0].commit.message.split('\n')[0]
           : scope.branch.replace(/[_-]/g, ' '),
       defaultDescription:
         descriptionCommit?.commit.message.split('\n').slice(1).join('\n').trim() ?? '',
