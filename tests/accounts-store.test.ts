@@ -312,9 +312,9 @@ describe('Cortana providers.json and OAuth.json store', () => {
     }
     const external = JSON.stringify(vault, null, 2) + '\n'
     vi.mocked(fsyncSync).mockImplementationOnce(() => writeFileSync(oauthPath, external))
-    expect(() =>
-      store.save({ ...store.get('a'), auth: '{"token":"INTERNAL"}' }),
-    ).toThrow('其他程序修改')
+    expect(() => store.save({ ...store.get('a'), auth: '{"token":"INTERNAL"}' })).toThrow(
+      '其他程序修改',
+    )
     expect(readFileSync(oauthPath, 'utf8')).toBe(external)
     expect(store.get('a').auth).toBe('{"token":"EXTERNAL"}')
   })

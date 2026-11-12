@@ -82,13 +82,7 @@ function sameCredentials(a: Credentials, b: Credentials): boolean {
   const keys = Object.keys(a)
   return (
     keys.length === Object.keys(b).length &&
-    keys.every(
-      (key) =>
-        Object.hasOwn(b, key) &&
-        a[key].scheme === b[key].scheme &&
-        a[key].encoding === b[key].encoding &&
-        a[key].data === b[key].data,
-    )
+    keys.every((key) => Object.hasOwn(b, key) && a[key].data === b[key].data)
   )
 }
 
@@ -165,11 +159,7 @@ function writeAtomic(path: string, contents: string, assertUnchanged?: () => voi
   }
 }
 
-function restore(
-  path: string,
-  contents: string | null,
-  assertUnchanged: () => void,
-): void {
+function restore(path: string, contents: string | null, assertUnchanged: () => void): void {
   if (contents !== null) {
     writeAtomic(path, contents, assertUnchanged)
     return
@@ -339,16 +329,15 @@ export class AccountStore {
     const stageChanged = !sameCredentials(oldEncrypted, staged)
     const cleanupNeeded = !sameCredentials(staged, nextEncrypted)
     const providersText = JSON.stringify(providers, null, 2) + '\n'
-    const stageText = JSON.stringify(
-      oauthFileSchema.parse({ schemaVersion: 1, credentials: staged }),
-      null,
-      2,
-    ) + '\n'
-    const finalText = JSON.stringify(
-      oauthFileSchema.parse({ schemaVersion: 1, credentials: nextEncrypted }),
-      null,
-      2,
-    ) + '\n'
+    const stageText =
+      JSON.stringify(oauthFileSchema.parse({ schemaVersion: 1, credentials: staged }), null, 2) +
+      '\n'
+    const finalText =
+      JSON.stringify(
+        oauthFileSchema.parse({ schemaVersion: 1, credentials: nextEncrypted }),
+        null,
+        2,
+      ) + '\n'
 
     let expected = { ...previousRevision }
     let stagedWritten = false
