@@ -11,7 +11,7 @@ import { WorktreeSetupDialog } from '@/features/workspace/worktree/WorktreeSetup
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { SourceControlSectionLayout } from '@/features/source-control/components/SourceControlSection'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useProjectBranches } from '@/features/workspace/hooks/use-project-branches'
@@ -59,6 +59,8 @@ export const ProjectSidebar = memo(function ProjectSidebar({
     })),
   )
   const leftPanelOpen = useLeftPanel((currentState) => currentState.open)
+  const agentsOpen = useLeftPanel((currentState) => currentState.agentsOpen)
+  const agentListTrigger = useRef<HTMLButtonElement>(null)
   const projectBranches = useProjectBranches(state.workspaces)
   const [worktreeProject, setWorktreeProject] = useState<string>()
   const [setupProject, setSetupProject] = useState<string>()
@@ -183,149 +185,158 @@ export const ProjectSidebar = memo(function ProjectSidebar({
         inert={!leftPanelOpen}
         aria-label="项目"
       >
-        <ResizablePanelGroup
-          orientation="vertical"
-          className="project-sidebar-sections min-h-0 flex-1"
+        <SourceControlSectionLayout
+          defaultOpen={agentsOpen}
+          resizeLabel="调整项目与 Agent 列表高度"
+          onOpenChange={(open) => {
+            if (useLeftPanel.getState().agentsOpen === open) return
+            if (!open && document.activeElement?.closest('#project-agent-list')) {
+              agentListTrigger.current?.focus()
+            }
+            useLeftPanel.setState({ agentsOpen: open })
+          }}
+          section={(open, onOpenChange) => (
+            <AgentList
+              homeActive={homeActive}
+              projectBranches={projectBranches}
+              open={open}
+              onOpenChange={onOpenChange}
+              triggerRef={agentListTrigger}
+            />
+          )}
         >
-          <ResizablePanel
-            id="project-tree"
-            minSize={120}
-            className="project-tree-panel flex min-h-0 flex-col"
-          >
-            <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
-              <h2 className="project-title">项目</h2>
-              <div className="project-header-actions flex items-center gap-1">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="project"
-                        size="icon-sm"
-                        className="project-toggle-all-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                        disabled={!projects.length || !state.ready || !!state.removingWorkspace}
-                        aria-label={toggleProjectsLabel}
-                        onClick={() => {
-                          setOpenProjects(
-                            Object.fromEntries(projects.map((path) => [path, !hasOpenProject])),
-                          )
-                        }}
-                      />
-                    }
-                  >
-                    {hasOpenProject ? (
-                      <CopyMinus className="project-toggle-all-icon" aria-hidden="true" />
-                    ) : (
-                      <CopyPlus className="project-toggle-all-icon" aria-hidden="true" />
-                    )}
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="project-toggle-all-tooltip">
-                    {toggleProjectsLabel}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="project"
-                        size="icon-sm"
-                        className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                        disabled={groupingDisabled}
-                        aria-label="添加项目"
-                        onClick={() => {
-                          void state.openProject()
-                        }}
-                      />
-                    }
-                  >
-                    <FolderPlus className="project-add-icon" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">
-                    添加项目
-                    <ShortcutKbd
-                      binding={shortcutBinding(
-                        state.shortcuts,
-                        'open-folder',
-                        window.desktop.platform,
-                      )}
+          <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
+            <h2 className="project-title">项目</h2>
+            <div className="project-header-actions flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="project"
+                      size="icon-sm"
+                      className="project-toggle-all-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                      disabled={!projects.length || !state.ready || !!state.removingWorkspace}
+                      aria-label={toggleProjectsLabel}
+                      onClick={() => {
+                        setOpenProjects(
+                          Object.fromEntries(projects.map((path) => [path, !hasOpenProject])),
+                        )
+                      }}
                     />
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="project"
-                        size="icon-sm"
-                        className="project-create-group-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                        disabled={groupingDisabled}
-                        aria-label="新建分组"
-                        onClick={(event) => {
-                          groupMenuTrigger.current = event.currentTarget
-                          setGroupNameTarget({ name: '' })
-                        }}
-                      />
-                    }
-                  >
-                    <ListPlus className="project-create-group-icon" aria-hidden="true" />
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="project-create-group-tooltip">
-                    新建分组
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-            {(groupingError || state.projectOpenError) && (
-              <p className="project-grouping-error px-4 pb-2 text-xs text-destructive" role="alert">
-                {groupingError || state.projectOpenError}
-              </p>
-            )}
-            <ScrollArea className="project-list-scroll-area min-h-0 min-w-0 flex-1">
-              <nav
-                className="project-list recent-projects flex min-w-0 flex-col gap-2 p-2"
-                aria-label="项目列表"
-              >
-                {groups.map((group) => {
-                  const groupProjects = projects.filter((path) => group.projects.includes(path))
-                  return (
-                    <ProjectGroup
-                      key={group.id}
-                      group={group}
+                  }
+                >
+                  {hasOpenProject ? (
+                    <CopyMinus className="project-toggle-all-icon" aria-hidden="true" />
+                  ) : (
+                    <CopyPlus className="project-toggle-all-icon" aria-hidden="true" />
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="project-toggle-all-tooltip">
+                  {toggleProjectsLabel}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="project"
+                      size="icon-sm"
+                      className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
                       disabled={groupingDisabled}
-                      onCollapsedChange={(collapsed) => {
-                        void runGroupingChange({ type: 'collapse', id: group.id, collapsed })
+                      aria-label="添加项目"
+                      onClick={() => {
+                        void state.openProject()
                       }}
-                      onAdd={() => {
-                        void state.openProject(group.id)
+                    />
+                  }
+                >
+                  <FolderPlus className="project-add-icon" />
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  添加项目
+                  <ShortcutKbd
+                    binding={shortcutBinding(
+                      state.shortcuts,
+                      'open-folder',
+                      window.desktop.platform,
+                    )}
+                  />
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="project"
+                      size="icon-sm"
+                      className="project-create-group-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
+                      disabled={groupingDisabled}
+                      aria-label="新建分组"
+                      onClick={(event) => {
+                        groupMenuTrigger.current = event.currentTarget
+                        setGroupNameTarget({ name: '' })
                       }}
-                      onRename={() => setGroupNameTarget({ id: group.id, name: group.name })}
-                      onRemove={() => setGroupRemovalTarget(group)}
-                      rememberTrigger={(trigger) => {
-                        groupMenuTrigger.current = trigger
-                      }}
-                    >
-                      {groupProjects.map(renderProject)}
-                    </ProjectGroup>
-                  )
-                })}
-                {ungroupedProjects.map(renderProject)}
-                {!projects.length && !groups.length && (
-                  <Empty className="project-empty-state flex-none px-3 py-8">
-                    <EmptyHeader className="project-empty-header">
-                      <EmptyMedia variant="icon" className="project-empty-media">
-                        <FolderOpen className="project-empty-icon" aria-hidden="true" />
-                      </EmptyMedia>
-                      <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
-                      <EmptyDescription className="project-empty-description">
-                        点击上方 + 或按 {shortcutLabel('open-folder')} 添加
-                      </EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                )}
-              </nav>
-            </ScrollArea>
-          </ResizablePanel>
-          <AgentList homeActive={homeActive} projectBranches={projectBranches} />
-        </ResizablePanelGroup>
+                    />
+                  }
+                >
+                  <ListPlus className="project-create-group-icon" aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="project-create-group-tooltip">
+                  新建分组
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          {(groupingError || state.projectOpenError) && (
+            <p className="project-grouping-error px-4 pb-2 text-xs text-destructive" role="alert">
+              {groupingError || state.projectOpenError}
+            </p>
+          )}
+          <ScrollArea className="project-list-scroll-area min-h-0 min-w-0 flex-1">
+            <nav
+              className="project-list recent-projects flex min-w-0 flex-col gap-2 p-2"
+              aria-label="项目列表"
+            >
+              {groups.map((group) => {
+                const groupProjects = projects.filter((path) => group.projects.includes(path))
+                return (
+                  <ProjectGroup
+                    key={group.id}
+                    group={group}
+                    disabled={groupingDisabled}
+                    onCollapsedChange={(collapsed) => {
+                      void runGroupingChange({ type: 'collapse', id: group.id, collapsed })
+                    }}
+                    onAdd={() => {
+                      void state.openProject(group.id)
+                    }}
+                    onRename={() => setGroupNameTarget({ id: group.id, name: group.name })}
+                    onRemove={() => setGroupRemovalTarget(group)}
+                    rememberTrigger={(trigger) => {
+                      groupMenuTrigger.current = trigger
+                    }}
+                  >
+                    {groupProjects.map(renderProject)}
+                  </ProjectGroup>
+                )
+              })}
+              {ungroupedProjects.map(renderProject)}
+              {!projects.length && !groups.length && (
+                <Empty className="project-empty-state flex-none px-3 py-8">
+                  <EmptyHeader className="project-empty-header">
+                    <EmptyMedia variant="icon" className="project-empty-media">
+                      <FolderOpen className="project-empty-icon" aria-hidden="true" />
+                    </EmptyMedia>
+                    <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
+                    <EmptyDescription className="project-empty-description">
+                      点击上方 + 或按 {shortcutLabel('open-folder')} 添加
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
+            </nav>
+          </ScrollArea>
+        </SourceControlSectionLayout>
       </aside>
       <ProjectGroupNameDialog
         target={groupNameTarget}

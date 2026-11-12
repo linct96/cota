@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -11,23 +11,30 @@ export function SourceControlSectionLayout({
   resizeLabel,
   defaultOpen = true,
   defaultExpandedSize = '40%',
+  onOpenChange,
 }: {
   children: ReactNode
   section?: (open: boolean, onOpenChange: (open: boolean) => void) => ReactNode
   resizeLabel: string
   defaultOpen?: boolean
   defaultExpandedSize?: string
+  onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [hasExpanded, setHasExpanded] = useState(defaultOpen)
   const [panel, setPanel] = usePanelCallbackRef()
+
+  function updateOpen(nextOpen: boolean) {
+    setOpen(nextOpen)
+    onOpenChange?.(nextOpen)
+  }
 
   function changeOpen(nextOpen: boolean) {
     if (!panel) return
     if (nextOpen && !hasExpanded) panel.resize(defaultExpandedSize)
     else if (nextOpen) panel.expand()
     else panel.collapse()
-    setOpen(!panel.isCollapsed())
+    updateOpen(!panel.isCollapsed())
   }
 
   if (!section) return children
@@ -58,7 +65,7 @@ export function SourceControlSectionLayout({
           if (panel) {
             const expanded = !panel.isCollapsed()
             if (expanded) setHasExpanded(true)
-            setOpen(expanded)
+            updateOpen(expanded)
           }
         }}
         className="source-control-section-secondary-panel flex min-h-0 min-w-0 flex-col overflow-hidden"
@@ -74,12 +81,14 @@ export function SourceControlSection({
   open,
   onOpenChange,
   disabled,
+  triggerRef,
   children,
 }: {
   title: ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
   disabled?: boolean
+  triggerRef?: Ref<HTMLButtonElement>
   children: ReactNode
 }) {
   return (
@@ -90,6 +99,7 @@ export function SourceControlSection({
     >
       <h3 className="source-control-section-header flex h-8 shrink-0 border-b">
         <CollapsibleTrigger
+          ref={triggerRef}
           disabled={disabled}
           className="source-control-section-trigger group/source-control-section flex h-full min-w-0 flex-1 items-center justify-between gap-2 bg-transparent px-3 text-left text-xs font-medium text-app-muted-foreground transition-colors hover:bg-background-hover hover:text-foreground aria-expanded:text-foreground"
         >
