@@ -16,7 +16,7 @@ Cota 是一款本地优先、终端优先的桌面工作区应用，将项目与
 
 ## Positioning
 
-不同于缺乏 Git Worktree 与 Agent 状态感知的通用终端模拟器，也不同于屏蔽本地 Shell 的云端绑定型 AI IDE，Cota 直接围绕真实的本地 CLI 工作流构建：原生 PTY 终端（`node-pty` + `xterm.js`）、一等公民的 Git Worktree 环境初始化与管理、实时 CLI Agent 状态追踪（`idle`、`running`、`needs-input`、`completed`、`failed`）、内嵌 Monaco Diff / 文件审阅，以及基于 `cortana.sqlite3` 与系统密钥（Electron `safeStorage`）加密的本地多账号切换。
+不同于缺乏 Git Worktree 与 Agent 状态感知的通用终端模拟器，也不同于屏蔽本地 Shell 的云端绑定型 AI IDE，Cota 直接围绕真实的本地 CLI 工作流构建：原生 PTY 终端（`node-pty` + `xterm.js`）、一等公民的 Git Worktree 环境初始化与管理、实时 CLI Agent 状态追踪（`idle`、`running`、`needs-input`、`completed`、`failed`）、内嵌 Monaco Diff / 文件审阅，以及基于 `providers.json` 与系统密钥（Electron `safeStorage`）加密的本地多账号切换。
 
 ## Operating Context
 
@@ -30,7 +30,7 @@ Cota 是一款本地优先、终端优先的桌面工作区应用，将项目与
 
 ## Capabilities and Constraints
 
-- **本地优先与进程安全：** 所有工作区状态、Worktree 初始化配置与 SQLite 账号凭据均保存在用户本机，敏感凭据通过系统密钥库（`safeStorage`）加密存储。
+- **本地优先与进程安全：** 所有工作区状态、Worktree 初始化配置与 JSON 账号凭据均保存在用户本机，敏感凭据通过系统密钥库（`safeStorage`）加密存储。
 - **Cortana 模块边界：** 仅保留账号管理核心能力（浏览器 OAuth 授权、本地登录导入、安全账号切换、配额刷新）与终端/Worktree 能力；协议转换网关与自定义模型路由不在本产品范围内。
 - **显式执行与破坏性操作保护：** Worktree 初始化命令、长驻服务启动及工作树/分支删除均需用户显式触发，绝不静默后台执行；删除未合并分支或覆盖未保存的外部 CLI 登录前强制执行预检与确认锁。
 - **主进程安全权威：** 前端校验（TanStack Form + Zod）仅用于即时交互反馈，绝不替代主进程的安全与文件系统校验。

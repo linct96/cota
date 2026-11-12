@@ -59,7 +59,6 @@ beforeEach(() => {
       list: vi.fn(),
       add: vi.fn(),
       importCurrent: vi.fn(),
-      importCortana: vi.fn(),
       switch: vi.fn(),
       rename: vi.fn(),
       remove: vi.fn(),

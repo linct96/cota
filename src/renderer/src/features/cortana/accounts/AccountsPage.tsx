@@ -3,7 +3,6 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
-  Download,
   LogIn,
   MoreHorizontal,
   Pencil,
@@ -48,7 +47,7 @@ import { Input } from '@/components/ui/input'
 import { useCortana } from '@/features/cortana/cortana-store'
 import { AddAccountDialog, RenameAccountDialog } from './AccountDialogs'
 
-type Confirmation = { kind: 'switch' | 'delete'; account: AccountProfile } | { kind: 'import' }
+type Confirmation = { kind: 'switch' | 'delete'; account: AccountProfile }
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : '账号操作失败，请稍后重试。'
 
@@ -156,17 +155,11 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
       await switchAccount(confirmation.account, true)
       return
     }
-    const done =
-      confirmation.kind === 'delete'
-        ? await perform(
-            'delete',
-            async () => unwrap(await window.desktop.accounts.remove(confirmation.account.id)),
-            '账号已删除。',
-          )
-        : await perform('import-cortana', async () => {
-            const count = unwrap(await window.desktop.accounts.importCortana())
-            toast.success(count ? `已从 Cortana 导入 ${count} 个账号。` : '没有需要导入的新账号。')
-          })
+    const done = await perform(
+      'delete',
+      async () => unwrap(await window.desktop.accounts.remove(confirmation.account.id)),
+      '账号已删除。',
+    )
     if (done) setConfirmation(undefined)
   }
 
@@ -205,21 +198,6 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
           </p>
         </div>
         <div className="accounts-actions flex flex-wrap items-center gap-2">
-          {status?.cortanaAvailable && (
-            <Button
-              className="accounts-import-cortana"
-              variant="outline"
-              disabled={!!busy || loading}
-              onClick={() => setConfirmation({ kind: 'import' })}
-            >
-              <Download
-                className="accounts-import-icon"
-                data-icon="inline-start"
-                aria-hidden="true"
-              />
-              导入 Cortana
-            </Button>
-          )}
           <Button
             className="accounts-add-button"
             disabled={!!busy || loading}
@@ -534,20 +512,14 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
         >
           <DialogHeader className="account-confirm-header">
             <DialogTitle className="account-confirm-title">
-              {confirmation?.kind === 'import'
-                ? '导入 Cortana 账号？'
-                : confirmation?.kind === 'switch'
-                  ? '切换并覆盖当前登录？'
-                  : '删除已保存账号？'}
+              {confirmation?.kind === 'switch'
+                ? '切换并覆盖当前登录？'
+                : '删除已保存账号？'}
             </DialogTitle>
             <DialogDescription className="account-confirm-description">
-              {confirmation?.kind === 'import'
-                ? '将本机 Cortana 中尚未导入的账号复制到 Cota，保留名称和排序。重复账号会跳过，原数据库不会修改。'
-                : confirmation?.kind === 'switch'
-                  ? `当前登录尚未保存。切换到「${confirmation.account.alias}」会替换 CLI 的当前认证信息。你也可以取消并先导入当前登录。`
-                  : confirmation?.kind === 'delete'
-                    ? `删除「${confirmation.account.alias}」只会移除 Cota 保存的账号，CLI 当前登录不会退出。`
-                    : ''}
+              {confirmation?.kind === 'switch'
+                ? `当前登录尚未保存。切换到「${confirmation.account.alias}」会替换 CLI 的当前认证信息。你也可以取消并先导入当前登录。`
+                : `删除「${confirmation?.account.alias}」只会移除 Cota 保存的账号，CLI 当前登录不会退出。`}
             </DialogDescription>
           </DialogHeader>
           {error && (
@@ -567,17 +539,11 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
             </Button>
             <Button
               className="account-confirm-submit"
-              variant={confirmation?.kind === 'import' ? 'default' : 'destructive'}
+              variant="destructive"
               disabled={!!busy}
               onClick={() => void confirm()}
             >
-              {busy
-                ? '处理中…'
-                : confirmation?.kind === 'import'
-                  ? '导入账号'
-                  : confirmation?.kind === 'switch'
-                    ? '确认切换'
-                    : '删除账号'}
+              {busy ? '处理中…' : confirmation?.kind === 'switch' ? '确认切换' : '删除账号'}
             </Button>
           </DialogFooter>
         </DialogContent>
