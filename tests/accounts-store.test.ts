@@ -301,6 +301,24 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(Object.keys(readVault().credentials)).toEqual(['a'])
   })
 
+  it('rechecks OAuth.json after the temp file is flushed, before replacing it', () => {
+    const store = new AccountStore(path)
+    store.save(account('a'))
+    const vault = readVault()
+    vault.credentials.a = {
+      scheme: 'electron-safeStorage',
+      encoding: 'base64',
+      data: Buffer.from('sealed:{"token":"EXTERNAL"}').toString('base64'),
+    }
+    const external = JSON.stringify(vault, null, 2) + '\n'
+    vi.mocked(fsyncSync).mockImplementationOnce(() => writeFileSync(oauthPath, external))
+    expect(() =>
+      store.save({ ...store.get('a'), auth: '{"token":"INTERNAL"}' }),
+    ).toThrow('其他程序修改')
+    expect(readFileSync(oauthPath, 'utf8')).toBe(external)
+    expect(store.get('a').auth).toBe('{"token":"EXTERNAL"}')
+  })
+
   it('requires secure encryption before saving a credential', () => {
     const store = new AccountStore(path)
     mockEncryption.available = false

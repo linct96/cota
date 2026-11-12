@@ -126,7 +126,7 @@ function withLocks(paths: string[], action: () => void): void {
 // Both files are independently written through an fsynced temporary file.
 // A staged OAuth superset keeps every provider's credentials available while
 // an operation spanning both files is in progress (or interrupted by a crash).
-function writeAtomic(path: string, contents: string): void {
+function writeAtomic(path: string, contents: string, assertUnchanged?: () => void): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   const temporary = path + '.' + randomUUID() + '.tmp'
   let descriptor: number | undefined
@@ -136,6 +136,7 @@ function writeAtomic(path: string, contents: string): void {
     fsyncSync(descriptor)
     closeSync(descriptor)
     descriptor = undefined
+    assertUnchanged?.()
     renameSync(temporary, path)
     // Some platforms cannot fsync directories; the file is synced above.
     try {
@@ -164,11 +165,16 @@ function writeAtomic(path: string, contents: string): void {
   }
 }
 
-function restore(path: string, contents: string | null): void {
+function restore(
+  path: string,
+  contents: string | null,
+  assertUnchanged: () => void,
+): void {
   if (contents !== null) {
-    writeAtomic(path, contents)
+    writeAtomic(path, contents, assertUnchanged)
     return
   }
+  assertUnchanged()
   try {
     unlinkSync(path)
   } catch (error) {
@@ -360,7 +366,7 @@ export class AccountStore {
       }
       const write = (which: keyof Contents, value: string) => {
         assertUnchanged()
-        writeAtomic(which === 'providers' ? this.path : this.oauthPath, value)
+        writeAtomic(which === 'providers' ? this.path : this.oauthPath, value, assertUnchanged)
         expected = { ...expected, [which]: checksum(value) }
       }
 
@@ -383,7 +389,7 @@ export class AccountStore {
         if (providersWritten) {
           try {
             assertUnchanged()
-            restore(this.path, oldContents.providers)
+            restore(this.path, oldContents.providers, assertUnchanged)
             expected.providers = checksum(oldContents.providers)
           } catch {
             canRestoreOAuth = false
@@ -393,7 +399,7 @@ export class AccountStore {
         if (stagedWritten && canRestoreOAuth) {
           try {
             assertUnchanged()
-            restore(this.oauthPath, oldContents.oauth)
+            restore(this.oauthPath, oldContents.oauth, assertUnchanged)
             expected.oauth = checksum(oldContents.oauth)
           } catch {
             console.warn('无法恢复原认证文件，请检查 OAuth.json。')
