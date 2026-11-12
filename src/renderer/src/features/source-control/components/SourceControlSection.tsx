@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
@@ -22,7 +22,7 @@ export function SourceControlSectionLayout({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   // 自行记录展开高度：库的 expand() 仅记住 collapse() 前的高度，拖拽折叠或重新注册后会丢失
-  const expandedSize = useRef<number>(undefined)
+  const [expandedSize, setExpandedSize] = useState<number>()
   const [panel, setPanel] = usePanelCallbackRef()
 
   function updateOpen(nextOpen: boolean) {
@@ -32,8 +32,7 @@ export function SourceControlSectionLayout({
 
   function changeOpen(nextOpen: boolean) {
     if (!panel) return
-    if (nextOpen)
-      panel.resize(expandedSize.current ? `${expandedSize.current}%` : defaultExpandedSize)
+    if (nextOpen) panel.resize(expandedSize ? `${expandedSize}%` : defaultExpandedSize)
     else panel.collapse()
     updateOpen(!panel.isCollapsed())
   }
@@ -67,7 +66,7 @@ export function SourceControlSectionLayout({
         onResize={(size) => {
           if (panel) {
             const expanded = !panel.isCollapsed()
-            if (expanded) expandedSize.current = size.asPercentage
+            if (expanded) setExpandedSize(size.asPercentage)
             updateOpen(expanded)
           }
         }}
