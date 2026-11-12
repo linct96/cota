@@ -11,6 +11,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+} from '@/components/ui/sidebar'
 import { useCortana } from './cortana-store'
 import { useLeftPanel } from '@/state/left-panel-store'
 import { cn } from '@/lib/utils'
@@ -30,15 +40,18 @@ export function CortanaLayout() {
   const ActiveIcon = PRODUCT_ICONS[activeProduct]
 
   return (
-    <section
-      className="cortana-layout flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background"
+    <SidebarProvider
+      className="cortana-layout min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background"
+      role="region"
       aria-label="Cortana"
     >
-      <aside
+      <Sidebar
         id="cortana-sidebar"
+        collapsible="none"
+        inert={!leftPanelOpen}
         className={cn(
-          'cortana-sidebar w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground',
-          leftPanelOpen ? 'flex' : 'hidden',
+          'cortana-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none',
+          !leftPanelOpen && 'hidden',
         )}
         aria-label="Cortana 菜单"
       >
@@ -109,30 +122,42 @@ export function CortanaLayout() {
             </DropdownMenu>
           </h1>
         </header>
-        <nav className="cortana-navigation flex flex-col gap-1 px-2" aria-label="模块">
-          <Button
-            variant="navigation"
-            className="cortana-accounts-link w-full justify-start"
-            data-active="true"
-            render={
-              <Link to="/cortana/accounts" aria-current="page" className="cortana-accounts-route" />
-            }
+        <SidebarContent className="cortana-nav-list">
+          <nav
+            className="cortana-navigation flex min-h-0 flex-1 flex-col pt-1.5 pb-4"
+            aria-label="模块"
           >
-            <UsersRound
-              className="cortana-accounts-icon"
-              data-icon="inline-start"
-              aria-hidden="true"
-            />
-            账号管理
-          </Button>
-        </nav>
-      </aside>
+            <SidebarGroup className="cortana-nav-group shrink-0">
+              <SidebarGroupContent className="cortana-nav-group-content">
+                <SidebarMenu className="cortana-nav-items">
+                  <SidebarMenuItem className="cortana-nav-item">
+                    <SidebarMenuButton
+                      className="cortana-accounts-link"
+                      isActive
+                      render={
+                        <Link
+                          to="/cortana/accounts"
+                          aria-current="page"
+                          className="cortana-accounts-route"
+                        />
+                      }
+                    >
+                      <UsersRound className="cortana-accounts-icon" aria-hidden="true" />
+                      <span className="cortana-accounts-label">账号管理</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </nav>
+        </SidebarContent>
+      </Sidebar>
       <main
         className="cortana-content flex min-h-0 min-w-0 flex-1 flex-col"
         aria-label="Cortana 模块内容"
       >
         <Outlet />
       </main>
-    </section>
+    </SidebarProvider>
   )
 }
