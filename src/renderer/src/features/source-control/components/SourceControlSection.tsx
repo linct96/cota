@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
@@ -21,7 +21,8 @@ export function SourceControlSectionLayout({
   onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const [hasExpanded, setHasExpanded] = useState(defaultOpen)
+  // 自行记录展开高度：库的 expand() 仅记住 collapse() 前的高度，拖拽折叠或重新注册后会丢失
+  const expandedSize = useRef<number>(undefined)
   const [panel, setPanel] = usePanelCallbackRef()
 
   function updateOpen(nextOpen: boolean) {
@@ -31,8 +32,8 @@ export function SourceControlSectionLayout({
 
   function changeOpen(nextOpen: boolean) {
     if (!panel) return
-    if (nextOpen && !hasExpanded) panel.resize(defaultExpandedSize)
-    else if (nextOpen) panel.expand()
+    if (nextOpen)
+      panel.resize(expandedSize.current ? `${expandedSize.current}%` : defaultExpandedSize)
     else panel.collapse()
     updateOpen(!panel.isCollapsed())
   }
@@ -54,17 +55,19 @@ export function SourceControlSectionLayout({
         withHandle
         className="source-control-section-resize-handle"
         aria-label={resizeLabel}
+        disabled={!open}
       />
       <ResizablePanel
         panelRef={setPanel}
         defaultSize={defaultOpen ? defaultExpandedSize : '2rem'}
-        minSize="6rem"
+        minSize="6.6rem"
         collapsible
         collapsedSize="2rem"
-        onResize={() => {
+        collapsedThreshold="100%"
+        onResize={(size) => {
           if (panel) {
             const expanded = !panel.isCollapsed()
-            if (expanded) setHasExpanded(true)
+            if (expanded) expandedSize.current = size.asPercentage
             updateOpen(expanded)
           }
         }}
