@@ -295,6 +295,84 @@ body:has(
 .terminal-tab[data-dnd-placeholder] {
   opacity: 0.35;
 }
+.account-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  transition:
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    opacity 200ms ease,
+    background-color 200ms ease;
+}
+.account-row[data-active='true'] {
+  background: color-mix(in oklab, var(--primary) 5%, var(--background));
+}
+.account-row:hover {
+  border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+}
+.account-row[data-dragging='true'] {
+  opacity: 0.95;
+  box-shadow: var(--shadow-lg);
+  outline: 1px solid color-mix(in oklab, var(--primary) 20%, transparent);
+}
+.account-row[data-dropping='true'] {
+  box-shadow: var(--shadow-md);
+}
+.account-row[data-dnd-placeholder] {
+  opacity: 0.35;
+}
+.account-drag-handle {
+  color: var(--muted-foreground);
+  border-radius: var(--radius-xs);
+}
+.account-drag-handle:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.account-drag-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
+}
+.account-avatar {
+  border-radius: 50%;
+  background: var(--secondary);
+  color: var(--primary);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+}
+.account-row-name {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 500;
+}
+.account-row-meta {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+.account-row-meta .account-meta-separator {
+  align-self: center;
+  background: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+}
+.account-meta-item[data-destructive='true'] {
+  color: var(--destructive);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-row-actions {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .account-row:hover .account-row-actions,
+  .account-row:focus-within .account-row-actions,
+  .account-row[data-busy] .account-row-actions,
+  .account-row-actions:has([data-popup-open]) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 .terminal-tab-new-button {
   color: var(--accent-foreground);
 }
@@ -375,6 +453,7 @@ body:has(
   height: var(--resizable-indicator-size);
 }
 @media (prefers-reduced-motion: reduce) {
+  .account-row,
   .terminal-tab-status,
   .workspace-tab-actions-overlay::before,
   .ui-resizable-handle::before {
@@ -465,7 +544,7 @@ body:has(
   animation: none;
   transition: none;
 }
-button:not(:disabled) {
+button:not(:disabled):not(.cursor-grab) {
   cursor: pointer;
 }
 .title-bar [role='tablist'],

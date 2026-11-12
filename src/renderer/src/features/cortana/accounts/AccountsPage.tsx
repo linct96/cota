@@ -1,32 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  ArrowDown,
-  ArrowUp,
-  Check,
-  LogIn,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  UsersRound,
-} from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { DragDropProvider, KeyboardSensor, PointerSensor } from '@dnd-kit/react'
+import { isSortable } from '@dnd-kit/react/sortable'
+import { Accessibility, DragDropManager, PointerActivationConstraints } from '@dnd-kit/dom'
+import type { DragDropManagerInput } from '@dnd-kit/dom'
+import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers'
+import { LogIn, Plus, RefreshCw, UsersRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { ACCOUNT_PRODUCTS } from '../../../../../shared/accounts'
-import type {
-  AccountProduct,
-  AccountProfile,
-  AccountStatus,
-  AccountUsageWindow,
-} from '../../../../../shared/accounts'
+import type { AccountProduct, AccountProfile, AccountStatus } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
-import { abbreviateHomePath, cn } from '@/lib/utils'
 import { useDialogState } from '@/hooks/use-dialog-state'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
@@ -35,17 +22,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Input } from '@/components/ui/input'
 import { useCortana } from '@/features/cortana/cortana-store'
 import { AddAccountDialog, RenameAccountDialog } from './AccountDialogs'
+import { AccountRow } from './AccountRow'
+
+const dragOptions: DragDropManagerInput = {
+  modifiers: [RestrictToVerticalAxis],
+  sensors: [
+    PointerSensor.configure({
+      activationConstraints: [new PointerActivationConstraints.Distance({ value: 6 })],
+    }),
+    KeyboardSensor,
+  ],
+  plugins: (defaults) => [
+    ...defaults.filter((plugin) => plugin !== Accessibility),
+    Accessibility.configure({
+      screenReaderInstructions: {
+        draggable:
+          '按空格或回车拿起账号，使用上下方向键调整位置，再按空格或回车放下，按 Escape 取消。',
+      },
+      announcements: {
+        dragstart: ({ operation }) => `已拿起 ${operation.source?.data.title}。`,
+        dragover: ({ operation }) =>
+          isSortable(operation.source)
+            ? `${operation.source.data.title}，第 ${operation.source.index + 1} 个位置。`
+            : undefined,
+        dragend: ({ canceled }) => (canceled ? '已取消排序。' : '已放下账号。'),
+      },
+    } satisfies ConstructorParameters<typeof Accessibility>[1]),
+  ],
+}
 
 type Confirmation = { kind: 'switch' | 'delete'; account: AccountProfile }
 const errorText = (error: unknown) =>
@@ -61,7 +68,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
   const [status, setStatus] = useState<AccountStatus>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const [search, setSearch] = useState('')
+  const [importSkipped, setImportSkipped] = useState(false)
   const [busy, setBusy] = useState<string>()
   const busyRef = useRef(false)
   const request = useRef(0)
@@ -69,6 +76,8 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
   const [editing, setEditing] = useState<AccountProfile>()
   const [confirmation, setConfirmation, confirmationDialog] = useDialogState<Confirmation>()
   const cancelButton = useRef<HTMLButtonElement | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const [dragManager] = useState(() => new DragDropManager(dragOptions))
 
   useEffect(() => {
     setAgentSwitchBlocked(!!busy || addOpen || !!editing || !!confirmation)
@@ -136,6 +145,13 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
     void reload()
   }, [reload])
 
+  function importCurrent() {
+    return perform('import-current', async () => {
+      const count = unwrap(await window.desktop.accounts.importCurrent(product))
+      toast.success(`已同步 ${count} 个账号。`)
+    })
+  }
+
   async function switchAccount(account: AccountProfile, force = false) {
     if (status?.authState === 'unmanaged' && !force) {
       setConfirmation({ kind: 'switch', account })
@@ -163,26 +179,67 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
     if (done) setConfirmation(undefined)
   }
 
-  async function move(account: AccountProfile, delta: number) {
-    if (!status) return
-    const ids = status.profiles.map((profile) => profile.id)
-    const index = ids.indexOf(account.id)
-    const next = index + delta
-    if (next < 0 || next >= ids.length) return
-    ;[ids[index], ids[next]] = [ids[next], ids[index]]
-    await perform('reorder', async () =>
-      unwrap(await window.desktop.accounts.reorder(product, ids)),
+  async function reorder(id: string, targetIndex: number) {
+    if (!status || sortingDisabled || targetIndex < 0 || targetIndex >= orderedProfiles.length)
+      return
+    const target = orderedProfiles[targetIndex]
+    const movable = status.profiles.filter((profile) => !profile.isActive)
+    const from = movable.findIndex((profile) => profile.id === id)
+    const to = movable.findIndex((profile) => profile.id === target.id)
+    if (from < 0 || to < 0 || from === to) return
+    movable.splice(to, 0, movable.splice(from, 1)[0])
+    let position = 0
+    const nextProfiles = status.profiles.map((profile) =>
+      profile.isActive ? profile : movable[position++],
     )
+    // Commit the drag library's DOM order before a fast IPC failure can batch away the rollback.
+    flushSync(() => setStatus({ ...status, profiles: nextProfiles }))
+    const done = await perform('reorder', async () =>
+      unwrap(
+        await window.desktop.accounts.reorder(
+          product,
+          nextProfiles.map((profile) => profile.id),
+        ),
+      ),
+    )
+    if (!done) setStatus(status)
   }
 
-  const query = search.trim().toLowerCase()
-  const profiles =
-    status?.profiles.filter((account) =>
-      [account.alias, account.email, account.apiBaseUrl, account.planType].some((value) =>
-        value?.toLowerCase().includes(query),
-      ),
-    ) ?? []
-  const active = status?.profiles.filter((account) => account.isActive) ?? []
+  const orderedProfiles = [...(status?.profiles ?? [])].sort(
+    (a, b) => Number(b.isActive) - Number(a.isActive),
+  )
+  const sortingDisabled =
+    loading ||
+    !!busy ||
+    addOpen ||
+    !!editing ||
+    !!confirmation ||
+    orderedProfiles.filter((account) => !account.isActive).length < 2
+  const showImportPrompt = status?.authState === 'unmanaged' && !importSkipped
+
+  useLayoutEffect(() => {
+    const cancel = () => {
+      if (dragManager.dragOperation.status.dragging) dragManager.actions.stop({ canceled: true })
+    }
+    const checkDrop = (event: PointerEvent) => {
+      const rect = listRef.current?.getBoundingClientRect()
+      if (
+        rect &&
+        (event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom)
+      )
+        cancel()
+    }
+    window.addEventListener('blur', cancel)
+    window.addEventListener('pointerup', checkDrop, true)
+    return () => {
+      window.removeEventListener('blur', cancel)
+      window.removeEventListener('pointerup', checkDrop, true)
+      cancel()
+    }
+  }, [dragManager, status, sortingDisabled])
 
   return (
     <section
@@ -190,12 +247,18 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
       aria-label="账号管理"
       aria-busy={loading || !!busy}
     >
-      <header className="accounts-header flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-        <div className="accounts-heading flex min-w-0 flex-col gap-1">
-          <h2 className="accounts-title text-sm font-medium">账号管理</h2>
-          <p className="accounts-description text-xs text-app-muted-foreground">
-            管理本机 CLI 账号与登录状态
-          </p>
+      <header className="accounts-header flex shrink-0 flex-wrap items-center justify-between gap-3 p-5">
+        <div className="accounts-heading flex min-w-0 items-center gap-2">
+          <h2 className="accounts-title text-lg font-semibold">账号管理</h2>
+          {status && (
+            <Badge
+              className="accounts-count tabular-nums"
+              variant="secondary"
+              aria-label={`${status.profiles.length} 个账号`}
+            >
+              {status.profiles.length}
+            </Badge>
+          )}
         </div>
         <div className="accounts-actions flex flex-wrap items-center gap-2">
           <Button
@@ -235,249 +298,86 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
         ) : (
           status && (
             <>
-              <Card className="accounts-current-card gap-3 p-4 shadow-none">
-                <div className="accounts-current-heading flex flex-wrap items-center justify-between gap-3">
-                  <div className="accounts-current-summary flex min-w-0 flex-col gap-1">
-                    <div className="accounts-current-label-row flex items-center gap-2">
-                      <span className="accounts-current-label text-xs text-app-muted-foreground">
-                        当前登录
-                      </span>
-                      <Badge className="accounts-current-state" variant="secondary">
-                        {status.authState === 'managed'
-                          ? '已保存'
-                          : status.authState === 'missing'
-                            ? '未登录'
-                            : '未保存'}
-                      </Badge>
-                    </div>
-                    <p className="accounts-current-name truncate text-sm font-medium">
-                      {active.length
-                        ? active.map((account) => account.alias).join('、')
-                        : status.authState === 'missing'
-                          ? `尚未登录 ${ACCOUNT_PRODUCTS[product].name}`
-                          : '检测到其他登录状态'}
-                    </p>
-                  </div>
-                  <Button
-                    className="accounts-import-current"
-                    variant="outline"
-                    disabled={!!busy || status.authState === 'missing'}
-                    onClick={() =>
-                      void perform('import-current', async () => {
-                        const count = unwrap(await window.desktop.accounts.importCurrent(product))
-                        toast.success(`已同步 ${count} 个账号。`)
-                      })
-                    }
-                  >
-                    <LogIn
-                      className="accounts-import-current-icon"
-                      data-icon="inline-start"
-                      aria-hidden="true"
-                    />
-                    导入当前登录
-                  </Button>
-                </div>
-                <p className="accounts-auth-message text-xs text-app-muted-foreground">
-                  {status.authMessage}
-                </p>
-                <p
-                  className="accounts-auth-path break-all text-xs text-app-muted-foreground"
-                  title={abbreviateHomePath(status.authPath)}
+              {showImportPrompt && (
+                <Alert
+                  className="accounts-import-prompt flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2"
+                  role="note"
                 >
-                  {abbreviateHomePath(status.authPath)}
-                </p>
-              </Card>
-              <div className="accounts-list-toolbar flex flex-wrap items-center justify-between gap-2">
-                <h3 className="accounts-list-title text-xs font-medium">
-                  已保存账号（{status.profiles.length}）
-                </h3>
-                <div className="accounts-list-tools flex items-center gap-2">
-                  <div className="accounts-search relative">
-                    <Search
-                      className="accounts-search-icon pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-app-muted-foreground"
-                      aria-hidden="true"
-                    />
-                    <Input
-                      className="accounts-search-input w-40 pl-7 sm:w-48"
-                      type="search"
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="搜索账号"
-                      aria-label="搜索已保存账号"
-                    />
-                  </div>
-                  <Button
-                    className="accounts-reload-button"
-                    variant="outline"
-                    size="icon"
-                    aria-label="刷新账号列表"
-                    title="刷新账号列表"
-                    disabled={loading || !!busy}
-                    onClick={() => void reload()}
-                  >
-                    <RefreshCw
-                      className={cn('accounts-reload-icon', loading && 'animate-spin')}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </div>
-              </div>
-              {profiles.length ? (
-                <ul
-                  className="accounts-list flex flex-col divide-y rounded-lg border"
-                  aria-label="已保存账号"
-                >
-                  {profiles.map((account) => (
-                    <li
-                      key={account.id}
-                      className="account-row flex flex-wrap items-center gap-3 p-3"
+                  <AlertDescription className="accounts-import-message">
+                    发现已有 {ACCOUNT_PRODUCTS[product].name} 登录凭据
+                  </AlertDescription>
+                  <div className="accounts-import-actions flex items-center gap-2">
+                    <Button
+                      className="accounts-import-skip"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!!busy || loading}
+                      onClick={() => setImportSkipped(true)}
                     >
-                      <div className="account-row-details flex min-w-0 flex-1 flex-col gap-1">
-                        <div className="account-row-heading flex flex-wrap items-center gap-2">
-                          <span className="account-row-name max-w-full truncate text-xs font-medium">
-                            {account.alias}
-                          </span>
-                          {account.isActive && (
-                            <Badge className="account-active-badge" variant="secondary">
-                              <Check className="account-active-icon" aria-hidden="true" />
-                              当前
-                            </Badge>
-                          )}
-                          <Badge className="account-type-badge" variant="outline">
-                            {account.accountType === 'relay' ? 'API' : 'OAuth'}
-                          </Badge>
-                          {account.planType && (
-                            <Badge className="account-plan-badge" variant="outline">
-                              {account.planType}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="account-row-identity truncate text-xs text-app-muted-foreground">
-                          {account.email ||
-                            account.apiBaseUrl ||
-                            (account.providerKey ? `${account.providerKey} · ` : '') +
-                              account.accountId.slice(0, 20)}
-                        </p>
-                        {account.needsReauthorization && (
-                          <p className="account-reauthorization-message text-xs text-destructive">
-                            登录已失效，请重新授权。
-                          </p>
-                        )}
-                        {account.switchUnavailable && (
-                          <p className="account-unavailable-message text-xs text-app-muted-foreground">
-                            {account.switchUnavailable}
-                          </p>
-                        )}
-                        {account.usageUpdatedAt && (
-                          <p className="account-usage-updated text-xs text-app-muted-foreground">
-                            {account.product === 'claude' ? '令牌更新' : '额度更新'}：
-                            {new Date(account.usageUpdatedAt).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <div className="account-row-usage flex flex-col gap-1 text-right">
-                        <UsageWindow window={account.usagePrimary} fallback="额度" />
-                        <UsageWindow window={account.usageSecondary} fallback="额度" />
-                      </div>
-                      <div className="account-row-actions flex items-center gap-1">
-                        <Button
-                          className="account-switch-button"
-                          variant="outline"
-                          size="sm"
-                          disabled={!!busy || account.isActive || !!account.switchUnavailable}
-                          onClick={() => void switchAccount(account)}
-                        >
-                          {busy === `switch:${account.id}`
-                            ? '切换中…'
-                            : account.isActive
-                              ? '使用中'
-                              : '切换'}
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button
-                                className="account-menu-button"
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`管理 ${account.alias}`}
-                                disabled={!!busy}
-                              />
-                            }
-                          >
-                            <MoreHorizontal className="account-menu-icon" aria-hidden="true" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="account-menu-content" align="end">
-                            <DropdownMenuGroup className="account-menu-group">
-                              <DropdownMenuItem
-                                className="account-rename-menu-item"
-                                onClick={() => setEditing(account)}
-                              >
-                                <Pencil className="account-rename-icon" aria-hidden="true" />
-                                重命名
-                              </DropdownMenuItem>
-                              {account.accountType === 'oauth' && (
-                                <DropdownMenuItem
-                                  className="account-refresh-menu-item"
-                                  onClick={() =>
-                                    void perform(
-                                      `refresh:${account.id}`,
-                                      async () =>
-                                        unwrap(await window.desktop.accounts.refresh(account.id)),
-                                      account.product === 'claude'
-                                        ? '登录令牌已更新。'
-                                        : '额度已刷新。',
-                                    )
-                                  }
-                                >
-                                  <RefreshCw className="account-refresh-icon" aria-hidden="true" />
-                                  {account.product === 'claude' ? '更新登录令牌' : '刷新额度'}
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                className="account-move-up-menu-item"
-                                disabled={!!query || status.profiles[0]?.id === account.id}
-                                onClick={() => void move(account, -1)}
-                              >
-                                <ArrowUp className="account-move-up-icon" aria-hidden="true" />
-                                上移
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="account-move-down-menu-item"
-                                disabled={!!query || status.profiles.at(-1)?.id === account.id}
-                                onClick={() => void move(account, 1)}
-                              >
-                                <ArrowDown className="account-move-down-icon" aria-hidden="true" />
-                                下移
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="account-delete-menu-item"
-                                variant="destructive"
-                                onClick={() => setConfirmation({ kind: 'delete', account })}
-                              >
-                                <Trash2 className="account-delete-icon" aria-hidden="true" />
-                                删除
-                              </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                      暂时跳过
+                    </Button>
+                    <Button
+                      className="accounts-import-accept"
+                      variant="outline"
+                      size="sm"
+                      disabled={!!busy || loading}
+                      onClick={() => void importCurrent()}
+                    >
+                      <LogIn
+                        className="accounts-import-icon"
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
+                      {busy === 'import-current' ? '导入中…' : '导入凭据'}
+                    </Button>
+                  </div>
+                </Alert>
+              )}
+              {orderedProfiles.length ? (
+                <DragDropProvider
+                  manager={dragManager}
+                  {...dragOptions}
+                  onDragEnd={({ canceled, operation }) => {
+                    if (canceled || !operation.target || !isSortable(operation.source)) return
+                    void reorder(String(operation.source.id), operation.source.index)
+                  }}
+                >
+                  <ul
+                    ref={listRef}
+                    className="accounts-list flex flex-col gap-3"
+                    aria-label="已保存账号"
+                  >
+                    {orderedProfiles.map((account, index) => (
+                      <AccountRow
+                        key={account.id}
+                        account={account}
+                        index={index}
+                        busy={busy}
+                        disabled={!!busy || loading}
+                        sortingDisabled={sortingDisabled}
+                        onSwitch={() => void switchAccount(account)}
+                        onRename={() => setEditing(account)}
+                        onRefresh={() =>
+                          void perform(
+                            `refresh:${account.id}`,
+                            async () => unwrap(await window.desktop.accounts.refresh(account.id)),
+                            account.product === 'claude' ? '登录令牌已更新。' : '额度已刷新。',
+                          )
+                        }
+                        onDelete={() => setConfirmation({ kind: 'delete', account })}
+                      />
+                    ))}
+                  </ul>
+                </DragDropProvider>
               ) : (
-                <Empty className="accounts-empty border py-12">
+                <Empty className="accounts-empty flex-none py-16">
                   <EmptyHeader className="accounts-empty-header">
                     <EmptyMedia className="accounts-empty-media" variant="icon">
                       <UsersRound className="accounts-empty-icon" aria-hidden="true" />
                     </EmptyMedia>
-                    <EmptyTitle className="accounts-empty-title">
-                      {query ? '未找到匹配的账号' : '还没有保存账号'}
-                    </EmptyTitle>
+                    <EmptyTitle className="accounts-empty-title">还没有保存账号</EmptyTitle>
                     <EmptyDescription className="accounts-empty-description">
-                      {query
-                        ? '尝试其他名称、邮箱或 API 地址。'
-                        : '添加一个账号，或导入当前 CLI 的登录状态。'}
+                      添加一个账号，或导入当前 CLI 的登录状态。
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
@@ -547,28 +447,5 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
         </DialogContent>
       </Dialog>
     </section>
-  )
-}
-
-function UsageWindow({
-  window,
-  fallback,
-}: {
-  window: AccountUsageWindow | null
-  fallback: string
-}) {
-  if (!window) return null
-  const label =
-    window.windowMinutes === 300 ? '5 小时' : window.windowMinutes === 10080 ? '每周' : fallback
-  return (
-    <span
-      className="account-usage-window text-xs text-app-muted-foreground"
-      title={window.resetsAt ? `重置：${new Date(window.resetsAt).toLocaleString()}` : undefined}
-    >
-      {label}剩余{' '}
-      <span className="account-usage-value font-medium tabular-nums text-foreground">
-        {Math.round(Math.min(100, Math.max(0, 100 - window.usedPercent)))}%
-      </span>
-    </span>
   )
 }
