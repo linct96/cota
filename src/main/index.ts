@@ -112,7 +112,7 @@ if (!app.requestSingleInstanceLock()) {
       app.setName(appName)
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       codeHosting = new CodeHostingService(config, sourceControl)
-      accounts = new AccountService(join(app.getPath('userData'), 'cortana.sqlite3'), (progress) =>
+      accounts = new AccountService(join(app.getPath('userData'), 'providers.json'), (progress) =>
         renderer.send('accounts:oauth-progress', progress),
       )
       const warning = (await config.load()).warning

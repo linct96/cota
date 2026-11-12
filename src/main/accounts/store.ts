@@ -1,60 +1,188 @@
-import { DatabaseSync } from 'node:sqlite'
-import { mkdirSync } from 'node:fs'
+import {
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
 import { safeStorage } from 'electron'
-import { z } from 'zod'
-import type { AccountProfile, AccountUsageWindow } from '../../shared/accounts'
-import { accountProductSchema } from '../../shared/accounts'
-import { object, text } from './files'
-import { normalizeCredential } from './credentials'
+import { lockSync } from 'proper-lockfile'
+import type { AccountProfile } from '../../shared/accounts'
+import { oauthFileSchema, providersFileSchema, storedAccountSchema } from './schema'
+import type { EncryptedCredential, OAuthFile, ProvidersFile } from './schema'
 
 export interface StoredAccount extends Omit<AccountProfile, 'isActive'> {
   auth: string
   sortOrder: number
 }
 
-const usageWindowSchema = z.object({
-  usedPercent: z.number(),
-  windowMinutes: z.number().nullable(),
-  resetsAt: z.number().nullable(),
-})
+type Contents = { providers: string | null; oauth: string | null }
+type Revision = Contents
+type FileStamp = { size: number; mtimeMs: number; ctimeMs: number; ino: number }
+type Stamps = { providers: FileStamp | null; oauth: FileStamp | null }
+type Credentials = Record<string, EncryptedCredential>
 
-function parseUsage(value: unknown): AccountUsageWindow | null {
+function readOptional(path: string): string | null {
   try {
-    return usageWindowSchema.safeParse(JSON.parse(String(value))).data ?? null
-  } catch {
-    return null
+    return readFileSync(path, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function checksum(contents: string | null): string | null {
+  return contents === null ? null : createHash('sha256').update(contents).digest('hex')
+}
+
+function revisionOf(contents: Contents): Revision {
+  return { providers: checksum(contents.providers), oauth: checksum(contents.oauth) }
+}
+
+function sameRevision(a: Revision, b: Revision): boolean {
+  return a.providers === b.providers && a.oauth === b.oauth
+}
+
+function stampOf(path: string): FileStamp | null {
+  try {
+    const stat = statSync(path)
+    return { size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, ino: stat.ino }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+function sameStamp(a: FileStamp | null, b: FileStamp | null): boolean {
+  return (
+    a?.size === b?.size &&
+    a?.mtimeMs === b?.mtimeMs &&
+    a?.ctimeMs === b?.ctimeMs &&
+    a?.ino === b?.ino
+  )
+}
+
+function sameStamps(a: Stamps, b: Stamps): boolean {
+  return sameStamp(a.providers, b.providers) && sameStamp(a.oauth, b.oauth)
+}
+
+// A just-written file may still have a coarse timestamp. Compare its bytes
+// for a short period; once settled, stat is enough for ordinary reads.
+function settled(stamp: FileStamp | null): boolean {
+  return stamp === null || Date.now() - Math.max(stamp.mtimeMs, stamp.ctimeMs) > 2_000
+}
+
+function sameCredentials(a: Credentials, b: Credentials): boolean {
+  const keys = Object.keys(a)
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => Object.hasOwn(b, key) && a[key].data === b[key].data)
+  )
+}
+
+// File locks are shared by both stores, always acquired in the same order.
+// Non-cooperating editors are additionally detected by a full-file hash
+// immediately before each rename.
+function withLocks(paths: string[], action: () => void): void {
+  const releases: (() => void)[] = []
+  try {
+    for (const path of [...new Set(paths)].sort()) {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+      try {
+        releases.push(lockSync(path, { realpath: false }))
+      } catch (error) {
+        throw new Error(
+          (error as NodeJS.ErrnoException).code === 'ELOCKED'
+            ? '账号配置正在写入，请稍后重试。'
+            : '无法锁定账号配置文件，请检查目录权限。',
+          { cause: error },
+        )
+      }
+    }
+    action()
+  } finally {
+    for (const release of releases.reverse()) {
+      try {
+        release()
+      } catch {
+        console.warn('无法释放账号配置锁。')
+      }
+    }
+  }
+}
+
+// Both files are independently written through an fsynced temporary file.
+// A staged OAuth superset keeps every provider's credentials available while
+// an operation spanning both files is in progress (or interrupted by a crash).
+function writeAtomic(path: string, contents: string, assertUnchanged?: () => void): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const temporary = path + '.' + randomUUID() + '.tmp'
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(temporary, 'wx', 0o600)
+    writeFileSync(descriptor, contents, 'utf8')
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = undefined
+    assertUnchanged?.()
+    renameSync(temporary, path)
+    // Some platforms cannot fsync directories; the file is synced above.
+    try {
+      const directory = openSync(dirname(path), 'r')
+      try {
+        fsyncSync(directory)
+      } finally {
+        closeSync(directory)
+      }
+    } catch {
+      // Directory fsync is not available on every supported filesystem.
+    }
+  } finally {
+    // Cleanup must not mask a write error or report a committed write as rolled back.
+    try {
+      if (descriptor !== undefined) closeSync(descriptor)
+    } catch {
+      console.warn('无法关闭账号配置临时文件：' + temporary)
+    }
+    try {
+      unlinkSync(temporary)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        console.warn('无法清理账号配置临时文件：' + temporary)
+    }
+  }
+}
+
+function restore(path: string, contents: string | null, assertUnchanged: () => void): void {
+  if (contents !== null) {
+    writeAtomic(path, contents, assertUnchanged)
+    return
+  }
+  assertUnchanged()
+  try {
+    unlinkSync(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 }
 
 export class AccountStore {
-  private connection?: DatabaseSync
-  constructor(private readonly path: string) {}
+  private readonly oauthPath: string
+  private accounts?: StoredAccount[]
+  private encrypted?: Credentials
+  private draft?: StoredAccount[]
+  private contents?: Contents
+  private revision?: Revision
+  private stamps?: Stamps
 
-  private db(): DatabaseSync {
-    if (!this.connection) {
-      mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 })
-      const connection = new DatabaseSync(this.path)
-      try {
-        connection.exec(`PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;
-          CREATE TABLE IF NOT EXISTS accounts (
-            id TEXT PRIMARY KEY, product TEXT NOT NULL, provider_key TEXT NOT NULL DEFAULT '',
-            account_type TEXT NOT NULL CHECK(account_type IN ('oauth', 'relay')),
-            alias TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', account_id TEXT NOT NULL DEFAULT '',
-            plan_type TEXT NOT NULL DEFAULT '', api_base_url TEXT, auth_encrypted BLOB NOT NULL,
-            usage_primary TEXT, usage_secondary TEXT, usage_updated_at INTEGER,
-            updated_at INTEGER NOT NULL, last_used_at INTEGER, sort_order INTEGER NOT NULL DEFAULT 0,
-            needs_reauthorization INTEGER NOT NULL DEFAULT 0, switch_unavailable TEXT
-          );
-          CREATE INDEX IF NOT EXISTS accounts_product_order ON accounts(product, sort_order);`)
-        this.connection = connection
-      } catch (error) {
-        connection.close()
-        throw error
-      }
-    }
-    return this.connection
+  constructor(private readonly path: string) {
+    this.oauthPath = join(dirname(path), 'OAuth.json')
   }
 
   private requireEncryption(): void {
@@ -65,34 +193,91 @@ export class AccountStore {
       throw new Error('系统凭据加密不可用，无法保存账号。请先启用系统凭据存储。')
   }
 
-  list(): StoredAccount[] {
-    const rows = this.db().prepare('SELECT * FROM accounts ORDER BY sort_order, updated_at').all()
-    return rows
-      .filter((row) => accountProductSchema.safeParse(row.product).success)
-      .map((row) => {
-        this.requireEncryption()
-        return {
-          id: String(row.id),
-          product: accountProductSchema.parse(row.product),
-          providerKey: String(row.provider_key),
-          accountType: row.account_type === 'relay' ? ('relay' as const) : ('oauth' as const),
-          alias: String(row.alias),
-          email: String(row.email),
-          accountId: String(row.account_id),
-          planType: String(row.plan_type),
-          apiBaseUrl: row.api_base_url === null ? null : String(row.api_base_url),
-          auth: safeStorage.decryptString(Buffer.from(row.auth_encrypted as Uint8Array)),
-          usagePrimary: parseUsage(row.usage_primary),
-          usageSecondary: parseUsage(row.usage_secondary),
-          usageUpdatedAt: row.usage_updated_at === null ? null : Number(row.usage_updated_at),
-          updatedAt: Number(row.updated_at),
-          lastUsedAt: row.last_used_at === null ? null : Number(row.last_used_at),
-          sortOrder: Number(row.sort_order),
-          needsReauthorization: !!row.needs_reauthorization,
-          ...(row.switch_unavailable ? { switchUnavailable: String(row.switch_unavailable) } : {}),
-        }
+  private observe(): Stamps {
+    return { providers: stampOf(this.path), oauth: stampOf(this.oauthPath) }
+  }
+
+  private readPair(): { contents: Contents; stamps: Stamps } {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = this.observe()
+      const contents = {
+        providers: readOptional(this.path),
+        oauth: readOptional(this.oauthPath),
+      }
+      const after = this.observe()
+      if (sameStamps(before, after)) return { contents, stamps: after }
+    }
+    throw new Error('账号配置正在被其他程序修改，请稍后重试。')
+  }
+
+  private invalidate(): void {
+    this.accounts = undefined
+    this.encrypted = undefined
+    this.contents = undefined
+    this.revision = undefined
+    this.stamps = undefined
+  }
+
+  private load(): StoredAccount[] {
+    const now = this.observe()
+    if (
+      this.accounts &&
+      this.stamps &&
+      sameStamps(this.stamps, now) &&
+      settled(now.providers) &&
+      settled(now.oauth)
+    )
+      return this.accounts
+
+    const { contents, stamps } = this.readPair()
+    const revision = revisionOf(contents)
+    if (this.accounts && this.revision && sameRevision(this.revision, revision)) {
+      this.stamps = stamps
+      return this.accounts
+    }
+
+    this.invalidate()
+    try {
+      const providers: ProvidersFile =
+        contents.providers === null
+          ? { schemaVersion: 1, accounts: [] }
+          : providersFileSchema.parse(JSON.parse(contents.providers))
+      const vault: OAuthFile =
+        contents.oauth === null
+          ? { schemaVersion: 1, credentials: {} }
+          : oauthFileSchema.parse(JSON.parse(contents.oauth))
+      if (providers.accounts.length) this.requireEncryption()
+      const accounts = providers.accounts.map((account) => {
+        if (!Object.hasOwn(vault.credentials, account.id))
+          throw new Error('OAuth.json 缺少账号 ' + account.id + ' 的认证信息。')
+        return storedAccountSchema.parse({
+          ...account,
+          auth: safeStorage.decryptString(
+            Buffer.from(vault.credentials[account.id].data, 'base64'),
+          ),
+        })
       })
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.updatedAt - b.updatedAt)
+      this.accounts = accounts
+      this.encrypted = { ...vault.credentials }
+      this.contents = contents
+      this.revision = revision
+      this.stamps = stamps
+      return accounts
+    } catch (error) {
+      throw new Error(
+        '账号配置或认证文件无效、缺失或无法解密，原文件已保留：' +
+          this.path +
+          ' / ' +
+          this.oauthPath,
+        { cause: error },
+      )
+    }
+  }
+
+  list(): StoredAccount[] {
+    return structuredClone(this.draft ?? this.load()).sort(
+      (a, b) => a.sortOrder - b.sortOrder || a.updatedAt - b.updatedAt,
+    )
   }
 
   get(id: string): StoredAccount {
@@ -101,128 +286,169 @@ export class AccountStore {
     return account
   }
 
-  save(account: StoredAccount): void {
-    this.requireEncryption()
-    this.db()
-      .prepare(`INSERT INTO accounts (id, product, provider_key, account_type, alias, email, account_id,
-      plan_type, api_base_url, auth_encrypted, usage_primary, usage_secondary, usage_updated_at, updated_at,
-      last_used_at, sort_order, needs_reauthorization, switch_unavailable) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET alias=excluded.alias, email=excluded.email, account_id=excluded.account_id,
-      plan_type=excluded.plan_type, api_base_url=excluded.api_base_url, auth_encrypted=excluded.auth_encrypted,
-      usage_primary=excluded.usage_primary, usage_secondary=excluded.usage_secondary,
-      usage_updated_at=excluded.usage_updated_at, updated_at=excluded.updated_at,
-      last_used_at=excluded.last_used_at, sort_order=excluded.sort_order,
-      needs_reauthorization=excluded.needs_reauthorization, switch_unavailable=excluded.switch_unavailable`)
-      .run(
-        account.id,
-        account.product,
-        account.providerKey,
-        account.accountType,
-        account.alias,
-        account.email,
-        account.accountId,
-        account.planType,
-        account.apiBaseUrl,
-        safeStorage.encryptString(account.auth),
-        account.usagePrimary ? JSON.stringify(account.usagePrimary) : null,
-        account.usageSecondary ? JSON.stringify(account.usageSecondary) : null,
-        account.usageUpdatedAt,
-        account.updatedAt,
-        account.lastUsedAt,
-        account.sortOrder,
-        Number(account.needsReauthorization),
-        account.switchUnavailable ?? null,
-      )
+  private persist(accounts: StoredAccount[]): void {
+    const before = this.accounts ?? this.load()
+    const oldEncrypted = this.encrypted!
+    const oldContents = this.contents!
+    const previousRevision = this.revision!
+    const normalized = accounts.map((account) => storedAccountSchema.parse(account))
+    const metadata = normalized.map(({ auth: _auth, ...account }) => account)
+    const previousMetadata = before.map(({ auth: _auth, ...account }) => account)
+    const providers: ProvidersFile = providersFileSchema.parse({
+      schemaVersion: 1,
+      accounts: metadata,
+    })
+    const providersChanged =
+      oldContents.providers === null ||
+      JSON.stringify(metadata) !== JSON.stringify(previousMetadata)
+
+    const beforeById = new Map(before.map((account) => [account.id, account]))
+    const nextEncrypted: Credentials = Object.fromEntries(
+      normalized.map((account): [string, EncryptedCredential] => {
+        const previous = Object.hasOwn(oldEncrypted, account.id)
+          ? oldEncrypted[account.id]
+          : undefined
+        if (previous && beforeById.get(account.id)?.auth === account.auth)
+          return [account.id, previous]
+        this.requireEncryption()
+        return [
+          account.id,
+          {
+            scheme: 'electron-safeStorage',
+            encoding: 'base64',
+            data: safeStorage.encryptString(account.auth).toString('base64'),
+          },
+        ]
+      }),
+    )
+
+    // First write a superset of old and new credentials, then providers.json,
+    // finally remove stale credentials. Every crash point remains readable:
+    // providers.json never references a credential absent from OAuth.json.
+    const staged: Credentials = { ...oldEncrypted, ...nextEncrypted }
+    const stageChanged = !sameCredentials(oldEncrypted, staged)
+    const cleanupNeeded = !sameCredentials(staged, nextEncrypted)
+    const providersText = JSON.stringify(providers, null, 2) + '\n'
+    const stageText =
+      JSON.stringify(oauthFileSchema.parse({ schemaVersion: 1, credentials: staged }), null, 2) +
+      '\n'
+    const finalText =
+      JSON.stringify(
+        oauthFileSchema.parse({ schemaVersion: 1, credentials: nextEncrypted }),
+        null,
+        2,
+      ) + '\n'
+
+    let expected = { ...previousRevision }
+    let stagedWritten = false
+    let providersWritten = false
+    withLocks([this.path, this.oauthPath], () => {
+      const assertUnchanged = () => {
+        const actual = revisionOf({
+          providers: readOptional(this.path),
+          oauth: readOptional(this.oauthPath),
+        })
+        if (!sameRevision(actual, expected)) {
+          this.invalidate()
+          throw new Error('账号配置或认证文件已被其他程序修改，请刷新后重试。')
+        }
+      }
+      const write = (which: keyof Contents, value: string) => {
+        assertUnchanged()
+        writeAtomic(which === 'providers' ? this.path : this.oauthPath, value, assertUnchanged)
+        expected = { ...expected, [which]: checksum(value) }
+      }
+
+      assertUnchanged()
+      try {
+        if (stageChanged) {
+          write('oauth', stageText)
+          stagedWritten = true
+        }
+        if (providersChanged) {
+          write('providers', providersText)
+          providersWritten = true
+        }
+        if (cleanupNeeded) write('oauth', finalText)
+      } catch (error) {
+        // Roll back in reverse dependency order when possible. If a crash
+        // or uncooperative writer intervened, retain the staged superset:
+        // it is preferable to deleting a credential still in use.
+        let canRestoreOAuth = true
+        if (providersWritten) {
+          try {
+            assertUnchanged()
+            restore(this.path, oldContents.providers, assertUnchanged)
+            expected.providers = checksum(oldContents.providers)
+          } catch {
+            canRestoreOAuth = false
+            console.warn('无法恢复原账号配置；保留现有认证数据。')
+          }
+        }
+        if (stagedWritten && canRestoreOAuth) {
+          try {
+            assertUnchanged()
+            restore(this.oauthPath, oldContents.oauth, assertUnchanged)
+            expected.oauth = checksum(oldContents.oauth)
+          } catch {
+            console.warn('无法恢复原认证文件，请检查 OAuth.json。')
+          }
+        }
+        this.invalidate()
+        throw error
+      }
+    })
+
+    this.accounts = structuredClone(normalized)
+    this.encrypted = nextEncrypted
+    this.contents = {
+      providers: providersChanged ? providersText : oldContents.providers,
+      oauth: stageChanged || cleanupNeeded ? finalText : oldContents.oauth,
+    }
+    this.revision = expected
+    this.stamps = this.observe()
   }
 
-  transaction(action: () => void): void {
-    const connection = this.db()
-    connection.exec('BEGIN IMMEDIATE')
-    try {
-      action()
-      connection.exec('COMMIT')
-    } catch (error) {
-      connection.exec('ROLLBACK')
-      throw error
+  private change(action: (accounts: StoredAccount[]) => void): void {
+    if (this.draft) {
+      action(this.draft)
+      return
     }
+    const next = structuredClone(this.accounts ?? this.load())
+    action(next)
+    this.persist(next)
+  }
+
+  save(account: StoredAccount): void {
+    const valid = storedAccountSchema.parse(account)
+    this.change((accounts) => {
+      const index = accounts.findIndex((entry) => entry.id === valid.id)
+      if (index === -1) accounts.push(valid)
+      else accounts[index] = valid
+    })
   }
 
   remove(id: string): void {
-    this.db().prepare('DELETE FROM accounts WHERE id=?').run(id)
+    this.change((accounts) => {
+      const index = accounts.findIndex((entry) => entry.id === id)
+      if (index !== -1) accounts.splice(index, 1)
+    })
   }
+
+  transaction(action: () => void): void {
+    if (this.draft) throw new Error('不支持嵌套账号事务。')
+    const draft = structuredClone(this.accounts ?? this.load())
+    this.draft = draft
+    try {
+      action()
+      this.persist(draft)
+    } finally {
+      this.draft = undefined
+    }
+  }
+
   close(): void {
-    this.connection?.close()
-    this.connection = undefined
-  }
-}
-
-export const cortanaDatabase = () => join(homedir(), '.cortana', 'app.sqlite3')
-
-// The original database is opened read-only. Importing never migrates its schema or modifies it.
-export function readCortanaAccounts(path: string): StoredAccount[] {
-  const connection = new DatabaseSync(path, { readOnly: true })
-  try {
-    const rows = connection.prepare('SELECT * FROM accounts ORDER BY sort_order, created_at').all()
-    const accounts = rows
-      .filter((row) => accountProductSchema.safeParse(row.product).success)
-      .map((row): StoredAccount => {
-        const product = accountProductSchema.parse(row.product)
-        const usage = (kind: string) => {
-          const percent = row[`usage_${kind}_percent`]
-          if (typeof percent !== 'number' || !Number.isFinite(percent)) return null
-          return {
-            usedPercent: percent,
-            windowMinutes: Number(row[`usage_${kind}_window_minutes`]) || null,
-            resetsAt: Number(row[`usage_${kind}_resets_at`]) || null,
-          }
-        }
-        const protocol = text(row.upstream_protocol) || 'openaiResponses'
-        const auth = String(row.auth_json)
-        const credential = object(JSON.parse(auth))
-        let incompatiblePi = false
-        if (product === 'pi' && row.account_type !== 'relay') {
-          try {
-            normalizeCredential(product, credential, text(row.provider_key))
-          } catch {
-            incompatiblePi = true
-          }
-        }
-        const needsGateway =
-          product === 'codex' &&
-          row.account_type === 'relay' &&
-          (protocol !== 'openaiResponses' || row.upstream_auth_mode === 'xApiKey')
-        return {
-          id: String(row.id),
-          product,
-          providerKey: text(row.provider_key),
-          accountType: row.account_type === 'relay' ? 'relay' : 'oauth',
-          alias: text(row.alias) || text(row.email) || '未命名账号',
-          email: text(row.email),
-          accountId: text(row.account_id),
-          planType: text(row.plan_type),
-          apiBaseUrl: text(row.api_base_url) || null,
-          usagePrimary: usage('primary'),
-          usageSecondary: usage('secondary'),
-          usageUpdatedAt: Number(row.usage_updated_at) || null,
-          updatedAt: Number(row.updated_at) || Date.now(),
-          lastUsedAt: Number(row.last_used_at) || null,
-          needsReauthorization: !!row.oauth_invalidated_at,
-          sortOrder: Number(row.sort_order) || 0,
-          auth,
-          ...(needsGateway
-            ? { switchUnavailable: '此账号依赖 Cortana 协议转换网关，待网关模块接入后可切换。' }
-            : {}),
-          ...(product === 'pi' && row.account_type === 'relay'
-            ? { switchUnavailable: '此账号依赖自定义模型配置，待模型模块接入后可切换。' }
-            : {}),
-          ...(product === 'grok' && row.account_type === 'relay'
-            ? { switchUnavailable: '此账号依赖 Grok 自定义模型配置，待模型模块接入后可切换。' }
-            : {}),
-          ...(incompatiblePi ? { switchUnavailable: '此 Pi 账号的凭据格式需要重新导入。' } : {}),
-        }
-      })
-    return accounts
-  } finally {
-    connection.close()
+    this.invalidate()
+    this.draft = undefined
   }
 }

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { access } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -16,7 +15,7 @@ import type {
   AccountProfile,
   AccountStatus,
 } from '../../shared/accounts'
-import { AccountStore, cortanaDatabase, readCortanaAccounts } from './store'
+import { AccountStore } from './store'
 import type { StoredAccount } from './store'
 import {
   AccountCredentials,
@@ -86,8 +85,8 @@ export class AccountService {
   private queue: Promise<unknown> = Promise.resolve()
   private closing = false
 
-  constructor(databasePath: string, emitOAuth: (progress: AccountOAuthProgress) => void) {
-    this.store = new AccountStore(databasePath)
+  constructor(providersPath: string, emitOAuth: (progress: AccountOAuthProgress) => void) {
+    this.store = new AccountStore(providersPath)
     this.credentials = new AccountCredentials(
       homedir(),
       () => process.env.CODEX_HOME || join(homedir(), '.codex'),
@@ -180,10 +179,6 @@ export class AccountService {
             : authState === 'missing'
               ? '尚未检测到当前产品的登录凭据。'
               : '检测到尚未保存的登录，请先导入当前账号。'),
-        cortanaAvailable: await access(cortanaDatabase()).then(
-          () => true,
-          () => false,
-        ),
       }
     })
   }
@@ -226,34 +221,6 @@ export class AccountService {
         for (const credential of current) this.upsert(product, credential, '')
       })
       return current.length
-    })
-  }
-
-  importCortana(): Promise<number> {
-    return this.run(() => {
-      const source = readCortanaAccounts(cortanaDatabase())
-      const existing = this.store.list()
-      const imported = source.filter((candidate) => {
-        const identity = storedIdentity(candidate)
-        return !existing.some(
-          (entry) =>
-            entry.id === `cortana:${candidate.id}` ||
-            (identity !== undefined &&
-              entry.product === candidate.product &&
-              entry.accountType === candidate.accountType &&
-              entry.providerKey === candidate.providerKey &&
-              storedIdentity(entry) === identity),
-        )
-      })
-      this.store.transaction(() => {
-        for (const [index, account] of imported.entries())
-          this.store.save({
-            ...account,
-            id: `cortana:${account.id}`,
-            sortOrder: existing.length + index,
-          })
-      })
-      return imported.length
     })
   }
 

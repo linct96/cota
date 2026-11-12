@@ -92,7 +92,6 @@ export interface AccountStatus {
   authPath: string
   authState: 'managed' | 'unmanaged' | 'missing'
   authMessage: string
-  cortanaAvailable: boolean
 }
 
 export interface AccountOAuthProgress {
@@ -105,7 +104,6 @@ export interface AccountsAPI {
   list: (product: AccountProduct) => Promise<Result<AccountStatus>>
   add: (input: AddAccountInput) => Promise<Result<void>>
   importCurrent: (product: AccountProduct) => Promise<Result<number>>
-  importCortana: () => Promise<Result<number>>
   switch: (input: z.input<typeof switchAccountSchema>) => Promise<Result<void>>
   rename: (input: z.infer<typeof renameAccountSchema>) => Promise<Result<void>>
   remove: (id: string) => Promise<Result<void>>
