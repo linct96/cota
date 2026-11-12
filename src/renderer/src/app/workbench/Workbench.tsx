@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { RightPanel } from '@/app/workbench/RightPanel'
 import { useLeftPanel } from '@/state/left-panel-store'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { cn } from '@/lib/utils'
 import type { WorkspaceView } from './use-workspace-view'
 import { WorkspaceStage } from './WorkspaceStage'
@@ -26,7 +26,7 @@ export function Workbench({
 
   useEffect(() => {
     if (!secondaryPageOpen) {
-      projectPanel?.resize(leftPanelOpen ? useLeftPanel.getState().width : 0)
+      projectPanel?.resize(leftPanelOpen ? 240 : 0)
     }
   }, [projectPanel, leftPanelOpen, secondaryPageOpen])
   useVisibleTerminal(activeId, activeNavigation, showingDiff)
@@ -43,35 +43,16 @@ export function Workbench({
         id="workspace-projects"
         panelRef={projectPanelRef}
         defaultSize={240}
-        minSize={200}
-        maxSize={400}
+        minSize={240}
+        maxSize={240}
         collapsible
         collapsedSize={0}
         groupResizeBehavior="preserve-pixel-size"
-        onResize={(size, _id, previous) => {
-          if (secondaryPageOpen || !previous) return
-          if (size.inPixels === 0) {
-            if (useLeftPanel.getState().open) {
-              useLeftPanel.setState({ open: false })
-              requestAnimationFrame(() => document.getElementById('left-panel-toggle')?.focus())
-            }
-          } else if (useLeftPanel.getState().open) {
-            useLeftPanel.setState({ width: size.inPixels })
-          }
-        }}
-        className="project-sidebar-panel flex min-h-0 min-w-0 flex-col"
+        className="project-sidebar-panel flex min-h-0 min-w-0 flex-col border-r"
         style={{ overflow: 'hidden' }}
       >
         <ProjectSidebar projects={projects} homeActive={activeNavigation === 'home'} />
       </ResizablePanel>
-      <ResizableHandle
-        className={cn(
-          'workspace-resize-handle project-sidebar-resize-handle',
-          !leftPanelOpen && 'hidden',
-        )}
-        disabled={!leftPanelOpen}
-        aria-label="调整项目面板宽度"
-      />
       <ResizablePanel
         id="workspace-main"
         minSize={200}

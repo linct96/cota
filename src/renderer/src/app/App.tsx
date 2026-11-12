@@ -24,7 +24,6 @@ export function App() {
   const [rightTab, setRightTab] = useState('files')
   const activeRightTab = rightTab === 'git' && !view.gitAvailable ? 'files' : rightTab
   const leftPanelOpen = useLeftPanel((state) => state.open)
-  const projectSidebarWidth = useLeftPanel((state) => state.width)
 
   if (bootstrapError) throw new Error(bootstrapError)
 
@@ -39,7 +38,7 @@ export function App() {
         <TopStatusBar
           secondaryPageOpen={secondaryPageOpen}
           gitAvailable={view.gitAvailable}
-          sidebarWidth={leftPanelOpen ? (secondaryPageOpen ? 240 : projectSidebarWidth + 1) : 0}
+          sidebarWidth={leftPanelOpen ? 240 : 0}
           leftPanelId={
             settingsOpen
               ? 'settings-sidebar'
