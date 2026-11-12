@@ -35,7 +35,10 @@ export const storedAccountSchema = z.strictObject({
 const encryptedCredentialSchema = z.strictObject({
   scheme: z.literal('electron-safeStorage'),
   encoding: z.literal('base64'),
-  data: z.string().min(4).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+  data: z
+    .string()
+    .min(4)
+    .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
 })
 
 export const providersFileSchema = z.strictObject({

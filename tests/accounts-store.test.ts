@@ -1,8 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  fsyncSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import type * as FsModule from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { lockSync } from 'proper-lockfile'
+import { AccountStore } from '../src/main/accounts/store'
 import type { StoredAccount } from '../src/main/accounts/store'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof FsModule>()
+  return { ...fs, fsyncSync: vi.fn(fs.fsyncSync), unlinkSync: vi.fn(fs.unlinkSync) }
+})
 
 const mockEncryption = vi.hoisted(() => ({ available: true }))
 vi.mock('electron', () => ({
@@ -17,8 +34,6 @@ vi.mock('electron', () => ({
     },
   },
 }))
-
-import { AccountStore } from '../src/main/accounts/store'
 
 let root: string
 let path: string
@@ -77,6 +92,10 @@ describe('Cortana providers.json store', () => {
     expect(new AccountStore(path).get('first').alias).toBe('renamed')
     store.remove('second')
     expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['first'])
+    unlinkSync(path)
+    expect(store.list()).toEqual([])
+    store.save(account('third'))
+    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['third'])
   })
 
   it('commits a batch once and reads staged changes in the transaction', () => {
@@ -103,13 +122,34 @@ describe('Cortana providers.json store', () => {
     ).toThrow('abort')
     expect(readFileSync(path, 'utf8')).toBe(before)
     expect(store.list().map((entry) => entry.id)).toEqual(['a'])
+
+    const writeError = new Error('disk sync failed')
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(fsyncSync).mockImplementationOnce(() => {
+      throw writeError
+    })
+    vi.mocked(unlinkSync).mockImplementationOnce(() => {
+      throw new Error('cleanup failed')
+    })
+    expect(() => store.transaction(() => store.save(account('b')))).toThrow(writeError)
+    expect(warning).toHaveBeenCalledWith(expect.stringContaining('无法清理'))
+    expect(readFileSync(path, 'utf8')).toBe(before)
+    expect(store.list().map((entry) => entry.id)).toEqual(['a'])
+    store.save(account('b'))
+    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['a', 'b'])
   })
 
   it('keeps corrupt and unsupported files intact rather than resetting them', () => {
-    for (const raw of ['not-json', '{"schemaVersion":2,"accounts":[]}', '{"schemaVersion":1,"accounts":"bad"}']) {
+    const store = new AccountStore(path)
+    store.save(account('a'))
+    for (const raw of [
+      'not-json',
+      '{"schemaVersion":2,"accounts":[]}',
+      '{"schemaVersion":1,"accounts":"bad"}',
+    ]) {
       writeFileSync(path, raw)
-      const store = new AccountStore(path)
       expect(() => store.list()).toThrow('账号配置文件无效')
+      expect(() => store.save(account('b'))).toThrow('账号配置文件无效')
       expect(readFileSync(path, 'utf8')).toBe(raw)
     }
   })
@@ -121,6 +161,24 @@ describe('Cortana providers.json store', () => {
     other.save(account('b'))
     expect(() => store.save(account('c'))).toThrow('其他程序修改')
     expect(store.list().map((entry) => entry.id)).toEqual(['a', 'b'])
+    other.save({ ...other.get('a'), alias: 'external' })
+    expect(store.get('a').alias).toBe('external')
+
+    const before = readFileSync(path, 'utf8')
+    const release = lockSync(path, { realpath: false })
+    try {
+      expect(() => store.save(account('c'))).toThrow('正在写入')
+      expect(readFileSync(path, 'utf8')).toBe(before)
+    } finally {
+      release()
+    }
+
+    const external = '{"schemaVersion":1,"accounts":[]}\n'
+    vi.mocked(fsyncSync).mockImplementationOnce(() => writeFileSync(path, external))
+    expect(() => store.save(account('c'))).toThrow('其他程序修改')
+    expect(readFileSync(path, 'utf8')).toBe(external)
+    expect(store.list()).toEqual([])
+    expect(readdirSync(root)).toEqual(['providers.json'])
   })
 
   it('refuses to save when secure encryption is unavailable', () => {

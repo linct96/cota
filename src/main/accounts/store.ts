@@ -11,6 +11,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import { safeStorage } from 'electron'
+import { lockSync } from 'proper-lockfile'
 import type { AccountProfile } from '../../shared/accounts'
 import { providersFileSchema, storedAccountSchema } from './schema'
 import type { ProvidersFile } from './schema'
@@ -35,16 +36,30 @@ function checksum(contents: string | null): string | null {
 
 // Persist an entire snapshot instead of saving individual accounts, so transactions
 // are all-or-nothing. Temporary files and the destination must share a directory.
-function writeAtomic(path: string, contents: string): void {
+function writeAtomic(path: string, contents: string, assertUnchanged: () => void): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  let release: () => void
+  try {
+    release = lockSync(path, { realpath: false })
+  } catch (error) {
+    throw new Error(
+      (error as NodeJS.ErrnoException).code === 'ELOCKED'
+        ? '账号配置正在写入，请稍后重试。'
+        : '无法锁定账号配置文件，请检查目录权限。',
+      { cause: error },
+    )
+  }
   const temporary = path + '.' + randomUUID() + '.tmp'
   let descriptor: number | undefined
   try {
+    assertUnchanged()
     descriptor = openSync(temporary, 'wx', 0o600)
     writeFileSync(descriptor, contents, 'utf8')
     fsyncSync(descriptor)
     closeSync(descriptor)
     descriptor = undefined
+    // shortcut: non-cooperating editors can still race after this check; require a shared lock for strict exclusion.
+    assertUnchanged()
     renameSync(temporary, path)
     // Some platforms cannot fsync directories; the file itself is synced above.
     try {
@@ -58,11 +73,22 @@ function writeAtomic(path: string, contents: string): void {
       // Directory fsync is not available on every supported filesystem.
     }
   } finally {
-    if (descriptor !== undefined) closeSync(descriptor)
+    // Cleanup must not mask the write result or cause a committed write to appear rolled back.
+    try {
+      if (descriptor !== undefined) closeSync(descriptor)
+    } catch {
+      console.warn('无法关闭账号配置临时文件：' + temporary)
+    }
     try {
       unlinkSync(temporary)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        console.warn('无法清理账号配置临时文件：' + temporary)
+    }
+    try {
+      release()
+    } catch {
+      console.warn('无法释放账号配置锁：' + path + '.lock')
     }
   }
 }
@@ -83,8 +109,10 @@ export class AccountStore {
   }
 
   private load(): StoredAccount[] {
-    if (this.accounts) return this.accounts
     const contents = readOptional(this.path)
+    const revision = checksum(contents)
+    if (this.accounts && revision === this.revision) return this.accounts
+    this.accounts = undefined
     if (contents === null) {
       this.accounts = []
       this.revision = null
@@ -100,7 +128,7 @@ export class AccountStore {
         }),
       )
       this.accounts = accounts
-      this.revision = checksum(contents)
+      this.revision = revision
       return accounts
     } catch (error) {
       throw new Error('账号配置文件无效或无法解密，原文件已保留：' + this.path, {
@@ -135,14 +163,14 @@ export class AccountStore {
         },
       })),
     })
-    const current = readOptional(this.path)
-    if (checksum(current) !== this.revision) {
-      // An external editor changed providers.json. Never overwrite it with stale data.
-      this.accounts = undefined
-      throw new Error('账号配置已被其他程序修改，请刷新后重试。')
+    const assertUnchanged = () => {
+      if (checksum(readOptional(this.path)) !== this.revision) {
+        this.accounts = undefined
+        throw new Error('账号配置已被其他程序修改，请刷新后重试。')
+      }
     }
     const serialized = JSON.stringify(document, null, 2) + '\n'
-    writeAtomic(this.path, serialized)
+    writeAtomic(this.path, serialized, assertUnchanged)
     this.accounts = structuredClone(normalized)
     this.revision = checksum(serialized)
   }
@@ -152,7 +180,7 @@ export class AccountStore {
       action(this.draft)
       return
     }
-    const next = structuredClone(this.load())
+    const next = structuredClone(this.accounts ?? this.load())
     action(next)
     this.persist(next)
   }
@@ -175,7 +203,7 @@ export class AccountStore {
 
   transaction(action: () => void): void {
     if (this.draft) throw new Error('不支持嵌套账号事务。')
-    const draft = structuredClone(this.load())
+    const draft = structuredClone(this.accounts ?? this.load())
     this.draft = draft
     try {
       action()

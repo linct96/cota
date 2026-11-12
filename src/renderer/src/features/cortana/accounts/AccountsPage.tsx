@@ -512,9 +512,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
         >
           <DialogHeader className="account-confirm-header">
             <DialogTitle className="account-confirm-title">
-              {confirmation?.kind === 'switch'
-                ? '切换并覆盖当前登录？'
-                : '删除已保存账号？'}
+              {confirmation?.kind === 'switch' ? '切换并覆盖当前登录？' : '删除已保存账号？'}
             </DialogTitle>
             <DialogDescription className="account-confirm-description">
               {confirmation?.kind === 'switch'
