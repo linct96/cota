@@ -268,7 +268,7 @@ export function AddAccountDialog({
                             >
                               {product === 'pi'
                                 ? '也可先在 Pi 中执行 /login，再使用「导入当前登录」。'
-                                : '凭据将加密保存在本机。请勿粘贴与此账号无关的配置。'}
+                                : '凭据将以明文保存在本机。'}
                             </FieldDescription>
                             {invalid && (
                               <FieldError

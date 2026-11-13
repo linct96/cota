@@ -27,20 +27,6 @@ vi.mock('node:fs', async (importOriginal) => {
   }
 })
 
-const mockEncryption = vi.hoisted(() => ({ available: true }))
-vi.mock('electron', () => ({
-  safeStorage: {
-    isEncryptionAvailable: () => mockEncryption.available,
-    getSelectedStorageBackend: () => 'gnome_libsecret',
-    encryptString: (value: string) => Buffer.from('sealed:' + value, 'utf8'),
-    decryptString: (value: Buffer) => {
-      const raw = value.toString('utf8')
-      if (!raw.startsWith('sealed:')) throw new Error('Invalid credential')
-      return raw.slice('sealed:'.length)
-    },
-  },
-}))
-
 let root: string
 let path: string
 let oauthPath: string
@@ -75,7 +61,6 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'cota-providers-'))
   path = join(root, 'providers.json')
   oauthPath = join(root, 'OAuth.json')
-  mockEncryption.available = true
 })
 
 afterEach(() => {
@@ -84,7 +69,7 @@ afterEach(() => {
 })
 
 describe('Cortana providers.json and OAuth.json store', () => {
-  it('keeps provider metadata and encrypted credentials in separate private files', () => {
+  it('keeps provider metadata and plaintext credentials in separate private files', () => {
     const store = new AccountStore(path)
     expect(store.list()).toEqual([])
     store.save(account('first'))
@@ -93,14 +78,14 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(raw).not.toContain('TOP-SECRET')
     expect(raw).not.toContain('authEncrypted')
     expect(raw).not.toContain('"auth"')
-    expect(vault).not.toContain('TOP-SECRET')
+    expect(vault).toContain('TOP-SECRET')
     expect(JSON.parse(raw)).toMatchObject({
       schemaVersion: 1,
       accounts: [{ id: 'first', alias: 'first' }],
     })
     expect(JSON.parse(vault)).toMatchObject({
-      schemaVersion: 1,
-      credentials: { first: { scheme: 'electron-safeStorage', encoding: 'base64' } },
+      schemaVersion: 2,
+      credentials: { first: account('first').auth },
     })
     if (process.platform !== 'win32') {
       expect(statSync(path).mode & 0o777).toBe(0o600)
@@ -242,6 +227,7 @@ describe('Cortana providers.json and OAuth.json store', () => {
     writeFileSync(path, providerGood)
     for (const raw of [
       'not-json',
+      '{"schemaVersion":3,"credentials":{}}',
       '{"schemaVersion":2,"credentials":{}}',
       '{"schemaVersion":1,"credentials":{}}',
     ]) {
@@ -305,11 +291,7 @@ describe('Cortana providers.json and OAuth.json store', () => {
     const store = new AccountStore(path)
     store.save(account('a'))
     const vault = readVault()
-    vault.credentials.a = {
-      scheme: 'electron-safeStorage',
-      encoding: 'base64',
-      data: Buffer.from('sealed:{"token":"EXTERNAL"}').toString('base64'),
-    }
+    vault.credentials.a = '{"token":"EXTERNAL"}'
     const external = JSON.stringify(vault, null, 2) + '\n'
     vi.mocked(fsyncSync).mockImplementationOnce(() => writeFileSync(oauthPath, external))
     expect(() => store.save({ ...store.get('a'), auth: '{"token":"INTERNAL"}' })).toThrow(
@@ -319,10 +301,20 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(store.get('a').auth).toBe('{"token":"EXTERNAL"}')
   })
 
-  it('requires secure encryption before saving a credential', () => {
+  it('rejects legacy encrypted credentials without overwriting either file', () => {
     const store = new AccountStore(path)
-    mockEncryption.available = false
-    expect(() => store.save(account('a'))).toThrow('系统凭据加密不可用')
-    expect(store.list()).toEqual([])
+    store.save(account('a'))
+    const providersBefore = readFileSync(path, 'utf8')
+    const legacy = JSON.stringify({
+      schemaVersion: 1,
+      credentials: {
+        a: { scheme: 'electron-safeStorage', encoding: 'base64', data: 'c2VhbGVk' },
+      },
+    })
+    writeFileSync(oauthPath, legacy)
+    expect(() => store.list()).toThrow('版本不兼容')
+    expect(() => store.save(account('b'))).toThrow('版本不兼容')
+    expect(readFileSync(path, 'utf8')).toBe(providersBefore)
+    expect(readFileSync(oauthPath, 'utf8')).toBe(legacy)
   })
 })

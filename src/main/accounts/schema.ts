@@ -32,16 +32,6 @@ export const storedAccountSchema = z.strictObject({
   auth: z.string().max(1024 * 1024),
 })
 
-export const encryptedCredentialSchema = z.strictObject({
-  scheme: z.literal('electron-safeStorage'),
-  encoding: z.literal('base64'),
-  data: z
-    .string()
-    .min(4)
-    .max(2 * 1024 * 1024)
-    .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-})
-
 export const providersFileSchema = z.strictObject({
   schemaVersion: z.literal(1),
   accounts: z
@@ -61,16 +51,17 @@ export const providersFileSchema = z.strictObject({
     }),
 })
 
-// OAuth.json is an encrypted credential vault keyed by the id in providers.json.
-// It contains OAuth tokens AND API keys; providers.json never contains secrets.
+// OAuth.json stores plaintext OAuth tokens and API keys by the id in providers.json.
+// Version 2 deliberately rejects the old encrypted format without overwriting it.
 export const oauthFileSchema = z.strictObject({
-  schemaVersion: z.literal(1),
-  credentials: z.record(accountIdSchema, encryptedCredentialSchema).superRefine((values, ctx) => {
-    if (Object.keys(values).length > 10_000)
-      ctx.addIssue({ code: 'custom', message: '认证记录数量超限。' })
-  }),
+  schemaVersion: z.literal(2),
+  credentials: z
+    .record(accountIdSchema, storedAccountSchema.shape.auth)
+    .superRefine((values, ctx) => {
+      if (Object.keys(values).length > 10_000)
+        ctx.addIssue({ code: 'custom', message: '认证记录数量超限。' })
+    }),
 })
 
 export type ProvidersFile = z.infer<typeof providersFileSchema>
 export type OAuthFile = z.infer<typeof oauthFileSchema>
-export type EncryptedCredential = z.infer<typeof encryptedCredentialSchema>

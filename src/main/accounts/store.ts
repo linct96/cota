@@ -11,11 +11,10 @@ import {
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { safeStorage } from 'electron'
 import { lockSync } from 'proper-lockfile'
 import type { AccountProfile } from '../../shared/accounts'
 import { oauthFileSchema, providersFileSchema, storedAccountSchema } from './schema'
-import type { EncryptedCredential, OAuthFile, ProvidersFile } from './schema'
+import type { OAuthFile, ProvidersFile } from './schema'
 
 export interface StoredAccount extends Omit<AccountProfile, 'isActive'> {
   auth: string
@@ -26,7 +25,7 @@ type Contents = { providers: string | null; oauth: string | null }
 type Revision = Contents
 type FileStamp = { size: number; mtimeMs: number; ctimeMs: number; ino: number }
 type Stamps = { providers: FileStamp | null; oauth: FileStamp | null }
-type Credentials = Record<string, EncryptedCredential>
+type Credentials = OAuthFile['credentials']
 
 function readOptional(path: string): string | null {
   try {
@@ -82,7 +81,7 @@ function sameCredentials(a: Credentials, b: Credentials): boolean {
   const keys = Object.keys(a)
   return (
     keys.length === Object.keys(b).length &&
-    keys.every((key) => Object.hasOwn(b, key) && a[key].data === b[key].data)
+    keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key])
   )
 }
 
@@ -175,7 +174,7 @@ function restore(path: string, contents: string | null, assertUnchanged: () => v
 export class AccountStore {
   private readonly oauthPath: string
   private accounts?: StoredAccount[]
-  private encrypted?: Credentials
+  private credentials?: Credentials
   private draft?: StoredAccount[]
   private contents?: Contents
   private revision?: Revision
@@ -183,14 +182,6 @@ export class AccountStore {
 
   constructor(private readonly path: string) {
     this.oauthPath = join(dirname(path), 'OAuth.json')
-  }
-
-  private requireEncryption(): void {
-    if (
-      !safeStorage.isEncryptionAvailable() ||
-      (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text')
-    )
-      throw new Error('系统凭据加密不可用，无法保存账号。请先启用系统凭据存储。')
   }
 
   private observe(): Stamps {
@@ -212,7 +203,7 @@ export class AccountStore {
 
   private invalidate(): void {
     this.accounts = undefined
-    this.encrypted = undefined
+    this.credentials = undefined
     this.contents = undefined
     this.revision = undefined
     this.stamps = undefined
@@ -244,28 +235,25 @@ export class AccountStore {
           : providersFileSchema.parse(JSON.parse(contents.providers))
       const vault: OAuthFile =
         contents.oauth === null
-          ? { schemaVersion: 1, credentials: {} }
+          ? { schemaVersion: 2, credentials: {} }
           : oauthFileSchema.parse(JSON.parse(contents.oauth))
-      if (providers.accounts.length) this.requireEncryption()
       const accounts = providers.accounts.map((account) => {
         if (!Object.hasOwn(vault.credentials, account.id))
           throw new Error('OAuth.json 缺少账号 ' + account.id + ' 的认证信息。')
         return storedAccountSchema.parse({
           ...account,
-          auth: safeStorage.decryptString(
-            Buffer.from(vault.credentials[account.id].data, 'base64'),
-          ),
+          auth: vault.credentials[account.id],
         })
       })
       this.accounts = accounts
-      this.encrypted = { ...vault.credentials }
+      this.credentials = { ...vault.credentials }
       this.contents = contents
       this.revision = revision
       this.stamps = stamps
       return accounts
     } catch (error) {
       throw new Error(
-        '账号配置或认证文件无效、缺失或无法解密，原文件已保留：' +
+        '账号配置或认证文件无效、缺失或版本不兼容，原文件已保留：' +
           this.path +
           ' / ' +
           this.oauthPath,
@@ -288,7 +276,7 @@ export class AccountStore {
 
   private persist(accounts: StoredAccount[]): void {
     const before = this.accounts ?? this.load()
-    const oldEncrypted = this.encrypted!
+    const oldCredentials = this.credentials!
     const oldContents = this.contents!
     const previousRevision = this.revision!
     const normalized = accounts.map((account) => storedAccountSchema.parse(account))
@@ -302,39 +290,23 @@ export class AccountStore {
       oldContents.providers === null ||
       JSON.stringify(metadata) !== JSON.stringify(previousMetadata)
 
-    const beforeById = new Map(before.map((account) => [account.id, account]))
-    const nextEncrypted: Credentials = Object.fromEntries(
-      normalized.map((account): [string, EncryptedCredential] => {
-        const previous = Object.hasOwn(oldEncrypted, account.id)
-          ? oldEncrypted[account.id]
-          : undefined
-        if (previous && beforeById.get(account.id)?.auth === account.auth)
-          return [account.id, previous]
-        this.requireEncryption()
-        return [
-          account.id,
-          {
-            scheme: 'electron-safeStorage',
-            encoding: 'base64',
-            data: safeStorage.encryptString(account.auth).toString('base64'),
-          },
-        ]
-      }),
+    const nextCredentials: Credentials = Object.fromEntries(
+      normalized.map((account) => [account.id, account.auth]),
     )
 
     // First write a superset of old and new credentials, then providers.json,
     // finally remove stale credentials. Every crash point remains readable:
     // providers.json never references a credential absent from OAuth.json.
-    const staged: Credentials = { ...oldEncrypted, ...nextEncrypted }
-    const stageChanged = !sameCredentials(oldEncrypted, staged)
-    const cleanupNeeded = !sameCredentials(staged, nextEncrypted)
+    const staged: Credentials = { ...oldCredentials, ...nextCredentials }
+    const stageChanged = !sameCredentials(oldCredentials, staged)
+    const cleanupNeeded = !sameCredentials(staged, nextCredentials)
     const providersText = JSON.stringify(providers, null, 2) + '\n'
     const stageText =
-      JSON.stringify(oauthFileSchema.parse({ schemaVersion: 1, credentials: staged }), null, 2) +
+      JSON.stringify(oauthFileSchema.parse({ schemaVersion: 2, credentials: staged }), null, 2) +
       '\n'
     const finalText =
       JSON.stringify(
-        oauthFileSchema.parse({ schemaVersion: 1, credentials: nextEncrypted }),
+        oauthFileSchema.parse({ schemaVersion: 2, credentials: nextCredentials }),
         null,
         2,
       ) + '\n'
@@ -400,7 +372,7 @@ export class AccountStore {
     })
 
     this.accounts = structuredClone(normalized)
-    this.encrypted = nextEncrypted
+    this.credentials = nextCredentials
     this.contents = {
       providers: providersChanged ? providersText : oldContents.providers,
       oauth: stageChanged || cleanupNeeded ? finalText : oldContents.oauth,
