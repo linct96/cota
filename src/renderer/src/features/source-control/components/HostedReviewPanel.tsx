@@ -140,8 +140,6 @@ export function HostedReviewPanel({
         </div>
       </nav>
       <SourceControlSectionLayout
-        defaultOpen={false}
-        defaultExpandedSize="50%"
         resizeLabel="调整最新评审与历史评审记录区域高度"
         section={
           snapshot

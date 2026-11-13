@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
+import { flushSync } from 'react-dom'
 import { usePanelCallbackRef } from 'react-resizable-panels'
 import { ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 
@@ -9,7 +11,7 @@ export function SourceControlSectionLayout({
   children,
   section,
   resizeLabel,
-  defaultOpen = true,
+  defaultOpen = false,
   defaultExpandedSize = '40%',
   onOpenChange,
 }: {
@@ -21,20 +23,17 @@ export function SourceControlSectionLayout({
   onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  // 自行记录展开高度：库的 expand() 仅记住 collapse() 前的高度，拖拽折叠或重新注册后会丢失
-  const [expandedSize, setExpandedSize] = useState<number>()
+  const expandedSize = useRef<string | undefined>(undefined)
   const [panel, setPanel] = usePanelCallbackRef()
-
-  function updateOpen(nextOpen: boolean) {
-    setOpen(nextOpen)
-    onOpenChange?.(nextOpen)
-  }
 
   function changeOpen(nextOpen: boolean) {
     if (!panel) return
-    if (nextOpen) panel.resize(expandedSize ? `${expandedSize}%` : defaultExpandedSize)
-    else panel.collapse()
-    updateOpen(!panel.isCollapsed())
+    // 先提交新的尺寸约束，避免 resize 被上一状态的最大高度截断。
+    flushSync(() => {
+      setOpen(nextOpen)
+      onOpenChange?.(nextOpen)
+    })
+    panel.resize(nextOpen ? (expandedSize.current ?? defaultExpandedSize) : '2rem')
   }
 
   if (!section) return children
@@ -42,6 +41,11 @@ export function SourceControlSectionLayout({
   return (
     <ResizablePanelGroup
       orientation="vertical"
+      onLayoutChanged={(_, { isUserInteraction }) => {
+        if (open && isUserInteraction && panel) {
+          expandedSize.current = `${panel.getSize().asPercentage}%`
+        }
+      }}
       className="source-control-section-layout min-h-0 min-w-0 flex-1"
     >
       <ResizablePanel
@@ -51,25 +55,17 @@ export function SourceControlSectionLayout({
         {children}
       </ResizablePanel>
       <ResizableHandle
-        withHandle
-        className="source-control-section-resize-handle"
+        withHandle={open}
+        className={cn('source-control-section-resize-handle', !open && 'pointer-events-none')}
         aria-label={resizeLabel}
         disabled={!open}
+        disableDoubleClick
       />
       <ResizablePanel
         panelRef={setPanel}
         defaultSize={defaultOpen ? defaultExpandedSize : '2rem'}
-        minSize="6.6rem"
-        collapsible
-        collapsedSize="2rem"
-        collapsedThreshold="100%"
-        onResize={(size) => {
-          if (panel) {
-            const expanded = !panel.isCollapsed()
-            if (expanded) setExpandedSize(size.asPercentage)
-            updateOpen(expanded)
-          }
-        }}
+        minSize={open ? '6.6rem' : '2rem'}
+        maxSize={open ? undefined : '2rem'}
         className="source-control-section-secondary-panel flex min-h-0 min-w-0 flex-col overflow-hidden"
       >
         {section(open, changeOpen)}
