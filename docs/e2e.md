@@ -57,7 +57,7 @@ pnpm exec playwright test --last-failed
 每个用例新建 `/private/tmp/cota-e2e-*` 私有目录，包括：
 
 - `home/`：独立 Home、Shell 配置、CLI 配置和工作树。
-- `profile/Cota Dev/`：配置、数据库、Chromium 用户数据与单实例身份。
+- `home/.cota-dev/`：应用配置、账号文件、Chromium 用户数据与单实例身份。
 - `sample-project/`：真实 Git 仓库，只有测试身份和初始文件，无远端。
 - `home/.gitconfig`：测试身份，禁用签名、凭据 helper、hooks 和远程传输。
 - `bin/`：外部 CLI 的可控“不可用”替身，以及执行真实 `/usr/bin/git` 的隔离启动脚本。主进程会清除 `GIT_*`，启动脚本在可执行文件边界重新指定临时配置并禁用系统配置。
