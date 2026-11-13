@@ -4,14 +4,17 @@ import { useRouter } from '@tanstack/react-router'
 import { useShallow } from 'zustand/react/shallow'
 import { currentWorkspace, useWorkspace } from '@/state/workspace'
 import { AgentIcon } from '@/features/agents/components/AgentIcon'
-import { AGENT_STATE_LABELS, agentTabState } from '@/features/agents/lib/agent-status'
+import {
+  AGENT_STATE_LABELS,
+  agentTabState,
+  terminalIndicatorState,
+} from '@/features/agents/lib/agent-status'
 import { DotStatus } from '@/components/DotStatus'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { SourceControlSection } from '@/features/source-control/components/SourceControlSection'
-import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { folderName } from '@/lib/utils'
+import { cn, folderName } from '@/lib/utils'
 
 export const AgentList = memo(function AgentList({
   homeActive,
@@ -60,23 +63,23 @@ export const AgentList = memo(function AgentList({
       open={open}
       triggerRef={triggerRef}
       onOpenChange={onOpenChange}
-      title={
-        <>
-          <span className="project-agents-title">Agents</span>
-          <Badge variant="secondary" className="project-agents-count tabular-nums">
-            {agents.length}
-          </Badge>
-        </>
-      }
+      title={<span className="project-agents-title">智能体</span>}
     >
-      <ScrollArea className="project-agents-scroll-area h-full min-w-0">
+      <ScrollArea
+        className={cn(
+          'project-agents-scroll-area h-full min-w-0 [&_.ui-scroll-area-content]:min-w-0!',
+          !agents.length &&
+            '[&_.ui-scroll-area-content]:flex [&_.ui-scroll-area-content]:min-h-full',
+        )}
+      >
         <nav
           id="project-agent-list"
-          className="project-agents-list flex flex-col gap-1 px-2 py-2"
-          aria-label="Agent 列表"
+          className="project-agents-list flex min-w-0 flex-1 flex-col gap-1 px-2 py-2"
+          aria-label="智能体列表"
         >
           {agents.map(({ tab, workspace }) => {
             const status = agentTabState(tab)
+            const indicatorState = terminalIndicatorState(tab)
             const selected = state.workspaceId === workspace.id
             const active = selected && homeActive && state.activeTabs[workspace.id] === tab.id
             const worktree = state.worktreeScans[workspace.projectPath]?.entries.find(
@@ -130,17 +133,22 @@ export const AgentList = memo(function AgentList({
                     {origin}
                   </span>
                 </span>
-                <span className="project-agent-status shrink-0" title={AGENT_STATE_LABELS[status]}>
-                  <DotStatus state={status === 'other' ? 'idle' : status} />
-                </span>
+                {indicatorState !== 'other' && (
+                  <span
+                    className="project-agent-status shrink-0"
+                    title={AGENT_STATE_LABELS[status]}
+                  >
+                    <DotStatus state={indicatorState} />
+                  </span>
+                )}
               </Button>
             )
           })}
           {!agents.length && (
-            <Empty className="project-agents-empty flex-none px-2 py-6">
-              <EmptyHeader className="project-agents-empty-header">
-                <EmptyTitle className="project-agents-empty-title">暂无 Agent</EmptyTitle>
-              </EmptyHeader>
+            <Empty className="project-agents-empty px-3 py-4">
+              <EmptyDescription className="project-agents-empty-description text-app-muted-foreground">
+                暂无智能体
+              </EmptyDescription>
             </Empty>
           )}
         </nav>
