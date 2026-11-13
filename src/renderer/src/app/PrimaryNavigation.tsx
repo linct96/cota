@@ -1,7 +1,7 @@
 import { useRouter } from '@tanstack/react-router'
 import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
 import { HouseIcon } from '@phosphor-icons/react/dist/csr/House'
-import { CircleDot } from 'lucide-react'
+import { CortanaIcon } from '@/components/CortanaIcon'
 import { useWorkspace } from '@/state/workspace'
 import { ShortcutKbd } from '@/components/ShortcutKbd'
 import { Button } from '@/components/ui/button'
@@ -63,7 +63,7 @@ export function PrimaryNavigation({
               />
             }
           >
-            <CircleDot className="nav-cortana-icon" aria-hidden="true" />
+            <CortanaIcon className="nav-cortana-icon" active={cortanaOpen} />
           </TooltipTrigger>
           <TooltipContent side="right">Cortana</TooltipContent>
         </Tooltip>

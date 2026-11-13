@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg-surface" x1="160" y1="100" x2="864" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#18181B" />
+      <stop offset="50%" stop-color="#0E0E11" />
+      <stop offset="100%" stop-color="#070709" />
+    </linearGradient>
+    <linearGradient id="bg-rim" x1="512" y1="100" x2="512" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.22" />
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.02" />
+    </linearGradient>
+    <radialGradient id="core-ambient" cx="512" cy="512" r="340" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.10" />
+      <stop offset="65%" stop-color="#FFFFFF" stop-opacity="0.03" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="outer-ring" x1="232" y1="232" x2="792" y2="792" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FAFAFA" />
+      <stop offset="60%" stop-color="#D4D4D8" />
+      <stop offset="100%" stop-color="#71717A" />
+    </linearGradient>
+    <linearGradient id="inner-halo" x1="320" y1="310" x2="704" y2="714" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="70%" stop-color="#F4F4F5" />
+      <stop offset="100%" stop-color="#A1A1AA" />
+    </linearGradient>
+  </defs>
+
+  <!-- macOS 标准圆角矩形底座 (824x824, rx=185) -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg-surface)" />
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#bg-rim)" stroke-width="3" />
+
+  <!-- 中心微弱单色环境光晕 -->
+  <circle cx="512" cy="512" r="340" fill="url(#core-ambient)" />
+
+  <!-- 外层极细科技刻度环 (r=304) -->
+  <circle
+    cx="512"
+    cy="512"
+    r="304"
+    fill="none"
+    stroke="#A1A1AA"
+    stroke-opacity="0.22"
+    stroke-width="4"
+    stroke-dasharray="18 22"
+  />
+
+  <!-- 科塔娜外层科技开口双弧环 (r=254) -->
+  <circle
+    cx="512"
+    cy="512"
+    r="254"
+    fill="none"
+    stroke="url(#outer-ring)"
+    stroke-width="28"
+    stroke-linecap="round"
+    stroke-dasharray="620 178"
+    transform="rotate(-35 512 512)"
+  />
+  <!-- 外环斜向对称科技点缀短弧 -->
+  <circle
+    cx="512"
+    cy="512"
+    r="254"
+    fill="none"
+    stroke="#E4E4E7"
+    stroke-opacity="0.55"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-dasharray="48 750"
+    transform="rotate(112 512 512)"
+  />
+  <circle
+    cx="512"
+    cy="512"
+    r="254"
+    fill="none"
+    stroke="#E4E4E7"
+    stroke-opacity="0.55"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-dasharray="48 750"
+    transform="rotate(292 512 512)"
+  />
+
+  <!-- 科塔娜核心主光环外层柔光圈 (r=166) -->
+  <circle
+    cx="512"
+    cy="512"
+    r="166"
+    fill="none"
+    stroke="#FFFFFF"
+    stroke-opacity="0.14"
+    stroke-width="68"
+  />
+
+  <!-- 科塔娜核心主光环 (r=166) -->
+  <circle
+    cx="512"
+    cy="512"
+    r="166"
+    fill="none"
+    stroke="url(#inner-halo)"
+    stroke-width="42"
+  />
+
+  <!-- 内层脉冲呼吸环 (r=92) -->
+  <circle
+    cx="512"
+    cy="512"
+    r="92"
+    fill="none"
+    stroke="#D4D4D8"
+    stroke-opacity="0.65"
+    stroke-width="12"
+    stroke-linecap="round"
+    stroke-dasharray="190 99"
+    transform="rotate(25 512 512)"
+  />
+
+  <!-- 中心能量核心 -->
+  <circle cx="512" cy="512" r="24" fill="#FAFAFA" />
+</svg>

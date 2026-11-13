@@ -8,13 +8,24 @@ files:
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - resources/licenses/**
+  - resources/icon.png
+  - resources/trayTemplate.png
+  - resources/trayTemplate@2x.png
+  - resources/tray.png
+  - resources/tray.ico
 asar: true
 asarUnpack:
   - node_modules/node-pty/**
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-*/**
   - out/main/**
+  - resources/icon.png
+  - resources/trayTemplate.png
+  - resources/trayTemplate@2x.png
+  - resources/tray.png
+  - resources/tray.ico
 mac:
+  icon: build/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
@@ -22,6 +33,7 @@ mac:
   identity: '-'
   hardenedRuntime: false
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]

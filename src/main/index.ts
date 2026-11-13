@@ -33,9 +33,11 @@ import { AppLifecycle } from './app/lifecycle'
 import { AppRenderer } from './app/renderer'
 import { createAppWindow } from './app/window'
 import { installMenu } from './app/menu'
+import { createAppTray } from './app/tray'
 import { createIPC } from './app/ipc'
 
 let window: BrowserWindow | undefined
+let appTray: { dispose: () => void } | undefined
 // Recovery IPC is installed without a Host; createIPC blocks Host-dependent calls on startup failure.
 let manager: HostClient | undefined
 let config: ConfigStore
@@ -103,6 +105,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
   app.on('will-quit', () => {
+    appTray?.dispose()
     agentSleep.dispose()
     workspacePorts?.dispose()
   })
@@ -110,6 +113,13 @@ if (!app.requestSingleInstanceLock()) {
     try {
       await app.whenReady()
       app.setName(appName)
+      if (!app.isPackaged && process.platform === 'darwin') {
+        try {
+          app.dock?.setIcon(join(__dirname, '../../resources/icon.png'))
+        } catch {
+          /* Ignore icon load errors in headless or test environments. */
+        }
+      }
       config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
       codeHosting = new CodeHostingService(config, sourceControl)
       accounts = new AccountService(join(app.getPath('userData'), 'providers.json'), (progress) =>
@@ -215,6 +225,21 @@ if (!app.requestSingleInstanceLock()) {
         renderer.replyExitLayout(id, layout),
       )
       handle('app:force-exit', () => lifecycle.requestForceExit())
+      const showMainWindow = () => {
+        if (!window || window.isDestroyed()) return
+        if (window.isMinimized()) window.restore()
+        window.show()
+        window.focus()
+      }
+      appTray = createAppTray({
+        appName,
+        showWindow: showMainWindow,
+        openSettings: () => {
+          if (!lifecycle.exitPending && !lifecycle.exiting)
+            renderer.send('app:shortcut', 'settings')
+        },
+        stopAllAndQuit: () => void lifecycle.requestExit(true),
+      })
       updateMenu()
       if (devURL) await window.loadURL(devURL)
       else await window.loadFile(rendererFile)

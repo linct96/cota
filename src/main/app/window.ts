@@ -36,6 +36,7 @@ export function createAppWindow(options: {
     show: false,
     acceptFirstMouse: true,
     title: appName,
+    ...(process.platform !== 'darwin' ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     titleBarStyle:
       process.platform === 'darwin' || process.platform === 'win32' ? 'hidden' : 'default',
     ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 14 } } : {}),

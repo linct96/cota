@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="36" height="36">
+  <!-- 外层科塔娜科技开口双弧环 -->
+  <circle
+    cx="18"
+    cy="18"
+    r="14"
+    fill="none"
+    stroke="#000000"
+    stroke-opacity="0.88"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-dasharray="33 10.98"
+    transform="rotate(-35 18 18)"
+  />
+  <!-- 核心科塔娜主光环 -->
+  <circle
+    cx="18"
+    cy="18"
+    r="8.2"
+    fill="none"
+    stroke="#000000"
+    stroke-width="3.4"
+  />
+  <!-- 中心能量核心 -->
+  <circle cx="18" cy="18" r="2.6" fill="#000000" />
+</svg>
