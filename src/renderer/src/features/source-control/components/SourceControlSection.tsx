@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import { flushSync } from 'react-dom'
 import { usePanelCallbackRef } from 'react-resizable-panels'
@@ -23,7 +23,7 @@ export function SourceControlSectionLayout({
   onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
-  const expandedSize = useRef<string | undefined>(undefined)
+  const [expandedSize, setExpandedSize] = useState<string>()
   const [panel, setPanel] = usePanelCallbackRef()
 
   function changeOpen(nextOpen: boolean) {
@@ -33,7 +33,7 @@ export function SourceControlSectionLayout({
       setOpen(nextOpen)
       onOpenChange?.(nextOpen)
     })
-    panel.resize(nextOpen ? (expandedSize.current ?? defaultExpandedSize) : '2rem')
+    panel.resize(nextOpen ? (expandedSize ?? defaultExpandedSize) : '2rem')
   }
 
   if (!section) return children
@@ -43,7 +43,7 @@ export function SourceControlSectionLayout({
       orientation="vertical"
       onLayoutChanged={(_, { isUserInteraction }) => {
         if (open && isUserInteraction && panel) {
-          expandedSize.current = `${panel.getSize().asPercentage}%`
+          setExpandedSize(`${panel.getSize().asPercentage}%`)
         }
       }}
       className="source-control-section-layout min-h-0 min-w-0 flex-1"
