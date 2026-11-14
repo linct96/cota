@@ -69,7 +69,7 @@ Git 面板中的冲突文件可在现有 Monaco Diff 中只读查看：“冲突
 
 ## 本地配置与数据
 
-正式版统一使用 `~/.cota/`，开发版使用 `~/.cota-dev/`，两者相互隔离：
+正式版配置使用 `~/.cota/`，开发版使用 `~/.cota-dev/`，两者相互隔离：
 
 | 文件             | 用途                                                   |
 | ---------------- | ------------------------------------------------------ |
@@ -77,9 +77,9 @@ Git 面板中的冲突文件可在现有 Monaco Diff 中只读查看：“冲突
 | `providers.json` | 账号列表和元数据                                       |
 | `OAuth.json`     | 明文 OAuth Token、刷新令牌和 API Key                   |
 
-工作树位于同一目录下的 `worktrees/`，初始化执行记录位于 `worktree-setups/`，Chromium 用户数据也使用该目录。配置文件按需生成；手动编辑前请先退出 Cota。
+工作树位于同一目录下的 `worktrees/`，正式版和开发版共用 `~/.cota/hooks/`。配置文件按需生成；手动编辑前请先退出 Cota。
 
-旧版系统应用数据目录不会被读取、迁移或删除，旧终端会话也不会自动恢复到新目录。可在退出 Cota 后手动复制兼容的 `config.json`；账号请重新添加或从当前 CLI 登录导入。
+Chromium 用户数据和工作树初始化执行记录使用系统应用数据目录；macOS 正式版为 `~/Library/Application Support/cota/`，开发版为 `~/Library/Application Support/Cota Dev/`。更新前请完全退出旧版 Cota，避免不同数据目录的实例同时写入同一配置。系统目录中已有的运行数据和兼容的 Terminal Host 可能被重新使用；原 `~/.cota/` 或 `~/.cota-dev/` 中生成的运行数据不会自动迁移或删除，对应的终端会话也不会自动接回。系统目录中的旧 `config.json`、`providers.json` 和 `OAuth.json` 不会作为应用配置读取或迁移。
 
 ## Cortana 账号管理
 

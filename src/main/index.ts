@@ -82,11 +82,15 @@ const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
 const rendererURL = URL.parse(devURL || pathToFileURL(rendererFile).href)?.href.split('#')[0]
 const { handle, trusted } = createIPC(getWindow, rendererURL, lifecycle)
 
-const userData = join(homedir(), app.isPackaged ? '.cota' : '.cota-dev')
-mkdirSync(userData, { recursive: true, mode: 0o700 })
-app.setName(appName)
-app.setPath('userData', userData)
-app.setPath('sessionData', userData)
+const configDirectory = join(homedir(), app.isPackaged ? '.cota' : '.cota-dev')
+mkdirSync(configDirectory, { recursive: true, mode: 0o700 })
+if (!app.isPackaged) {
+  const userData = join(app.getPath('appData'), appName)
+  mkdirSync(userData, { recursive: true, mode: 0o700 })
+  app.setName(appName)
+  app.setPath('userData', userData)
+  app.setPath('sessionData', userData)
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -118,9 +122,9 @@ if (!app.requestSingleInstanceLock()) {
           /* Ignore icon load errors in headless or test environments. */
         }
       }
-      config = new ConfigStore(join(app.getPath('userData'), 'config.json'))
+      config = new ConfigStore(join(configDirectory, 'config.json'))
       codeHosting = new CodeHostingService(config, sourceControl)
-      accounts = new AccountService(join(app.getPath('userData'), 'providers.json'), (progress) =>
+      accounts = new AccountService(join(configDirectory, 'providers.json'), (progress) =>
         renderer.send('accounts:oauth-progress', progress),
       )
       const warning = (await config.load()).warning
@@ -133,7 +137,7 @@ if (!app.requestSingleInstanceLock()) {
       agentSleep.setEnabled(config.snapshot().preferences.preventSleep)
       powerMonitor.on('resume', () => agentSleep.refresh())
       nativeTheme.themeSource = config.snapshot().preferences.theme
-      worktrees = new WorktreeManager(config, join(userData, 'worktrees'))
+      worktrees = new WorktreeManager(config, join(configDirectory, 'worktrees'))
       worktreeSetups = new WorktreeSetupService(
         config,
         worktrees,

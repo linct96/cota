@@ -32,50 +32,44 @@ beforeEach(() => {
 })
 
 describe('application profile isolation', () => {
-  it('isolates development storage and Host before acquiring the single-instance lock', async () => {
+  it('separates development configuration and runtime data before acquiring the single-instance lock', async () => {
     mocks.app.isPackaged = false
     await import('../src/main/index')
 
-    const profile = join('/home/cota-test', '.cota-dev')
-    expect(mocks.mkdir).toHaveBeenCalledExactlyOnceWith(profile, {
-      recursive: true,
-      mode: 0o700,
-    })
-    expect(mocks.app.getPath).not.toHaveBeenCalled()
+    const configDirectory = join('/home/cota-test', '.cota-dev')
+    const profile = join('/profiles', 'Cota Dev')
+    expect(mocks.mkdir.mock.calls).toEqual([
+      [configDirectory, { recursive: true, mode: 0o700 }],
+      [profile, { recursive: true, mode: 0o700 }],
+    ])
+    expect(mocks.app.getPath).toHaveBeenCalledExactlyOnceWith('appData')
     expect(mocks.app.setName).toHaveBeenCalledExactlyOnceWith('Cota Dev')
     expect(mocks.app.setPath.mock.calls).toEqual([
       ['userData', profile],
       ['sessionData', profile],
     ])
-    expect(mocks.mkdir.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mocks.mkdir.mock.invocationCallOrder[1]).toBeLessThan(
       mocks.app.setPath.mock.invocationCallOrder[0],
     )
     expect(mocks.app.setPath.mock.invocationCallOrder[1]).toBeLessThan(
       mocks.app.requestSingleInstanceLock.mock.invocationCallOrder[0],
     )
-    expect(hostDirectory(profile)).not.toBe(hostDirectory(join('/home/cota-test', '.cota')))
+    expect(hostDirectory(profile)).not.toBe(hostDirectory(join('/profiles', 'cota')))
     expect(mocks.app.quit).toHaveBeenCalledOnce()
   })
 
-  it('uses the production home profile before acquiring the single-instance lock', async () => {
+  it('keeps production configuration in home and leaves runtime paths at their defaults', async () => {
     mocks.app.isPackaged = true
     await import('../src/main/index')
 
-    const profile = join('/home/cota-test', '.cota')
-    expect(mocks.mkdir).toHaveBeenCalledExactlyOnceWith(profile, {
+    expect(mocks.mkdir).toHaveBeenCalledExactlyOnceWith(join('/home/cota-test', '.cota'), {
       recursive: true,
       mode: 0o700,
     })
     expect(mocks.app.getPath).not.toHaveBeenCalled()
-    expect(mocks.app.setPath.mock.calls).toEqual([
-      ['userData', profile],
-      ['sessionData', profile],
-    ])
-    expect(mocks.app.setName).toHaveBeenCalledExactlyOnceWith('Cota')
+    expect(mocks.app.setPath).not.toHaveBeenCalled()
+    expect(mocks.app.setName).not.toHaveBeenCalled()
     expect(mocks.mkdir.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.app.setPath.mock.invocationCallOrder[0],
-    )
-    expect(mocks.app.setPath.mock.invocationCallOrder[1]).toBeLessThan(
       mocks.app.requestSingleInstanceLock.mock.invocationCallOrder[0],
     )
     expect(mocks.app.requestSingleInstanceLock).toHaveBeenCalledOnce()

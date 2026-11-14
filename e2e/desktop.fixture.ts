@@ -61,7 +61,8 @@ export const test = base.extend<{ desktop: Desktop }>({
       const root = await realpath(await mkdtemp('/tmp/cota-e2e-'))
       const home = join(root, 'home')
       const repo = join(root, 'sample-project')
-      const profile = join(home, '.cota-dev')
+      const configDirectory = join(home, '.cota-dev')
+      const profile = join(root, 'profile', 'Cota Dev')
       const hostPath = hostDirectory(profile)
       const logs: string[] = []
       const rendererErrors: string[] = []
@@ -212,7 +213,8 @@ export const test = base.extend<{ desktop: Desktop }>({
           return electron
         },
         git,
-        config: async () => JSON.parse(await readFile(join(profile, 'config.json'), 'utf8')),
+        config: async () =>
+          JSON.parse(await readFile(join(configDirectory, 'config.json'), 'utf8')),
         sessions: () => withHost((client) => client.request('list', [])),
         async openProject(path = repo) {
           if (path !== null) assert.ok(!relative(root, await realpath(path)).startsWith('..'))
@@ -262,6 +264,7 @@ export const test = base.extend<{ desktop: Desktop }>({
         for (const directory of [
           home,
           repo,
+          configDirectory,
           profile,
           join(root, 'bin'),
           join(root, 'logs'),
@@ -302,7 +305,9 @@ export const test = base.extend<{ desktop: Desktop }>({
           notificationsEnabled: false,
           preventSleep: false,
         })
-        await writeFile(join(profile, 'config.json'), JSON.stringify(config), { mode: 0o600 })
+        await writeFile(join(configDirectory, 'config.json'), JSON.stringify(config), {
+          mode: 0o600,
+        })
         await writeFile(join(repo, 'README.md'), 'COTA_ORIGINAL\n')
         await writeFile(join(repo, 'notes.txt'), 'COTA_NOTES\n')
         await git('init', '-b', 'main')
