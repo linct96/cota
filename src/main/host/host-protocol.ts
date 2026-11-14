@@ -14,8 +14,12 @@ import type {
 import type { TerminalProcessRoot } from '../../shared/workspace-ports'
 import type { AgentCliCache } from '../../shared/agent-cli'
 
-export const HOST_PROTOCOL = 15
+export const HOST_PROTOCOL = 1
 
+export type HostTerminalPreferences = Pick<
+  Preferences,
+  'shellPath' | 'scrollback' | 'quickCommands'
+>
 export type ResolvedTerminalCreate = CreateTerminal &
   TerminalBinding & { agentCliCache?: AgentCliCache }
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
@@ -25,7 +29,7 @@ export interface HostMethods {
   hello: { args: [token: string, version: number]; value: void }
   list: { args: []; value: TerminalSession[] }
   processRoots: { args: []; value: TerminalProcessRoot[] }
-  create: { args: [ResolvedTerminalCreate, Preferences]; value: void }
+  create: { args: [ResolvedTerminalCreate, HostTerminalPreferences]; value: void }
   attach: { args: [ResolvedTerminalAttach]; value: TerminalAttachment }
   detach: { args: [string, string]; value: void }
   write: { args: [id: string, data: string, encoding?: 'utf8' | 'binary']; value: void }

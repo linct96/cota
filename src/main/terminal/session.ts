@@ -19,7 +19,7 @@ export interface Session extends TerminalSession {
   shell?: string
   managed?: {
     token: string
-    settings: Preferences
+    settings: Pick<Preferences, 'shellPath'>
     cliCache?: AgentCliCache
     run?: {
       owner: AgentProcessRow

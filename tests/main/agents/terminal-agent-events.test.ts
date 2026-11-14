@@ -52,6 +52,7 @@ describe('Managed Agent event authentication', () => {
     )
     mocks.processes.mockResolvedValue(manualRows)
     expect(await dynamic.receiveAgentEvent(manual, manualChannel)).toBe(true)
+    expect(mocks.agent).toHaveBeenCalledWith('pi', { shellPath: settings.shellPath }, undefined)
     const firstRun = (await dynamic.list())[0].agent!
     expect(firstRun).toMatchObject({ provider: 'pi', activityState: 'idle', observability: 'full' })
     expect((await dynamic.list())[0].kind).toBeUndefined()

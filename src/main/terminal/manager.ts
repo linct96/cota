@@ -1,12 +1,11 @@
 import type {
   AgentUpdate,
-  Preferences,
   TerminalAttachment,
   TerminalEvent,
   TerminalSession,
   WorkspaceTarget,
 } from '../../shared/contracts'
-import { dimensions, preferences, terminalId, workspaceTarget } from '../validation'
+import { dimensions, terminalId, terminalScrollback, workspaceTarget } from '../validation'
 import { AgentSessionManager } from '../agents/runtime/session-manager'
 import { hasRunningJob, stopProcessTree } from '../system/process-tree'
 import type { ResolvedTerminalAttach, ResolvedTerminalCreate } from '../host/host-protocol'
@@ -33,7 +32,7 @@ export class TerminalManager {
     this.integration = new TerminalAgentIntegration(this.sessions, this.agents, () => this.stopping)
   }
 
-  create(options: ResolvedTerminalCreate, settings: Preferences): Promise<void> {
+  create(options: ResolvedTerminalCreate, settings: unknown): Promise<void> {
     const operation = createTerminal(options, settings, {
       sessions: this.sessions,
       agents: this.agents,
@@ -222,7 +221,7 @@ export class TerminalManager {
   }
 
   setScrollback(value: unknown): void {
-    const { scrollback } = preferences({ shellPath: null, scrollback: value, openWith: [] })
+    const scrollback = terminalScrollback(value)
     for (const session of this.sessions.values()) session.screen.options.scrollback = scrollback
   }
 

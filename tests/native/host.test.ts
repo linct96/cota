@@ -14,7 +14,6 @@ import { HostClient } from '../../src/main/host/host-client'
 import { HOST_PROTOCOL } from '../../src/main/host/host-protocol'
 import { hostEndpoint, isWindows, powershell } from '../../src/main/system/platform'
 import { stopProcessTree } from '../../src/main/system/process-tree'
-import { DEFAULT_CONFIG } from '../../src/shared/contracts'
 
 const require = createRequire(import.meta.url)
 const run = promisify(execFile)
@@ -196,10 +195,9 @@ child.once('spawn', () => { console.log(child.pid); child.unref() })
     rows: 31,
   }
   const preferences = {
-    ...DEFAULT_CONFIG.preferences,
     shellPath: isWindows ? null : '/bin/bash',
     scrollback: 1000,
-    openWith: [],
+    quickCommands: [],
   }
   await first.client.request('create', [options, preferences])
   const original = await first.client.request('attach', [

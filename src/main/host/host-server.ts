@@ -7,7 +7,7 @@ import { startAgentEventServer } from '../agents/runtime/event-server'
 import { HOST_PROTOCOL, readMessages, sendMessage } from './host-protocol'
 import type { HostMessage, HostMethods, ResolvedTerminalCreate } from './host-protocol'
 import { absolutePath, terminalId } from '../validation'
-import type { AttachTerminal, Preferences, WorkspaceTarget } from '../../shared/contracts'
+import type { AttachTerminal, WorkspaceTarget } from '../../shared/contracts'
 
 export async function startHost(directory: string, token: string, onStopped = () => {}) {
   const clients = new Map<Socket, Map<string, string>>()
@@ -61,7 +61,7 @@ export async function startHost(directory: string, token: string, onStopped = ()
         case 'processRoots':
           return manager.processRoots()
         case 'create':
-          return manager.create(args[0] as ResolvedTerminalCreate, args[1] as Preferences)
+          return manager.create(args[0] as ResolvedTerminalCreate, args[1])
         case 'attach': {
           const value = await manager.attach(args[0])
           const attachmentId = terminalId((args[0] as AttachTerminal).attachmentId)

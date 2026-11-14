@@ -1,5 +1,6 @@
 import { extname } from 'node:path'
 import type { Preferences } from '../../shared/contracts'
+import type { HostTerminalPreferences } from '../host/host-protocol'
 import { NOTIFICATION_SOUND_EXTENSIONS } from '../../shared/notification-sounds'
 import type { NotificationSound } from '../../shared/notification-sounds'
 import {
@@ -29,6 +30,26 @@ function notificationSoundPreference(value: unknown): NotificationSound {
       return { path }
   }
   throw new Error('通知提示音选项无效。')
+}
+
+function terminalShellPath(value: unknown): string | null {
+  return value === null ? null : absolutePath(value)
+}
+
+export function terminalScrollback(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1000 || value > 20000)
+    throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
+  return value
+}
+
+export function hostTerminalPreferences(value: unknown): HostTerminalPreferences {
+  if (!value || typeof value !== 'object') throw new Error('设置格式无效。')
+  const settings = value as Record<keyof HostTerminalPreferences, unknown>
+  return {
+    shellPath: terminalShellPath(settings.shellPath),
+    scrollback: terminalScrollback(settings.scrollback),
+    quickCommands: savedQuickCommands(settings.quickCommands),
+  }
 }
 
 export function preferences(value: unknown): Preferences {
@@ -97,15 +118,8 @@ export function preferences(value: unknown): Preferences {
   ) {
     throw new Error('Shell 名称不能包含换行且最多 80 字符。')
   }
-  const validatedShellPath = shellPath === null ? null : absolutePath(shellPath)
-  if (
-    typeof scrollback !== 'number' ||
-    !Number.isInteger(scrollback) ||
-    scrollback < 1000 ||
-    scrollback > 20000
-  ) {
-    throw new Error('Scrollback 必须是 1,000–20,000 之间的整数。')
-  }
+  const validatedShellPath = terminalShellPath(shellPath)
+  const validatedScrollback = terminalScrollback(scrollback)
   if (
     preferredOpenerId !== undefined &&
     (typeof preferredOpenerId !== 'string' || !/^[\w-]{1,64}$/.test(preferredOpenerId))
@@ -132,7 +146,7 @@ export function preferences(value: unknown): Preferences {
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: validatedShellPath,
-    scrollback,
+    scrollback: validatedScrollback,
     openWith: workspaceOpeners(openWith),
     quickCommands: savedQuickCommands(quickCommands),
   }

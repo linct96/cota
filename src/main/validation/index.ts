@@ -1,5 +1,5 @@
 export { absolutePath, projectDirectory, executable } from './paths'
-export { preferences } from './preferences'
+export { hostTerminalPreferences, preferences, terminalScrollback } from './preferences'
 export { workspaceOpeners, startupCommand, savedQuickCommands } from './commands'
 export { terminalId, agentProvider, terminalLaunch, dimensions } from './terminal'
 export { workspaceTarget, workspaceRemoval, workspaceLayout } from './workspace'

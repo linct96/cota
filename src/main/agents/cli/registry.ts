@@ -17,7 +17,7 @@ import {
 
 export async function resolveAgent(
   provider: AgentProvider,
-  settings: Preferences,
+  settings: Pick<Preferences, 'shellPath'>,
   cache?: AgentCliCache,
 ): Promise<{
   executable: string

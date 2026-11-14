@@ -83,7 +83,8 @@ function child() {
     listeners,
   }
 }
-const settings = structuredClone(DEFAULT_CONFIG.preferences)
+const { shellPath, scrollback, quickCommands } = structuredClone(DEFAULT_CONFIG.preferences)
+const settings = { shellPath, scrollback, quickCommands }
 const agentLaunch = () => ({
   kind: 'agent' as const,
   provider: 'codex' as const,

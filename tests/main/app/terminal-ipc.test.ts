@@ -20,6 +20,16 @@ describe('Terminal IPC trust boundaries', () => {
   })
   it('discards forged terminal paths, executables and Agent definitions', async () => {
     mocks.config.recentProjects = [path]
+    mocks.config.preferences.shellPath = '/bin/zsh'
+    mocks.config.preferences.scrollback = 4321
+    mocks.config.preferences.quickCommands = [
+      { id: 'dev', name: 'Dev', command: 'echo ready', scope: { type: 'global' } },
+    ]
+    const hostPreferences = {
+      shellPath: mocks.config.preferences.shellPath,
+      scrollback: mocks.config.preferences.scrollback,
+      quickCommands: mocks.config.preferences.quickCommands,
+    }
     const value = {
       id: randomUUID(),
       projectPath: path,
@@ -43,7 +53,7 @@ describe('Terminal IPC trust boundaries', () => {
         workspaceKind: 'local',
         kind: 'shell',
       },
-      mocks.config.preferences,
+      hostPreferences,
     )
     const launch = { kind: 'agent', provider: 'codex', launchId: randomUUID() }
     expect(
@@ -68,7 +78,7 @@ describe('Terminal IPC trust boundaries', () => {
         ...launch,
         agentCliCache: mocks.config.agentCliCache,
       },
-      mocks.config.preferences,
+      hostPreferences,
     )
     mocks.create.mockClear()
     for (const provider of ['__proto__', 'sh', 'codex; touch nope'])

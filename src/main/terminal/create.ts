@@ -6,8 +6,14 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import { agentCliCacheSchema } from '../../shared/agent-cli'
 import { prepareAgentShell } from '../agents/hooks/shell-integration'
 import { MAX_TERMINALS } from '../../shared/contracts'
-import type { Preferences, TerminalEvent } from '../../shared/contracts'
-import { dimensions, preferences, startupCommand, terminalId, terminalLaunch } from '../validation'
+import type { TerminalEvent } from '../../shared/contracts'
+import {
+  dimensions,
+  hostTerminalPreferences,
+  startupCommand,
+  terminalId,
+  terminalLaunch,
+} from '../validation'
 import { resolveShell, shellArguments, shellEnvironment } from '../system/shell'
 import { resolveAgent } from '../agents/cli/registry'
 import type { AgentSessionManager } from '../agents/runtime/session-manager'
@@ -32,7 +38,7 @@ interface TerminalCreationRuntime {
 
 export function createTerminal(
   value: unknown,
-  settings: Preferences,
+  inputSettings: unknown,
   runtime: TerminalCreationRuntime,
 ): Promise<void> {
   if (runtime.isStopping()) return Promise.reject(new Error('应用正在退出。'))
@@ -45,7 +51,7 @@ export function createTerminal(
     options.agentCliCache === undefined
       ? undefined
       : agentCliCacheSchema.parse(options.agentCliCache)
-  settings = preferences(settings)
+  const settings = hostTerminalPreferences(inputSettings)
   const definition =
     options.service === undefined
       ? undefined
@@ -163,7 +169,7 @@ export function createTerminal(
       }
       if (runtime.agentSocketPath) {
         const token = randomBytes(32).toString('hex')
-        session.managed = { token, settings, cliCache }
+        session.managed = { token, settings: { shellPath: settings.shellPath }, cliCache }
         Object.assign(command.env, {
           COTA_AGENT_SOCKET: runtime.agentSocketPath,
           COTA_AGENT_TOKEN: token,

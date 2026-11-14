@@ -61,6 +61,9 @@ describe('trust boundary validation', () => {
       shellPath: null,
       scrollback: 20000,
     })
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, quickCommands: undefined }).quickCommands,
+    ).toEqual([])
     for (const mode of ['auto', 'on', 'off']) {
       expect(
         preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: mode }),

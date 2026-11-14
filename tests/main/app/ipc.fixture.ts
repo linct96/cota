@@ -20,7 +20,9 @@ const mocks = vi.hoisted(() => {
       | 'confirmCloseRunningTerminal'
       | 'notificationSound'
       | 'turnCompleteNotification'
+      | 'shellPath'
       | 'scrollback'
+      | 'quickCommands'
       | 'openWith'
     >
     recentProjects: string[]
@@ -40,7 +42,9 @@ const mocks = vi.hoisted(() => {
       confirmCloseRunningTerminal: true,
       notificationSound: 'system',
       turnCompleteNotification: 'unfocused',
+      shellPath: null,
       scrollback: 5000,
+      quickCommands: [],
       openWith: [{ id: 'zed', name: 'Zed', command: 'zed', arguments: '{path}' }],
     },
     recentProjects: [],

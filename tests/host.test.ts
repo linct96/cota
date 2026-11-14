@@ -27,6 +27,7 @@ import {
   hostDirectory,
 } from '../src/main/host/host-client'
 import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
+import type { HostTerminalPreferences } from '../src/main/host/host-protocol'
 import { gitAvailable } from './helpers/git'
 import { startHost } from '../src/main/host/host-server'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
@@ -76,6 +77,8 @@ let directory: string
 let server: Awaited<ReturnType<typeof startHost>>
 const clients: HostClient[] = []
 const token = randomBytes(32).toString('hex')
+const { shellPath, scrollback, quickCommands } = DEFAULT_CONFIG.preferences
+const settings = { shellPath, scrollback, quickCommands }
 async function client(secret = token, version = HOST_PROTOCOL, send = vi.fn(), agents = vi.fn()) {
   const socket = connect(join(directory, 'host.sock'))
   await once(socket, 'connect')
@@ -120,10 +123,50 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
   it('rejects missing credentials and incompatible protocols before granting any capability', async () => {
     await expect(client('0'.repeat(64))).rejects.toThrow('断开')
     await expect(client(token, HOST_PROTOCOL + 1)).rejects.toThrow('断开')
-    await expect(client(token, 1)).rejects.toThrow('断开')
     await expect(client(token, HOST_PROTOCOL - 1)).rejects.toThrow('断开')
     expect(mocks.spawn).not.toHaveBeenCalled()
     expect(await (await client()).request('list', [])).toEqual([])
+  })
+  it('validates only Host settings before starting a terminal', async () => {
+    const connection = await client()
+    const options = {
+      id: randomUUID(),
+      workspaceId: randomUUID(),
+      projectPath: directory,
+      cwd: directory,
+      workspaceKind: 'local' as const,
+      cols: 80,
+      rows: 24,
+    }
+    const invalid: unknown[] = [
+      undefined,
+      { ...settings, shellPath: 'relative' },
+      { ...settings, scrollback: 999 },
+      { ...settings, scrollback: 20001 },
+      { ...settings, quickCommands: undefined },
+      {
+        ...settings,
+        quickCommands: [
+          {
+            id: 'dev',
+            name: 'Dev',
+            command: 'echo ready',
+            scope: { type: 'global' },
+            mode: 'service',
+            port: 0,
+          },
+        ],
+      },
+    ]
+    for (const value of invalid)
+      await expect(
+        connection.request('create', [options, value as HostTerminalPreferences]),
+      ).rejects.toThrow()
+    expect(mocks.spawn).not.toHaveBeenCalled()
+    expect(await connection.request('list', [])).toEqual([])
+    const unrelated = { ...settings, theme: 'invalid' }
+    await connection.request('create', [options, unrelated])
+    expect(mocks.spawn).toHaveBeenCalledOnce()
   })
   it('preserves legacy mouse bytes through input forwarding and the Host', async () => {
     const connection = await client()
@@ -138,7 +181,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         cols: 80,
         rows: 24,
       },
-      DEFAULT_CONFIG.preferences,
+      settings,
     ])
     const terminal = new Terminal()
     // Exercise input routing without opening a DOM terminal or spawning a real PTY.
@@ -214,7 +257,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       cols: 80,
       rows: 24,
     }
-    await first.request('create', [options, DEFAULT_CONFIG.preferences])
+    await first.request('create', [options, settings])
     expect(await first.request('needsCloseConfirmation', [options.id])).toBe(false)
     mocks.busy.mockResolvedValueOnce(true)
     expect(await first.request('needsCloseConfirmation', [options.id])).toBe(true)
@@ -278,8 +321,8 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         ],
       },
     }
-    await second.request('create', [agent, DEFAULT_CONFIG.preferences])
-    await second.request('create', [agent, DEFAULT_CONFIG.preferences])
+    await second.request('create', [agent, settings])
+    await second.request('create', [agent, settings])
     expect(mocks.spawn).toHaveBeenCalledTimes(2)
     expect(mocks.spawn).toHaveBeenLastCalledWith(
       '/fake/codex',
@@ -456,8 +499,8 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       rows: 24,
     }
     const connection = await client()
-    await connection.request('create', [options, DEFAULT_CONFIG.preferences])
-    await connection.request('create', [options, DEFAULT_CONFIG.preferences])
+    await connection.request('create', [options, settings])
+    await connection.request('create', [options, settings])
     const other = {
       ...options,
       id: randomUUID(),
@@ -465,22 +508,19 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       worktreeId: randomUUID(),
       cwd: b,
     }
-    await connection.request('create', [other, DEFAULT_CONFIG.preferences])
+    await connection.request('create', [other, settings])
     expect(mocks.spawn).toHaveBeenCalledTimes(2)
     expect(mocks.spawn.mock.calls.map(([, , value]) => value.cwd)).toEqual([a, b])
     await writeFile(join(a, 'example.txt'), 'only A')
     expect(await readFile(join(b, 'example.txt'), 'utf8')).toBe('initial')
-    await expect(
-      connection.request('create', [{ ...options, cwd: b }, DEFAULT_CONFIG.preferences]),
-    ).rejects.toThrow('占用')
+    await expect(connection.request('create', [{ ...options, cwd: b }, settings])).rejects.toThrow(
+      '占用',
+    )
     await expect(
       connection.request('attach', [{ ...options, cwd: b, attachmentId: randomUUID() }]),
     ).rejects.toThrow('不存在')
     await expect(
-      connection.request('create', [
-        { ...options, id: randomUUID(), cwd: repo },
-        DEFAULT_CONFIG.preferences,
-      ]),
+      connection.request('create', [{ ...options, id: randomUUID(), cwd: repo }, settings]),
     ).rejects.toThrow('不会回退')
     connection.disconnect()
     const reconnected = await client()
@@ -490,28 +530,30 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     await writeFile(join(a, 'example.txt'), 'initial')
     await git('worktree', 'remove', '--', a)
     await expect(
-      reconnected.request('create', [{ ...options, id: randomUUID() }, DEFAULT_CONFIG.preferences]),
+      reconnected.request('create', [{ ...options, id: randomUUID() }, settings]),
     ).rejects.toThrow()
     expect(mocks.spawn).toHaveBeenCalledTimes(2)
     expect(await reconnected.request('list', [])).toHaveLength(2)
   }, 15000)
-  it('refuses live protocol-1 Host metadata without replacing its process or runtime file', async () => {
+  it('refuses live incompatible Host metadata without replacing its process or runtime file', async () => {
     const userData = join(directory, 'old-profile')
     const runtime = hostDirectory(userData)
     await mkdir(runtime, { mode: 0o700 })
     const file = join(runtime, 'runtime.json')
-    const content = JSON.stringify({ pid: process.pid, token, version: 1 })
     try {
-      await writeFile(file, content, { mode: 0o600 })
-      await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('协议')
-      await expect(forceStopTerminalHost(userData)).rejects.toThrow('进程标识无效')
-      expect(mocks.stop).not.toHaveBeenCalled()
-      expect(await readFile(file, 'utf8')).toBe(content)
+      for (const version of [HOST_PROTOCOL - 1, HOST_PROTOCOL + 1]) {
+        const content = JSON.stringify({ pid: process.pid, token, version })
+        await writeFile(file, content, { mode: 0o600 })
+        await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('协议')
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('进程标识无效')
+        expect(mocks.stop).not.toHaveBeenCalled()
+        expect(await readFile(file, 'utf8')).toBe(content)
+      }
     } finally {
       await rm(runtime, { recursive: true, force: true })
     }
   })
-  it.each([1, HOST_PROTOCOL])(
+  it.each([HOST_PROTOCOL + 1, HOST_PROTOCOL])(
     'force-cleans only a verified Host and waits for its process tree: protocol %s',
     async (version) => {
       const userData = join(directory, 'force-profile')
@@ -568,7 +610,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       }
     },
   )
-  it.each([1, HOST_PROTOCOL])(
+  it.each([HOST_PROTOCOL + 1, HOST_PROTOCOL])(
     'cleans dead Host metadata for protocol %s before spawning a replacement',
     async (version) => {
       const userData = join(directory, 'dead-profile')
@@ -585,7 +627,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       })
       try {
         await writeFile(file, JSON.stringify({ pid: process.pid, token, version }), { mode: 0o600 })
-        if (version === 1) await writeFile(socket, '')
+        if (version !== HOST_PROTOCOL) await writeFile(socket, '')
         await expect(connectTerminalHost(userData, vi.fn())).rejects.toBe(spawnError)
         expect(probe).toHaveBeenCalledExactlyOnceWith(process.pid, 0)
         expect(spawn).toHaveBeenCalledOnce()
@@ -603,7 +645,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     const runtime = hostDirectory(userData)
     await mkdir(runtime, { mode: 0o700 })
     const file = join(runtime, 'runtime.json')
-    const content = JSON.stringify({ pid: process.pid, token, version: 1 })
+    const content = JSON.stringify({ pid: process.pid, token, version: HOST_PROTOCOL + 1 })
     const probeError = Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
     const probe = vi.spyOn(process, 'kill').mockImplementationOnce(() => {
       throw probeError
@@ -628,7 +670,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       cols: 80,
       rows: 24,
     }
-    await connection.request('create', [options, DEFAULT_CONFIG.preferences])
+    await connection.request('create', [options, settings])
     const attaching = connection.request('attach', [{ ...options, attachmentId: randomUUID() }])
     const rejected = expect(attaching).rejects.toThrow('视图已断开')
     await connection.detachAll()

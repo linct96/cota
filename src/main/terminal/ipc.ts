@@ -58,7 +58,11 @@ export function registerTerminalIPC(deps: {
             ...(command === undefined ? {} : { startupCommand: command }),
             ...(value.service === undefined ? {} : { service: value.service }),
           },
-          snapshot.preferences,
+          {
+            shellPath: snapshot.preferences.shellPath,
+            scrollback: snapshot.preferences.scrollback,
+            quickCommands: snapshot.preferences.quickCommands,
+          },
         ])
       return launch.kind === 'agent'
         ? agentClis.run(launch.provider, snapshot.preferences, (_command, cache) => create(cache))
