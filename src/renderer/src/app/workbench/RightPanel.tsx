@@ -51,7 +51,10 @@ export function RightPanel({
   return (
     <>
       <ResizableHandle
-        className={cn('workspace-resize-handle right-panel-resize-handle', !visible && 'hidden')}
+        className={cn(
+          'workspace-resize-handle right-panel-resize-handle',
+          !visible && 'pointer-events-none w-0 bg-transparent opacity-0 after:hidden',
+        )}
         disabled={!visible}
         aria-label="调整右侧面板宽度"
       />
