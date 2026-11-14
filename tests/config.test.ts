@@ -26,6 +26,33 @@ describe('local JSON configuration', () => {
     expect((await store.load()).config).toEqual(DEFAULT_CONFIG)
     expect(DEFAULT_CONFIG.preferences.fileExplorer.followSymlinks).toBe(true)
     expect(DEFAULT_CONFIG.preferences.fileIconTheme).toBe('default')
+    for (const windowBlur of [false, true]) {
+      const legacyFile = join(root, 'legacy-blur.json')
+      const terminalAppearance = {
+        ...DEFAULT_CONFIG.preferences.terminalAppearance,
+        backgroundOpacity: 0.5,
+      }
+      const legacyConfig = {
+        ...DEFAULT_CONFIG,
+        preferences: {
+          ...DEFAULT_CONFIG.preferences,
+          terminalAppearance: { ...terminalAppearance, windowBlur },
+        },
+      }
+      const expectedConfig = {
+        ...legacyConfig,
+        preferences: { ...legacyConfig.preferences, terminalAppearance },
+      }
+      const original = JSON.stringify(legacyConfig)
+      await writeFile(legacyFile, original)
+      const legacyStore = new ConfigStore(legacyFile)
+      const loaded = await legacyStore.load()
+      expect(loaded.warning).toBeUndefined()
+      expect(loaded.config).toEqual(expectedConfig)
+      expect(await readFile(legacyFile, 'utf8')).toBe(original)
+      await legacyStore.savePreferences(loaded.config.preferences)
+      expect(JSON.parse(await readFile(legacyFile, 'utf8'))).toEqual(expectedConfig)
+    }
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme: undefined }).fileIconTheme,
     ).toBe('default')

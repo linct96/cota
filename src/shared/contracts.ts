@@ -473,7 +473,6 @@ export interface DesktopAPI {
   }
   readonly initialAppearance: {
     theme: ThemePreference
-    windowBlur: boolean
     interfaceColors?: InterfaceColors
   }
   readClipboard: () => Promise<Result<string>>

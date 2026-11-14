@@ -1,7 +1,4 @@
-import {
-  DEFAULT_TERMINAL_APPEARANCE,
-  terminalAppearanceSchema,
-} from '../../../../../shared/terminal-appearance'
+import { terminalAppearanceSchema } from '../../../../../shared/terminal-appearance'
 import type { Preferences } from '../../../../../shared/contracts'
 import { Button } from '@/components/ui/button'
 import { FieldError, FieldGroup } from '@/components/ui/field'
@@ -61,19 +58,6 @@ export function TerminalAppearanceSettings({
                         重试保存
                       </Button>
                     )}
-                    <Button
-                      className="terminal-appearance-reset"
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const defaults = structuredClone(DEFAULT_TERMINAL_APPEARANCE)
-                        form.reset(defaults)
-                        void saveAppearance(defaults)
-                      }}
-                    >
-                      恢复默认
-                    </Button>
                   </div>
                 </div>
                 <TerminalAppearancePreview settings={values} />

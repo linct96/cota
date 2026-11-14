@@ -62,7 +62,7 @@ export function TerminalThemeFields({
                       {field.state.value === 'auto' ? '跟随应用主题' : field.state.value}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="terminal-theme-content">
+                  <SelectContent className="terminal-theme-content max-h-[min(16rem,var(--available-height))]">
                     <SelectGroup className="terminal-theme-items">
                       <SelectItem className="terminal-theme-item" value="auto">
                         跟随应用主题

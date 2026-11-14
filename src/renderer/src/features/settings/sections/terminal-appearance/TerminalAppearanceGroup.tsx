@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import { Card } from '@/components/ui/card'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -182,12 +182,6 @@ export function TerminalAppearanceGroup({
                       >
                         {label}
                       </span>
-                      {name === 'windowBlur' &&
-                        values.windowBlur !== window.desktop.initialAppearance.windowBlur && (
-                          <FieldDescription className="terminal-blur-restart-help">
-                            重启 Cota，以应用窗口背景模糊设置。提高背景透明度可显现模糊效果。
-                          </FieldDescription>
-                        )}
                     </div>
                     <Switch
                       id={`terminal-${name}`}
@@ -199,10 +193,6 @@ export function TerminalAppearanceGroup({
                         field.handleChange(value)
                         onEdit()
                       }}
-                      disabled={
-                        name === 'windowBlur' &&
-                        !['darwin', 'win32'].includes(window.desktop.platform)
-                      }
                     />
                   </Field>
                 )}

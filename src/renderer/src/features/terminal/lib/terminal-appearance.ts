@@ -87,7 +87,7 @@ export function terminalAppearanceOptions(
   const theme = resolveTerminalTheme(settings, dark)
   return {
     allowTransparency: settings.backgroundOpacity < 1,
-    fontFamily: settings.fontFamily,
+    fontFamily: `${settings.fontFamily}, monospace`,
     fontSize: settings.fontSize,
     fontWeight: settings.fontWeight,
     fontWeightBold: settings.fontWeightBold,

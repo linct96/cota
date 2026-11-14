@@ -26,7 +26,7 @@ beforeEach(() => {
   useFileExplorer.setState(useFileExplorer.getInitialState(), true)
   api = {
     system: { homeDirectory: '/Users/test' },
-    initialAppearance: { theme: 'system', windowBlur: false },
+    initialAppearance: { theme: 'system' },
     readClipboard: vi.fn(),
     writeClipboard: vi.fn(),
     setShortcutRecording: vi.fn(),

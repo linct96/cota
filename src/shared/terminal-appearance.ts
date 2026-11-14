@@ -54,7 +54,6 @@ export const terminalAppearanceSchema = z.object({
   cursorBlink: z.boolean(),
   cursorOpacity: z.number().min(0).max(1),
   backgroundOpacity: z.number().min(0).max(1),
-  windowBlur: z.boolean(),
   paddingX: z.number().int().min(0).max(128),
   paddingY: z.number().int().min(0).max(128),
   mouseHideWhileTyping: z.boolean(),
@@ -65,7 +64,7 @@ export const terminalAppearanceSchema = z.object({
 
 export type TerminalAppearance = z.infer<typeof terminalAppearanceSchema>
 export const DEFAULT_TERMINAL_APPEARANCE: TerminalAppearance = {
-  fontFamily: '"SF Mono", Menlo, Monaco, Consolas, monospace',
+  fontFamily: 'SF Mono',
   fontSize: 14,
   fontWeight: 400,
   fontWeightBold: 700,
@@ -79,7 +78,6 @@ export const DEFAULT_TERMINAL_APPEARANCE: TerminalAppearance = {
   cursorBlink: true,
   cursorOpacity: 1,
   backgroundOpacity: 1,
-  windowBlur: false,
   paddingX: 6,
   paddingY: 6,
   mouseHideWhileTyping: false,

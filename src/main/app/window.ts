@@ -13,26 +13,13 @@ export function createAppWindow(options: {
   rendererUnavailable: () => void
 }) {
   const { appName, preferences, lifecycle } = options
-  const windowBlurEnabled =
-    preferences.terminalAppearance.windowBlur && ['darwin', 'win32'].includes(process.platform)
-  const background = () =>
-    windowBlurEnabled ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#171717' : '#f0f0f0'
+  const background = () => (nativeTheme.shouldUseDarkColors ? '#171717' : '#f0f0f0')
   const window = new BrowserWindow({
     width: 1180,
     height: 780,
     minWidth: 760,
     minHeight: 480,
     backgroundColor: background(),
-    ...(windowBlurEnabled && process.platform === 'darwin'
-      ? {
-          vibrancy: 'under-window' as const,
-          visualEffectState: 'active' as const,
-          transparent: true,
-        }
-      : {}),
-    ...(windowBlurEnabled && process.platform === 'win32'
-      ? { backgroundMaterial: 'acrylic' as const }
-      : {}),
     show: false,
     acceptFirstMouse: true,
     title: appName,
@@ -46,7 +33,6 @@ export function createAppWindow(options: {
         `--cota-home-directory=${encodeURIComponent(app.getPath('home'))}`,
         `--cota-theme=${preferences.theme}`,
         `--cota-interface-colors=${JSON.stringify(preferences.interfaceColors)}`,
-        ...(windowBlurEnabled ? ['--cota-window-blur'] : []),
       ],
       preload: join(__dirname, '../preload/index.js'),
       nodeIntegration: false,

@@ -941,11 +941,6 @@ button:not([data-slot='button']):focus-visible {
 .terminal-screen.terminal-mouse-hidden * {
   cursor: none !important;
 }
-.window-blur body,
-.window-blur .app-container,
-.window-blur .workspace-content {
-  background: transparent;
-}
 /* 为末列字形保留缓冲，避免小数像素误差导致右侧笔画被裁切。 */
 .terminal-screen .xterm-rows > div {
   box-sizing: content-box;

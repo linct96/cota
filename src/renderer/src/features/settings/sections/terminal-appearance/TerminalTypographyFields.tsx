@@ -1,18 +1,18 @@
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from '@/components/ui/combobox'
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
 import type { ReactNode } from 'react'
-import { FONT_SUGGESTIONS } from './fields'
+import { FONT_OPTIONS } from './fields'
 
 export function TerminalTypographyFields({
   form,
@@ -30,74 +30,68 @@ export function TerminalTypographyFields({
   return (
     <>
       <form.Field name="fontFamily">
-        {(field) => (
-          <Field
-            className="terminal-font-family-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
-            data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-          >
-            <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-              <span
-                id="terminal-font-family-label"
-                className="terminal-font-family-label text-xs leading-5 font-medium text-foreground"
-              >
-                字体
-              </span>
-              <FieldDescription
-                id="terminal-font-family-help"
-                className="terminal-font-family-description"
-              >
-                使用已安装的等宽字体；可用逗号设置回退字体。
-              </FieldDescription>
-              <FieldError
-                id="terminal-font-family-error"
-                className="terminal-font-family-error"
-                errors={field.state.meta.isTouched ? field.state.meta.errors : []}
-              />
-            </div>
-            <Combobox
-              items={FONT_SUGGESTIONS}
-              value={field.state.value}
-              inputValue={field.state.value}
-              onInputValueChange={(value) => {
-                field.handleChange(value)
-                onEdit()
-              }}
-              onValueChange={(value) => {
-                if (value === null) return
-                field.handleChange(value)
-                onEdit()
-              }}
+        {(field) => {
+          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+          const fonts = FONT_OPTIONS.includes(field.state.value)
+            ? FONT_OPTIONS
+            : [field.state.value, ...FONT_OPTIONS]
+          return (
+            <Field
+              className="terminal-font-family-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
+              data-invalid={invalid}
             >
-              <ComboboxInput
-                id="terminal-font-family"
-                aria-labelledby="terminal-font-family-label"
-                className="terminal-font-family-input w-60 min-w-0 max-w-full shrink-0 font-mono"
-                spellCheck={false}
-                autoCorrect="off"
-                autoCapitalize="off"
-                onBlur={field.handleBlur}
-                aria-invalid={field.state.meta.isTouched && !field.state.meta.isValid}
-                aria-describedby="terminal-font-family-help terminal-font-family-error"
-              />
-              <ComboboxContent className="terminal-font-suggestions w-(--anchor-width)">
-                <ComboboxEmpty className="terminal-font-suggestions-empty">
-                  无匹配建议，可继续使用输入的字体。
-                </ComboboxEmpty>
-                <ComboboxList className="terminal-font-suggestions-list">
-                  {(font: string) => (
-                    <ComboboxItem
-                      className="terminal-font-suggestion font-mono"
-                      key={font}
-                      value={font}
-                    >
-                      {font}
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-              </ComboboxContent>
-            </Combobox>
-          </Field>
-        )}
+              <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                <FieldLabel
+                  htmlFor="terminal-font-family"
+                  id="terminal-font-family-label"
+                  className="terminal-font-family-label text-xs leading-5 font-medium text-foreground"
+                >
+                  字体
+                </FieldLabel>
+                <FieldError
+                  id="terminal-font-family-error"
+                  className="terminal-font-family-error"
+                  errors={field.state.meta.isTouched ? field.state.meta.errors : []}
+                />
+              </div>
+              <Select
+                items={fonts.map((font) => ({ label: font, value: font }))}
+                value={field.state.value}
+                onValueChange={(value) => {
+                  if (value === null) return
+                  field.handleChange(value)
+                  onEdit()
+                }}
+              >
+                <SelectTrigger
+                  id="terminal-font-family"
+                  aria-labelledby="terminal-font-family-label"
+                  aria-invalid={invalid}
+                  aria-describedby={invalid ? 'terminal-font-family-error' : undefined}
+                  className="terminal-font-family-select min-w-0 max-w-full shrink-0 font-mono"
+                  title={field.state.value}
+                  onBlur={field.handleBlur}
+                >
+                  <SelectValue className="min-w-0 truncate" />
+                </SelectTrigger>
+                <SelectContent className="terminal-font-options max-h-[min(16rem,var(--available-height))]">
+                  <SelectGroup className="terminal-font-options-group">
+                    {fonts.map((font) => (
+                      <SelectItem
+                        className="terminal-font-option font-mono"
+                        key={font}
+                        value={font}
+                        title={font}
+                      >
+                        <span className="terminal-font-option-label block truncate">{font}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          )
+        }}
       </form.Field>
       {choiceFields}
       <FieldGroup className="terminal-appearance-numbers grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-3 lg:grid-cols-5">

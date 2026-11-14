@@ -21,10 +21,6 @@ const updateTheme = () => {
       ? state.preferences.interfaceColors
       : window.desktop.initialAppearance.interfaceColors,
   )
-  document.documentElement.classList.toggle(
-    'window-blur',
-    window.desktop.initialAppearance.windowBlur,
-  )
 }
 updateTheme()
 systemTheme.addEventListener('change', updateTheme)

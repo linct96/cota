@@ -12,21 +12,10 @@ import type { TerminalAppearance } from '../../../../../../shared/terminal-appea
 
 const PREVIEW_PROMPT = '\x1b[34m~/cota\x1b[0m \x1b[35mmain\x1b[0m \x1b[32m❯\x1b[0m '
 const PREVIEW_OUTPUT = [
-  `${PREVIEW_PROMPT}pnpm test`,
-  '\x1b[1;32m PASS \x1b[0m src/terminal.test.ts',
-  ' \x1b[32m✓\x1b[0m 中文与 English 混排',
-  ' \x1b[32m✓\x1b[0m theme updated  \x1b[2m12ms\x1b[0m',
-  ' \x1b[33m⚠ preview mode · 示例输出\x1b[0m',
-  '',
   `${PREVIEW_PROMPT}git diff`,
-  '\x1b[36m@@ -1,2 +1,2 @@\x1b[0m',
   '\x1b[31m-const fontSize = 13;\x1b[0m',
   '\x1b[32m+const fontSize = 14;\x1b[0m',
-  '',
-  '\x1b[2;3m// 字体连字与字符辨识\x1b[0m',
-  '\x1b[34mconst\x1b[0m ready = a !== b && count >= 1;',
-  '=> -> === !== <= >=  0O 1Il {} []',
-  '',
+  '\x1b[1m中文 English\x1b[0m  \x1b[2;3m=> !== 0O 1Il\x1b[0m',
   '标准 \x1b[30m██ \x1b[31m██ \x1b[32m██ \x1b[33m██ \x1b[34m██ \x1b[35m██ \x1b[36m██ \x1b[37m██\x1b[0m',
   '高亮 \x1b[90m██ \x1b[91m██ \x1b[92m██ \x1b[93m██ \x1b[94m██ \x1b[95m██ \x1b[96m██ \x1b[97m██\x1b[0m',
   '',
@@ -44,13 +33,12 @@ export function TerminalAppearancePreview({ settings }: { settings: TerminalAppe
       macOptionIsMeta: false,
       macOptionClickForcesSelection: true,
       scrollback: 1000,
-      scrollbar: { width: 6 },
+      scrollbar: { showScrollbar: false },
     })
     const fit = new StableCellFitAddon()
     terminal.loadAddon(fit)
     terminal.open(container)
-    terminal.textarea?.setAttribute('aria-label', '终端交互预览')
-    terminal.textarea?.setAttribute('aria-describedby', 'terminal-appearance-preview-help')
+    terminal.textarea?.setAttribute('aria-label', '终端交互预览（不会执行命令）')
     terminal.attachCustomKeyEventHandler((event) => event.key !== 'Tab')
     const appearance = installTerminalAppearance(terminal, container, () => fit.fit())
     const update = (value = currentSettings()) => {
@@ -95,19 +83,12 @@ export function TerminalAppearancePreview({ settings }: { settings: TerminalAppe
   useEffect(() => apply.current(settings), [settings])
   return (
     <section
-      className="terminal-appearance-preview flex flex-col gap-1.5"
-      aria-label="终端外观预览：包含示例测试输出、Git Diff、中英文、粗体、斜体、弱化文字、字体连字、易混淆字符、ANSI 十六色和光标示例"
+      className="terminal-appearance-preview"
+      aria-label="终端外观预览：包含 Git Diff、中英文、粗体、斜体、弱化文字、字体连字、易混淆字符、ANSI 十六色和光标示例"
     >
-      <div className="terminal-appearance-preview-frame h-52 overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-ring/50">
+      <div className="terminal-appearance-preview-frame h-42 overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-ring/50">
         <div ref={host} className="terminal-appearance-preview-screen terminal-screen h-full" />
       </div>
-      <p
-        id="terminal-appearance-preview-help"
-        className="terminal-appearance-preview-help text-xs text-muted-foreground"
-      >
-        点击输入或拖动选择，使用方向键、Home / End 移动光标；Enter 清空输入，Tab
-        离开预览。仅供预览，不会执行命令。
-      </p>
     </section>
   )
 }

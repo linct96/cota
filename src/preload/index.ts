@@ -40,7 +40,6 @@ const api: DesktopAPI = {
   },
   initialAppearance: {
     theme: initialTheme(),
-    windowBlur: process.argv.includes('--cota-window-blur'),
     interfaceColors: initialInterfaceColors(),
   },
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),

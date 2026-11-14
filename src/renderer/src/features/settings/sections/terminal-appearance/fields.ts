@@ -1,4 +1,5 @@
-export const FONT_SUGGESTIONS = [
+export const FONT_OPTIONS = [
+  'SF Mono',
   'Consolas',
   'Cascadia Code',
   'JetBrains Mono',
@@ -22,7 +23,7 @@ export const NUMBER_FIELDS = [
   { name: 'lineHeight', label: '行高', min: 1, max: 3, step: 0.05, group: 'typography' },
   {
     name: 'letterSpacing',
-    label: '字符间距（px）',
+    label: '字符间距',
     min: -2,
     max: 10,
     step: 0.1,
@@ -65,7 +66,6 @@ export const ENUM_FIELDS = [
 export const SWITCH_FIELDS = [
   { name: 'separateLightTheme', label: '浅色模式使用独立配色', group: 'theme' },
   { name: 'cursorBlink', label: '光标闪烁', group: 'cursor' },
-  { name: 'windowBlur', label: '窗口背景模糊（重启后生效）', group: 'background' },
   { name: 'mouseHideWhileTyping', label: '输入时隐藏鼠标指针', group: 'cursor' },
 ] as const
 export const COLOR_LABELS = [
