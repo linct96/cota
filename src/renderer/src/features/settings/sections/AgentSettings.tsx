@@ -26,10 +26,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-function joinErrors(...messages: (string | undefined)[]) {
-  return [...new Set(messages.filter(Boolean))].join('\n\n')
-}
-
 function AgentCliActionButton({
   agent,
   installing,
@@ -97,13 +93,10 @@ export function AgentSettings() {
   const detectingVisible = useLoadingIndicator(busy === 'detect')
   const isBusy = !!busy || !!activeInstall || updatesVisible || detectingVisible
   const [progressProvider, setProgressProvider, progressDialog] = useDialogState<AgentProvider>()
-  const [error, setError] = useState<string>()
-  const [operationErrors, setOperationErrors] = useState<Partial<Record<AgentProvider, string>>>({})
   const [errorDetails, setErrorDetails, errorDialog] = useDialogState<{
     title: string
     detail: string
   }>()
-  const globalErrors = joinErrors(error, cacheError)
   const pending = useRef(false)
   const pendingChecks = useRef(new Set<AgentProvider>())
   useEffect(() => {
@@ -127,9 +120,7 @@ export function AgentSettings() {
             ...runs.filter((run) => !received.has(run.provider)),
           ])
       })
-      .catch((cause: unknown) => {
-        if (!disposed) setError(cause instanceof Error ? cause.message : String(cause))
-      })
+      .catch(() => {})
     return () => {
       disposed = true
       unsubscribe()
@@ -162,12 +153,8 @@ export function AgentSettings() {
     if (pending.current || pendingChecks.current.size > 0 || initialPending || isBusy) return
     pending.current = true
     setBusy(updates ? 'updates' : 'detect')
-    setOperationErrors({})
-    setError(undefined)
     try {
-      unwrap(await window.desktop.inspectAgentClis(updates))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      await window.desktop.inspectAgentClis(updates).catch(() => {})
     } finally {
       pending.current = false
       setBusy(undefined)
@@ -177,42 +164,22 @@ export function AgentSettings() {
     if (pending.current || pendingChecks.current.has(provider) || initialPending || isBusy) return
     pendingChecks.current.add(provider)
     setCheckingProviders([...pendingChecks.current])
-    setOperationErrors((current) => ({ ...current, [provider]: undefined }))
     try {
-      unwrap(await window.desktop.inspectAgentClis(true, provider))
-    } catch (cause) {
-      setOperationErrors((current) => ({
-        ...current,
-        [provider]: cause instanceof Error ? cause.message : String(cause),
-      }))
+      await window.desktop.inspectAgentClis(true, provider).catch(() => {})
     } finally {
       pendingChecks.current.delete(provider)
       setCheckingProviders([...pendingChecks.current])
     }
   }
   async function openInstallGuide(provider: AgentProvider) {
-    setOperationErrors((current) => ({ ...current, [provider]: undefined }))
-    try {
-      unwrap(await window.desktop.openAgentCliInstallGuide(provider))
-    } catch (cause) {
-      setOperationErrors((current) => ({
-        ...current,
-        [provider]: cause instanceof Error ? cause.message : String(cause),
-      }))
-    }
+    await window.desktop.openAgentCliInstallGuide(provider).catch(() => {})
   }
   async function update(provider: AgentProvider) {
     if (pending.current || pendingChecks.current.size > 0 || initialPending || isBusy) return
     pending.current = true
     setBusy(provider)
-    setOperationErrors((current) => ({ ...current, [provider]: undefined }))
     try {
-      unwrap(await window.desktop.updateAgentCli(provider))
-    } catch (cause) {
-      setOperationErrors((current) => ({
-        ...current,
-        [provider]: cause instanceof Error ? cause.message : String(cause),
-      }))
+      await window.desktop.updateAgentCli(provider).catch(() => {})
     } finally {
       pending.current = false
       setBusy(undefined)
@@ -278,19 +245,6 @@ export function AgentSettings() {
                       />
                       {detectingVisible ? '检测中…' : '重新检测'}
                     </Button>
-                    {globalErrors && (
-                      <Button
-                        className="agent-settings-global-error"
-                        variant="destructive"
-                        aria-label="查看 Agent CLI 错误详情"
-                        aria-haspopup="dialog"
-                        onClick={() =>
-                          setErrorDetails({ title: 'Agent CLI 错误详情', detail: globalErrors })
-                        }
-                      >
-                        错误
-                      </Button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -305,12 +259,6 @@ export function AgentSettings() {
                   const upToDate = agent.updateAvailable === false
                   const run = installRuns.find((item) => item.provider === provider)
                   const installing = busy === provider || run?.status === 'running'
-                  const rowErrors = joinErrors(
-                    agent.error,
-                    agent.updateError,
-                    operationErrors[provider],
-                    run?.error,
-                  )
                   return (
                     <Field
                       key={provider}
@@ -366,6 +314,15 @@ export function AgentSettings() {
                       </div>
                       <div className="agent-settings-item-control flex min-w-0 flex-col gap-1.5">
                         <div className="agent-settings-item-actions flex min-h-7 flex-wrap items-center gap-2">
+                          {run && run.status !== 'running' && !installing && (
+                            <Button
+                              className="agent-settings-view-install-log"
+                              variant="ghost"
+                              onClick={() => setProgressProvider(provider)}
+                            >
+                              查看日志
+                            </Button>
+                          )}
                           <AgentCliActionButton
                             agent={agent}
                             installing={installing}
@@ -389,31 +346,6 @@ export function AgentSettings() {
                                       : checkUpdate(provider))
                             }
                           />
-                          {run && run.status !== 'running' && !installing && (
-                            <Button
-                              className="agent-settings-view-install-log"
-                              variant="ghost"
-                              onClick={() => setProgressProvider(provider)}
-                            >
-                              查看日志
-                            </Button>
-                          )}
-                          {rowErrors && (
-                            <Button
-                              className="agent-settings-row-error"
-                              variant="destructive"
-                              aria-label={`查看 ${AGENT_PROVIDERS[provider].name} 错误详情`}
-                              aria-haspopup="dialog"
-                              onClick={() =>
-                                setErrorDetails({
-                                  title: `${AGENT_PROVIDERS[provider].name} 错误详情`,
-                                  detail: rowErrors,
-                                })
-                              }
-                            >
-                              错误
-                            </Button>
-                          )}
                         </div>
                       </div>
                     </Field>

@@ -17,12 +17,12 @@ import { observeDocumentTheme } from '@/lib/theme'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 function AgentCliInstallTerminal({
   provider,
@@ -117,8 +117,7 @@ function AgentCliInstallTerminal({
     observer.observe(container)
     const apply = (event: AgentCliInstallEvent) => {
       if (event.run.id !== current?.id) return
-      if (current.status !== event.run.status || current.error !== event.run.error)
-        setRun(event.run)
+      if (current.status !== event.run.status) setRun(event.run)
       current = event.run
       terminal.options.disableStdin = current.status !== 'running'
       if (event.data !== undefined && event.revision > revision) {
@@ -220,35 +219,40 @@ export function AgentCliInstallDialog({
       onOpenChangeComplete={onOpenChangeComplete}
     >
       <DialogContent
-        className="agent-cli-install-dialog grid max-h-[90vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-4xl"
+        className="agent-cli-install-dialog flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-2xl"
         showCloseButton={false}
       >
         <DialogHeader className="agent-cli-install-header">
           <DialogTitle className="agent-cli-install-title">
             {AGENT_PROVIDERS[provider].name} 更新进度
           </DialogTitle>
-          <DialogDescription className="agent-cli-install-description">
-            关闭弹窗不会中断更新。
-          </DialogDescription>
         </DialogHeader>
         <section
-          className="agent-cli-install-terminal-region terminal-screen-container h-[55vh] min-h-0 overflow-hidden rounded-md border"
+          className="agent-cli-install-terminal-region terminal-screen-container h-[40vh] min-h-0 shrink overflow-hidden rounded-md border"
           aria-label={`${AGENT_PROVIDERS[provider].name} 更新终端`}
         >
           <AgentCliInstallTerminal provider={provider} setRun={setRun} setError={setError} />
         </section>
-        <DialogFooter className="agent-cli-install-footer items-center sm:justify-between">
-          <output className="agent-cli-install-status min-w-0 break-words" aria-live="polite">
-            {error ||
-              run?.error ||
-              (run?.status === 'succeeded'
-                ? '更新完成'
-                : run?.status === 'failed'
-                  ? '更新失败'
-                  : run?.status === 'not-installed'
-                    ? '未安装'
-                    : '更新中…')}
-          </output>
+        {error && (
+          <Alert
+            className="agent-cli-install-error max-h-[20vh] shrink-0 overflow-auto"
+            variant="destructive"
+          >
+            <AlertDescription className="agent-cli-install-error-message whitespace-pre-wrap break-words">
+              {error}
+            </AlertDescription>
+          </Alert>
+        )}
+        <output className="agent-cli-install-status sr-only" aria-live="polite">
+          {run?.status === 'succeeded'
+            ? '更新完成'
+            : run?.status === 'failed'
+              ? '更新失败'
+              : run?.status === 'not-installed'
+                ? '未安装'
+                : '更新中…'}
+        </output>
+        <DialogFooter className="agent-cli-install-footer shrink-0">
           <Button className="agent-cli-install-close" variant="outline" onClick={onClose}>
             关闭
           </Button>
