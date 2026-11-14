@@ -338,7 +338,10 @@ export function NotificationSettings() {
               >
                 <SelectValue className="notification-settings-sound-value" />
               </SelectTrigger>
-              <SelectContent className="notification-settings-sound-menu" align="end">
+              <SelectContent
+                className="notification-settings-sound-menu max-h-[min(16rem,var(--available-height))]"
+                align="end"
+              >
                 <SelectGroup className="notification-settings-sound-options">
                   {NOTIFICATION_SOUND_OPTIONS.map((option) => (
                     <Fragment key={option.value}>

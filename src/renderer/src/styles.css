@@ -535,7 +535,6 @@ body:has(
   width: 100%;
   height: 100%;
   max-width: none;
-  transform: none;
   translate: none;
   place-content: center;
   border-radius: 0;

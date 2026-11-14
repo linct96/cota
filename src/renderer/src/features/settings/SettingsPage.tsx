@@ -242,10 +242,10 @@ export function SettingsPage() {
       <main
         id={`${titleId}-detail`}
         key={activeCategory}
-        className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background"
+        className="settings-detail-pane flex min-w-0 flex-1 flex-col overflow-y-auto bg-background [scrollbar-gutter:stable]"
         aria-label={activeItem ? `${activeItem.label}设置` : '设置详情'}
       >
-        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl flex-col px-8 pt-6 pb-24 text-xs/relaxed">
+        <div className="settings-detail-container mx-auto flex min-h-full w-full max-w-3xl shrink-0 flex-col px-8 pt-6 pb-16 text-xs/relaxed">
           <LoadingContent
             pending={!ready}
             label={`${activeItem?.label ?? '设置'}配置读取中...`}

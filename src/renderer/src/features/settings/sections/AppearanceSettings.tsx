@@ -17,9 +17,9 @@ import { ColorInput } from '@/components/ui/color-input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
 const colorFields: { role: InterfaceColorRole; label: string; description: string }[] = [
-  { role: 'primary', label: '主题色', description: '设置当前模式下主要按钮与强调元素的颜色。' },
+  { role: 'primary', label: '主题色', description: '主要按钮与强调元素的颜色。' },
   { role: 'background', label: '背景色', description: '设置当前模式下的界面底色。' },
-  { role: 'foreground', label: '前景色', description: '设置当前模式下主要文字与图标的颜色。' },
+  { role: 'foreground', label: '前景色', description: '主要文字与图标的颜色。' },
 ]
 const colorInputSchema = z
   .string()

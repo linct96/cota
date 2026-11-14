@@ -298,7 +298,10 @@ export function TerminalSettings() {
                       </SelectValue>
                     </SelectTrigger>
 
-                    <SelectContent align="end" className="terminal-settings-menu max-w-sm">
+                    <SelectContent
+                      align="end"
+                      className="terminal-settings-menu max-h-[min(16rem,var(--available-height))]"
+                    >
                       <SelectGroup className="terminal-settings-shell-group">
                         <SelectItem value="default" className="terminal-settings-menu-item">
                           <span className="terminal-settings-default-shell-label break-all">
@@ -337,7 +340,7 @@ export function TerminalSettings() {
                     id="terminal-settings-scrollback-description"
                     className="terminal-settings-scrollback-description text-xs text-muted-foreground"
                   >
-                    终端保留的最大历史输出行数（范围 1,000–20,000，减小会丢弃旧输出）
+                    终端保留的最大历史输出行数，超出后丢弃旧输出。
                   </p>
                   {!scrollbackDialogOpen && scrollbackError && (
                     <p
@@ -372,7 +375,10 @@ export function TerminalSettings() {
                     </SelectValue>
                   </SelectTrigger>
 
-                  <SelectContent align="end" className="terminal-settings-menu w-48">
+                  <SelectContent
+                    align="end"
+                    className="terminal-settings-menu max-h-[min(16rem,var(--available-height))]"
+                  >
                     <SelectGroup className="terminal-settings-scrollback-group">
                       {PRESET_SCROLLBACKS.map((item) => (
                         <SelectItem

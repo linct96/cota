@@ -189,13 +189,13 @@ export function FileExplorerSettings() {
                     }}
                   >
                     <SelectTrigger
-                      className="file-icon-theme-select w-full max-w-60"
+                      className="file-icon-theme-select min-w-0 max-w-full"
                       aria-labelledby="file-icon-theme-label"
                       aria-describedby="file-icon-theme-help file-icon-theme-placeholder file-explorer-settings-error"
                     >
-                      <SelectValue className="file-icon-theme-value" />
+                      <SelectValue className="file-icon-theme-value min-w-0 truncate" />
                     </SelectTrigger>
-                    <SelectContent className="file-icon-theme-options" align="start">
+                    <SelectContent className="file-icon-theme-options max-h-[min(16rem,var(--available-height))]">
                       <SelectGroup className="file-icon-theme-options-group">
                         {iconThemes.map(({ value, label }) => (
                           <SelectItem className="file-icon-theme-option" key={value} value={value}>
