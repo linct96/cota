@@ -11,6 +11,7 @@ import { SourceControlService } from './git/source-control/service'
 import { registerGitIPC } from './git/ipc'
 import type { GitResources } from './git/ipc'
 import { CodeHostingService } from './code-hosting/service'
+import { HostingAccountsCache } from './code-hosting/accounts-cache'
 import { registerCodeHostingIPC } from './code-hosting/ipc'
 import { WorktreeManager } from './git/worktrees/manager'
 import { WorktreeSetupService } from './git/worktrees/setup'
@@ -123,7 +124,13 @@ if (!app.requestSingleInstanceLock()) {
         }
       }
       config = new ConfigStore(join(configDirectory, 'config.json'))
-      codeHosting = new CodeHostingService(config, sourceControl)
+      codeHosting = new CodeHostingService(
+        config,
+        sourceControl,
+        undefined,
+        undefined,
+        new HostingAccountsCache(join(app.getPath('userData'), 'code-hosting-accounts.json')),
+      )
       accounts = new AccountService(join(configDirectory, 'providers.json'), (progress) =>
         renderer.send('accounts:oauth-progress', progress),
       )

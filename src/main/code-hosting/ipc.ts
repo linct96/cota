@@ -23,13 +23,18 @@ export function registerCodeHostingIPC(deps: {
     assertReadable()
     return readHosting(target, (_cwd, context) => context)
   })
-  handle('code-hosting:accounts', (provider: unknown) => {
+  handle('code-hosting:accounts-read', () => {
     assertReadable()
-    return codeHosting.accounts(provider)
+    return codeHosting.readAccounts()
   })
-  handle('code-hosting:connection', (provider: unknown, host: unknown) => {
+  handle('code-hosting:accounts', (provider: unknown, refresh?: unknown) => {
     assertReadable()
-    return codeHosting.connection(provider, host)
+    return codeHosting.accounts(provider, refresh)
+  })
+  handle('code-hosting:connection', async (provider: unknown, host: unknown) => {
+    assertReadable()
+    const result = await codeHosting.connection(provider, host)
+    return { result, cache: await codeHosting.readAccounts() }
   })
   handle('code-hosting:inspect', (target: WorkspaceTarget) => {
     assertReadable()

@@ -195,10 +195,24 @@ export type HostingAccounts =
   | { status: 'detected'; accounts: HostingAccount[] }
   | { status: 'disconnected' | 'cli-unavailable'; message: string }
 
+export interface HostingAccountsCacheEntry {
+  result?: HostingAccounts
+  failed: boolean
+  cliUnavailable?: boolean
+}
+export interface HostingAccountsCacheSnapshot {
+  entries: Partial<Record<HostingProvider, HostingAccountsCacheEntry>>
+  error?: string
+}
+
 export interface CodeHostingAPI {
   context: (target: WorkspaceTarget) => Promise<Result<HostingContext>>
-  accounts: (provider: HostingProvider) => Promise<Result<HostingAccounts>>
-  connection: (provider: HostingProvider, host: string) => Promise<Result<HostingConnection>>
+  readAccounts: () => Promise<Result<HostingAccountsCacheSnapshot>>
+  accounts: (provider: HostingProvider, refresh?: boolean) => Promise<Result<HostingAccounts>>
+  connection: (
+    provider: HostingProvider,
+    host: string,
+  ) => Promise<Result<{ result: HostingConnection; cache: HostingAccountsCacheSnapshot }>>
   inspect: (target: WorkspaceTarget) => Promise<Result<HostingSnapshot>>
   creationContext: (target: WorkspaceTarget) => Promise<Result<HostedReviewCreationContext>>
   refreshBranches: (

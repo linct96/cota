@@ -1,10 +1,11 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseHostingRemote } from '../src/main/code-hosting/remote'
 import { HostingBranches } from '../src/main/code-hosting/branches'
 import { parseHostingAccounts } from '../src/main/code-hosting/accounts'
+import { HostingAccountsCache } from '../src/main/code-hosting/accounts-cache'
 import { HostingError } from '../src/main/code-hosting/cli-runner'
 import type { HostingRequest } from '../src/main/code-hosting/cli-runner'
 import type { ReviewScope } from '../src/main/code-hosting/adapter'
@@ -14,7 +15,12 @@ import { CodeHostingService } from '../src/main/code-hosting/service'
 import { ConfigStore } from '../src/main/settings/config-store'
 import { SourceControlService } from '../src/main/git/source-control/service'
 import { hostingBranchesExpired } from '../src/shared/code-hosting'
-import type { HostedReview, HostingContext, HostingRepository } from '../src/shared/code-hosting'
+import type {
+  HostedReview,
+  HostingAccounts,
+  HostingContext,
+  HostingRepository,
+} from '../src/shared/code-hosting'
 import { projectBranch } from '../src/main/git/branches/project-branch'
 import { parseGitStatus } from '../src/main/git/source-control/status'
 import { createBranchFormSchema } from '../src/renderer/src/features/source-control/lib/form-schemas'
@@ -168,6 +174,235 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
     expect(() =>
       parseHostingAccounts('gitlab', '{"hosts":[{"host":"gitlab.com","state":"success"}]}'),
     ).toThrow('账号列表格式无法识别')
+  })
+
+  it('hosting account cache persists scans and failure states without saving CLI credentials', async () => {
+    const file = join(directory, 'code-hosting-accounts.json')
+    const github = parseHostingAccounts(
+      'github',
+      JSON.stringify({
+        hosts: {
+          'github.com': [
+            { host: 'github.com', login: 'alice', active: true, state: 'success', token: 'secret' },
+          ],
+        },
+      }),
+    )
+    const gitlab: HostingAccounts = { status: 'disconnected', message: 'no accounts' }
+    const scan = vi.fn((provider: unknown): Promise<HostingAccounts> =>
+      Promise.resolve(provider === 'github' ? github : gitlab),
+    )
+    const adapter = new GitHubAdapter(vi.fn())
+    vi.spyOn(adapter, 'account').mockResolvedValue('bob')
+    const service = new CodeHostingService(
+      new ConfigStore(join(directory, 'config.json')),
+      new SourceControlService(),
+      { github: adapter, gitlab: adapter },
+      scan,
+      new HostingAccountsCache(file),
+    )
+    expect((await service.readAccounts()).entries).toEqual({})
+    expect(scan).not.toHaveBeenCalled()
+    await Promise.all([
+      service.accounts('github', false),
+      service.accounts('github', false),
+      service.accounts('gitlab', false),
+    ])
+    expect(scan).toHaveBeenCalledTimes(2)
+    const original = await readFile(file, 'utf8')
+    expect(original).not.toContain('secret')
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600)
+
+    const restarted = new CodeHostingService(
+      new ConfigStore(join(directory, 'config.json')),
+      new SourceControlService(),
+      { github: adapter, gitlab: adapter },
+      scan,
+      new HostingAccountsCache(file),
+    )
+    expect((await restarted.readAccounts()).entries).toEqual({
+      github: { result: github, failed: false },
+      gitlab: { result: gitlab, failed: false },
+    })
+    await restarted.readAccounts()
+    expect(scan).toHaveBeenCalledTimes(2)
+    scan.mockRejectedValueOnce(new Error('private-token'))
+    await expect(restarted.accounts('github', true)).rejects.toThrow('private-token')
+    expect((await restarted.readAccounts()).entries.github).toEqual({
+      result: github,
+      failed: true,
+    })
+    expect(await readFile(file, 'utf8')).not.toContain('private-token')
+    expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+      result: github,
+      failed: true,
+    })
+    await expect(restarted.connection('github', 'github.com')).resolves.toEqual({
+      status: 'connected',
+      account: 'bob',
+    })
+    expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+      failed: true,
+      result: {
+        status: 'detected',
+        accounts: [
+          { host: 'github.com', account: 'alice', active: false, status: 'connected' },
+          { host: 'github.com', account: 'bob', active: true, status: 'connected' },
+        ],
+      },
+    })
+    await restarted.accounts('github', true)
+    expect(scan).toHaveBeenCalledTimes(4)
+    expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+      result: github,
+      failed: false,
+    })
+    service.close()
+    restarted.close()
+  })
+
+  it.each([
+    ['single', [{ host: 'github.com', account: 'alice', active: true, status: 'connected' }]],
+    [
+      'multiple',
+      [
+        { host: 'github.com', account: 'alice', active: true, status: 'connected' },
+        { host: 'github.example', account: 'bob', active: true, status: 'connected' },
+      ],
+    ],
+  ] as const)(
+    'hosting account cache preserves %s accounts while the CLI is unavailable',
+    async (_name, accounts) => {
+      const file = join(directory, 'code-hosting-accounts.json')
+      const detected: HostingAccounts = { status: 'detected', accounts: [...accounts] }
+      const unavailable: HostingAccounts = { status: 'cli-unavailable', message: 'CLI unavailable' }
+      const scan = vi.fn().mockResolvedValue(detected)
+      const adapter = new GitHubAdapter(vi.fn())
+      const account = vi.spyOn(adapter, 'account')
+      const service = new CodeHostingService(
+        new ConfigStore(join(directory, 'config.json')),
+        new SourceControlService(),
+        { github: adapter, gitlab: adapter },
+        scan,
+        new HostingAccountsCache(file),
+      )
+      await service.accounts('github', true)
+      account.mockRejectedValueOnce(new HostingError('cli', 'CLI unavailable'))
+      await expect(service.connection('github', 'github.com')).resolves.toEqual(unavailable)
+      expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+        result: detected,
+        failed: false,
+        cliUnavailable: true,
+      })
+
+      scan.mockRejectedValueOnce(new Error('scan failed'))
+      await expect(service.accounts('github', true)).rejects.toThrow('scan failed')
+      expect((await service.readAccounts()).entries.github).toEqual({
+        result: detected,
+        failed: true,
+        cliUnavailable: true,
+      })
+      account.mockResolvedValueOnce('alice')
+      await service.connection('github', 'github.com')
+      expect((await service.readAccounts()).entries.github).toEqual({
+        result: detected,
+        failed: true,
+      })
+
+      scan.mockResolvedValueOnce(unavailable)
+      await expect(service.accounts('github', true)).resolves.toEqual(unavailable)
+      expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+        result: detected,
+        failed: false,
+        cliUnavailable: true,
+      })
+      account.mockRejectedValueOnce(new HostingError('auth', 'not logged in'))
+      await service.connection('github', 'github.com')
+      expect((await service.readAccounts()).entries.github).toEqual({
+        result: {
+          status: 'detected',
+          accounts: accounts.map((entry) =>
+            entry.host === 'github.com' ? { ...entry, status: 'error' } : entry,
+          ),
+        },
+        failed: false,
+      })
+      await service.accounts('github', true)
+      expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+        result: detected,
+        failed: false,
+      })
+
+      account.mockRejectedValueOnce(new HostingError('cli', 'CLI unavailable'))
+      await service.connection('gitlab', 'gitlab.com')
+      expect((await service.readAccounts()).entries.gitlab).toEqual({
+        result: unavailable,
+        failed: false,
+      })
+      service.close()
+    },
+  )
+
+  it('hosting account cache serializes scans and host checks and retains an initial failure', async () => {
+    const file = join(directory, 'code-hosting-accounts.json')
+    let finish!: (result: HostingAccounts) => void
+    const pending = new Promise<HostingAccounts>((resolve) => {
+      finish = resolve
+    })
+    const scan = vi.fn().mockReturnValueOnce(pending).mockRejectedValueOnce(new Error('private'))
+    const adapter = new GitHubAdapter(vi.fn())
+    const account = vi.spyOn(adapter, 'account').mockResolvedValue('new-user')
+    const service = new CodeHostingService(
+      new ConfigStore(join(directory, 'config.json')),
+      new SourceControlService(),
+      { github: adapter, gitlab: adapter },
+      scan,
+      new HostingAccountsCache(file),
+    )
+    const scanning = service.accounts('github', false)
+    const duplicate = service.accounts('github', false)
+    const connecting = service.connection('github', 'github.com')
+    expect(account).not.toHaveBeenCalled()
+    finish({
+      status: 'detected',
+      accounts: [{ host: 'github.com', account: 'old-user', active: true, status: 'connected' }],
+    })
+    await Promise.all([scanning, duplicate, connecting])
+    expect(scan).toHaveBeenCalledOnce()
+    expect((await service.readAccounts()).entries.github?.result).toEqual({
+      status: 'detected',
+      accounts: [
+        { host: 'github.com', account: 'old-user', active: false, status: 'connected' },
+        { host: 'github.com', account: 'new-user', active: true, status: 'connected' },
+      ],
+    })
+    await expect(service.accounts('gitlab', false)).rejects.toThrow('private')
+    expect((await new HostingAccountsCache(file).read()).entries.gitlab).toEqual({ failed: true })
+    expect(await readFile(file, 'utf8')).not.toContain('private')
+    service.close()
+  })
+
+  it('hosting account cache preserves invalid files and refuses symbolic links', async () => {
+    const file = join(directory, 'code-hosting-accounts.json')
+    const original = '{"version":2,"entries":{}}'
+    await writeFile(file, original)
+    const cache = new HostingAccountsCache(file)
+    expect((await cache.read()).error).toContain('无法读取代码托管缓存')
+    await cache.update('github', () => ({
+      result: { status: 'disconnected', message: 'no accounts' },
+      failed: false,
+    }))
+    expect((await cache.read()).entries.github?.result?.status).toBe('disconnected')
+    expect(await readFile(file, 'utf8')).toBe(original)
+
+    if (process.platform !== 'win32') {
+      const link = join(directory, 'linked-cache.json')
+      await symlink(file, link)
+      const linked = new HostingAccountsCache(link)
+      expect((await linked.read()).error).toContain('无法读取代码托管缓存')
+      await linked.update('github', () => ({ failed: true }))
+      expect(await readFile(file, 'utf8')).toBe(original)
+    }
   })
 
   it.each(['github', 'gitlab'] as const)(

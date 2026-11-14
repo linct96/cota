@@ -43,6 +43,7 @@ beforeEach(() => {
     onAgentCliInstall: vi.fn(),
     codeHosting: {
       context: vi.fn(),
+      readAccounts: vi.fn(),
       accounts: vi.fn(),
       connection: vi.fn(),
       inspect: vi.fn(),

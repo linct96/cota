@@ -25,6 +25,44 @@ describe('Git IPC trust boundaries', () => {
     expect(mocks.createWorktree).not.toHaveBeenCalled()
   })
 
+  it('hosting account cache IPC uses trusted frames and returns the updated connection snapshot', async () => {
+    const cache = {
+      entries: { github: { failed: false, result: { status: 'disconnected', message: 'none' } } },
+    }
+    const connection = { status: 'connected', account: 'alice' }
+    mocks.hostingReadAccounts.mockResolvedValue(cache)
+    mocks.hostingAccounts.mockResolvedValue(cache.entries.github.result)
+    mocks.hostingConnection.mockResolvedValue(connection)
+    for (const channel of [
+      'code-hosting:accounts-read',
+      'code-hosting:accounts',
+      'code-hosting:connection',
+    ]) {
+      expect(
+        await mocks.handlers.get(channel)!({ ...event, senderFrame: {} }, 'github', 'github.com'),
+      ).toMatchObject({ ok: false, error: '拒绝未授权的窗口请求。' })
+    }
+    expect(mocks.hostingReadAccounts).not.toHaveBeenCalled()
+    expect(mocks.hostingAccounts).not.toHaveBeenCalled()
+    expect(mocks.hostingConnection).not.toHaveBeenCalled()
+    expect(await mocks.handlers.get('code-hosting:accounts-read')!(event)).toEqual({
+      ok: true,
+      value: cache,
+    })
+    expect(await mocks.handlers.get('code-hosting:accounts')!(event, 'github', false)).toEqual({
+      ok: true,
+      value: cache.entries.github.result,
+    })
+    expect(mocks.hostingAccounts).toHaveBeenCalledWith('github', false)
+    expect(
+      await mocks.handlers.get('code-hosting:connection')!(event, 'github', 'github.com'),
+    ).toEqual({
+      ok: true,
+      value: { result: connection, cache },
+    })
+    expect(mocks.hostingConnection).toHaveBeenCalledWith('github', 'github.com')
+  })
+
   it('releases the repository gate during hosted reads and rejects a changed publication context', async () => {
     let locked = false
     mocks.config.recentProjects = [path]

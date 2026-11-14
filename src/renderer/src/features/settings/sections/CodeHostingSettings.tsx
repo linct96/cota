@@ -7,6 +7,8 @@ import { unwrap } from '../../../../../shared/contracts'
 import { hostingHostSchema, hostingProviderSchema } from '../../../../../shared/code-hosting'
 import type {
   HostingAccounts,
+  HostingAccountsCacheEntry,
+  HostingAccountsCacheSnapshot,
   HostingConnection,
   HostingProvider,
 } from '../../../../../shared/code-hosting'
@@ -42,11 +44,19 @@ const platforms = {
   gitlab: { name: 'GitLab', cli: 'glab', host: 'gitlab.com' },
 }
 
-type ConnectionStatus = { checking?: boolean } & (
+type ConnectionStatus = { checking?: boolean; failure?: string; cliUnavailable?: boolean } & (
   | HostingAccounts
   | { status: 'unchecked' }
   | { status: 'error'; message: string }
 )
+
+function cachedConnection(entry?: HostingAccountsCacheEntry, failure?: string): ConnectionStatus {
+  const error = failure || (entry?.failed ? '检测失败，请重新检测。' : undefined)
+  if (entry?.result)
+    return { ...entry.result, failure: error, cliUnavailable: entry.cliUnavailable }
+  if (error) return { status: 'error', message: error }
+  return { status: 'unchecked' }
+}
 
 const connectionStates = {
   unchecked: { label: '未检测', variant: 'secondary' },
@@ -62,6 +72,7 @@ export function CodeHostingSettings() {
     gitlab: { status: 'unchecked' },
   })
   const [initialPending, setInitialPending] = useState(true)
+  const [cacheError, setCacheError] = useState<string>()
   const [detecting, setDetecting] = useState(false)
   const [configuring, setConfiguring] = useState<HostingProvider>()
   const pending = useRef(false)
@@ -71,43 +82,87 @@ export function CodeHostingSettings() {
     (connection) => connection.status !== 'unchecked',
   )
 
-  const detectOnMount = useEffectEvent(detect)
+  const loadOnMount = useEffectEvent((cache: HostingAccountsCacheSnapshot) => {
+    setCacheError(cache.error)
+    setConnections({
+      github: cachedConnection(cache.entries.github),
+      gitlab: cachedConnection(cache.entries.gitlab),
+    })
+    const missing = hostingProviderSchema.options.filter((provider) => !cache.entries[provider])
+    if (missing.length < hostingProviderSchema.options.length) setInitialPending(false)
+    if (missing.length) void detect(missing, false)
+    else setInitialPending(false)
+  })
   useEffect(() => {
+    let disposed = false
     alive.current = true
-    void detectOnMount()
+    void window.desktop.codeHosting
+      .readAccounts()
+      .then(unwrap)
+      .then((cache) => {
+        if (!disposed) loadOnMount(cache)
+      })
+      .catch(() => {
+        if (!disposed) {
+          setCacheError('无法读取代码托管缓存，请重新检测。')
+          setInitialPending(false)
+        }
+      })
     return () => {
+      disposed = true
       alive.current = false
     }
   }, [])
 
-  async function scan(provider: HostingProvider) {
+  async function scan(provider: HostingProvider, refresh: boolean) {
     setConnections((previous) => ({
       ...previous,
       [provider]: { ...previous[provider], checking: true },
     }))
+    let result: HostingAccounts | undefined
+    let failure: string | undefined
     try {
-      const result = unwrap(await window.desktop.codeHosting.accounts(provider))
-      if (alive.current) setConnections((previous) => ({ ...previous, [provider]: result }))
+      result = unwrap(await window.desktop.codeHosting.accounts(provider, refresh))
     } catch (cause) {
+      failure = cause instanceof Error ? cause.message : '检测失败，请重新检测。'
+    }
+    try {
+      const cache = unwrap(await window.desktop.codeHosting.readAccounts())
       if (alive.current) {
+        setCacheError(cache.error)
         setConnections((previous) => ({
           ...previous,
-          [provider]: {
-            status: 'error',
-            message: cause instanceof Error ? cause.message : '检测失败，请重试。',
-          },
+          [provider]: cachedConnection(cache.entries[provider], failure),
         }))
       }
-      throw cause
+    } catch {
+      if (alive.current) {
+        setCacheError('无法读取代码托管缓存，请重新检测。')
+        setConnections((previous) => {
+          const current = previous[provider]
+          const error = failure || '无法读取检测结果，请重新检测。'
+          return {
+            ...previous,
+            [provider]: result
+              ? result
+              : current.status === 'unchecked' || current.status === 'error'
+                ? { status: 'error', message: error }
+                : { ...current, checking: false, failure: error },
+          }
+        })
+      }
     }
   }
 
-  async function detect() {
+  async function detect(
+    providers: readonly HostingProvider[] = hostingProviderSchema.options,
+    refresh = true,
+  ) {
     if (pending.current || detectingVisible || configuring) return
     pending.current = true
     setDetecting(true)
     try {
-      await Promise.allSettled(hostingProviderSchema.options.map((provider) => scan(provider)))
+      await Promise.allSettled(providers.map((provider) => scan(provider, refresh)))
     } finally {
       pending.current = false
       if (alive.current) {
@@ -147,67 +202,46 @@ export function CodeHostingSettings() {
       </header>
       <LoadingContent pending={initialPending} label="代码托管配置读取中..." showLabel>
         {!initialPending && (
-          <Card
-            size="sm"
-            className="code-hosting-settings-card gap-0 divide-y divide-border py-0"
-            aria-busy={detecting}
-          >
-            {hostingProviderSchema.options.map((provider) => (
-              <CodeHostingConnectionRow
-                key={provider}
-                provider={provider}
-                connection={connections[provider]}
-                disabled={detecting || detectingVisible}
-                open={configuring === provider}
-                onOpenChange={(open) => {
-                  if (!pending.current) setConfiguring(open ? provider : undefined)
-                }}
-                onConnect={async (host) => {
-                  const result = unwrap(await window.desktop.codeHosting.connection(provider, host))
-                  if (alive.current) {
-                    setConnections((previous) => {
-                      const current = previous[provider]
-                      const accounts = current.status === 'detected' ? current.accounts : []
-                      const updated = accounts.map((account) => {
-                        if (account.host !== host) return account
-                        if (result.status !== 'connected')
-                          return account.active ? { ...account, status: 'error' as const } : account
-                        return {
-                          ...account,
-                          active: account.account === result.account,
-                          status:
-                            account.account === result.account
-                              ? ('connected' as const)
-                              : account.status,
-                        }
-                      })
-                      if (
-                        result.status === 'connected' &&
-                        !updated.some(
-                          (account) => account.host === host && account.account === result.account,
-                        )
-                      ) {
-                        updated.push({
-                          host,
-                          account: result.account,
-                          active: true,
-                          status: 'connected',
-                        })
-                      }
-                      return {
+          <>
+            {cacheError && (
+              <Alert className="code-hosting-cache-error mb-3" variant="destructive">
+                <AlertDescription className="code-hosting-cache-error-message">
+                  {cacheError}
+                </AlertDescription>
+              </Alert>
+            )}
+            <Card
+              size="sm"
+              className="code-hosting-settings-card gap-0 divide-y divide-border py-0"
+              aria-busy={detecting}
+            >
+              {hostingProviderSchema.options.map((provider) => (
+                <CodeHostingConnectionRow
+                  key={provider}
+                  provider={provider}
+                  connection={connections[provider]}
+                  disabled={detecting || detectingVisible}
+                  open={configuring === provider}
+                  onOpenChange={(open) => {
+                    if (!pending.current) setConfiguring(open ? provider : undefined)
+                  }}
+                  onConnect={async (host) => {
+                    const { result, cache } = unwrap(
+                      await window.desktop.codeHosting.connection(provider, host),
+                    )
+                    if (alive.current) {
+                      setCacheError(cache.error)
+                      setConnections((previous) => ({
                         ...previous,
-                        [provider]:
-                          result.status === 'connected' || updated.length > 0
-                            ? { status: 'detected', accounts: updated }
-                            : result,
-                      }
-                    })
-                  }
-                  return result
-                }}
-              />
-            ))}
-          </Card>
+                        [provider]: cachedConnection(cache.entries[provider]),
+                      }))
+                    }
+                    return result
+                  }}
+                />
+              ))}
+            </Card>
+          </>
         )}
       </LoadingContent>
     </section>
@@ -231,11 +265,24 @@ function CodeHostingConnectionRow({
 }) {
   const { name, cli, host: defaultHost } = platforms[provider]
   const hostId = `hosting-${provider}-host`
-  const view = connectionStates[connection.status]
+  const cliUnavailable = connection.cliUnavailable || connection.status === 'cli-unavailable'
+  const unavailableMessage =
+    connection.status === 'cli-unavailable'
+      ? connection.message
+      : `${cli} 不可用，请检查安装后重新检测。`
   const allAccounts = connection.status === 'detected' ? connection.accounts : []
   const accounts = allAccounts.filter((account) => account.status === 'connected')
-  const primaryAccount = accounts.find((account) => account.active) ?? accounts.at(0)
-  const action = primaryAccount ? '管理连接' : '连接'
+  const primaryAccount = cliUnavailable
+    ? undefined
+    : (accounts.find((account) => account.active) ?? accounts.at(0))
+  const view = cliUnavailable
+    ? connectionStates['cli-unavailable']
+    : connection.failure
+      ? connectionStates.error
+      : primaryAccount
+        ? { label: '已连接', variant: 'success' as const }
+        : connectionStates[connection.status]
+  const action = primaryAccount || (cliUnavailable && allAccounts.length) ? '管理连接' : '连接'
   const checkingVisible = useLoadingIndicator(!!connection.checking)
   const [adding, setAdding] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -287,7 +334,7 @@ function CodeHostingConnectionRow({
         endpoint?.focus({ preventScroll: true })
       } else {
         setError(result.message)
-        setGuide({ host })
+        setGuide(result.status === 'cli-unavailable' ? undefined : { host })
       }
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : '连接失败，请重试。')
@@ -324,9 +371,11 @@ function CodeHostingConnectionRow({
           setGuide(undefined)
           setNotice(undefined)
           setError(
-            connection.status === 'error' || connection.status === 'cli-unavailable'
-              ? connection.message
-              : undefined,
+            cliUnavailable
+              ? unavailableMessage
+              : connection.status === 'error'
+                ? connection.message
+                : undefined,
           )
         }
         onOpenChange(next)
@@ -350,26 +399,36 @@ function CodeHostingConnectionRow({
             </Badge>
             {!connection.checking &&
               !checkingVisible &&
-              (primaryAccount || connection.status !== 'detected') && (
+              (cliUnavailable ||
+                connection.failure ||
+                primaryAccount ||
+                connection.status !== 'detected') && (
                 <Badge
                   render={<output className="code-hosting-connection-status" />}
-                  variant={primaryAccount ? 'success' : view.variant}
+                  variant={view.variant}
                 >
-                  {primaryAccount ? '已连接' : view.label}
+                  {view.label}
                 </Badge>
               )}
           </div>
           <p className="code-hosting-connection-detail break-all text-xs text-muted-foreground select-text">
-            {primaryAccount
-              ? `${primaryAccount.host} · ${primaryAccount.account}${accounts.length > 1 ? ` 等${accounts.length}个远端地址` : ''}`
-              : connection.status === 'detected'
-                ? '未发现已授权账号，请在终端重新授权后再检测。'
-                : connection.status === 'unchecked'
-                  ? '点击「检测连接」扫描所有已登录账号。'
-                  : 'message' in connection
-                    ? connection.message
-                    : ''}
+            {cliUnavailable
+              ? unavailableMessage
+              : primaryAccount
+                ? `${primaryAccount.host} · ${primaryAccount.account}${accounts.length > 1 ? ` 等${accounts.length}个远端地址` : ''}`
+                : connection.status === 'detected'
+                  ? '未发现已授权账号，请在终端重新授权后再检测。'
+                  : connection.status === 'unchecked'
+                    ? '点击「检测连接」扫描所有已登录账号。'
+                    : 'message' in connection
+                      ? connection.message
+                      : ''}
           </p>
+          {connection.failure && (
+            <output className="code-hosting-connection-error text-xs text-destructive">
+              {connection.failure} 显示上次结果。
+            </output>
+          )}
         </div>
         <div className="code-hosting-connection-control flex min-w-0 flex-col gap-2">
           {connection.status !== 'unchecked' && (
@@ -413,11 +472,18 @@ function CodeHostingConnectionRow({
                     </h4>
                     <Badge
                       className="code-hosting-endpoint-status"
-                      variant={account.status === 'connected' ? 'success' : 'warning'}
+                      variant={
+                        cliUnavailable
+                          ? 'secondary'
+                          : account.status === 'connected'
+                            ? 'success'
+                            : 'warning'
+                      }
                     >
+                      {cliUnavailable && '上次'}
                       {account.status === 'connected' ? '已连接' : '验证失败'}
                     </Badge>
-                    {account.active && account.status === 'connected' && (
+                    {!cliUnavailable && account.active && account.status === 'connected' && (
                       <Badge className="code-hosting-endpoint-active" variant="secondary">
                         当前账号
                       </Badge>
