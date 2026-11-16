@@ -54,8 +54,8 @@ export class AgentCliInstallTerminals {
     provider: AgentProvider,
     operation: (execute: ExecuteCliInstall) => Promise<AgentCliInstallResult>,
   ): Promise<AgentCliInstallResult> {
-    if (this.running) throw new Error('已有 CLI 正在更新，请等待完成。')
     const previous = this.jobs.get(provider)
+    if (previous?.run.status === 'running') throw new Error('该 CLI 正在更新，请等待完成。')
     if (previous) {
       this.resetAttachment(previous)
       previous.screen.write('', () => previous.screen.dispose())
@@ -120,6 +120,12 @@ export class AgentCliInstallTerminals {
     if (!job) return undefined
     return new Promise((resolve) => {
       job.screen.write('', () => {
+        if (this.jobs.get(provider) !== job) {
+          resolve(
+            epoch === this.attachmentEpoch ? this.snapshot(provider, attachmentId) : undefined,
+          )
+          return
+        }
         if (attachmentId && epoch === this.attachmentEpoch) {
           this.resetAttachment(job)
           job.attachmentId = attachmentId
@@ -190,9 +196,13 @@ export class AgentCliInstallTerminals {
     for (const job of jobs) {
       job.cancelled = true
       this.resetAttachment(job)
-      await job.stop?.()
     }
-    await Promise.allSettled(jobs.map((job) => job.done))
+    const stopped = await Promise.allSettled(jobs.map((job) => job.stop?.() ?? Promise.resolve()))
+    await Promise.allSettled(
+      jobs.filter((_, index) => stopped[index].status === 'fulfilled').map((job) => job.done),
+    )
+    const failure = stopped.find((result) => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
   }
 
   private find(id: string): Job {

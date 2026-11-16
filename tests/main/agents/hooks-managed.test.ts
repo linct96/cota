@@ -12,16 +12,32 @@ import {
 import { codexRpc, userHookConfig } from './hooks.fixture'
 
 describe('Managed Agent Hook files', () => {
+  it('installs Codex and Claude Hooks concurrently with one shared loader', async () => {
+    const env = { HOME: root, PATH: join(root, 'bin') }
+    const codex = await userHookConfig('codex', env)
+    const claude = await userHookConfig('claude', env)
+    const statuses = await Promise.all([
+      installAgentHook('codex', env),
+      installAgentHook('claude', env),
+    ])
+    expect(statuses.map((status) => status.state)).toEqual(['installed', 'installed'])
+    expect(codex.paths.loader).toBe(claude.paths.loader)
+    expect(await readFile(codex.paths.loader, 'utf8')).toContain('cota-managed-agent-hook:')
+    for (const paths of [codex.paths, claude.paths]) {
+      const config = JSON.parse(await readFile(paths.config, 'utf8'))
+      expect(config.hooks.Stop[0].hooks).toContainEqual({ type: 'command', command: 'user-hook' })
+    }
+  })
+
   it.each(['codex', 'claude'] as const)(
-    'installs %s Hooks without granting implicit trust and preserves user data',
+    'installs %s Hooks without implicit trust and preserves user configuration',
     async (provider) => {
       const env = { HOME: root, PATH: join(root, 'bin') }
-      const { trustRecords, trustRequests, rpcChildren, failure } = codexRpc(env)
+      const { trustRecords, trustRequests } = codexRpc(env)
       const { paths, original, trustConfig, userToml } = await userHookConfig(provider, env)
-
-      if (provider === 'codex') {
+      if (provider === 'codex')
         await expect(trustAgentHook(provider, env)).rejects.toThrow('请先安装或更新')
-      }
+
       const beforeInstall = trustRequests.length
       const hookStatus = await installAgentHook(provider, env)
       expect(hookStatus.state).toBe('installed')
@@ -36,32 +52,6 @@ describe('Managed Agent Hook files', () => {
         ).toBe('untrusted')
         expect(await readFile(trustConfig, 'utf8')).toBe(userToml)
         expect(trustRequests.every((request) => !request.method.startsWith('config/'))).toBe(true)
-        const beforeTrust = await readFile(paths.config, 'utf8')
-        const beforeLoader = await readFile(paths.loader, 'utf8')
-        expect(await trustAgentHook(provider, env)).toMatchObject({
-          trust: 'trusted',
-          detail: expect.stringContaining('已信任 Cota Hooks'),
-        })
-        expect(await readFile(paths.config, 'utf8')).toBe(beforeTrust)
-        expect(await readFile(paths.loader, 'utf8')).toBe(beforeLoader)
-        expect(await readFile(trustConfig, 'utf8')).toBe(`${userToml}# native trust write\n`)
-        expect(trustRecords.get('user-trust')).toEqual({ trusted_hash: 'keep', enabled: false })
-        expect(trustRecords.size).toBe(7)
-        const beforeDetect = trustRequests.length
-        expect(
-          (await inspectAgentHook(provider, env, undefined, join(root, 'bin', 'codex'))).trust,
-        ).toBe('trusted')
-        expect(
-          trustRequests
-            .slice(beforeDetect)
-            .every((request) => !request.method.startsWith('config/')),
-        ).toBe(true)
-        failure.value = 'unsupported'
-        expect(
-          await inspectAgentHook(provider, env, undefined, join(root, 'bin', 'codex')),
-        ).toMatchObject({ state: 'installed', trust: 'unknown' })
-        failure.value = undefined
-        expect(rpcChildren.every((rpc) => rpc.kill.mock.calls.length === 1)).toBe(true)
       }
       const installed = await readFile(paths.config, 'utf8')
       const data = JSON.parse(installed)
@@ -77,17 +67,10 @@ describe('Managed Agent Hook files', () => {
       )
       expect(backups).toHaveLength(1)
       expect(await readFile(join(paths.config, '..', backups[0]), 'utf8')).toBe(original)
-      const writes = trustRequests.filter(
-        (request) => request.method === 'config/batchWrite',
-      ).length
       const beforeReinstall = trustRequests.length
       await installAgentHook(provider, env)
       expect(trustRequests).toHaveLength(beforeReinstall)
-      if (provider === 'codex') await trustAgentHook(provider, env)
       expect(await readFile(paths.config, 'utf8')).toBe(installed)
-      expect(
-        trustRequests.filter((request) => request.method === 'config/batchWrite'),
-      ).toHaveLength(writes)
       expect(
         (await readdir(join(paths.config, '..'))).filter((name) =>
           name.startsWith(`${provider === 'codex' ? 'hooks.json' : 'settings.json'}.cota-backup-`),
@@ -95,6 +78,52 @@ describe('Managed Agent Hook files', () => {
       ).toHaveLength(1)
     },
   )
+
+  it('trusts installed Codex Hooks idempotently without changing unrelated trust or Hook files', async () => {
+    const env = { HOME: root, PATH: join(root, 'bin') }
+    const { trustRecords, trustRequests, rpcChildren, failure } = codexRpc(env)
+    const { paths, trustConfig, userToml } = await userHookConfig('codex', env)
+    await installAgentHook('codex', env)
+    const beforeTrust = await readFile(paths.config, 'utf8')
+    const beforeLoader = await readFile(paths.loader, 'utf8')
+    expect(await trustAgentHook('codex', env)).toMatchObject({
+      trust: 'trusted',
+      detail: expect.stringContaining('已信任 Cota Hooks'),
+    })
+    expect(await readFile(paths.config, 'utf8')).toBe(beforeTrust)
+    expect(await readFile(paths.loader, 'utf8')).toBe(beforeLoader)
+    expect(await readFile(trustConfig, 'utf8')).toBe(`${userToml}# native trust write\n`)
+    expect(trustRecords.get('user-trust')).toEqual({ trusted_hash: 'keep', enabled: false })
+    expect(trustRecords.size).toBe(7)
+    const beforeDetect = trustRequests.length
+    expect(
+      (await inspectAgentHook('codex', env, undefined, join(root, 'bin', 'codex'))).trust,
+    ).toBe('trusted')
+    expect(
+      trustRequests.slice(beforeDetect).every((request) => !request.method.startsWith('config/')),
+    ).toBe(true)
+    failure.value = 'unsupported'
+    expect(
+      await inspectAgentHook('codex', env, undefined, join(root, 'bin', 'codex')),
+    ).toMatchObject({ state: 'installed', trust: 'unknown' })
+    failure.value = undefined
+    expect(rpcChildren.every((rpc) => rpc.kill.mock.calls.length === 1)).toBe(true)
+
+    const writes = trustRequests.filter((request) => request.method === 'config/batchWrite').length
+    const beforeReinstall = trustRequests.length
+    await installAgentHook('codex', env)
+    expect(trustRequests).toHaveLength(beforeReinstall)
+    await trustAgentHook('codex', env)
+    expect(await readFile(paths.config, 'utf8')).toBe(beforeTrust)
+    expect(trustRequests.filter((request) => request.method === 'config/batchWrite')).toHaveLength(
+      writes,
+    )
+    expect(
+      (await readdir(join(paths.config, '..'))).filter((name) =>
+        name.startsWith('hooks.json.cota-backup-'),
+      ),
+    ).toHaveLength(1)
+  })
 
   it.each(['codex', 'claude'] as const)(
     'removes only Cota %s Hooks and rejects malformed or symlinked configuration',

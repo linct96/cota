@@ -54,8 +54,12 @@ export function registerAgentsIPC(deps: {
         async () => {
           lifecycle.assertAvailable()
           if (
-            (await manager.request('list', [])).some(
-              (session) => session.provider === provider && !session.exited,
+            (await manager.request('list', [true])).some(
+              (session) =>
+                !session.exited &&
+                (session.provider === provider ||
+                  (session.agent?.provider === provider &&
+                    !['exited', 'error'].includes(session.agent.runtimeState))),
             )
           )
             throw new Error('请先关闭 Cota 中正在运行的该智能体终端，再更新。')
@@ -80,65 +84,77 @@ export function registerAgentsIPC(deps: {
   handle('agent:cli-install-resize', (id: unknown, cols: unknown, rows: unknown) =>
     cliInstallTerminals.resize(terminalId(id), cols, rows),
   )
-  handle('agent:hooks-detect', async () => {
+  handle('agent:hooks-detect', async (value?: unknown) => {
+    const providers =
+      value === undefined
+        ? (Object.keys(AGENT_PROVIDERS) as AgentProvider[])
+        : [agentProvider(value)]
     const env = await loginShellEnvironment(config.snapshot().preferences)
     const agents = agentClis.read().entries
     return Promise.all(
-      (Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) =>
-        inspectAgentHook(
-          provider,
-          env,
-          agents.find((agent) => agent.provider === provider)?.version,
-          agents.find((agent) => agent.provider === provider)?.executable,
-        ),
-      ),
+      providers.map((provider) => {
+        const entry = agents.find((agent) => agent.provider === provider)
+        const executable = agentClis.isUpdating(provider) ? undefined : entry?.executable
+        const inspect = () => inspectAgentHook(provider, env, entry?.version, executable)
+        return provider === 'codex' && executable ? agentClis.use(provider, inspect) : inspect()
+      }),
     )
   })
   for (const operation of ['install', 'trust', 'uninstall'] as const) {
     handle(`agent:hooks-${operation}`, async (value: unknown) => {
       const provider = agentProvider(value)
-      const env = shellEnvironment()
-      const uninstall = operation === 'uninstall'
-      const trust = operation === 'trust'
-      if (trust && provider !== 'codex') throw new Error('仅 Codex 支持单独信任 Hooks。')
-      const label = uninstall ? '卸载' : trust ? '信任' : '安装'
-      // The installed CLI version determines supported Hook events, not trust consent.
-      const codex =
-        !uninstall && provider === 'codex'
-          ? (await agentClis.inspect(config.snapshot().preferences, false, provider)).find(
-              (agent) => agent.provider === provider,
-            )
-          : undefined
-      if (trust && !codex?.executable) throw new Error('找不到 Codex，无法信任 Hooks。')
-      const version = codex?.version
-      const status = await inspectAgentHook(provider, env, version)
-      if (status.state === 'conflict' || status.state === 'error') throw new Error(status.detail)
-      if (trust && status.state !== 'installed')
-        throw new Error('请先安装或更新 Codex 的 Cota Hooks，再授予信任。')
-      const window = deps.getWindow()
-      if (!renderer.ready || !window || window.webContents.isDestroyed() || renderer.confirming)
-        throw new Error(
-          uninstall
-            ? '当前无法显示卸载确认，请关闭其他确认弹窗后重试；仍无响应时请重新打开应用。'
-            : `当前无法${label}，请关闭其他确认弹窗后重试；仍无响应时请重新打开应用。`,
+      const manage = async () => {
+        const env = shellEnvironment()
+        const uninstall = operation === 'uninstall'
+        const trust = operation === 'trust'
+        if (trust && provider !== 'codex') throw new Error('仅 Codex 支持单独信任 Hooks。')
+        const label = uninstall ? '卸载' : trust ? '信任' : '安装'
+        // The installed CLI version determines supported Hook events, not trust consent.
+        const codex =
+          !uninstall && provider === 'codex'
+            ? (await agentClis.inspect(config.snapshot().preferences, false, provider)).find(
+                (agent) => agent.provider === provider,
+              )
+            : undefined
+        if (trust && !codex?.executable) throw new Error('找不到 Codex，无法信任 Hooks。')
+        const version = codex?.version
+        const status = await inspectAgentHook(provider, env, version)
+        if (status.state === 'conflict' || status.state === 'error') throw new Error(status.detail)
+        if (trust && status.state !== 'installed')
+          throw new Error('请先安装或更新 Codex 的 Cota Hooks，再授予信任。')
+        const window = deps.getWindow()
+        if (
+          !renderer.ready ||
+          !window ||
+          window.webContents.isDestroyed() ||
+          (uninstall && renderer.confirming)
         )
-      if (operation === 'install') return installAgentHook(provider, env, version)
-      if (trust)
-        return trustAgentHook(
-          provider,
-          await loginShellEnvironment(config.snapshot().preferences),
-          version,
-          codex?.executable,
+          throw new Error(
+            uninstall
+              ? '当前无法显示卸载确认，请关闭其他确认弹窗后重试；仍无响应时请重新打开应用。'
+              : `当前无法${label}，请关闭其他确认弹窗后重试；仍无响应时请重新打开应用。`,
+          )
+        if (operation === 'install') return installAgentHook(provider, env, version)
+        if (trust)
+          return trustAgentHook(
+            provider,
+            await loginShellEnvironment(config.snapshot().preferences),
+            version,
+            codex?.executable,
+          )
+        if (
+          !(await renderer.confirm({
+            title: `卸载 ${AGENT_PROVIDERS[provider].name} 状态集成？`,
+            description: '不会退出正在运行的 Agent；重启 Agent 后停止状态同步。',
+            confirmLabel: '卸载',
+          }))
         )
-      if (
-        !(await renderer.confirm({
-          title: `卸载 ${AGENT_PROVIDERS[provider].name} 状态集成？`,
-          description: '不会退出正在运行的 Agent；重启 Agent 后停止状态同步。',
-          confirmLabel: '卸载',
-        }))
-      )
-        return null
-      return uninstallAgentHook(provider, env)
+          return null
+        return uninstallAgentHook(provider, env)
+      }
+      return provider === 'codex' && operation !== 'uninstall'
+        ? agentClis.use(provider, manage)
+        : manage()
     })
   }
   handle('agent:visible', (id: unknown) => {

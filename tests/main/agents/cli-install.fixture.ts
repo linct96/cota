@@ -37,30 +37,41 @@ export async function cliManagement() {
       return Promise.reject(cause)
     }
   })
-  return { configFile, restored, restarted, launch }
+  return { configFile, restored, restarted, launch, publish }
 }
-export function installTerminal() {
-  const installChild = new EventEmitter()
-  const write = vi.fn()
-  const resize = vi.fn()
-  const pause = vi.fn()
-  const resume = vi.fn()
-  mocks.ptySpawn.mockReturnValue({
-    pid: 12345,
-    write,
-    resize,
-    pause,
-    resume,
-    onData: (listener: (data: string) => void) => {
-      installChild.on('data', listener)
-      return { dispose: () => installChild.off('data', listener) }
-    },
-    onExit: (listener: (event: { exitCode: number; signal?: number }) => void) => {
-      installChild.on('exit', listener)
-      return { dispose: () => installChild.off('exit', listener) }
-    },
+export function installTerminal(separateChildren = false) {
+  const createChild = () => {
+    const installChild = new EventEmitter()
+    const write = vi.fn()
+    const resize = vi.fn()
+    const pause = vi.fn()
+    const resume = vi.fn()
+    const pty = {
+      pid: 12345,
+      write,
+      resize,
+      pause,
+      resume,
+      onData: (listener: (data: string) => void) => {
+        installChild.on('data', listener)
+        return { dispose: () => installChild.off('data', listener) }
+      },
+      onExit: (listener: (event: { exitCode: number; signal?: number }) => void) => {
+        installChild.on('exit', listener)
+        return { dispose: () => installChild.off('exit', listener) }
+      },
+    }
+    return { installChild, write, resize, pause, resume, pty }
+  }
+  const first = createChild()
+  const children: ReturnType<typeof createChild>[] = []
+  mocks.ptySpawn.mockImplementation(() => {
+    const child = separateChildren && children.length ? createChild() : first
+    if (separateChildren) child.pty.pid += children.length
+    children.push(child)
+    return child.pty
   })
   const progress = vi.fn()
   const terminals = new AgentCliInstallTerminals(progress)
-  return { installChild, write, resize, pause, resume, progress, terminals }
+  return { ...first, children, progress, terminals }
 }

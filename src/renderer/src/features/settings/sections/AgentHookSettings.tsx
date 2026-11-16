@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Download, LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
@@ -13,6 +13,8 @@ import { Card } from '@/components/ui/card'
 import { Field, FieldDescription } from '@/components/ui/field'
 
 type HookAction = 'install' | 'trust' | 'uninstall'
+type HookPending = HookAction | 'detect'
+const providers = Object.keys(AGENT_PROVIDERS) as AgentProvider[]
 
 const labels: Record<AgentHookStatus['state'], string> = {
   installed: '已安装',
@@ -24,42 +26,80 @@ const labels: Record<AgentHookStatus['state'], string> = {
 
 export function AgentHookSettings({
   agents,
-  initialStatuses,
-  initialError,
   onShowError,
 }: {
   agents: AgentCliStatus[]
-  initialStatuses: AgentHookStatus[]
-  initialError?: string
   onShowError: (title: string, detail: string) => void
 }) {
-  const [statuses, setStatuses] = useState(initialStatuses)
-  const [busy, setBusy] = useState<'detect' | { provider: AgentProvider; action: HookAction }>()
-  const [error, setError] = useState(initialError)
-  const [feedbackProvider, setFeedbackProvider] = useState<AgentProvider>()
-  const detectingVisible = useLoadingIndicator(busy === 'detect')
-  const trustingVisible = useLoadingIndicator(typeof busy === 'object' && busy.action === 'trust')
-  const blocked = !!busy || detectingVisible || trustingVisible
+  const [statuses, setStatuses] = useState<AgentHookStatus[]>([])
+  const [busy, setBusy] = useState<Partial<Record<AgentProvider, HookPending>>>({})
+  const [errors, setErrors] = useState<Partial<Record<AgentProvider, string>>>({})
+  const [detectionErrors, setDetectionErrors] = useState<Partial<Record<AgentProvider, string>>>({})
+  const [detecting, setDetecting] = useState(false)
+  const pending = useRef(new Set<AgentProvider>())
+  const refreshRequested = useRef(new Set<AgentProvider>())
+  const pendingBatch = useRef(false)
+  const detectingVisible = useLoadingIndicator(detecting)
+  const trustingVisible = useLoadingIndicator(busy.codex === 'trust')
+
+  const detectProvider = useCallback(async (provider: AgentProvider) => {
+    if (pending.current.has(provider)) {
+      refreshRequested.current.add(provider)
+      return
+    }
+    pending.current.add(provider)
+    setBusy((current) => ({ ...current, [provider]: 'detect' }))
+    try {
+      do {
+        refreshRequested.current.delete(provider)
+        try {
+          const status = unwrap(await window.desktop.detectAgentHooks(provider)).find(
+            (item) => item.provider === provider,
+          )
+          if (!status) throw new Error('状态集成检测结果无效。')
+          setStatuses((current) => [
+            ...current.filter((item) => item.provider !== provider),
+            status,
+          ])
+          setDetectionErrors((current) => ({ ...current, [provider]: undefined }))
+        } catch (cause) {
+          setDetectionErrors((current) => ({
+            ...current,
+            [provider]: cause instanceof Error ? cause.message : String(cause),
+          }))
+        }
+      } while (refreshRequested.current.has(provider))
+    } finally {
+      pending.current.delete(provider)
+      setBusy((current) => ({ ...current, [provider]: undefined }))
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.desktop.onAgentCliInstall(({ run, data }) => {
+      if (data === undefined && run.status !== 'running') void detectProvider(run.provider)
+    })
+    void Promise.all(providers.map(detectProvider))
+    return unsubscribe
+  }, [detectProvider])
 
   async function detect() {
-    if (blocked) return
-    setBusy('detect')
-    setFeedbackProvider(undefined)
-    setError(undefined)
+    if (pendingBatch.current) return
+    pendingBatch.current = true
+    setDetecting(true)
     try {
-      setStatuses(unwrap(await window.desktop.detectAgentHooks()))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      await Promise.all(providers.map(detectProvider))
     } finally {
-      setBusy(undefined)
+      pendingBatch.current = false
+      setDetecting(false)
     }
   }
 
   async function manage(provider: AgentProvider, action: HookAction) {
-    if (blocked) return
-    setBusy({ provider, action })
-    setFeedbackProvider(provider)
-    setError(undefined)
+    if (pending.current.has(provider)) return
+    pending.current.add(provider)
+    setBusy((current) => ({ ...current, [provider]: action }))
+    setErrors((current) => ({ ...current, [provider]: undefined }))
     try {
       const status = unwrap(
         await (action === 'uninstall'
@@ -79,9 +119,14 @@ export function AgentHookSettings({
         if (action === 'trust') toast.success('已信任 Hooks，将在新 Codex Agent 生效。')
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setErrors((current) => ({
+        ...current,
+        [provider]: cause instanceof Error ? cause.message : String(cause),
+      }))
     } finally {
-      setBusy(undefined)
+      pending.current.delete(provider)
+      setBusy((current) => ({ ...current, [provider]: undefined }))
+      if (refreshRequested.current.delete(provider)) void detectProvider(provider)
     }
   }
 
@@ -90,7 +135,6 @@ export function AgentHookSettings({
       className="agent-hook-settings flex flex-col gap-2.5"
       aria-labelledby="agent-hook-settings-title"
       aria-describedby="agent-hook-settings-description"
-      aria-busy={!!busy}
     >
       <div className="agent-hook-settings-header flex flex-wrap items-start justify-between gap-3">
         <div className="agent-hook-settings-heading flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
@@ -111,8 +155,8 @@ export function AgentHookSettings({
           <Button
             className="agent-hook-detect"
             variant="outline"
-            disabled={blocked}
-            aria-busy={busy === 'detect' || detectingVisible}
+            disabled={detecting || detectingVisible}
+            aria-busy={detecting || detectingVisible}
             onClick={() => void detect()}
           >
             <RefreshCw
@@ -125,30 +169,20 @@ export function AgentHookSettings({
             />
             {detectingVisible ? '检测中…' : '重新检测'}
           </Button>
-          {feedbackProvider === undefined && error && (
-            <Button
-              className="agent-hook-detect-error"
-              variant="destructive"
-              aria-label="查看状态集成检测错误详情"
-              aria-haspopup="dialog"
-              onClick={() => onShowError('状态集成检测失败', error)}
-            >
-              错误
-            </Button>
-          )}
         </div>
       </div>
       <Card size="sm" className="agent-hook-settings-card gap-0 divide-y divide-border py-0">
-        {(Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) => {
+        {providers.map((provider) => {
           const status = statuses.find((item) => item.provider === provider)
-          const pendingAction =
-            busy && busy !== 'detect' && busy.provider === provider ? busy.action : undefined
+          const pendingAction = busy[provider]
+          const blocked = !!pendingAction || (provider === 'codex' && trustingVisible)
           const TrustIcon = trustingVisible ? LoaderCircle : ShieldCheck
           const installLabel = status?.state === 'outdated' ? '更新' : '安装'
           const invalidStatus = status?.state === 'error' || status?.state === 'conflict'
           const rowError = [
             invalidStatus || status?.trust === 'unknown' ? status.detail : undefined,
-            feedbackProvider === provider ? error : undefined,
+            errors[provider],
+            detectionErrors[provider],
           ]
             .filter(Boolean)
             .join('\n\n')
@@ -165,6 +199,7 @@ export function AgentHookSettings({
               key={provider}
               className="agent-hook-row min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/30"
               aria-labelledby={`agent-hook-${provider}-label`}
+              aria-busy={!!pendingAction}
             >
               <div className="agent-hook-description flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
                 <div className="agent-hook-heading flex flex-wrap items-center gap-2">

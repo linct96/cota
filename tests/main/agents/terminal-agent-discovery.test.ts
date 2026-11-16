@@ -1,5 +1,5 @@
 import { mocks, options, settings } from '../terminal/terminal.fixture'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 
 import { TerminalManager } from '../../../src/main/terminal/manager'
@@ -17,20 +17,34 @@ function agentEvent() {
     timestamp: Date.now(),
   }
 }
+const managers: TerminalManager[] = []
+
+function terminalManager() {
+  const manager = new TerminalManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+  managers.push(manager)
+  return manager
+}
+
+afterEach(async () => {
+  for (const manager of managers.splice(0)) await manager.shutdown()
+})
+
 describe('Terminal Agent discovery', () => {
-  it('discovers Codex from foreground ownership and drops replaced process identities', async () => {
-    const manual = agentEvent()
-    const startup = new TerminalManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+  it('discovers the foreground Codex and upgrades it only after a valid first Hook', async () => {
+    const startup = terminalManager()
     const startupEntry = options()
     await startup.create(startupEntry, settings)
     const startupEnv = mocks.spawn.mock.calls.at(-1)![2].env
     mocks.processes.mockResolvedValue(backgroundRows)
     await vi.advanceTimersByTimeAsync(500)
-    expect((await startup.list())[0].agent).toBeUndefined()
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent,
+    ).toBeUndefined()
     mocks.processes.mockResolvedValue(codexRows)
     startup.write(startupEntry.id, 'codex\r')
     await vi.advanceTimersByTimeAsync(350)
-    const detected = (await startup.list())[0].agent!
+    const terminal = (await startup.list()).find((entry) => entry.id === startupEntry.id)!
+    const detected = terminal.agent!
     expect(detected).toMatchObject({
       provider: 'codex',
       runtimeState: 'running',
@@ -39,12 +53,13 @@ describe('Terminal Agent discovery', () => {
       observability: 'unavailable',
       unread: false,
     })
-    expect((await startup.list())[0].kind).toBeUndefined()
-    const detectedRevision = detected.revision
+    expect(terminal.kind).toBeUndefined()
     await vi.advanceTimersByTimeAsync(500)
-    expect((await startup.list())[0].agent?.revision).toBe(detectedRevision)
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent?.revision,
+    ).toBe(detected.revision)
     const startupEvent = {
-      ...manual,
+      ...agentEvent(),
       terminalId: startupEntry.id,
       token: startupEnv.COTA_AGENT_TOKEN,
       provider: 'codex',
@@ -53,37 +68,61 @@ describe('Terminal Agent discovery', () => {
     }
     expect(
       await startup.receiveAgentEvent(
-        {
-          ...startupEvent,
-          type: 'turn-ended',
-          turnId: 'too-early',
-        },
+        { ...startupEvent, type: 'turn-ended', turnId: 'too-early' },
         {},
       ),
     ).toBe(false)
     expect(await startup.receiveAgentEvent({ ...startupEvent, provider: 'pi' }, {})).toBe(false)
-    const startupChannel = {}
-    expect(await startup.receiveAgentEvent(startupEvent, startupChannel)).toBe(true)
-    expect((await startup.list())[0].agent).toMatchObject({
+    const channel = {}
+    expect(await startup.receiveAgentEvent(startupEvent, channel)).toBe(true)
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent,
+    ).toMatchObject({
       launchId: detected.launchId,
       activityState: 'idle',
       observability: 'partial',
     })
     expect(
       await startup.receiveAgentEvent(
-        {
-          ...startupEvent,
-          type: 'turn-started',
-          turnId: 'first-turn',
-          eventId: randomUUID(),
-        },
-        startupChannel,
+        { ...startupEvent, type: 'turn-started', turnId: 'first-turn', eventId: randomUUID() },
+        channel,
       ),
     ).toBe(true)
-    expect((await startup.list())[0].agent?.activityState).toBe('working')
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent?.activityState,
+    ).toBe('working')
+  })
+
+  it('marks an unobserved Codex unknown and replaces a reused process identity', async () => {
+    const startup = terminalManager()
+    const startupEntry = options()
+    await startup.create(startupEntry, settings)
+    const startupEnv = mocks.spawn.mock.calls.at(-1)![2].env
+    mocks.processes.mockResolvedValue(codexRows)
+    startup.write(startupEntry.id, 'codex\r')
+    await vi.advanceTimersByTimeAsync(350)
+    const detected = (await startup.list()).find((entry) => entry.id === startupEntry.id)!.agent!
+    const startupEvent = {
+      ...agentEvent(),
+      terminalId: startupEntry.id,
+      token: startupEnv.COTA_AGENT_TOKEN,
+      provider: 'codex',
+      timestamp: Date.now(),
+      eventId: randomUUID(),
+    }
+    const channel = {}
+    expect(await startup.receiveAgentEvent(startupEvent, channel)).toBe(true)
+    expect(
+      await startup.receiveAgentEvent(
+        { ...startupEvent, type: 'turn-started', turnId: 'first-turn', eventId: randomUUID() },
+        channel,
+      ),
+    ).toBe(true)
     mocks.processes.mockRejectedValueOnce(new Error('process snapshot unavailable'))
     await vi.advanceTimersByTimeAsync(750)
-    expect((await startup.list())[0].agent).toMatchObject({
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent,
+    ).toMatchObject({
       launchId: detected.launchId,
       activityState: 'unknown',
     })
@@ -95,36 +134,31 @@ describe('Terminal Agent discovery', () => {
       ),
     )
     await vi.advanceTimersByTimeAsync(1500)
-    expect((await startup.list())[0].agent).toBeUndefined()
+    expect(
+      (await startup.list()).find((entry) => entry.id === startupEntry.id)?.agent,
+    ).toBeUndefined()
     expect(
       await startup.receiveAgentEvent(
-        {
-          ...startupEvent,
-          type: 'turn-ended',
-          turnId: 'old-turn',
-        },
+        { ...startupEvent, type: 'turn-ended', turnId: 'old-turn' },
         {},
       ),
     ).toBe(false)
     mocks.processes.mockResolvedValue(
-      codexRows.map((row) => ({
-        ...row,
-        started: `${row.started}-restarted`,
-      })),
+      codexRows.map((row) => ({ ...row, started: `${row.started}-restarted` })),
     )
     startup.write(startupEntry.id, 'codex\r')
     await vi.advanceTimersByTimeAsync(350)
-    const restarted = (await startup.list())[0].agent!
+    const restarted = (await startup.list()).find((entry) => entry.id === startupEntry.id)!.agent!
     expect(restarted.launchId).not.toBe(detected.launchId)
-    expect(restarted.revision).toBeGreaterThan(detectedRevision)
+    expect(restarted.revision).toBeGreaterThan(detected.revision)
     expect(restarted.activityState).toBe('unknown')
-    await startup.shutdown()
   })
 
-  it('upgrades discovered Claude and Pi sessions only after their first valid Hook', async () => {
-    const manual = agentEvent()
-    for (const provider of ['claude', 'pi'] as const) {
-      const generic = new TerminalManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+  it.each(['claude', 'pi'] as const)(
+    'upgrades a discovered %s session only after its first valid Hook',
+    async (provider) => {
+      const manual = agentEvent()
+      const generic = terminalManager()
       const genericEntry = options()
       await generic.create(genericEntry, settings)
       const genericEnv = mocks.spawn.mock.calls.at(-1)![2].env
@@ -136,7 +170,9 @@ describe('Terminal Agent discovery', () => {
         ),
       )
       await vi.advanceTimersByTimeAsync(350)
-      const discovered = (await generic.list())[0].agent!
+      const discovered = (await generic.list()).find(
+        (entry) => entry.id === genericEntry.id,
+      )!.agent!
       expect(discovered).toMatchObject({
         provider,
         activityState: 'unknown',
@@ -157,17 +193,18 @@ describe('Terminal Agent discovery', () => {
           {},
         ),
       ).toBe(true)
-      expect((await generic.list())[0].agent).toMatchObject({
+      expect(
+        (await generic.list()).find((entry) => entry.id === genericEntry.id)?.agent,
+      ).toMatchObject({
         launchId: discovered.launchId,
         activityState: 'idle',
         observability: provider === 'pi' ? 'full' : 'partial',
       })
-      await generic.shutdown()
-    }
-  })
+    },
+  )
 
   it('coalesces process observations, backs off on failures and stops polling after shutdown', async () => {
-    const cadence = new TerminalManager(vi.fn(), vi.fn(), '/tmp/cota-test/agent.sock')
+    const cadence = terminalManager()
     const idleEntry = options()
     mocks.processes.mockResolvedValue(rows.filter((row) => row.pid === 98765))
     await cadence.create(idleEntry, settings)

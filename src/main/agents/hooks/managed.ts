@@ -263,6 +263,25 @@ async function replaceFile(
   }
 }
 
+const loaderWrites = new Map<string, Promise<void>>()
+
+async function installLoader(loader: string): Promise<void> {
+  const pending = (loaderWrites.get(loader) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const script = await contents(loader)
+      if (script !== undefined && !script.includes('cota-managed-agent-hook:'))
+        throw new Error('目标脚本不属于 Cota。')
+      await replaceFile(loader, script, launcher, { mode: 0o700 })
+    })
+  loaderWrites.set(loader, pending)
+  try {
+    await pending
+  } finally {
+    if (loaderWrites.get(loader) === pending) loaderWrites.delete(loader)
+  }
+}
+
 // Only the explicit Settings install action writes files, never startup/detection.
 export async function installAgentHook(
   provider: AgentProvider,
@@ -281,10 +300,7 @@ export async function installAgentHook(
     await replaceFile(config, raw, extension)
   } else {
     const { config: data, hooks } = configuration(raw)
-    const script = await contents(loader)
-    if (script !== undefined && !script.includes('cota-managed-agent-hook:'))
-      throw new Error('目标脚本不属于 Cota。')
-    await replaceFile(loader, script, launcher, { mode: 0o700 })
+    await installLoader(loader)
     for (const name of eventNames(provider, version)) {
       const groups = (hooks[name] || []) as { hooks: Record<string, unknown>[] }[]
       // Preserve every user group and handler, including mixed groups containing an older Cota entry.
