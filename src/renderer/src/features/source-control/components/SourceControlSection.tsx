@@ -80,6 +80,7 @@ export function SourceControlSection({
   onOpenChange,
   disabled,
   triggerRef,
+  triggerClassName,
   children,
 }: {
   title: ReactNode
@@ -87,6 +88,7 @@ export function SourceControlSection({
   onOpenChange: (open: boolean) => void
   disabled?: boolean
   triggerRef?: Ref<HTMLButtonElement>
+  triggerClassName?: string
   children: ReactNode
 }) {
   return (
@@ -99,7 +101,10 @@ export function SourceControlSection({
         <CollapsibleTrigger
           ref={triggerRef}
           disabled={disabled}
-          className="source-control-section-trigger group/source-control-section flex h-full min-w-0 flex-1 items-center justify-between gap-2 bg-transparent px-3 text-left text-xs font-medium text-app-muted-foreground transition-colors hover:bg-background-hover hover:text-foreground aria-expanded:text-foreground"
+          className={cn(
+            'source-control-section-trigger group/source-control-section flex h-full min-w-0 flex-1 items-center justify-between gap-2 bg-transparent px-3 text-left text-xs font-medium text-app-muted-foreground transition-colors hover:bg-background-hover hover:text-foreground aria-expanded:text-foreground',
+            triggerClassName,
+          )}
         >
           <span className="source-control-section-title flex min-w-0 items-center gap-2">
             {title}

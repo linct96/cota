@@ -62,6 +62,7 @@ export const AgentList = memo(function AgentList({
     <SourceControlSection
       open={open}
       triggerRef={triggerRef}
+      triggerClassName="pl-4 pr-3"
       onOpenChange={onOpenChange}
       title={<span className="project-agents-title">智能体</span>}
     >

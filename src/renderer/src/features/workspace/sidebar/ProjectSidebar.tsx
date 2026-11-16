@@ -101,6 +101,11 @@ export const ProjectSidebar = memo(function ProjectSidebar({
   const [removal, setRemoval, removalDialog] = useDialogState<WorkspaceRemovalTarget>()
   const [workspaceDialog, setWorkspaceDialog, workspaceNameDialog] =
     useDialogState<WorkspaceNameTarget>()
+  const openFolderShortcut = shortcutBinding(
+    state.shortcuts,
+    'open-folder',
+    window.desktop.platform,
+  )
   const shortcutLabel = (id: string) =>
     formatShortcut(
       shortcutBinding(state.shortcuts, id, window.desktop.platform),
@@ -205,7 +210,31 @@ export const ProjectSidebar = memo(function ProjectSidebar({
             />
           )}
         >
-          <div className="project-header group/header flex h-12 shrink-0 items-center justify-between pl-4 pr-3">
+          <div className="project-create-action shrink-0 px-2 pt-2">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="project-add-button h-9 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground"
+                    disabled={groupingDisabled}
+                    onClick={() => {
+                      void state.openProject()
+                    }}
+                  />
+                }
+              >
+                <FolderPlus className="project-add-icon" aria-hidden="true" />
+                <span className="project-add-label truncate">新建项目</span>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                新建项目
+                <ShortcutKbd binding={openFolderShortcut} />
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="project-header group/header flex h-9 shrink-0 items-center justify-between pl-4 pr-3">
             <h2 className="project-title">项目</h2>
             <div className="project-header-actions flex items-center gap-1">
               <Tooltip>
@@ -233,34 +262,6 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="project-toggle-all-tooltip">
                   {toggleProjectsLabel}
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="project"
-                      size="icon-sm"
-                      className="project-add-button opacity-0 transition-opacity focus-visible:opacity-100 disabled:opacity-0 group-hover/header:opacity-100"
-                      disabled={groupingDisabled}
-                      aria-label="添加项目"
-                      onClick={() => {
-                        void state.openProject()
-                      }}
-                    />
-                  }
-                >
-                  <FolderPlus className="project-add-icon" />
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  添加项目
-                  <ShortcutKbd
-                    binding={shortcutBinding(
-                      state.shortcuts,
-                      'open-folder',
-                      window.desktop.platform,
-                    )}
-                  />
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -329,7 +330,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                     </EmptyMedia>
                     <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
                     <EmptyDescription className="project-empty-description">
-                      点击上方 + 或按 {shortcutLabel('open-folder')} 添加
+                      点击上方「新建项目」或按 {shortcutLabel('open-folder')} 添加
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
