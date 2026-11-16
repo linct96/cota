@@ -324,6 +324,16 @@ vi.mock('../../../src/main/accounts/service', () => ({
     close = vi.fn().mockResolvedValue(undefined)
   },
 }))
+vi.mock('../../../src/main/accounts/usage-refresh', () => ({
+  AccountUsageScheduler: class {
+    start = vi.fn().mockResolvedValue(undefined)
+    close = vi.fn().mockResolvedValue(undefined)
+    configure = vi.fn()
+    wake = vi.fn()
+    clearError = vi.fn()
+    snapshot = vi.fn().mockReturnValue([])
+  },
+}))
 vi.mock('../../../src/main/settings/config-store', () => ({
   ConfigStore: class {
     load = () => Promise.resolve({})

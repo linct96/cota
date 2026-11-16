@@ -10,15 +10,63 @@ import {
 import { useSourceControl } from '../../../src/renderer/src/state/source-control-store'
 import { useRightPanel } from '../../../src/renderer/src/state/right-panel-store'
 
+async function prepareTwoWorkspaces() {
+  const store = () => useWorkspace.getState()
+  await store().bootstrap()
+  await store().openProject()
+  const path = store().selectedProject!
+  const initial = store().tabs[0]
+  await store().newWorkspace(path)
+  const workspace = store().workspaces.find((item) => item.id !== initial.workspaceId)!
+  const first = store().tabs.find((tab) => tab.workspaceId === workspace.id)!
+  return { store, path, initial, workspace, first }
+}
+
+async function prepareWorkspaceWithAgentTabs() {
+  const { store, path, initial, workspace } = await prepareTwoWorkspaces()
+  const target = { ...workspace, id: crypto.randomUUID(), name: '仅 Agent' }
+  useWorkspace.setState({ workspaces: [...store().workspaces, target] })
+  store().newTerminal('pi', target.id)
+  store().newTerminal('pi')
+  store().newTerminal('codex')
+  store().newTerminal('claude')
+  store().newTerminal()
+  return { store, path, initial, target }
+}
+
+function stagedStatus(rootPath: string) {
+  return {
+    rootPath,
+    branch: 'main',
+    head: null,
+    ahead: 0,
+    behind: 0,
+    indexVersion: 'fixture',
+    entries: [{ path: 'file.txt', area: 'staged' as const, status: 'A', submodule: false }],
+  }
+}
+
+function reviewSelection() {
+  return {
+    area: 'review' as const,
+    path: 'file.txt',
+    base: null,
+    head: 'a'.repeat(40),
+    label: 'snapshot',
+    status: 'A',
+    submodule: false,
+  }
+}
+
 describe('Workspace creation and removal', () => {
-  it('creates independent workspaces and scopes terminal selection, closing and shortcuts', async () => {
+  it('creates an independent workspace with its own terminal', async () => {
     const store = () => useWorkspace.getState()
     await store().bootstrap()
     await store().openProject()
     const path = store().selectedProject!
     const initial = store().tabs[0]
     expect(await store().newWorkspace(path)).toBe(true)
-    const workspace = store().workspaces[1]
+    const workspace = store().workspaces.find((item) => item.id !== initial.workspaceId)!
     expect(workspace).toMatchObject({ projectPath: path, name: '工作区 2' })
     expect(nextWorkspaceName(path, store().workspaces)).toBe('工作区 3')
     expect(nextWorkspaceName('/tmp/other', store().workspaces)).toBe('工作区')
@@ -26,7 +74,7 @@ describe('Workspace creation and removal', () => {
     expect(workspace.id).not.toBe(initial.workspaceId)
     expect(store().selectedWorkspaces[path]).toBe(workspace.id)
     expect(store().tabs).toHaveLength(2)
-    const first = store().tabs[1]
+    const first = store().tabs.find((tab) => tab.workspaceId === workspace.id)!
     expect(first).toMatchObject({
       projectPath: path,
       workspaceId: workspace.id,
@@ -35,6 +83,10 @@ describe('Workspace creation and removal', () => {
       status: 'starting',
     })
     expect(store().activeTabs[workspace.id]).toBe(first.id)
+  })
+
+  it('closes a preview before closing a workspace terminal', async () => {
+    const { store, initial, workspace, first } = await prepareTwoWorkspaces()
     useSourceControl.getState().update(workspace.id, {
       preview: true,
       draft: 'keep draft',
@@ -45,7 +97,9 @@ describe('Workspace creation and removal', () => {
       preview: false,
       draft: 'keep draft',
     })
-    const second = store().tabs[2]
+    const second = store().tabs.find(
+      (tab) => tab.workspaceId === workspace.id && tab.id !== first.id,
+    )!
     expect(second).toMatchObject({ workspaceId: workspace.id, title: 'Terminal 2' })
     useSourceControl.getState().update(workspace.id, { preview: true })
     store().shortcut('tab-1')
@@ -76,6 +130,18 @@ describe('Workspace creation and removal', () => {
       [initial.workspaceId]: initial.id,
       [workspace.id]: second.id,
     })
+  })
+
+  it('remembers the selected workspace when switching projects after a terminal closes', async () => {
+    const { store, path, initial, workspace, first } = await prepareTwoWorkspaces()
+    store().newTerminal()
+    const second = store().tabs.find(
+      (tab) => tab.workspaceId === workspace.id && tab.id !== first.id,
+    )!
+    store().selectTab(first.id)
+    store().updateTab(first.id, { status: 'running' })
+    store().shortcut('close-terminal')
+    await vi.waitFor(() => expect(store().tabs).toEqual([initial, second]))
     await store().selectProject(path, initial.workspaceId)
     expect(store().selectedWorkspaces[path]).toBe(initial.workspaceId)
     await store().selectProject('/tmp/other')
@@ -83,11 +149,17 @@ describe('Workspace creation and removal', () => {
     expect(store().selectedWorkspaces[path]).toBe(initial.workspaceId)
     expect(store().tabs).toEqual([initial, second])
     expect(api.closeWindow).not.toHaveBeenCalled()
+  })
+
+  it('creates, persists and focuses Agent tabs in their target workspace', async () => {
+    const { store, path, initial, workspace } = await prepareTwoWorkspaces()
     const target = { ...workspace, id: crypto.randomUUID(), name: '仅 Agent' }
     useWorkspace.setState({ workspaces: [...store().workspaces, target] })
     store().newTerminal('pi', target.id)
     expect(store().tabs).toHaveLength(3)
-    expect(store().tabs[2]).toMatchObject({
+    const targetTabs = () => store().tabs.filter((tab) => tab.workspaceId === target.id)
+    const firstAgent = targetTabs()[0]
+    expect(firstAgent).toMatchObject({
       kind: 'agent',
       provider: 'pi',
       title: 'Pi · 1',
@@ -95,21 +167,24 @@ describe('Workspace creation and removal', () => {
       status: 'starting',
     })
     expect(currentWorkspace(store())?.id).toBe(target.id)
-    const launchId = store().tabs[2].launchId
+    const launchId = firstAgent.launchId
     expect(launchId).toBeTruthy()
     store().newTerminal('pi')
     store().newTerminal('codex')
     store().newTerminal('claude')
     store().newTerminal()
-    expect(
-      store()
-        .tabs.slice(2)
-        .map((tab) => tab.title),
-    ).toEqual(['Pi · 1', 'Pi · 2', 'Codex · 1', 'Claude Code · 1', 'Terminal 1'])
-    expect(store().tabs[3].launchId).not.toBe(launchId)
+    expect(targetTabs().map((tab) => tab.title)).toEqual([
+      'Pi · 1',
+      'Pi · 2',
+      'Codex · 1',
+      'Claude Code · 1',
+      'Terminal 1',
+    ])
+    expect(targetTabs().find((tab) => tab.title === 'Pi · 2')?.launchId).not.toBe(launchId)
     const saved = vi.mocked(api.saveLayout).mock.calls.at(-1)![0]
-    expect(saved.tabs[2]).toEqual({
-      id: store().tabs[2].id,
+    expect(saved.tabs.map((tab) => tab.id)).toEqual(store().tabs.map((tab) => tab.id))
+    expect(saved.tabs.find((tab) => tab.id === firstAgent.id)).toEqual({
+      id: firstAgent.id,
       projectPath: path,
       workspaceId: target.id,
       title: 'Pi · 1',
@@ -117,7 +192,7 @@ describe('Workspace creation and removal', () => {
       provider: 'pi',
     })
     await store().selectProject(path, initial.workspaceId)
-    const agentTab = store().tabs[4]
+    const agentTab = targetTabs().find((tab) => tab.provider === 'codex')!
     const focus = store().focusVersion
     if (await store().selectProject(agentTab.projectPath, agentTab.workspaceId)) {
       store().selectTab(agentTab.id)
@@ -125,20 +200,16 @@ describe('Workspace creation and removal', () => {
     expect(currentWorkspace(store())?.id).toBe(target.id)
     expect(store().activeTabs[target.id]).toBe(agentTab.id)
     expect(store().focusVersion).toBeGreaterThan(focus)
+  })
+
+  it('reconciles a preview selection with changed Git status', async () => {
+    const { path, target } = await prepareWorkspaceWithAgentTabs()
     useSourceControl.getState().update(target.id, {
       preview: true,
       draft: 'keep draft',
       selection: { path: 'file.txt', area: 'unstaged' },
     })
-    const status = {
-      rootPath: path,
-      branch: 'main',
-      head: null,
-      ahead: 0,
-      behind: 0,
-      indexVersion: 'fixture',
-      entries: [{ path: 'file.txt', area: 'staged' as const, status: 'A', submodule: false }],
-    }
+    const status = stagedStatus(path)
     useSourceControl.getState().update(target.id, { status })
     expect(useSourceControl.getState().sessions[target.id]).toMatchObject({
       preview: true,
@@ -150,6 +221,12 @@ describe('Workspace creation and removal', () => {
       selection: undefined,
       draft: 'keep draft',
     })
+  })
+
+  it('scopes changes-tab shortcuts without closing workspace terminals', async () => {
+    const { store, path, initial, target } = await prepareWorkspaceWithAgentTabs()
+    const status = stagedStatus(path)
+    useSourceControl.getState().update(target.id, { draft: 'keep draft', selection: undefined })
     const terminalTabs = store().tabs
     const closeCalls = vi.mocked(api.closeTerminal).mock.calls.length
     useSourceControl.getState().update(target.id, { status })
@@ -181,16 +258,14 @@ describe('Workspace creation and removal', () => {
     expect(store().tabs).toBe(terminalTabs)
     expect(api.closeTerminal).toHaveBeenCalledTimes(closeCalls)
     expect(useSourceControl.getState().sessions[initial.workspaceId]?.changesOpen).not.toBe(true)
+  })
+
+  it('keeps review previews when worktree status changes', async () => {
+    const { store, path, target } = await prepareWorkspaceWithAgentTabs()
+    const status = stagedStatus(path)
+    useSourceControl.getState().update(target.id, { draft: 'keep draft' })
     useSourceControl.getState().openChanges(target.id)
-    const review = {
-      area: 'review' as const,
-      path: 'file.txt',
-      base: null,
-      head: 'a'.repeat(40),
-      label: 'snapshot',
-      status: 'A',
-      submodule: false,
-    }
+    const review = reviewSelection()
     useSourceControl
       .getState()
       .update(target.id, { selection: review, preview: true, mode: 'history' })
@@ -206,6 +281,16 @@ describe('Workspace creation and removal', () => {
       selection: review,
       preview: false,
       draft: 'keep draft',
+      mode: 'history',
+    })
+  })
+
+  it('preserves right-panel and source-control state across workspace switches', async () => {
+    const { store, path, initial, target } = await prepareWorkspaceWithAgentTabs()
+    useSourceControl.getState().update(target.id, {
+      draft: 'keep draft',
+      selection: reviewSelection(),
+      preview: false,
       mode: 'history',
     })
     expect(useRightPanel.getState()).toEqual({ open: false, width: 300 })

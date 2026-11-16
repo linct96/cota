@@ -55,7 +55,7 @@ describe('trust boundary validation', () => {
     await expect(projectDirectory('/nonexistent-cota-path')).rejects.toThrow('不可访问')
     await expect(executable('/bin/zsh -c whoami')).rejects.toThrow('不可执行')
   })
-  it('validates preferences, terminal IDs and sizes', () => {
+  it('normalizes default preferences and omitted quick commands', () => {
     expect(preferences({ ...DEFAULT_CONFIG.preferences, scrollback: 20000 })).toEqual({
       ...DEFAULT_CONFIG.preferences,
       shellPath: null,
@@ -64,84 +64,164 @@ describe('trust boundary validation', () => {
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, quickCommands: undefined }).quickCommands,
     ).toEqual([])
-    for (const mode of ['auto', 'on', 'off']) {
-      expect(
-        preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: mode }),
-      ).toMatchObject({ terminalGpuAcceleration: mode })
-    }
+  })
+
+  it.each(['auto', 'on', 'off'])('accepts GPU acceleration mode %s', (mode) => {
+    expect(
+      preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: mode }),
+    ).toMatchObject({ terminalGpuAcceleration: mode })
+  })
+
+  it('defaults an omitted GPU acceleration mode to auto', () => {
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: undefined }),
     ).toMatchObject({ terminalGpuAcceleration: 'auto' })
-    for (const mode of [null, true, false, 0, '', 'enabled', [], {}]) {
-      expect(() =>
-        preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: mode }),
-      ).toThrow('GPU 加速选项无效')
-    }
-    expect(preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: true }).preventSleep).toBe(
-      true,
+  })
+
+  it.each(
+    [null, true, false, 0, '', 'enabled', [], {}].map((value) => ({
+      value,
+      label: JSON.stringify(value),
+    })),
+  )('rejects invalid GPU acceleration mode $label', ({ value }) => {
+    expect(() =>
+      preferences({ ...DEFAULT_CONFIG.preferences, terminalGpuAcceleration: value }),
+    ).toThrow('GPU 加速选项无效')
+  })
+
+  it.each([
+    [true, true],
+    [undefined, true],
+    [false, false],
+  ])('normalizes preventSleep %s to %s', (value, expected) => {
+    expect(preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: value }).preventSleep).toBe(
+      expected,
     )
-    expect(
-      preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: undefined }).preventSleep,
-    ).toBe(true)
-    expect(preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: false }).preventSleep).toBe(
-      false,
-    )
-    for (const preventSleep of [null, 'true', 1, [], {}]) {
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, preventSleep })).toThrow(
+  })
+
+  it.each([null, 'true', 1, [], {}].map((value) => ({ value, label: JSON.stringify(value) })))(
+    'rejects invalid preventSleep value $label',
+    ({ value }) => {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, preventSleep: value })).toThrow(
         '防休眠选项无效',
       )
-    }
+    },
+  )
+
+  it('trims a custom Shell name and clears a stale name without a custom path', () => {
     const custom = { ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash' }
     expect(preferences({ ...custom, shellName: ' 我的 Bash ' })).toMatchObject({
       shellName: '我的 Bash',
       shellPath: '/bin/bash',
     })
-    for (const shellName of [undefined, null, '', '   ']) {
-      expect(preferences({ ...custom, shellName })).toMatchObject({
-        shellName: null,
-        shellPath: '/bin/bash',
-      })
-    }
     expect(preferences({ ...DEFAULT_CONFIG.preferences, shellName: '旧名称' }).shellName).toBeNull()
-    for (const shellName of [123, {}, 'x'.repeat(81), 'bad\0name', 'bad\nname', 'bad\rname'])
-      expect(() => preferences({ ...custom, shellName })).toThrow('Shell 名称')
-    for (const value of [999, 20001, 1000.1, '5000', NaN])
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, scrollback: value })).toThrow()
-    expect(() => preferences({ scrollback: 5000, openWith: [] })).toThrow()
-    expect(() => terminalId('../../file')).toThrow()
-    expect(() => dimensions(0, 24)).toThrow()
-    expect(() => dimensions('80', 24)).toThrow()
-    expect(dimensions(80, 24)).toEqual({ cols: 80, rows: 24 })
+  })
 
-    expect(shellFormSchema.safeParse({ name: '', path: '/bin/bash' }).success).toBe(true)
-    for (const path of [
-      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
-      '\\\\server\\share\\pwsh.exe',
-    ])
-      expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(true)
-    for (const path of ['', 'zsh', 'C:pwsh.exe', '/bin/bash\0'])
-      expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(false)
-    expect(shellFormSchema.safeParse({ name: 'bad\nname', path: '/bin/bash' }).success).toBe(false)
-    for (const scrollback of ['1000', '20000'])
-      expect(scrollbackFormSchema.safeParse({ scrollback }).success).toBe(true)
-    for (const scrollback of ['', '999', '20001', '1000.1', 'NaN'])
-      expect(scrollbackFormSchema.safeParse({ scrollback }).success).toBe(false)
-    const opener = { name: '编辑器', command: '/Apps/Code Editor', arguments: '"{path}"' }
-    expect(openerFormSchema.safeParse(opener).success).toBe(true)
+  it.each([undefined, null, '', '   '])('normalizes blank Shell name %s', (shellName) => {
     expect(
-      openerFormSchema.safeParse({ ...opener, command: 'C:\\Program Files\\Editor\\code.exe' })
-        .success,
-    ).toBe(true)
-    expect(openerFormSchema.safeParse({ ...opener, command: 'code --wait' }).success).toBe(false)
-    expect(openerFormSchema.safeParse({ ...opener, name: ' ' }).success).toBe(false)
-    for (const args of ['"unclosed', 'trailing\\', 'bad\0arg'])
-      expect(openerFormSchema.safeParse({ ...opener, arguments: args }).success).toBe(false)
+      preferences({ ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash', shellName }),
+    ).toMatchObject({ shellName: null, shellPath: '/bin/bash' })
+  })
+
+  it.each([
+    ['number', 123],
+    ['object', {}],
+    ['overlong name', 'x'.repeat(81)],
+    ['NUL character', 'bad\0name'],
+    ['line feed', 'bad\nname'],
+    ['carriage return', 'bad\rname'],
+  ])('rejects Shell name with %s', (_case, shellName) => {
+    expect(() =>
+      preferences({ ...DEFAULT_CONFIG.preferences, shellPath: '/bin/bash', shellName }),
+    ).toThrow('Shell 名称')
+  })
+
+  it.each([999, 20001, 1000.1, '5000', NaN])('rejects scrollback %s', (scrollback) => {
+    expect(() => preferences({ ...DEFAULT_CONFIG.preferences, scrollback })).toThrow()
+  })
+
+  it('rejects incomplete preferences', () => {
+    expect(() => preferences({ scrollback: 5000, openWith: [] })).toThrow()
+  })
+
+  it('rejects invalid terminal IDs', () => {
+    expect(() => terminalId('../../file')).toThrow()
+  })
+
+  it.each([0, '80'])('rejects invalid terminal column count %s', (cols) => {
+    expect(() => dimensions(cols, 24)).toThrow()
+  })
+
+  it('accepts valid terminal dimensions', () => {
+    expect(dimensions(80, 24)).toEqual({ cols: 80, rows: 24 })
+  })
+
+  it.each([
+    '/bin/bash',
+    'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+    '\\\\server\\share\\pwsh.exe',
+  ])('accepts Shell form path %s', (path) => {
+    expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(true)
+  })
+
+  it.each(['', 'zsh', 'C:pwsh.exe', '/bin/bash\0'])('rejects Shell form path %s', (path) => {
+    expect(shellFormSchema.safeParse({ name: '', path }).success).toBe(false)
+  })
+
+  it('rejects a Shell form name containing a line feed', () => {
+    expect(shellFormSchema.safeParse({ name: 'bad\nname', path: '/bin/bash' }).success).toBe(false)
+  })
+
+  it.each(['1000', '20000'])('accepts scrollback form value %s', (scrollback) => {
+    expect(scrollbackFormSchema.safeParse({ scrollback }).success).toBe(true)
+  })
+
+  it.each(['', '999', '20001', '1000.1', 'NaN'])(
+    'rejects scrollback form value %s',
+    (scrollback) => {
+      expect(scrollbackFormSchema.safeParse({ scrollback }).success).toBe(false)
+    },
+  )
+
+  const opener = { name: '编辑器', command: '/Apps/Code Editor', arguments: '"{path}"' }
+
+  it.each(['/Apps/Code Editor', 'C:\\Program Files\\Editor\\code.exe'])(
+    'accepts opener executable %s',
+    (command) => {
+      expect(openerFormSchema.safeParse({ ...opener, command }).success).toBe(true)
+    },
+  )
+
+  it.each([
+    ['arguments in command', { command: 'code --wait' }],
+    ['blank name', { name: ' ' }],
+    ['unclosed quote', { arguments: '"unclosed' }],
+    ['trailing escape', { arguments: 'trailing\\' }],
+    ['NUL argument', { arguments: 'bad\0arg' }],
+  ])('rejects opener with %s', (_case, change) => {
+    expect(openerFormSchema.safeParse({ ...opener, ...change }).success).toBe(false)
+  })
+
+  it('accepts a workspace form name with surrounding spaces', () => {
     expect(workspaceFormSchema.safeParse({ name: ' 工作区 ' }).success).toBe(true)
-    for (const name of [' ', 'x'.repeat(1025)])
-      expect(workspaceFormSchema.safeParse({ name }).success).toBe(false)
+  })
+
+  it.each([
+    ['blank', ' '],
+    ['overlong', 'x'.repeat(1025)],
+  ])('rejects a %s workspace form name', (_case, name) => {
+    expect(workspaceFormSchema.safeParse({ name }).success).toBe(false)
+  })
+
+  it('accepts a valid worktree form', () => {
     expect(worktreeFormSchema.safeParse({ name: '木星', baseRef: 'main' }).success).toBe(true)
-    for (const name of ['---', 'feature/name', 'bad\nname'])
-      expect(worktreeFormSchema.safeParse({ name, baseRef: 'main' }).success).toBe(false)
+  })
+
+  it.each(['---', 'feature/name', 'bad\nname'])('rejects worktree form name %s', (name) => {
+    expect(worktreeFormSchema.safeParse({ name, baseRef: 'main' }).success).toBe(false)
+  })
+
+  it('rejects a blank worktree base reference', () => {
     expect(worktreeFormSchema.safeParse({ name: 'jupiter', baseRef: ' ' }).success).toBe(false)
   })
   it('resolves platform defaults and never falls back from an invalid custom shell', async () => {

@@ -116,13 +116,69 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await git('-C', peer, 'config', 'commit.gpgsign', 'false')
         await git('-C', peer, 'config', 'core.hooksPath', '/dev/null')
       })
-      it('fetches into remote refs and pulls without losing staged, unstaged or ignored files', async () => {
+      async function remoteFileChanges() {
         await writeFile(join(peer, 'renamed 空格.txt'), 'peer\n')
         await writeFile(join(peer, 'ignored.txt'), 'from remote\n')
         await git('-C', peer, 'add', '-A')
         await git('-C', peer, 'commit', '-m', 'remote change')
         await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
-        // A custom fetch mapping must never let Fetch overwrite a local branch namespace.
+      }
+
+      async function divergentBranches() {
+        const push = {
+          ...target,
+          action: 'push' as const,
+          branch: 'feature/worktree',
+          tracking: { remote: 'review', branch: 'feature/worktree' },
+        }
+        // Push and Pull must refuse divergence even if user configuration requests mirror/rebase/autostash.
+        await git('-C', peer, 'fetch', 'origin')
+        await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
+        await git('-C', peer, 'commit', '--allow-empty', '-m', 'peer diverged')
+        await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
+        await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local diverged')
+        const current = await sourceControl.status(worktree)
+        return { current, push }
+      }
+
+      async function conflictingBranches() {
+        const added = '双方 [新增].txt'
+        await writeFile(join(worktree, 'deleted-by-us.txt'), 'shared baseline\n')
+        await git('-C', worktree, 'add', '--', 'deleted-by-us.txt')
+        await git('-C', worktree, 'commit', '-m', 'conflict baseline')
+        await git('-C', worktree, 'push', 'review', 'HEAD:refs/heads/feature/worktree')
+        const sync = {
+          ...target,
+          action: 'sync' as const,
+          branch: 'feature/worktree',
+          tracking: { remote: 'review', branch: 'feature/worktree' },
+        }
+        await git('-C', peer, 'fetch', 'origin')
+        await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
+        await writeFile(join(peer, 'renamed 空格.txt'), 'remote conflict\n')
+        await rm(join(peer, 'local.txt'))
+        await writeFile(join(peer, 'deleted-by-us.txt'), 'remote modified\n')
+        await writeFile(join(peer, added), 'remote added\n')
+        await writeFile(join(peer, 'binary.dat'), Buffer.from([0, 1]))
+        await git('-C', peer, 'add', '-A')
+        await git('-C', peer, 'commit', '-m', 'remote conflict')
+        await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
+        const conflictRemote = (
+          await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
+        ).stdout.trim()
+        await writeFile(join(worktree, 'renamed 空格.txt'), 'local conflict\n')
+        await writeFile(join(worktree, 'local.txt'), '')
+        await rm(join(worktree, 'deleted-by-us.txt'))
+        await writeFile(join(worktree, added), 'local added\n')
+        await writeFile(join(worktree, 'binary.dat'), Buffer.from([0, 2]))
+        await git('-C', worktree, 'add', '-A')
+        await git('-C', worktree, 'commit', '-m', 'local conflict')
+        const current = await sourceControl.status(worktree)
+        return { added, sync, conflictRemote, current }
+      }
+
+      it('fetches remote refs without overwriting a local branch namespace', async () => {
+        await remoteFileChanges()
         await git(
           '-C',
           worktree,
@@ -146,6 +202,14 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         const current = await sourceControl.status(worktree)
         expect(current.head).toBe(renameHead)
         expect(current.behind).toBe(1)
+      }, 30000)
+
+      it('reports an overlapping pull without exposing credentials or changing local data', async () => {
+        await remoteFileChanges()
+        await sourceControl.mutate(worktree, { ...target, action: 'fetch', remote: 'review' }, () =>
+          Promise.resolve(true),
+        )
+        const current = await sourceControl.status(worktree)
         const pull = {
           ...target,
           action: 'pull' as const,
@@ -183,7 +247,23 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         expect(await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')).toBe(
           'overlapping local changes\n',
         )
-        await git('-C', worktree, 'restore', '--worktree', '--', 'renamed 空格.txt')
+      }, 30000)
+
+      it('preserves ignored, staged, unstaged and untracked files across pull and retry', async () => {
+        await remoteFileChanges()
+        await sourceControl.mutate(worktree, { ...target, action: 'fetch', remote: 'review' }, () =>
+          Promise.resolve(true),
+        )
+        const current = await sourceControl.status(worktree)
+        const pull = {
+          ...target,
+          action: 'pull' as const,
+          branch: current.branch!,
+          head: current.head!,
+          tracking: current.tracking!,
+        }
+        await writeFile(join(worktree, 'dirty.txt'), 'keep me')
+        await writeFile(join(worktree, 'local.txt'), 'uncommitted local changes\n')
         await git('-C', worktree, 'add', '--', 'local.txt')
         await writeFile(join(worktree, 'local.txt'), 'unstaged local changes\n')
         const exclude = (
@@ -220,8 +300,6 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
           expect.objectContaining({ path: 'local.txt', area: 'unstaged' }),
           expect.objectContaining({ path: 'dirty.txt', area: 'untracked' }),
         ])
-        await rm(join(worktree, 'dirty.txt'))
-        await git('-C', worktree, 'restore', '--staged', '--worktree', '--', 'local.txt')
       }, 30000)
       it('rejects moved HEAD before push and never pushes staged-only contents', async () => {
         let current
@@ -274,21 +352,8 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         ])
         await git('-C', worktree, 'restore', '--staged', '--worktree', '--', 'local.txt')
       }, 30000)
-      it('refuses divergent push/pull and syncs without losing local changes', async () => {
-        const noConfirmation = vi.fn().mockResolvedValue(false)
-        const push = {
-          ...target,
-          action: 'push' as const,
-          branch: 'feature/worktree',
-          tracking: { remote: 'review', branch: 'feature/worktree' },
-        }
-        // Push and Pull must refuse divergence even if user configuration requests mirror/rebase/autostash.
-        await git('-C', peer, 'fetch', 'origin')
-        await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
-        await git('-C', peer, 'commit', '--allow-empty', '-m', 'peer diverged')
-        await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
-        await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local diverged')
-        const current = await sourceControl.status(worktree)
+      it('refuses divergent pull and push without altering HEAD or stashing', async () => {
+        const { current, push } = await divergentBranches()
         const divergence = { ...push, head: current.head! }
         await expect(
           sourceControl.mutate(worktree, { ...divergence, action: 'pull' }, () =>
@@ -302,7 +367,12 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         ).rejects.toThrow()
         await expect(git('-C', worktree, 'rev-parse', '--verify', 'MERGE_HEAD')).rejects.toThrow()
         expect((await git('-C', worktree, 'stash', 'list')).stdout).toBe('')
+      }, 30000)
 
+      it('syncs divergence without losing local changes after a blocked attempt', async () => {
+        const noConfirmation = vi.fn().mockResolvedValue(false)
+        const { current, push } = await divergentBranches()
+        const divergence = { ...push, head: current.head! }
         // Sync merges divergence and pushes without a separate confirmation.
         await git('-C', worktree, 'config', 'remote.review.mirror', 'false')
         const sync = { ...divergence, action: 'sync' as const }
@@ -382,7 +452,16 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         expect(alreadySynced).not.toHaveBeenCalled()
         await rm(join(worktree, 'dirty.txt'))
         await git('-C', worktree, 'restore', '--worktree', '--', 'local.txt')
+      }, 30000)
 
+      it('requires the pending same-tree merge to be committed before remote operations', async () => {
+        const noConfirmation = vi.fn().mockResolvedValue(false)
+        const sync = {
+          ...target,
+          action: 'sync' as const,
+          branch: 'feature/worktree',
+          tracking: { remote: 'review', branch: 'feature/worktree' },
+        }
         // A same-tree merge still needs a merge commit even with no staged files.
         await git('-C', peer, 'fetch', 'origin')
         await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
@@ -460,39 +539,8 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         expect((await sourceControl.status(worktree)).ahead).toBe(0)
         expect(noConfirmation).not.toHaveBeenCalled()
       }, 30000)
-      it('preserves merge conflicts and never pushes a failed sync', async () => {
-        const added = '双方 [新增].txt'
-        await writeFile(join(worktree, 'deleted-by-us.txt'), 'shared baseline\n')
-        await git('-C', worktree, 'add', '--', 'deleted-by-us.txt')
-        await git('-C', worktree, 'commit', '-m', 'conflict baseline')
-        await git('-C', worktree, 'push', 'review', 'HEAD:refs/heads/feature/worktree')
-        const sync = {
-          ...target,
-          action: 'sync' as const,
-          branch: 'feature/worktree',
-          tracking: { remote: 'review', branch: 'feature/worktree' },
-        }
-        await git('-C', peer, 'fetch', 'origin')
-        await git('-C', peer, 'merge', '--ff-only', 'origin/feature/worktree')
-        await writeFile(join(peer, 'renamed 空格.txt'), 'remote conflict\n')
-        await rm(join(peer, 'local.txt'))
-        await writeFile(join(peer, 'deleted-by-us.txt'), 'remote modified\n')
-        await writeFile(join(peer, added), 'remote added\n')
-        await writeFile(join(peer, 'binary.dat'), Buffer.from([0, 1]))
-        await git('-C', peer, 'add', '-A')
-        await git('-C', peer, 'commit', '-m', 'remote conflict')
-        await git('-C', peer, 'push', 'origin', 'HEAD:refs/heads/feature/worktree')
-        const conflictRemote = (
-          await git('--git-dir', remote, 'rev-parse', 'refs/heads/feature/worktree')
-        ).stdout.trim()
-        await writeFile(join(worktree, 'renamed 空格.txt'), 'local conflict\n')
-        await writeFile(join(worktree, 'local.txt'), '')
-        await rm(join(worktree, 'deleted-by-us.txt'))
-        await writeFile(join(worktree, added), 'local added\n')
-        await writeFile(join(worktree, 'binary.dat'), Buffer.from([0, 2]))
-        await git('-C', worktree, 'add', '-A')
-        await git('-C', worktree, 'commit', '-m', 'local conflict')
-        const current = await sourceControl.status(worktree)
+      it('preserves a failed sync conflict and does not push or stash', async () => {
+        const { sync, current, conflictRemote } = await conflictingBranches()
         const noPushOnConflict = vi.fn().mockResolvedValue(true)
         await writeFile(join(worktree, 'dirty.txt'), 'keep local changes\n')
         await expect(
@@ -527,6 +575,16 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         const conflicted = await sourceControl.status(worktree)
         expect(conflicted.merge?.heads).toEqual([conflictRemote])
         expect(conflicted.merge?.message).not.toContain('# Conflicts:')
+      }, 30000)
+
+      it('reads conflict variants without changing the index or working files', async () => {
+        const { added, sync, current } = await conflictingBranches()
+        await expect(
+          sourceControl.mutate(worktree, { ...sync, head: current.head! }, () =>
+            Promise.resolve(true),
+          ),
+        ).rejects.toThrow('拉取合并未完成')
+        const conflicted = await sourceControl.status(worktree)
         const indexBeforeDiff = (await git('-C', worktree, 'ls-files', '--stage', '-z')).stdout
         const marked = await readFile(join(worktree, 'renamed 空格.txt'), 'utf8')
         const selection = { path: 'renamed 空格.txt', area: 'conflict' as const }
@@ -581,6 +639,17 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await writeFile(join(worktree, selection.path), Buffer.alloc(2 * 1024 * 1024 + 1, 65))
         await expect(sourceControl.diff(worktree, selection)).rejects.toThrow('超过 2 MiB')
         await writeFile(join(worktree, selection.path), marked)
+      }, 30000)
+
+      it('requires conflict resolution and a merge commit before syncing', async () => {
+        const { added, sync, current, conflictRemote } = await conflictingBranches()
+        const noPushOnConflict = vi.fn().mockResolvedValue(true)
+        await writeFile(join(worktree, 'dirty.txt'), 'keep local changes\n')
+        await expect(
+          sourceControl.mutate(worktree, { ...sync, head: current.head! }, noPushOnConflict),
+        ).rejects.toThrow('拉取合并未完成')
+        const conflicted = await sourceControl.status(worktree)
+        const selection = { path: 'renamed 空格.txt', area: 'conflict' as const }
         await expect(
           sourceControl.mutate(
             worktree,
@@ -729,10 +798,17 @@ describe.skipIf(!gitAvailable)('Git remote and history integration (requires Git
         await sourceControl.mutate(worktree, switchBack, noPushOnConflict)
         expect((await sourceControl.status(worktree)).branch).toBe('feature/切换')
         expect(noPushOnConflict).not.toHaveBeenCalled()
+      }, 30000)
 
+      it('checks remote branch requests before creating a tracking branch', async () => {
+        await git('-C', worktree, 'commit', '--allow-empty', '-m', 'local change')
+        await git('-C', worktree, 'branch', 'feature/切换')
+        await git('-C', worktree, 'switch', 'feature/切换')
+        const noPushOnConflict = vi.fn().mockResolvedValue(true)
         const beforeRemoteSwitch = await sourceControl.status(worktree)
         const switchRemote = {
-          ...switchBranch,
+          ...target,
+          action: 'switch-branch' as const,
           branch: beforeRemoteSwitch.branch,
           head: beforeRemoteSwitch.head,
           ref: 'refs/remotes/review/feature/远端',

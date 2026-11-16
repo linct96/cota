@@ -1,7 +1,7 @@
 import { api } from './workspace.fixture'
 import { describe, expect, it, vi } from 'vitest'
 import { terminalTabs, useWorkspace } from '../../../src/renderer/src/state/workspace'
-import type { TerminalTab } from '../../../src/renderer/src/state/workspace'
+import type { TerminalTab, WorkspaceState } from '../../../src/renderer/src/state/workspace'
 import {
   agentIndicatorState,
   agentTabState,
@@ -10,16 +10,52 @@ import {
 
 import { restoreAgentWorkspace } from './agent-workspace.fixture'
 
-describe('Workspace Agent state and unread indicators', () => {
-  it('prioritizes Agent outcomes and indicators across terminal groups', async () => {
-    const { workspace, live, other, buffered } = await restoreAgentWorkspace()
-    const store = () => useWorkspace.getState()
-    const completion = {
-      ...buffered,
+async function prepareAgentScenario() {
+  const fixture = await restoreAgentWorkspace()
+  return {
+    ...fixture,
+    store: () => useWorkspace.getState(),
+    completion: {
+      ...fixture.buffered,
       revision: 4,
       activityState: 'completed' as const,
       unread: true,
-    }
+    },
+  }
+}
+
+function tab(id: string): TerminalTab {
+  const found = useWorkspace.getState().tabs.find((item) => item.id === id)
+  if (!found) throw new Error(`Missing terminal ${id}`)
+  return found
+}
+
+function splitGroup(focused: TerminalTab, background: TerminalTab): WorkspaceState {
+  return {
+    ...useWorkspace.getState(),
+    tabs: [focused, background],
+    terminalLayouts: [
+      {
+        id: 'group',
+        activePaneId: focused.id,
+        root: {
+          type: 'split',
+          id: 'split',
+          direction: 'horizontal',
+          ratio: 0.5,
+          children: [
+            { type: 'terminal', id: focused.id },
+            { type: 'terminal', id: background.id },
+          ],
+        },
+      },
+    ],
+  }
+}
+
+describe('Workspace Agent state and unread indicators', () => {
+  it('does not change focus when an Agent completes while not visible', async () => {
+    const { workspace, live, completion, store } = await prepareAgentScenario()
     const focus = store().focusVersion
     store().receiveAgent({ type: 'state', session: completion })
     expect(api.readAgent).not.toHaveBeenCalled()
@@ -30,26 +66,55 @@ describe('Workspace Agent state and unread indicators', () => {
       count: 1,
       description: '1 个本轮结束',
     })
-    expect(workspaceAgentSummary([store().tabs[0]])).toBeUndefined()
-    for (const status of ['starting', 'running', 'error', 'exited'] as const) {
-      expect(workspaceAgentSummary([{ ...store().tabs[1], agent: undefined, status }])?.state).toBe(
+  })
+
+  it('omits an ordinary shell from the Agent summary', async () => {
+    const { other } = await prepareAgentScenario()
+    expect(workspaceAgentSummary([tab(other.id)])).toBeUndefined()
+  })
+
+  it.each(['starting', 'running', 'error', 'exited'] as const)(
+    'summarizes Agent terminal status %s without an Agent session',
+    async (status) => {
+      const { live } = await prepareAgentScenario()
+      expect(workspaceAgentSummary([{ ...tab(live.id), agent: undefined, status }])?.state).toBe(
         status === 'error' ? 'error' : 'other',
       )
-    }
-    for (const runtimeState of ['starting', 'stopping', 'exited'] as const) {
+    },
+  )
+
+  it.each(['starting', 'stopping', 'exited'] as const)(
+    'does not show a completion indicator for runtime %s',
+    async (runtimeState) => {
+      const { live, completion } = await prepareAgentScenario()
+      expect(agentIndicatorState({ ...tab(live.id), agent: { ...completion, runtimeState } })).toBe(
+        'other',
+      )
+    },
+  )
+
+  it.each(['idle', 'unknown'] as const)(
+    'does not show an Agent indicator for activity %s',
+    async (activityState) => {
+      const { live, completion } = await prepareAgentScenario()
       expect(
-        agentIndicatorState({ ...store().tabs[1], agent: { ...completion, runtimeState } }),
+        agentIndicatorState({ ...tab(live.id), agent: { ...completion, activityState } }),
       ).toBe('other')
-    }
-    for (const activityState of ['idle', 'unknown'] as const) {
-      expect(
-        agentIndicatorState({ ...store().tabs[1], agent: { ...completion, activityState } }),
-      ).toBe('other')
-    }
-    expect(agentTabState({ ...store().tabs[1], closingStatus: 'running' })).toBe('other')
-    expect(agentTabState(store().tabs[1])).toBe('completed')
+    },
+  )
+
+  it('classifies a completed Agent and suppresses a closing terminal', async () => {
+    const { live, completion, store } = await prepareAgentScenario()
+    store().receiveAgent({ type: 'state', session: completion })
+    expect(agentTabState({ ...tab(live.id), closingStatus: 'running' })).toBe('other')
+    expect(agentTabState(tab(live.id))).toBe('completed')
+  })
+
+  it('summarizes unread Agent outcomes in priority order', async () => {
+    const { live, buffered, completion, store } = await prepareAgentScenario()
+    store().receiveAgent({ type: 'state', session: completion })
     const failed = {
-      ...store().tabs[1],
+      ...tab(live.id),
       agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
     }
     expect(agentIndicatorState(failed)).toBe('failed')
@@ -70,7 +135,7 @@ describe('Workspace Agent state and unread indicators', () => {
     expect(
       workspaceAgentSummary([{ ...failed, agent: { ...failed.agent, unread: false } }]),
     ).toEqual({ state: 'other', count: 1, description: '1 个其他状态' })
-    const succeeded = { ...store().tabs[1], agent: { ...completion, outcome: 'success' as const } }
+    const succeeded = { ...tab(live.id), agent: { ...completion, outcome: 'success' as const } }
     expect(agentTabState(succeeded)).toBe('succeeded')
     expect(
       workspaceAgentSummary([
@@ -85,41 +150,35 @@ describe('Workspace Agent state and unread indicators', () => {
       count: 1,
       description: '1 个执行失败 · 1 个已完成 · 1 个本轮结束 · 1 个待处理 · 1 个执行中',
     })
-    const groupIndicator = (background: TerminalTab, focused = store().tabs[0]) =>
-      terminalTabs({
-        ...store(),
-        tabs: [focused, background],
-        terminalLayouts: [
-          {
-            id: 'group',
-            activePaneId: focused.id,
-            root: {
-              type: 'split',
-              id: 'split',
-              direction: 'horizontal',
-              ratio: 0.5,
-              children: [
-                { type: 'terminal', id: focused.id },
-                { type: 'terminal', id: background.id },
-              ],
-            },
-          },
-        ],
-      })[0]
-    for (const background of [working, succeeded, store().tabs[1], failed]) {
-      const grouped = groupIndicator(background)
+  })
+
+  it('prioritizes focused and background indicators in a split terminal group', async () => {
+    const { live, other, buffered, completion, store } = await prepareAgentScenario()
+    store().receiveAgent({ type: 'state', session: completion })
+    const focused = tab(other.id)
+    const completed = tab(live.id)
+    const failed = {
+      ...completed,
+      agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
+    }
+    const working = { ...failed, agent: buffered }
+    const succeeded = { ...completed, agent: { ...completion, outcome: 'success' as const } }
+    for (const background of [working, succeeded, completed, failed]) {
+      const grouped = terminalTabs(splitGroup(focused, background))[0]
       expect(grouped.indicatorTab).toBe(background)
       expect(grouped).toMatchObject({ id: 'group', kind: 'shell', cwd: other.cwd })
     }
     const focusedAgent = { ...succeeded, id: other.id }
-    expect(groupIndicator(working, focusedAgent).indicatorTab).toBe(focusedAgent)
-    expect(groupIndicator(succeeded, focusedAgent).indicatorTab).toBe(focusedAgent)
-    expect(groupIndicator(failed, focusedAgent).indicatorTab).toBe(failed)
+    expect(terminalTabs(splitGroup(focusedAgent, working))[0].indicatorTab).toBe(focusedAgent)
+    expect(terminalTabs(splitGroup(focusedAgent, succeeded))[0].indicatorTab).toBe(focusedAgent)
+    expect(terminalTabs(splitGroup(focusedAgent, failed))[0].indicatorTab).toBe(failed)
     const connectionError = { ...focusedAgent, status: 'error' as const }
-    expect(groupIndicator(succeeded, connectionError).indicatorTab).toBe(connectionError)
-    expect(groupIndicator(succeeded, { ...store().tabs[0], status: 'error' }).indicatorTab).toBe(
-      succeeded,
+    expect(terminalTabs(splitGroup(connectionError, succeeded))[0].indicatorTab).toBe(
+      connectionError,
     )
+    expect(
+      terminalTabs(splitGroup({ ...focused, status: 'error' }, succeeded))[0].indicatorTab,
+    ).toBe(succeeded)
     for (const background of [
       { ...succeeded, agent: { ...succeeded.agent, unread: false } },
       { ...failed, agent: { ...failed.agent, unread: false } },
@@ -128,26 +187,13 @@ describe('Workspace Agent state and unread indicators', () => {
       { ...working, agent: { ...buffered, runtimeState: 'exited' as const } },
       { ...working, agent: { ...buffered, activityState: 'idle' as const } },
     ]) {
-      expect(groupIndicator(background).indicatorTab).toBe(store().tabs[0])
+      expect(terminalTabs(splitGroup(focused, background))[0].indicatorTab).toBe(focused)
     }
   })
 
-  it('acknowledges only visible current Agent revisions and rejects stale shell identities', async () => {
-    const { live, agent, other, buffered } = await restoreAgentWorkspace()
-    const store = () => useWorkspace.getState()
-    const completion = {
-      ...buffered,
-      revision: 4,
-      activityState: 'completed' as const,
-      unread: true,
-    }
+  it('acknowledges a completed Agent only after its active terminal remains visible', async () => {
+    const { live, agent, other, completion, store } = await prepareAgentScenario()
     store().receiveAgent({ type: 'state', session: completion })
-    const succeeded = { ...store().tabs[1], agent: { ...completion, outcome: 'success' as const } }
-    const failed = {
-      ...store().tabs[1],
-      agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
-    }
-    const working = { ...failed, agent: buffered }
     vi.useFakeTimers()
     try {
       vi.advanceTimersByTime(5000)
@@ -169,15 +215,23 @@ describe('Workspace Agent state and unread indicators', () => {
       store().updateTab(other.id, { title: 'Shell renamed' })
       vi.advanceTimersByTime(1)
       expect(api.readAgent).toHaveBeenCalledExactlyOnceWith(live.id, agent.launchId, 4)
-      expect(store().tabs[1].agent?.unread).toBe(true)
+      expect(tab(live.id).agent?.unread).toBe(true)
     } finally {
+      store().setVisibleTerminal(undefined)
       vi.useRealTimers()
     }
+  })
+
+  it('updates Agent indicators and summary after a read', async () => {
+    const { live, buffered, completion, store } = await prepareAgentScenario()
+    store().receiveAgent({ type: 'state', session: completion })
+    const succeeded = { ...tab(live.id), agent: { ...completion, outcome: 'success' as const } }
+    const working = { ...tab(live.id), agent: buffered }
     const read = { ...completion, revision: 5, unread: false }
     store().receiveAgent({ type: 'state', session: read })
-    expect(store().tabs[1].agent?.activityState).toBe('completed')
-    expect(agentTabState(store().tabs[1])).toBe('completed')
-    expect(agentIndicatorState(store().tabs[1])).toBe('other')
+    expect(tab(live.id).agent?.activityState).toBe('completed')
+    expect(agentTabState(tab(live.id))).toBe('completed')
+    expect(agentIndicatorState(tab(live.id))).toBe('other')
     expect(workspaceAgentSummary(store().tabs)).toEqual({
       state: 'other',
       count: 1,
@@ -188,13 +242,44 @@ describe('Workspace Agent state and unread indicators', () => {
         ?.state,
     ).toBe('other')
     expect(workspaceAgentSummary([working])?.state).toBe('working')
+  })
+
+  it.each(['older revision', 'different launch', 'different cwd'] as const)(
+    'ignores an Agent update with %s after a read',
+    async (mismatch) => {
+      const { live, completion, store } = await prepareAgentScenario()
+      store().receiveAgent({ type: 'state', session: completion })
+      const read = { ...completion, revision: 5, unread: false }
+      store().receiveAgent({ type: 'state', session: read })
+      const invalid =
+        mismatch === 'older revision'
+          ? completion
+          : mismatch === 'different launch'
+            ? { ...completion, revision: 6, launchId: crypto.randomUUID() }
+            : { ...completion, revision: 6, cwd: '/wrong' }
+      store().receiveAgent({ type: 'state', session: invalid })
+      expect(tab(live.id).agent).toEqual(read)
+      const attention = {
+        ...read,
+        revision: 6,
+        activityState: 'needs-input' as const,
+        unread: true,
+      }
+      store().receiveAgent({ type: 'state', session: attention })
+      expect(tab(live.id).agent).toEqual(attention)
+    },
+  )
+
+  it('summarizes Agents needing input alongside failures and working sessions', async () => {
+    const { live, buffered, completion, store } = await prepareAgentScenario()
     store().receiveAgent({ type: 'state', session: completion })
-    store().receiveAgent({
-      type: 'state',
-      session: { ...completion, revision: 6, launchId: crypto.randomUUID() },
-    })
-    store().receiveAgent({ type: 'state', session: { ...completion, revision: 6, cwd: '/wrong' } })
-    expect(store().tabs[1].agent).toEqual(read)
+    const failed = {
+      ...tab(live.id),
+      agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
+    }
+    const working = { ...failed, agent: buffered }
+    const read = { ...completion, revision: 5, unread: false }
+    store().receiveAgent({ type: 'state', session: read })
     const attention = { ...read, revision: 6, activityState: 'needs-input' as const, unread: true }
     store().setVisibleTerminal(undefined)
     store().receiveAgent({ type: 'state', session: attention })
@@ -203,16 +288,27 @@ describe('Workspace Agent state and unread indicators', () => {
       count: 1,
       description: '1 个待处理',
     })
-    expect(workspaceAgentSummary([failed, working, store().tabs[1]])).toEqual({
+    expect(workspaceAgentSummary([failed, working, tab(live.id)])).toEqual({
       state: 'failed',
       count: 1,
       description: '1 个执行失败 · 1 个待处理 · 1 个执行中',
     })
-    expect(workspaceAgentSummary([{ ...store().tabs[1], kind: 'shell' }])).toEqual({
+    expect(workspaceAgentSummary([{ ...tab(live.id), kind: 'shell' }])).toEqual({
       state: 'needs-input',
       count: 1,
       description: '1 个待处理',
     })
+  })
+
+  it('cancels and coalesces pending reads as visible Agent revisions change', async () => {
+    const { live, agent, buffered, completion, store } = await prepareAgentScenario()
+    const attention = {
+      ...completion,
+      revision: 6,
+      activityState: 'needs-input' as const,
+      unread: true,
+    }
+    store().receiveAgent({ type: 'state', session: attention })
     vi.useFakeTimers()
     try {
       store().setVisibleTerminal(live.id)
@@ -222,7 +318,7 @@ describe('Workspace Agent state and unread indicators', () => {
       store().receiveAgent({ type: 'state', session: { ...buffered, revision: 8 } })
       vi.advanceTimersByTime(2000)
       expect(api.readAgent).toHaveBeenCalledTimes(reads)
-      expect(agentIndicatorState(store().tabs[1])).toBe('working')
+      expect(agentIndicatorState(tab(live.id))).toBe('working')
       store().receiveAgent({ type: 'state', session: { ...completion, revision: 9 } })
       vi.advanceTimersByTime(500)
       store().receiveAgent({ type: 'state', session: { ...completion, revision: 10 } })
@@ -238,10 +334,22 @@ describe('Workspace Agent state and unread indicators', () => {
       store().setVisibleTerminal(live.id)
       vi.advanceTimersByTime(2000)
       expect(api.readAgent).toHaveBeenCalledTimes(reads + 1)
-      expect(agentIndicatorState(store().tabs[1])).toBe('other')
+      expect(agentIndicatorState(tab(live.id))).toBe('other')
     } finally {
+      store().setVisibleTerminal(undefined)
       vi.useRealTimers()
     }
+  })
+
+  it('preserves a close error across Agent runtime transitions', async () => {
+    const { live, completion, store } = await prepareAgentScenario()
+    const attention = {
+      ...completion,
+      revision: 6,
+      activityState: 'needs-input' as const,
+      unread: true,
+    }
+    store().receiveAgent({ type: 'state', session: attention })
     store().receiveAgent({
       type: 'state',
       session: {
@@ -264,11 +372,15 @@ describe('Workspace Agent state and unread indicators', () => {
         unread: false,
       },
     })
-    expect(store().tabs[1]).toMatchObject({
+    expect(tab(live.id)).toMatchObject({
       status: 'running',
       error: '关闭失败：permission denied',
     })
-    expect(agentTabState(store().tabs[1])).toBe('other')
+    expect(agentTabState(tab(live.id))).toBe('other')
+  })
+
+  it('isolates manually detected Agent launches on a shell terminal', async () => {
+    const { agent, other, store } = await prepareAgentScenario()
     const manual = {
       ...agent,
       terminalId: other.id,
@@ -277,18 +389,18 @@ describe('Workspace Agent state and unread indicators', () => {
       activityState: 'working' as const,
     }
     store().receiveAgent({ type: 'state', session: manual })
-    expect(store().tabs[0]).toMatchObject({ kind: 'shell', status: 'running', agent: manual })
-    expect(store().tabs[0].launchId).toBeUndefined()
+    expect(tab(other.id)).toMatchObject({ kind: 'shell', status: 'running', agent: manual })
+    expect(tab(other.id).launchId).toBeUndefined()
     store().receiveAgent({
       type: 'removed',
       terminalId: other.id,
       launchId: manual.launchId,
       revision: 2,
     })
-    expect(store().tabs[0].agent).toBeUndefined()
-    expect(store().tabs[0].status).toBe('running')
+    expect(tab(other.id).agent).toBeUndefined()
+    expect(tab(other.id).status).toBe('running')
     store().receiveAgent({ type: 'state', session: manual })
-    expect(store().tabs[0].agent).toBeUndefined()
+    expect(tab(other.id).agent).toBeUndefined()
     const restarted = { ...manual, launchId: crypto.randomUUID(), revision: 3 }
     store().receiveAgent({ type: 'state', session: restarted })
     store().receiveAgent({
@@ -297,9 +409,17 @@ describe('Workspace Agent state and unread indicators', () => {
       launchId: manual.launchId,
       revision: 2,
     })
-    expect(store().tabs[0].agent).toEqual(restarted)
+    expect(tab(other.id).agent).toEqual(restarted)
     store().updateTab(other.id, { agent: manual })
-    expect(store().tabs[0].agent).toEqual(restarted)
+    expect(tab(other.id).agent).toEqual(restarted)
+  })
+
+  it('acknowledges a failure only after it remains visible', async () => {
+    const { live, agent, completion, store } = await prepareAgentScenario()
+    const failed = {
+      ...tab(live.id),
+      agent: { ...completion, activityState: 'failed' as const, outcome: 'failure' as const },
+    }
     vi.useFakeTimers()
     try {
       store().setVisibleTerminal(undefined)
@@ -315,49 +435,73 @@ describe('Workspace Agent state and unread indicators', () => {
       store().setVisibleTerminal(live.id)
       vi.advanceTimersByTime(999)
       expect(api.readAgent).toHaveBeenCalledTimes(reads)
-      expect(agentIndicatorState(store().tabs[1])).toBe('failed')
+      expect(agentIndicatorState(tab(live.id))).toBe('failed')
       vi.advanceTimersByTime(1)
       expect(api.readAgent).toHaveBeenLastCalledWith(live.id, agent.launchId, 14)
       store().receiveAgent({
         type: 'state',
         session: { ...failed.agent, revision: 15, unread: false },
       })
-      expect(agentIndicatorState(store().tabs[1])).toBe('other')
-      expect(agentTabState(store().tabs[1])).toBe('failed')
-      store().receiveAgent({
-        type: 'state',
-        session: { ...read, revision: 16, runtimeState: 'error' },
-      })
-      expect(agentIndicatorState(store().tabs[1])).toBe('error')
-      vi.advanceTimersByTime(999)
-      expect(agentIndicatorState(store().tabs[1])).toBe('error')
-      vi.advanceTimersByTime(1)
-      expect(agentIndicatorState(store().tabs[1])).toBe('other')
-      expect(agentTabState(store().tabs[1])).toBe('error')
-      expect(store().tabs[1].status).toBe('error')
-      store().updateTab(live.id, { title: 'Codex renamed' })
-      expect(agentIndicatorState(store().tabs[1])).toBe('other')
-      store().receiveAgent({ type: 'state', session: { ...read, revision: 17 } })
-      store().updateTab(live.id, { status: 'error', error: '连接失败' })
-      expect(agentIndicatorState(store().tabs[1])).toBe('error')
-      vi.advanceTimersByTime(1000)
-      expect(agentIndicatorState(store().tabs[1])).toBe('other')
-      expect(store().tabs[1].error).toBe('连接失败')
-      expect(api.readAgent).toHaveBeenCalledTimes(reads + 1)
+      expect(agentIndicatorState(tab(live.id))).toBe('other')
+      expect(agentTabState(tab(live.id))).toBe('failed')
     } finally {
       store().setVisibleTerminal(undefined)
       vi.useRealTimers()
     }
+  })
+
+  it('clears transient error indicators without losing the tab error', async () => {
+    const { live, completion, store } = await prepareAgentScenario()
+    const read = { ...completion, revision: 5, unread: false }
+    store().receiveAgent({
+      type: 'state',
+      session: { ...read, revision: 15, activityState: 'failed', outcome: 'failure' },
+    })
+    vi.useFakeTimers()
+    try {
+      store().setVisibleTerminal(live.id)
+      store().receiveAgent({
+        type: 'state',
+        session: { ...read, revision: 16, runtimeState: 'error' },
+      })
+      expect(agentIndicatorState(tab(live.id))).toBe('error')
+      vi.advanceTimersByTime(999)
+      expect(agentIndicatorState(tab(live.id))).toBe('error')
+      vi.advanceTimersByTime(1)
+      expect(agentIndicatorState(tab(live.id))).toBe('other')
+      expect(agentTabState(tab(live.id))).toBe('error')
+      expect(tab(live.id).status).toBe('error')
+      store().updateTab(live.id, { title: 'Codex renamed' })
+      expect(agentIndicatorState(tab(live.id))).toBe('other')
+      store().receiveAgent({ type: 'state', session: { ...read, revision: 17 } })
+      store().updateTab(live.id, { status: 'error', error: '连接失败' })
+      expect(agentIndicatorState(tab(live.id))).toBe('error')
+      vi.advanceTimersByTime(1000)
+      expect(agentIndicatorState(tab(live.id))).toBe('other')
+      expect(tab(live.id).error).toBe('连接失败')
+      expect(api.readAgent).not.toHaveBeenCalled()
+    } finally {
+      store().setVisibleTerminal(undefined)
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores Agent state after disconnect and excludes session data from saved layouts', async () => {
+    const { live, completion, store } = await prepareAgentScenario()
+    store().receiveAgent({ type: 'state', session: { ...completion, revision: 17, unread: false } })
+    store().updateTab(live.id, { title: 'Codex renamed', status: 'error', error: '连接失败' })
     store().receiveAgent({ type: 'disconnected' })
-    expect(store().tabs[1].agent).toMatchObject({
+    expect(tab(live.id).agent).toMatchObject({
       activityState: 'unknown',
       observability: 'unavailable',
       unread: false,
     })
     store().receiveAgent({ type: 'state', session: { ...completion, revision: 7 } })
-    expect(store().tabs[1].agent?.activityState).toBe('unknown')
+    expect(tab(live.id).agent?.activityState).toBe('unknown')
     const saved = vi.mocked(api.saveLayout).mock.calls.at(-1)![0]
-    expect(saved.tabs[1]).not.toHaveProperty('agent')
-    expect(saved.tabs[1]).not.toHaveProperty('launchId')
+    const savedAgent = saved.tabs.find((item) => item.id === live.id)
+    expect(savedAgent).toBeDefined()
+    expect(savedAgent).not.toHaveProperty('agent')
+    expect(savedAgent).not.toHaveProperty('launchId')
   })
 })

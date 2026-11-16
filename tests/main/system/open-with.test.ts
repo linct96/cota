@@ -73,13 +73,13 @@ describe('Workspace program launching', () => {
     expect(child.unref).toHaveBeenCalledOnce()
   })
 
-  it('supports absolute executable paths with spaces and appends the directory when no placeholder exists', async () => {
+  it('appends the workspace to an absolute executable when there is no placeholder', async () => {
     mocks.login.mockRejectedValueOnce(new Error('shell initialization timed out'))
     await openWorkspaceWith(root, { ...opener, command, arguments: '--new-window' })
-    expect(mocks.spawn.mock.calls[0].slice(0, 2)).toEqual([command, ['--new-window', root]])
+    expect(mocks.spawn.mock.calls.at(-1)!.slice(0, 2)).toEqual([command, ['--new-window', root]])
+  })
 
-    for (const name of ['code', 'zeditor'])
-      await writeFile(join(root, 'bin', name), '#!/bin/sh\n', { mode: 0o700 })
+  it('lists configured programs and the system file manager without resolving commands', () => {
     const configured = [
       { id: 'finder', name: '访达', command: '/usr/bin/open', arguments: '-a Finder {path}' },
       {
@@ -91,7 +91,6 @@ describe('Workspace program launching', () => {
       },
       opener,
     ]
-    const loginCalls = mocks.login.mock.calls.length
     const available = listWorkspaceOpeners({
       ...DEFAULT_CONFIG.preferences,
       openWith: configured,
@@ -99,18 +98,8 @@ describe('Workspace program launching', () => {
     expect(available.slice(0, -1)).toEqual(configured)
     expect(available.at(-1)?.id).toBe('system-file-manager')
     expect(configured).toHaveLength(3)
-    for (const [platform, name] of [
-      ['darwin', '访达'],
-      ['win32', '资源管理器'],
-      ['linux', '文件管理器'],
-    ]) {
-      const builtIn = withSystemFileManager([], platform)
-      expect(builtIn).toEqual([expect.objectContaining({ id: 'system-file-manager', name })])
-      expect(withSystemFileManager([{ ...opener, id: 'system-file-manager' }], platform)).toEqual(
-        builtIn,
-      )
-    }
-    expect(mocks.login).toHaveBeenCalledTimes(loginCalls)
+    expect(mocks.login).not.toHaveBeenCalled()
+    expect(mocks.spawn).not.toHaveBeenCalled()
     const empty = listWorkspaceOpeners(DEFAULT_CONFIG.preferences)
     expect(empty).toEqual([expect.objectContaining({ id: 'system-file-manager' })])
     expect(DEFAULT_CONFIG.preferences.openWith).toEqual([])
@@ -138,33 +127,57 @@ describe('Workspace program launching', () => {
         workspaceOpeners: available,
       })?.id,
     ).toBe('system-file-manager')
-    expect(mocks.spawn).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['darwin', '访达'],
+    ['win32', '资源管理器'],
+    ['linux', '文件管理器'],
+  ])('adds the system file manager on %s without duplicating its ID', (platform, name) => {
+    const builtIn = withSystemFileManager([], platform)
+    expect(builtIn).toEqual([expect.objectContaining({ id: 'system-file-manager', name })])
+    expect(withSystemFileManager([{ ...opener, id: 'system-file-manager' }], platform)).toEqual(
+      builtIn,
+    )
+  })
+
+  it('retains explicitly configured absolute executable paths', async () => {
+    for (const name of ['code', 'zeditor'])
+      await writeFile(join(root, 'bin', name), '#!/bin/sh\n', { mode: 0o700 })
     expect(
       listWorkspaceOpeners({
         ...DEFAULT_CONFIG.preferences,
         openWith: [{ ...opener, command: join(root, 'bin', 'code') }],
       }).map((entry) => entry.id),
     ).toEqual(['editor', 'system-file-manager'])
+  })
 
-    if (process.platform === 'darwin') {
-      vi.spyOn(shell, 'findExecutable').mockRejectedValue(new Error('not on PATH'))
-      mocks.applications.add('/Applications/Visual Studio Code.app')
-      const apps = listWorkspaceOpeners({
-        ...DEFAULT_CONFIG.preferences,
-        openWith: [{ id: 'vscode', name: 'VS Code', command: 'code', arguments: '{path}' }],
-      })
-      expect(apps).toContainEqual(expect.objectContaining({ id: 'vscode' }))
-      await openWorkspaceWith(
-        root,
-        apps.find((entry) => entry.id === 'vscode')!,
-      )
-      expect(mocks.spawn.mock.calls.at(-1)!.slice(0, 2)).toEqual([
-        '/usr/bin/open',
-        ['-a', '/Applications/Visual Studio Code.app', root, '--args', root],
-      ])
-      vi.mocked(shell.findExecutable).mockRestore()
-    }
+  it.skipIf(process.platform !== 'darwin')(
+    'opens a macOS application when its CLI is absent',
+    async () => {
+      const missing = vi.spyOn(shell, 'findExecutable').mockRejectedValue(new Error('not on PATH'))
+      try {
+        mocks.applications.add('/Applications/Visual Studio Code.app')
+        const apps = listWorkspaceOpeners({
+          ...DEFAULT_CONFIG.preferences,
+          openWith: [{ id: 'vscode', name: 'VS Code', command: 'code', arguments: '{path}' }],
+        })
+        expect(apps).toContainEqual(expect.objectContaining({ id: 'vscode' }))
+        await openWorkspaceWith(
+          root,
+          apps.find((entry) => entry.id === 'vscode')!,
+        )
+        expect(mocks.spawn.mock.calls.at(-1)!.slice(0, 2)).toEqual([
+          '/usr/bin/open',
+          ['-a', '/Applications/Visual Studio Code.app', root, '--args', root],
+        ])
+      } finally {
+        missing.mockRestore()
+      }
+    },
+  )
 
+  it('resolves a detached launch after its startup grace period and clears the timer', async () => {
     vi.useFakeTimers()
     child.unref.mockClear()
     mocks.spawn.mockImplementationOnce(() => {
@@ -172,11 +185,17 @@ describe('Workspace program launching', () => {
       return child
     })
     const pending = openWorkspaceWith(root, { ...opener, command })
-    await vi.waitFor(() => expect(child.unref).toHaveBeenCalledOnce())
-    await vi.advanceTimersByTimeAsync(300)
-    await pending
-    child.emit('exit', 0)
-    expect(vi.getTimerCount()).toBe(0)
+    try {
+      await vi.waitFor(() => expect(child.unref).toHaveBeenCalledOnce())
+      await vi.advanceTimersByTimeAsync(300)
+      await pending
+      child.emit('exit', 0)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      child.emit('exit', 0)
+      vi.useRealTimers()
+      await pending.catch(() => {})
+    }
   })
 
   it('rejects invalid executables and directories before spawning', async () => {

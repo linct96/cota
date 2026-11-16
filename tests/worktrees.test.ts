@@ -278,49 +278,50 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       )
       expect(await git(repo, 'branch', '--list', 'merged')).toBe('')
     }, 15000)
-    it('requires force confirmation for edits and ignored files but never bypasses locks', async () => {
+    it.each([
+      ['DIRTY', 'example.txt', 'changed'],
+      ['UNTRACKED_FILES', 'untracked', 'keep'],
+      ['IGNORED_CONTENT', 'ignored', 'keep ignored'],
+    ] as const)(
+      'requires force confirmation for %s and preserves a cancelled removal',
+      async (blocker, name, content) => {
+        const { record } = await manager.createWorktree(input(repo))
+        const options = removalOptions()
+        options.confirm.mockResolvedValue(false)
+        if (blocker === 'IGNORED_CONTENT')
+          await writeFile(join(repo, '.git', 'info', 'exclude'), 'ignored\n')
+        await writeFile(join(record.path, name), content)
+        expect((await manager.inspectRemoval(record.id, [])).blockers).toContain(blocker)
+        expect(await manager.removeWorktree(record.id, options)).toMatchObject({ cancelled: true })
+        expect(options.confirm).toHaveBeenLastCalledWith(
+          expect.objectContaining({ blockers: [blocker] }),
+          true,
+        )
+        expect(await readFile(join(record.path, name), 'utf8')).toBe(content)
+        expect(options.close).not.toHaveBeenCalled()
+      },
+      15000,
+    )
+
+    it('never offers force removal of a locked worktree', async () => {
       const { record } = await manager.createWorktree(input(repo))
       const options = removalOptions()
-      options.confirm.mockResolvedValue(false)
-      await writeFile(join(record.path, 'example.txt'), 'changed')
-      expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('DIRTY')
-      expect(await manager.removeWorktree(record.id, options)).toMatchObject({ cancelled: true })
-      expect(options.confirm).toHaveBeenLastCalledWith(
-        expect.objectContaining({ blockers: ['DIRTY'] }),
-        true,
-      )
-      expect(await readFile(join(record.path, 'example.txt'), 'utf8')).toBe('changed')
-      expect(options.close).not.toHaveBeenCalled()
-      await writeFile(join(record.path, 'example.txt'), 'initial\n')
-      await writeFile(join(record.path, 'untracked'), 'keep')
-      expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('UNTRACKED_FILES')
-      expect(await manager.removeWorktree(record.id, options)).toMatchObject({ cancelled: true })
-      expect(options.confirm).toHaveBeenLastCalledWith(
-        expect.objectContaining({ blockers: ['UNTRACKED_FILES'] }),
-        true,
-      )
-      expect(await readFile(join(record.path, 'untracked'), 'utf8')).toBe('keep')
-      await rm(join(record.path, 'untracked'))
-      await writeFile(join(repo, '.git', 'info', 'exclude'), 'ignored\n')
-      await writeFile(join(record.path, 'ignored'), 'keep ignored')
-      expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('IGNORED_CONTENT')
-      expect(await manager.removeWorktree(record.id, options)).toMatchObject({ cancelled: true })
-      expect(options.confirm).toHaveBeenLastCalledWith(
-        expect.objectContaining({ blockers: ['IGNORED_CONTENT'] }),
-        true,
-      )
-      expect(await readFile(join(record.path, 'ignored'), 'utf8')).toBe('keep ignored')
-      await rm(join(record.path, 'ignored'))
+      options.confirm.mockResolvedValue(true)
       await git(repo, 'worktree', 'lock', '--reason', 'keep', record.path)
       expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('LOCKED')
-      options.confirm.mockClear().mockResolvedValue(true)
       await expect(manager.removeWorktree(record.id, options)).rejects.toMatchObject({
         code: 'REMOVAL_BLOCKED',
       })
       expect(options.confirm).not.toHaveBeenCalled()
       expect(await readFile(join(record.path, 'example.txt'), 'utf8')).toBe('initial\n')
       expect(config.snapshot().worktreeRecords).toEqual([record])
-      await git(repo, 'worktree', 'unlock', record.path)
+    }, 15000)
+
+    it('removes staged, untracked and ignored contents only after force confirmation', async () => {
+      const { record } = await manager.createWorktree(input(repo))
+      const options = removalOptions()
+      options.confirm.mockResolvedValue(true)
+      await writeFile(join(repo, '.git', 'info', 'exclude'), 'ignored\n')
       await writeFile(join(record.path, 'example.txt'), 'staged change')
       await git(record.path, 'add', 'example.txt')
       await writeFile(join(record.path, 'untracked'), 'discard')

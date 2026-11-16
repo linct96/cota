@@ -13,8 +13,85 @@ import type { TerminalTab } from '../../../src/renderer/src/state/workspace'
 import { useSourceControl } from '../../../src/renderer/src/state/source-control-store'
 import { gitFileKey } from '../../../src/shared/source-control'
 
+async function prepareSplitGroup() {
+  const store = () => useWorkspace.getState()
+  await store().bootstrap()
+  await store().openProject()
+  const a = store().tabs[0]
+  store().updateTab(a.id, { status: 'running' })
+  store().shortcut('split-terminal')
+  const b = store().tabs[1]
+  store().resizeTerminalSplit(store().terminalLayouts[0].root.id, 0.63)
+  store().updateTab(b.id, { status: 'running' })
+  store().selectTab(a.id)
+  store().shortcut('split-terminal-down')
+  const c = store().tabs[2]
+  store().updateTab(c.id, { status: 'running' })
+  const layout = structuredClone(store().terminalLayouts)
+  const order = () => useSourceControl.getState().sessions[a.workspaceId]!.tabOrder
+  return { store, a, b, c, layout, order }
+}
+
+async function prepareSplitGroupForClose() {
+  const group = await prepareSplitGroup()
+  const { store, a } = group
+  await store().closePane(a.id)
+  const d = store().newTerminal()!
+  store().updateTab(d, { status: 'running' })
+  store().reorderTab(a.workspaceId, a.id, 1)
+  return { ...group, d }
+}
+
+async function prepareSplitPriority() {
+  const { store, a, b, c, layout } = await prepareSplitGroup()
+  const outside = store().newTerminal()!
+  const agent: NonNullable<TerminalTab['agent']> = {
+    terminalId: a.id,
+    projectPath: a.projectPath,
+    workspaceId: a.workspaceId,
+    cwd: a.cwd!,
+    revision: 1,
+    unread: true,
+    launchId: crypto.randomUUID(),
+    provider: 'codex',
+    runtimeState: 'running',
+    activityState: 'working',
+    startedAt: new Date().toISOString(),
+    lastEventAt: new Date().toISOString(),
+    eventSource: 'process',
+    observability: 'unavailable',
+  }
+  const working = { agent }
+  const needsInput = { agent: { ...agent, activityState: 'needs-input' as const } }
+  const completed = { shellActivity: 'idle' as const, shellUnread: true }
+  const succeeded = {
+    agent: { ...agent, activityState: 'completed' as const, outcome: 'success' as const },
+  }
+  const failed = {
+    agent: { ...agent, activityState: 'failed' as const, outcome: 'failure' as const },
+  }
+  const error = { ...working, status: 'error' as const }
+  const states: Record<string, Partial<TerminalTab>> = {
+    working,
+    'needs-input': needsInput,
+    completed,
+    succeeded,
+    failed,
+    error,
+    running: { shellActivity: 'running' },
+    'read-success': { agent: { ...succeeded.agent, unread: false } },
+    'read-failure': { agent: { ...failed.agent, unread: false } },
+    'read-error': { ...error, errorRead: true },
+    'read-completion': { ...completed, shellUnread: false },
+    closing: { ...error, closingStatus: 'running' },
+    interrupted: { agent: { ...agent, activityState: 'interrupted' } },
+    none: {},
+  }
+  return { store, a, b, c, layout: layout[0], outside, states, key: `terminal:${layout[0].id}` }
+}
+
 describe('Terminal tabs and split panes', () => {
-  it('shares one tab across split panes, persists layout and closes or reopens groups safely', async () => {
+  it('creates split panes in one tab and persists the resized layout', async () => {
     const store = () => useWorkspace.getState()
     const splitShortcuts = ['split-terminal', 'split-terminal-down'] as const
     await store().bootstrap()
@@ -72,28 +149,35 @@ describe('Terminal tabs and split panes', () => {
     expect(terminalPaneIds(layout[0].root)).toEqual([a.id, c.id, b.id])
     expect(order()).toEqual([`terminal:${a.id}`])
     expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].terminalLayouts).toEqual(layout)
+  })
 
-    useWorkspace.setState({ removingWorkspace: a.workspaceId })
-    store().splitTerminal(a.id)
-    useWorkspace.setState({ removingWorkspace: undefined, creatingWorktree: true })
-    store().splitTerminal(a.id)
-    useWorkspace.setState({ creatingWorktree: false })
-    expect(store().tabs).toHaveLength(3)
+  it.each(['removing workspace', 'creating worktree'] as const)(
+    'does not split panes while %s',
+    async (busy) => {
+      const { store, a } = await prepareSplitGroup()
+      useWorkspace.setState(
+        busy === 'removing workspace'
+          ? { removingWorkspace: a.workspaceId }
+          : { creatingWorktree: true },
+      )
+      store().splitTerminal(a.id)
+      expect(store().tabs).toHaveLength(3)
+    },
+  )
+
+  it('restores the split layout after a failed close and retries safely', async () => {
+    const { store, a, b, c, layout, order } = await prepareSplitGroup()
     store().selectTab(a.id)
+    let activeDuringClosing: string | undefined
     vi.mocked(api.closeTerminal).mockImplementationOnce(() => {
-      try {
-        store().shortcut('close-terminal')
-        expect(api.closeTerminal).toHaveBeenCalledExactlyOnceWith(a.id)
-        vi.mocked(api.onTerminal).mock.calls.at(-1)![0]({
-          type: 'closing',
-          id: a.id,
-          closing: true,
-        })
-        expect(store().activeTabs[a.workspaceId]).toBe(c.id)
-        throw new Error('cleanup failed')
-      } catch (cause) {
-        return Promise.reject(cause)
-      }
+      store().shortcut('close-terminal')
+      vi.mocked(api.onTerminal).mock.calls.at(-1)![0]({
+        type: 'closing',
+        id: a.id,
+        closing: true,
+      })
+      activeDuringClosing = store().activeTabs[a.workspaceId]
+      return Promise.reject(new Error('cleanup failed'))
     })
     store().shortcut('close-terminal')
     await vi.waitFor(() =>
@@ -102,6 +186,8 @@ describe('Terminal tabs and split panes', () => {
         closingStatus: undefined,
       }),
     )
+    expect(api.closeTerminal).toHaveBeenCalledExactlyOnceWith(a.id)
+    expect(activeDuringClosing).toBe(c.id)
     expect(store().terminalLayouts[0].root).toEqual(layout[0].root)
     expect(store().activeTabs[a.workspaceId]).toBe(a.id)
     store().shortcut('close-terminal')
@@ -113,6 +199,15 @@ describe('Terminal tabs and split panes', () => {
     expect(terminalTabs(store()).map((tab) => tab.id)).toEqual([a.id])
     expect(useSourceControl.getState().sessions[a.workspaceId]!.closedTabs).toEqual([])
     expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+  })
+
+  it('restores and reorders a persisted split group without changing its active pane', async () => {
+    const { store, a, b, c, order } = await prepareSplitGroup()
+    store().selectTab(a.id)
+    store().shortcut('close-terminal')
+    await vi.waitFor(() =>
+      expect(terminalPaneIds(store().terminalLayouts[0].root)).toEqual([c.id, b.id]),
+    )
     const persisted = structuredClone(vi.mocked(api.saveLayout).mock.calls.at(-1)![0])
     vi.mocked(api.bootstrap).mockResolvedValueOnce({
       ok: true,
@@ -146,14 +241,24 @@ describe('Terminal tabs and split panes', () => {
     expect(order()).toEqual([`terminal:${a.id}`, `terminal:${d}`])
     store().reorderTab(a.workspaceId, a.id, 1)
     expect(order()).toEqual([`terminal:${d}`, `terminal:${a.id}`])
+  })
+
+  it('allows a split-group close to be retried after cancellation', async () => {
+    const { store, a, c, d } = await prepareSplitGroupForClose()
+    const closeCallsBefore = vi.mocked(api.closeTerminal).mock.calls.length
+    let closingTabs: string[] = []
+    let tabsAfterSplit = 0
     vi.mocked(api.closeTerminal).mockImplementationOnce(async () => {
-      expect(store().closingTerminalTabs).toEqual([a.id])
+      closingTabs = [...store().closingTerminalTabs]
       store().splitTerminal(c.id)
-      expect(store().tabs).toHaveLength(3)
+      tabsAfterSplit = store().tabs.length
       await store().closeTab(a.id)
       return { ok: true, value: false }
     })
     await store().closeTab(a.id)
+    expect(closingTabs).toEqual([a.id])
+    expect(tabsAfterSplit).toBe(3)
+    expect(api.closeTerminal).toHaveBeenCalledTimes(closeCallsBefore + 1)
     expect(store().tabs).toHaveLength(3)
     expect(store().closingTerminalTabs).toEqual([])
     expect(useSourceControl.getState().sessions[a.workspaceId]!.closedTabs).toEqual([])
@@ -164,6 +269,11 @@ describe('Terminal tabs and split panes', () => {
     expect(useSourceControl.getState().sessions[a.workspaceId]!.closedTabs).toMatchObject([
       { kind: 'terminal-group' },
     ])
+  })
+
+  it('reopens a closed split group with new identities that can be closed again', async () => {
+    const { store, a, b, c, d, order } = await prepareSplitGroupForClose()
+    await store().closeTab(a.id)
     store().reopenTab()
     expect(store().tabs).toHaveLength(3)
     const reopened = store().terminalLayouts[0]
@@ -189,109 +299,60 @@ describe('Terminal tabs and split panes', () => {
     expect(api.closeWindow).not.toHaveBeenCalled()
   })
 
-  it('prioritizes unread indicators only when activating a split terminal tab', async () => {
-    const store = () => useWorkspace.getState()
-    await store().openProject()
-    const a = store().tabs[0]
-    store().updateTab(a.id, { status: 'running' })
-    store().splitTerminal(a.id)
-    const b = store().tabs[1]
-    store().splitTerminal(a.id, 'vertical')
-    const c = store().tabs[2]
-    const layout = store().terminalLayouts[0]
-    const outside = store().newTerminal()!
-    const key = `terminal:${layout.id}`
-    const agent: NonNullable<TerminalTab['agent']> = {
-      terminalId: a.id,
-      projectPath: a.projectPath,
-      workspaceId: a.workspaceId,
-      cwd: a.cwd!,
-      revision: 1,
-      unread: true,
-      launchId: crypto.randomUUID(),
-      provider: 'codex',
-      runtimeState: 'running',
-      activityState: 'working',
-      startedAt: new Date().toISOString(),
-      lastEventAt: new Date().toISOString(),
-      eventSource: 'process',
-      observability: 'unavailable',
-    }
-    const working = { agent }
-    const needsInput = { agent: { ...agent, activityState: 'needs-input' as const } }
-    const completed = { shellActivity: 'idle' as const, shellUnread: true }
-    const succeeded = {
-      agent: { ...agent, activityState: 'completed' as const, outcome: 'success' as const },
-    }
-    const failed = {
-      agent: { ...agent, activityState: 'failed' as const, outcome: 'failure' as const },
-    }
-    const error = { ...working, status: 'error' as const }
-    const running = { shellActivity: 'running' as const }
-    expect(terminalPaneIds(layout.root)).toEqual([a.id, c.id, b.id])
-    const cases: [string, Partial<TerminalTab>[], string, string][] = [
-      ['error before failure', [failed, error, succeeded], a.id, b.id],
-      ['failure before success', [succeeded, failed, completed], a.id, b.id],
-      ['success before completion', [completed, succeeded, needsInput], a.id, b.id],
-      ['completion before input', [needsInput, completed, working], a.id, b.id],
-      ['input before working', [working, needsInput, running], a.id, b.id],
-      ['same state keeps focus', [completed, completed, completed], b.id, b.id],
-      ['same state uses layout order', [working, completed, completed], a.id, c.id],
-      [
-        'read success is skipped',
-        [{ agent: { ...succeeded.agent, unread: false } }, needsInput, working],
-        a.id,
-        b.id,
-      ],
-      [
-        'read failure is skipped',
-        [{ agent: { ...failed.agent, unread: false } }, needsInput, working],
-        a.id,
-        b.id,
-      ],
-      ['read error is skipped', [{ ...error, errorRead: true }, needsInput, working], a.id, b.id],
-      [
-        'read shell completion is skipped',
-        [{ ...completed, shellUnread: false }, needsInput, working],
-        a.id,
-        b.id,
-      ],
-      [
-        'closing pane is skipped',
-        [{ ...error, closingStatus: 'running' }, needsInput, working],
-        a.id,
-        b.id,
-      ],
-      ['working does not override focus', [working, running, {}], c.id, c.id],
-      [
-        'interrupted does not override focus',
-        [{ agent: { ...agent, activityState: 'interrupted' } }, running, {}],
-        c.id,
-        c.id,
-      ],
-      ['missing focus uses first pane', [{}, {}, {}], 'removed', a.id],
-      ['missing focus still prioritizes status', [{}, needsInput, {}], 'removed', b.id],
-    ]
-    for (const [name, patches, focused, expected] of cases) {
-      useWorkspace.setState({
-        tabs: [a, b, c]
-          .map((tab, index): TerminalTab => ({
+  it.each([
+    ['error before failure', ['failed', 'error', 'succeeded'], 'a', 'b'],
+    ['failure before success', ['succeeded', 'failed', 'completed'], 'a', 'b'],
+    ['success before completion', ['completed', 'succeeded', 'needs-input'], 'a', 'b'],
+    ['completion before input', ['needs-input', 'completed', 'working'], 'a', 'b'],
+    ['input before working', ['working', 'needs-input', 'running'], 'a', 'b'],
+    ['same state keeps focus', ['completed', 'completed', 'completed'], 'b', 'b'],
+    ['same state uses layout order', ['working', 'completed', 'completed'], 'a', 'c'],
+    ['read success is skipped', ['read-success', 'needs-input', 'working'], 'a', 'b'],
+    ['read failure is skipped', ['read-failure', 'needs-input', 'working'], 'a', 'b'],
+    ['read error is skipped', ['read-error', 'needs-input', 'working'], 'a', 'b'],
+    ['read shell completion is skipped', ['read-completion', 'needs-input', 'working'], 'a', 'b'],
+    ['closing pane is skipped', ['closing', 'needs-input', 'working'], 'a', 'b'],
+    ['working does not override focus', ['working', 'running', 'none'], 'c', 'c'],
+    ['interrupted does not override focus', ['interrupted', 'running', 'none'], 'c', 'c'],
+    ['missing focus uses first pane', ['none', 'none', 'none'], 'removed', 'a'],
+    ['missing focus still prioritizes status', ['none', 'needs-input', 'none'], 'removed', 'b'],
+  ] as const)('prioritizes split panes: %s', async (_name, patches, focused, expected) => {
+    const { store, a, b, c, layout, outside, states, key } = await prepareSplitPriority()
+    const ids = { a: a.id, b: b.id, c: c.id, removed: 'removed' }
+    useWorkspace.setState({
+      tabs: [a, b, c]
+        .map((tab, index): TerminalTab => {
+          const patch = states[patches[index]]
+          return {
             ...tab,
             status: 'running',
-            ...patches[index],
-            ...(patches[index].agent
-              ? { agent: { ...patches[index].agent, terminalId: tab.id } }
-              : {}),
-          }))
-          .concat({ ...a, id: outside, status: 'running' }),
-        terminalLayouts: [{ ...layout, activePaneId: focused }],
-      })
-      store().selectTab(outside)
-      store().selectWorkspaceTab(a.workspaceId, key)
-      expect(store().activeTabs[a.workspaceId], name).toBe(expected)
-      expect(store().terminalLayouts[0].activePaneId, name).toBe(expected)
-    }
+            ...patch,
+            ...(patch.agent ? { agent: { ...patch.agent, terminalId: tab.id } } : {}),
+          }
+        })
+        .concat({ ...a, id: outside, status: 'running' }),
+      terminalLayouts: [{ ...layout, activePaneId: ids[focused] }],
+    })
+    store().selectTab(outside)
+    store().selectWorkspaceTab(a.workspaceId, key)
+    expect(store().activeTabs[a.workspaceId]).toBe(ids[expected])
+    expect(store().terminalLayouts[0].activePaneId).toBe(ids[expected])
+  })
 
+  it('reprioritizes unread panes only when activating an inactive split tab', async () => {
+    const { store, a, b, c, layout, outside, states, key } = await prepareSplitPriority()
+    expect(terminalPaneIds(layout.root)).toEqual([a.id, c.id, b.id])
+    useWorkspace.setState({
+      tabs: [
+        a,
+        { ...b, agent: { ...states['needs-input'].agent!, terminalId: b.id } },
+        c,
+        { ...a, id: outside, status: 'running' },
+      ],
+      terminalLayouts: [{ ...layout, activePaneId: 'removed' }],
+    })
+    store().selectTab(outside)
+    store().selectWorkspaceTab(a.workspaceId, key)
     store().selectTab(a.id)
     store().selectWorkspaceTab(a.workspaceId, key)
     expect(store().activeTabs[a.workspaceId]).toBe(a.id)
@@ -302,7 +363,7 @@ describe('Terminal tabs and split panes', () => {
     expect(store().activeTabs[a.workspaceId]).toBe(a.id)
   })
 
-  it('respects close cancellation and chooses a surviving tab after confirmation', async () => {
+  it('keeps a terminal after cancellation or failure and closes it on retry', async () => {
     await useWorkspace.getState().openProject()
     useWorkspace.getState().newTerminal()
     const [a, b] = useWorkspace.getState().tabs
@@ -329,8 +390,12 @@ describe('Terminal tabs and split panes', () => {
     await useWorkspace.getState().closeTab(b.id)
     expect(useWorkspace.getState().tabs).toHaveLength(1)
     expect(useWorkspace.getState().activeTabs[b.workspaceId]).toBe(a.id)
+  })
 
+  it('selects a surviving neighbor across terminal, diff and preview tabs', async () => {
     const store = () => useWorkspace.getState()
+    await store().openProject()
+    const a = store().tabs[0]
     const scm = useSourceControl.getState()
     const id = a.workspaceId
     const session = () => useSourceControl.getState().sessions[id]
@@ -369,7 +434,16 @@ describe('Terminal tabs and split panes', () => {
     store().closeWorkspaceTab(id, 'preview')
     expect(store().activeTabs[id]).toBe(right.id)
     expect(session()!.preview).toBe(false)
+  })
 
+  it('keeps non-terminal tabs available until the last workspace tab closes', async () => {
+    const store = () => useWorkspace.getState()
+    await store().openProject()
+    const right = store().tabs[0]
+    const id = right.workspaceId
+    const scm = useSourceControl.getState()
+    const session = () => useSourceControl.getState().sessions[id]
+    store().updateTab(right.id, { status: 'running' })
     scm.openChanges(id)
     scm.update(id, { file: 'last-preview.ts', preview: true })
     store().selectTab(right.id)

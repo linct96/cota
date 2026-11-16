@@ -33,7 +33,7 @@ afterEach(async () => {
 })
 
 describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
-  it('browses folders and internal symlinks without reading outside the workspace', async () => {
+  it('sorts files naturally and hides Git metadata', async () => {
     const files = new FileExplorerService()
     expect(await files.list(root, '')).toEqual([])
     await mkdir(join(root, 'src'))
@@ -53,6 +53,11 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
       'file2.txt',
       'file10.txt',
     ])
+  })
+
+  it('reads the current UTF-8 file contents and rejects deleted files', async () => {
+    const files = new FileExplorerService()
+    await mkdir(join(root, 'src'))
     await writeFile(join(root, 'src', '中文 空格.txt'), '你好\n')
     expect(await files.read(root, 'src/中文 空格.txt')).toEqual({ kind: 'text', content: '你好\n' })
     await writeFile(join(root, 'src', '中文 空格.txt'), 'updated\n')
@@ -60,12 +65,27 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
       kind: 'text',
       content: 'updated\n',
     })
-    await writeFile(join(root, 'binary'), Buffer.from([1, 0, 3]))
-    await writeFile(join(root, 'invalid-utf8'), Buffer.from([0xff, 0xfe]))
-    await writeFile(join(root, 'large'), Buffer.alloc(2 * 1024 * 1024 + 1, 65))
-    for (const name of ['binary', 'invalid-utf8', 'large', 'src']) {
-      expect(await files.read(root, name)).toMatchObject({ kind: 'unavailable' })
-    }
+    await writeFile(join(root, 'file2.txt'), 'two')
+    await rm(join(root, 'file2.txt'))
+    await expect(files.read(root, 'file2.txt')).rejects.toThrow()
+  })
+
+  it.each([
+    ['binary', Buffer.from([1, 0, 3])],
+    ['invalid-utf8', Buffer.from([0xff, 0xfe])],
+    ['large', Buffer.alloc(2 * 1024 * 1024 + 1, 65)],
+    ['src', undefined],
+  ])('does not read unavailable content: %s', async (name, content) => {
+    const files = new FileExplorerService()
+    if (content) await writeFile(join(root, name), content)
+    else await mkdir(join(root, name))
+    expect(await files.read(root, name)).toMatchObject({ kind: 'unavailable' })
+  })
+
+  it('follows internal directory symlinks only when enabled', async () => {
+    const files = new FileExplorerService()
+    await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src', '中文 空格.txt'), '你好\n')
     await symlink('src', join(root, 'linked-src'))
     expect((await files.list(root, '')).filter((entry) => entry.kind === 'directory')).toEqual([
       { name: 'linked-src', path: 'linked-src', kind: 'directory', symlink: true, empty: false },
@@ -76,6 +96,10 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     ])
     const noLinks = new FileExplorerService(() => ({ showIgnored: true, followSymlinks: false }))
     await expect(noLinks.list(root, 'linked-src')).rejects.toThrow('不跟随符号链接')
+  })
+
+  it('reports external and dangling links without following them outside the workspace', async () => {
+    const files = new FileExplorerService()
     await mkdir(join(directory, 'outside'))
     await writeFile(join(directory, 'outside', 'secret'), 'must not read')
     await symlink(join(directory, 'outside'), join(root, 'linked-dir'))
@@ -90,38 +114,49 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     await expect(files.list(root, 'linked-dir')).rejects.toThrow('工作区外')
     await expect(files.read(root, 'linked-dir/secret')).rejects.toThrow('工作区外')
     expect(await files.location(root, 'linked-file')).toBe(join(root, 'linked-file'))
-    for (const path of [
-      '../outside/secret',
-      '/etc/passwd',
-      'C:/Windows',
-      'src\\file',
-      'src//file',
-      './src',
-      '.git',
-      'src/.GIT/config',
-      'src/../file',
-      'nul\0',
-      null,
-      {},
-    ]) {
-      await expect(files.list(root, path)).rejects.toThrow('路径无效')
-      await expect(files.read(root, path)).rejects.toThrow('路径无效')
-    }
-    await symlink(root, join(directory, 'root-link'))
-    await expect(files.list(join(directory, 'root-link'), '')).rejects.toThrow('真实路径')
-    await rm(join(root, 'file2.txt'))
-    await expect(files.read(root, 'file2.txt')).rejects.toThrow()
+    expect(await readFile(join(directory, 'outside', 'secret'), 'utf8')).toBe('must not read')
+  })
+
+  it.each([
+    '../outside/secret',
+    '/etc/passwd',
+    'C:/Windows',
+    'src\\file',
+    'src//file',
+    './src',
+    '.git',
+    'src/.GIT/config',
+    'src/../file',
+    'nul\0',
+    null,
+    {},
+  ])('rejects invalid workspace paths: %j', async (path) => {
+    const files = new FileExplorerService()
+    await writeFile(join(root, '.env'), 'TOKEN=fixture')
+    await mkdir(join(directory, 'outside'))
+    await writeFile(join(directory, 'outside', 'secret'), 'must not read')
+    await expect(files.list(root, path)).rejects.toThrow('路径无效')
+    await expect(files.read(root, path)).rejects.toThrow('路径无效')
     expect(await readFile(join(root, '.env'), 'utf8')).toBe('TOKEN=fixture')
     expect(await readFile(join(directory, 'outside', 'secret'), 'utf8')).toBe('must not read')
+  })
 
+  it('rejects a symlink as the workspace root', async () => {
+    const files = new FileExplorerService()
+    await symlink(root, join(directory, 'root-link'))
+    await expect(files.list(join(directory, 'root-link'), '')).rejects.toThrow('真实路径')
+  })
+
+  it('marks Git ignored files and respects the visibility setting', async () => {
+    const files = new FileExplorerService()
     const git = (...args: string[]) =>
       promisify(execFile)('git', args, {
         cwd: root,
         env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
         timeout: 5000,
       })
-    await rm(join(root, '.git'))
     await git('init', '--quiet')
+    await mkdir(join(root, 'src'))
     await mkdir(join(root, 'generated'))
     await writeFile(join(root, '.gitignore'), 'generated/\n*.log\n!keep.log\n')
     for (const name of ['ignored.log', '-中文 空格\n.log', 'keep.log', 'tracked.log'])

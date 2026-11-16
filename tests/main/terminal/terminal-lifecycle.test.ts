@@ -44,6 +44,9 @@ describe('Terminal creation and cleanup', () => {
     const creating = manager.create(options(), settings)
     await Promise.resolve()
     const rejected = expect(creating).rejects.toThrow('missing')
+    const creatingSnapshot = await manager.list(true)
+    expect(creatingSnapshot).toHaveLength(1)
+    expect(creatingSnapshot[0].exited).toBe(false)
     const listing = manager.list()
     fail(new Error('missing'))
     await rejected

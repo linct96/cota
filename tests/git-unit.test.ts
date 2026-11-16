@@ -34,6 +34,84 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
+const REVIEW_TIME = '2026-10-28T00:00:00Z'
+
+function reviewFixture(provider: 'github' | 'gitlab') {
+  const request = vi.fn<HostingRequest>()
+  const adapter = provider === 'github' ? new GitHubAdapter(request) : new GitLabAdapter(request)
+  const repository = { provider, host: `${provider}.com`, path: 'team/repo' }
+  const scope: ReviewScope = {
+    source: repository,
+    target: repository,
+    branch: 'feature/review',
+    sourceInfo: { id: 1, path: repository.path, defaultBranch: 'main' },
+    targetInfo: { id: 1, path: repository.path, defaultBranch: 'main' },
+  }
+  const time = REVIEW_TIME
+  const payload = (
+    number: number,
+    state: 'open' | 'merged' | 'closed' | 'locked',
+    branch = scope.branch,
+    target = 'main',
+    sourceId = 1,
+  ) => ({
+    title: `Review ${number}`,
+    draft: false,
+    created_at: time,
+    updated_at: time,
+    merged_at: state === 'merged' ? time : null,
+    closed_at: state === 'merged' || state === 'closed' ? time : null,
+    ...(provider === 'github'
+      ? {
+          number,
+          state: state === 'open' ? 'open' : 'closed',
+          head: { ref: branch, sha: 'a'.repeat(40), repo: { id: sourceId } },
+          base: { ref: target, repo: { id: 1 } },
+        }
+      : {
+          iid: number,
+          state: state === 'open' ? 'opened' : state,
+          source_project_id: sourceId,
+          target_project_id: 1,
+          source_branch: branch,
+          target_branch: target,
+          sha: 'a'.repeat(40),
+        }),
+  })
+  return { request, adapter, repository, scope, time, payload }
+}
+
+function gitlabIdentity() {
+  return {
+    account: {
+      username: 'me',
+      email: 'me@example.com',
+      public_email: 'public@example.com',
+      commit_email: 'private@noreply.gitlab.com',
+    },
+    emails: [
+      { email: 'old@example.com', confirmed_at: REVIEW_TIME },
+      { email: 'pending@example.com', confirmed_at: null },
+    ],
+  }
+}
+
+function commit(
+  title: string,
+  body = '',
+  author = 'me@example.com',
+  date = REVIEW_TIME,
+  parents = ['parent'],
+) {
+  return {
+    title,
+    message: `${title}\n${body}`,
+    author_email: author,
+    authored_date: date,
+    parent_ids: parents,
+  }
+}
+
 describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
   it('isolates the platform branch cache and discards invalidated requests without retrying writes', async () => {
     const cache = new HostingBranches()
@@ -406,50 +484,9 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
   })
 
   it.each(['github', 'gitlab'] as const)(
-    'reads %s hosting review history and merges with identity checks',
+    'filters %s open reviews by source identity',
     async (provider) => {
-      const request = vi.fn<HostingRequest>()
-      const adapter =
-        provider === 'github' ? new GitHubAdapter(request) : new GitLabAdapter(request)
-      const repository = { provider, host: `${provider}.com`, path: 'team/repo' }
-      const scope: ReviewScope = {
-        source: repository,
-        target: repository,
-        branch: 'feature/review',
-        sourceInfo: { id: 1, path: repository.path, defaultBranch: 'main' },
-        targetInfo: { id: 1, path: repository.path, defaultBranch: 'main' },
-      }
-      const time = '2026-10-28T00:00:00Z'
-      const payload = (
-        number: number,
-        state: 'open' | 'merged' | 'closed' | 'locked',
-        branch = scope.branch,
-        target = 'main',
-        sourceId = 1,
-      ) => ({
-        title: `Review ${number}`,
-        draft: false,
-        created_at: time,
-        updated_at: time,
-        merged_at: state === 'merged' ? time : null,
-        closed_at: state === 'merged' || state === 'closed' ? time : null,
-        ...(provider === 'github'
-          ? {
-              number,
-              state: state === 'open' ? 'open' : 'closed',
-              head: { ref: branch, sha: 'a'.repeat(40), repo: { id: sourceId } },
-              base: { ref: target, repo: { id: 1 } },
-            }
-          : {
-              iid: number,
-              state: state === 'open' ? 'opened' : state,
-              source_project_id: sourceId,
-              target_project_id: 1,
-              source_branch: branch,
-              target_branch: target,
-              sha: 'a'.repeat(40),
-            }),
-      })
+      const { request, adapter, scope, payload } = reviewFixture(provider)
       request.mockResolvedValueOnce([
         payload(1, 'open'),
         payload(2, 'open', scope.branch, 'release'),
@@ -460,6 +497,13 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
         'main',
         'release',
       ])
+    },
+  )
+
+  it.each(['github', 'gitlab'] as const)(
+    'paginates and filters %s review history',
+    async (provider) => {
+      const { request, adapter, scope, time, payload } = reviewFixture(provider)
       request.mockResolvedValueOnce(
         Array.from({ length: 20 }, (_, index) => payload(index + 30, 'closed', 'other')),
       )
@@ -478,12 +522,20 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
         [9, 'closed'],
       ])
       expect(history.items[1]).toMatchObject({ createdAt: time, mergedAt: time })
-      expect(request.mock.calls[2]?.[1]).toContain('state=all')
-      expect(request.mock.calls[2]?.[1]).toContain(
+      const historyRequest = request.mock.calls.at(-1)?.[1]
+      expect(historyRequest).toContain('state=all')
+      expect(historyRequest).toContain(
         provider === 'github' ? 'sort=created&direction=desc' : 'order_by=created_at&sort=desc',
       )
-      expect(request.mock.calls[2]?.[1]).toContain('page=2')
-      expect(request.mock.calls[2]?.[1]).toContain('feature%2Freview')
+      expect(historyRequest).toContain('page=2')
+      expect(historyRequest).toContain('feature%2Freview')
+    },
+  )
+
+  it.each(['github', 'gitlab'] as const)(
+    'reads %s review details and rejects mismatched identities',
+    async (provider) => {
+      const { request, adapter, scope, payload } = reviewFixture(provider)
       request.mockResolvedValueOnce(payload(12, 'merged'))
       expect((await adapter.get(scope, 12)).url).toBe(
         provider === 'github'
@@ -492,28 +544,36 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       )
       request.mockResolvedValueOnce(payload(13, 'merged', 'other'))
       await expect(adapter.get(scope, 13)).rejects.toThrow('不匹配')
-      request.mockResolvedValueOnce(
-        provider === 'github' ? { files: [] } : { diffs: [], commits: [] },
-      )
-      expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
-        status: 'empty',
-      })
-      request.mockResolvedValueOnce(
-        provider === 'github'
-          ? { files: [{ filename: 'file' }] }
-          : { diffs: [{ diff: '+line' }], commits: [] },
-      )
-      expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
-        status: 'changes',
-      })
-      request.mockResolvedValueOnce(
-        provider === 'github'
-          ? { files: Array.from({ length: 300 }, () => ({ filename: 'file' })) }
-          : { diffs: [], commits: [], compare_timeout: true },
-      )
-      expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
-        status: 'unknown',
-      })
+    },
+  )
+
+  describe.each(['github', 'gitlab'] as const)('%s comparisons', (provider) => {
+    it.each(['empty', 'changes', 'unknown'] as const)(
+      'classifies %s comparisons',
+      async (status) => {
+        const { request, adapter, scope } = reviewFixture(provider)
+        const responses = {
+          github: {
+            empty: { files: [] },
+            changes: { files: [{ filename: 'file' }] },
+            unknown: { files: Array.from({ length: 300 }, () => ({ filename: 'file' })) },
+          },
+          gitlab: {
+            empty: { diffs: [], commits: [] },
+            changes: { diffs: [{ diff: '+line' }], commits: [] },
+            unknown: { diffs: [], commits: [], compare_timeout: true },
+          },
+        }
+        request.mockResolvedValueOnce(responses[provider][status])
+        expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({ status })
+      },
+    )
+  })
+
+  it.each(['github', 'gitlab'] as const)(
+    'merges %s reviews with the expected identity and head',
+    async (provider) => {
+      const { request, adapter, repository, scope, payload } = reviewFixture(provider)
       request.mockResolvedValueOnce(payload(12, 'open'))
       const openReview = await adapter.get(scope, 12)
       const mergeCall = request.mock.calls.length
@@ -536,173 +596,179 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
           : { sha: openReview.head, squash: false, should_remove_source_branch: false },
         'PUT',
       ])
-      if (provider === 'github') {
-        request.mockResolvedValueOnce({ merged: false })
-        await expect(adapter.merge(scope, openReview)).rejects.toThrow('未合并')
-      }
-      if (provider === 'gitlab') {
-        const account = {
-          username: 'me',
-          email: 'me@example.com',
-          public_email: 'public@example.com',
-          commit_email: 'private@noreply.gitlab.com',
-        }
-        const emails = [
-          { email: 'old@example.com', confirmed_at: time },
-          { email: 'pending@example.com', confirmed_at: null },
-        ]
-        const commit = (
-          title: string,
-          body = '',
-          author = 'me@example.com',
-          date = time,
-          parents = ['parent'],
-        ) => ({
-          title,
-          message: `${title}\n${body}`,
-          author_email: author,
-          authored_date: date,
-          parent_ids: parents,
-        })
-        for (const [commits, defaultTitle, defaultDescription] of [
-          [
-            [commit('Only commit', '\nSingle body\n', 'other@example.com')],
-            'Only commit',
-            'Single body',
-          ],
-          [
-            [commit('First', '', 'other@example.com'), commit('Second', '', 'pending@example.com')],
-            'Feature/review',
-            '',
-          ],
-          [
-            [
-              commit('Newest', '\nMore'),
-              commit('Other author', '\nNot mine', 'other@example.com', '2026-10-01T00:00:00Z'),
-              commit('Oldest own commit', '\nDetails', ' OLD@EXAMPLE.COM ', '2026-10-20T00:00:00Z'),
-            ],
-            'Oldest own commit',
-            'Details',
-          ],
-          [
-            [
-              commit('With body', '\nDetails'),
-              commit('First', '', 'me@example.com', '2026-10-20T00:00:00Z'),
-            ],
-            'First',
-            '',
-          ],
-          [
-            [
-              commit('Pending', '\nUnverified', 'pending@example.com', '2026-10-01T00:00:00Z'),
-              commit(
-                'Private email',
-                '\nDetails',
-                'private@noreply.gitlab.com',
-                '2026-10-20T00:00:00Z',
-              ),
-              commit('Public email', '\nMore', 'public@example.com'),
-            ],
-            'Private email',
-            'Details',
-          ],
-          [
-            [
-              commit('Feature', '\nDetails'),
-              commit('Merge', '\nMerged details', 'me@example.com', '2026-10-20T00:00:00Z', [
-                'one',
-                'two',
-              ]),
-            ],
-            'Merge',
-            'Merged details',
-          ],
-        ] as const) {
-          request.mockResolvedValueOnce({ diffs: [{ diff: '+line' }], commits })
-          if (commits.length > 1) {
-            request.mockResolvedValueOnce(account)
-            request.mockResolvedValueOnce(emails)
-          }
-          expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toEqual({
-            status: 'changes',
-            defaultTitle,
-            defaultDescription,
-          })
-        }
-        for (const confidential of [false, true]) {
-          request.mockResolvedValueOnce({
-            diffs: [{ diff: '+line' }],
-            commits: [
-              commit('First', '', 'other@example.com'),
-              commit('Second', '', 'other@example.com'),
-            ],
-          })
-          request.mockResolvedValueOnce(account)
-          request.mockResolvedValueOnce(emails)
-          request.mockResolvedValueOnce({ title: 'Fix issue', confidential })
-          expect(
-            await adapter.compare(
-              { ...scope, branch: '123-fix_issue' },
-              'source-sha',
-              'target-sha',
-            ),
-          ).toMatchObject({
-            defaultTitle: confidential ? '123 fix issue' : 'Resolve "Fix issue"',
-          })
-        }
-        request.mockResolvedValueOnce(payload(14, 'locked'))
-        expect((await adapter.get(scope, 14)).state).toBe('open')
-        request.mockResolvedValueOnce({ ...payload(15, 'open'), state: 'unexpected' })
-        await expect(adapter.get(scope, 15)).rejects.toThrow()
-      }
-      const branchPage = (names: string[], hasNextPage: boolean) =>
-        provider === 'github'
-          ? {
-              data: {
-                repository: {
-                  refs: {
-                    nodes: names.map((name) => ({ name, target: { committedDate: time } })),
-                    pageInfo: { hasNextPage, endCursor: hasNextPage ? 'next-page' : null },
-                  },
-                },
-              },
-            }
-          : names.map((name) => ({ name, commit: { committed_date: time } }))
-      request.mockResolvedValueOnce(
-        branchPage(
-          Array.from({ length: 100 }, (_, index) => `branch-${index}`),
-          true,
-        ),
-      )
-      request.mockResolvedValueOnce(branchPage(['remote/only'], false))
-      const branches = await adapter.branches(repository)
-      expect(branches).toHaveLength(101)
-      expect(branches.at(-1)).toEqual({ name: 'remote/only', date: time })
-      if (provider === 'github') {
-        expect(request.mock.calls.at(-1)).toEqual([
-          repository,
-          'graphql',
-          expect.objectContaining({
-            variables: { owner: 'team', name: 'repo', cursor: 'next-page' },
-          }),
-        ])
-      } else {
-        expect(request.mock.calls.at(-1)?.[1]).toContain('page=2')
-      }
-      request.mockRejectedValueOnce(new Error('remote branches unavailable'))
-      await expect(adapter.branches(repository)).rejects.toThrow('remote branches unavailable')
-      if (provider === 'github') {
-        request.mockResolvedValueOnce({
-          files: [{ filename: 'file' }],
-          commits: [{ commit: { message: 'Remote commit title\n\nBody' } }],
-        })
-        expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
-          defaultTitle: 'Remote commit title',
-          defaultDescription: 'Body',
-        })
-      }
     },
   )
+
+  it('rejects a GitHub merge that was not completed', async () => {
+    const { request, adapter, scope, payload } = reviewFixture('github')
+    request.mockResolvedValueOnce(payload(12, 'open'))
+    const openReview = await adapter.get(scope, 12)
+    request.mockResolvedValueOnce({ merged: false })
+    await expect(adapter.merge(scope, openReview)).rejects.toThrow('未合并')
+  })
+
+  it.each([
+    [
+      'single commit',
+      [commit('Only commit', '\nSingle body\n', 'other@example.com')],
+      'Only commit',
+      'Single body',
+    ],
+    [
+      'no verified author',
+      [commit('First', '', 'other@example.com'), commit('Second', '', 'pending@example.com')],
+      'Feature/review',
+      '',
+    ],
+    [
+      'oldest verified author',
+      [
+        commit('Newest', '\nMore'),
+        commit('Other author', '\nNot mine', 'other@example.com', '2026-10-01T00:00:00Z'),
+        commit('Oldest own commit', '\nDetails', ' OLD@EXAMPLE.COM ', '2026-10-20T00:00:00Z'),
+      ],
+      'Oldest own commit',
+      'Details',
+    ],
+    [
+      'oldest authored commit without a body',
+      [
+        commit('With body', '\nDetails'),
+        commit('First', '', 'me@example.com', '2026-10-20T00:00:00Z'),
+      ],
+      'First',
+      '',
+    ],
+    [
+      'private and public author email',
+      [
+        commit('Pending', '\nUnverified', 'pending@example.com', '2026-10-01T00:00:00Z'),
+        commit('Private email', '\nDetails', 'private@noreply.gitlab.com', '2026-10-20T00:00:00Z'),
+        commit('Public email', '\nMore', 'public@example.com'),
+      ],
+      'Private email',
+      'Details',
+    ],
+    [
+      'merge commit',
+      [
+        commit('Feature', '\nDetails'),
+        commit('Merge', '\nMerged details', 'me@example.com', '2026-10-20T00:00:00Z', [
+          'one',
+          'two',
+        ]),
+      ],
+      'Merge',
+      'Merged details',
+    ],
+  ] as const)(
+    'derives GitLab review defaults: %s',
+    async (_name, commits, defaultTitle, defaultDescription) => {
+      const { request, adapter, scope } = reviewFixture('gitlab')
+      const { account, emails } = gitlabIdentity()
+      request.mockResolvedValueOnce({ diffs: [{ diff: '+line' }], commits })
+      if (commits.length > 1) {
+        request.mockResolvedValueOnce(account)
+        request.mockResolvedValueOnce(emails)
+      }
+      expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toEqual({
+        status: 'changes',
+        defaultTitle,
+        defaultDescription,
+      })
+    },
+  )
+
+  it.each([false, true])(
+    'uses issue details for GitLab defaults when confidential is %s',
+    async (confidential) => {
+      const { request, adapter, scope } = reviewFixture('gitlab')
+      const { account, emails } = gitlabIdentity()
+      request.mockResolvedValueOnce({
+        diffs: [{ diff: '+line' }],
+        commits: [
+          commit('First', '', 'other@example.com'),
+          commit('Second', '', 'other@example.com'),
+        ],
+      })
+      request.mockResolvedValueOnce(account)
+      request.mockResolvedValueOnce(emails)
+      request.mockResolvedValueOnce({ title: 'Fix issue', confidential })
+      expect(
+        await adapter.compare({ ...scope, branch: '123-fix_issue' }, 'source-sha', 'target-sha'),
+      ).toMatchObject({
+        defaultTitle: confidential ? '123 fix issue' : 'Resolve "Fix issue"',
+      })
+    },
+  )
+
+  it('normalizes locked GitLab reviews as open', async () => {
+    const { request, adapter, scope, payload } = reviewFixture('gitlab')
+    request.mockResolvedValueOnce(payload(14, 'locked'))
+    expect((await adapter.get(scope, 14)).state).toBe('open')
+  })
+
+  it('rejects unexpected GitLab review states', async () => {
+    const { request, adapter, scope, payload } = reviewFixture('gitlab')
+    request.mockResolvedValueOnce({ ...payload(15, 'open'), state: 'unexpected' })
+    await expect(adapter.get(scope, 15)).rejects.toThrow()
+  })
+
+  it.each(['github', 'gitlab'] as const)('paginates %s remote branches', async (provider) => {
+    const { request, adapter, repository, time } = reviewFixture(provider)
+    const branchPage = (names: string[], hasNextPage: boolean) =>
+      provider === 'github'
+        ? {
+            data: {
+              repository: {
+                refs: {
+                  nodes: names.map((name) => ({ name, target: { committedDate: time } })),
+                  pageInfo: { hasNextPage, endCursor: hasNextPage ? 'next-page' : null },
+                },
+              },
+            },
+          }
+        : names.map((name) => ({ name, commit: { committed_date: time } }))
+    request.mockResolvedValueOnce(
+      branchPage(
+        Array.from({ length: 100 }, (_, index) => `branch-${index}`),
+        true,
+      ),
+    )
+    request.mockResolvedValueOnce(branchPage(['remote/only'], false))
+    const branches = await adapter.branches(repository)
+    expect(branches).toHaveLength(101)
+    expect(branches.at(-1)).toEqual({ name: 'remote/only', date: time })
+    if (provider === 'github') {
+      expect(request.mock.calls.at(-1)).toEqual([
+        repository,
+        'graphql',
+        expect.objectContaining({
+          variables: { owner: 'team', name: 'repo', cursor: 'next-page' },
+        }),
+      ])
+    } else {
+      expect(request.mock.calls.at(-1)?.[1]).toContain('page=2')
+    }
+  })
+
+  it.each(['github', 'gitlab'] as const)('reports %s remote branch failures', async (provider) => {
+    const { request, adapter, repository } = reviewFixture(provider)
+    request.mockRejectedValueOnce(new Error('remote branches unavailable'))
+    await expect(adapter.branches(repository)).rejects.toThrow('remote branches unavailable')
+  })
+
+  it('uses the remote commit title and body as GitHub review defaults', async () => {
+    const { request, adapter, scope } = reviewFixture('github')
+    request.mockResolvedValueOnce({
+      files: [{ filename: 'file' }],
+      commits: [{ commit: { message: 'Remote commit title\n\nBody' } }],
+    })
+    expect(await adapter.compare(scope, 'source-sha', 'target-sha')).toMatchObject({
+      defaultTitle: 'Remote commit title',
+      defaultDescription: 'Body',
+    })
+  })
 
   describe('hosting merge guards (no Git required)', () => {
     function mergeFixture() {

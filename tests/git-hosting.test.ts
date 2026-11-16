@@ -259,8 +259,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         await first
       }
     })
-    it('caches creation reads but revalidates account, context and selected branches', async () => {
-      const { context, input, prepareInput, service, adapter, remoteBranches } = current
+    it('resolves a target branch only from the matching remote', () => {
+      const { context } = current
       const comparisonContext = {
         ...context,
         remotes: [
@@ -288,12 +288,27 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
       expect(
         resolveTargetBranchRef({ ...context, target: null }, references, 'main'),
       ).toBeUndefined()
+    })
+
+    it('rejects stale creation context, account and branch inputs before posting', async () => {
+      const { input, service, adapter } = current
       await expect(service.create(directory, { ...input, key: '0'.repeat(64) })).rejects.toThrow(
         '已改变',
       )
       await expect(service.create(directory, { ...input, account: 'other-user' })).rejects.toThrow(
         '账号已改变',
       )
+      await expect(
+        service.create(directory, { ...input, sourceBranch: '-invalid' }),
+      ).rejects.toThrow()
+      await expect(
+        service.create(directory, { ...input, sourceBranch: undefined }),
+      ).rejects.toThrow()
+      expect(adapter.create).not.toHaveBeenCalled()
+    }, 15000)
+
+    it('caches creation branches but revalidates the account before preparing', async () => {
+      const { context, input, prepareInput, service, adapter, remoteBranches } = current
       const creation = await service.creationContext(directory)
       expect(creation).toMatchObject({
         context,
@@ -323,31 +338,34 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
       })
       expect(adapter.account).toHaveBeenCalledTimes(initialAccountCalls + 1)
       expect(adapter.repository).toHaveBeenCalledTimes(initialRepositoryCalls)
-      adapter.account.mockResolvedValueOnce('other-user')
-      await expect(service.prepare(directory, prepareInput)).rejects.toThrow('账号已改变')
-      await service.creationContext(directory)
-      adapter.account.mockResolvedValueOnce('other-user')
-      await expect(service.prepare(directory, prepareInput)).rejects.toThrow('账号已改变')
-      await service.creationContext(directory)
-      const expired = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5001)
-      try {
-        adapter.account.mockResolvedValueOnce('other-user')
-        await expect(service.prepare(directory, prepareInput)).rejects.toThrow('账号已改变')
-      } finally {
-        expired.mockRestore()
-      }
-      await service.creationContext(directory)
-      adapter.account.mockResolvedValueOnce('other-user')
-      await expect(service.create(directory, input)).rejects.toThrow('账号已改变')
-      await expect(
-        service.create(directory, { ...input, sourceBranch: '-invalid' }),
-      ).rejects.toThrow()
-      await expect(
-        service.create(directory, { ...input, sourceBranch: undefined }),
-      ).rejects.toThrow()
       expect(adapter.compare).toHaveBeenCalledWith(expect.anything(), 'not-pushed', 'not-pushed')
       expect(adapter.create).not.toHaveBeenCalled()
     }, 15000)
+
+    it.each(['after prepare', 'cached', 'expired', 'create'] as const)(
+      'rejects a changed account before %s',
+      async (scenario) => {
+        const { input, prepareInput, service, adapter } = current
+        await service.creationContext(directory)
+        if (scenario === 'after prepare') await service.prepare(directory, prepareInput)
+        const expired =
+          scenario === 'expired'
+            ? vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5001)
+            : undefined
+        try {
+          adapter.account.mockResolvedValueOnce('other-user')
+          await expect(
+            scenario === 'create'
+              ? service.create(directory, input)
+              : service.prepare(directory, prepareInput),
+          ).rejects.toThrow('账号已改变')
+          expect(adapter.create).not.toHaveBeenCalled()
+        } finally {
+          expired?.mockRestore()
+        }
+      },
+      15000,
+    )
     it('blocks identical heads and empty or uncertain comparisons before posting', async () => {
       const { input, prepareInput, service, adapter, head } = current
       adapter.branchHead.mockResolvedValue(head)
@@ -375,8 +393,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         message: '',
       })
     }, 15000)
-    it('persists uncertain creation across restart and only recovers matching open reviews', async () => {
-      const { input, prepareInput, service, adapter, head, file, review } = current
+    it('persists an uncertain creation and blocks duplicate posts after restart', async () => {
+      const { input, prepareInput, service, adapter, head, file } = current
       adapter.branchHead.mockResolvedValue(head)
       adapter.branchHead.mockResolvedValueOnce('not-pushed')
       await expect(service.create(directory, input)).rejects.toThrow('重复创建保护')
@@ -388,33 +406,62 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
         github: adapter,
         gitlab: adapter,
       })
-      await expect(afterRestart.create(directory, input)).rejects.toThrow('阻止重复提交')
-      await expect(
-        afterRestart.prepare(directory, { ...prepareInput, sourceBranch: 'remote/feature' }),
-      ).resolves.toMatchObject({ status: 'ready' })
-      expect(adapter.create).toHaveBeenCalledOnce()
-      const pending = reopened.snapshot().codeHostingPendingCreates![0]
-      if (typeof pending === 'string') throw new Error('Expected structured creation protection')
-      expect(pending).toMatchObject({
-        sourceBranch: input.sourceBranch,
-        targetBranch: 'main',
-        sourceHead: 'not-pushed',
-        account: input.account,
+      try {
+        await expect(afterRestart.create(directory, input)).rejects.toThrow('阻止重复提交')
+        await expect(
+          afterRestart.prepare(directory, { ...prepareInput, sourceBranch: 'remote/feature' }),
+        ).resolves.toMatchObject({ status: 'ready' })
+        expect(adapter.create).toHaveBeenCalledOnce()
+        const pending = reopened.snapshot().codeHostingPendingCreates![0]
+        if (typeof pending === 'string') throw new Error('Expected structured creation protection')
+        expect(pending).toMatchObject({
+          sourceBranch: input.sourceBranch,
+          targetBranch: 'main',
+          sourceHead: 'not-pushed',
+          account: input.account,
+        })
+      } finally {
+        afterRestart.close()
+      }
+    }, 15000)
+
+    it('recovers an uncertain creation only for a matching review and account', async () => {
+      const { input, service, adapter, head, file, review } = current
+      adapter.branchHead.mockResolvedValue(head)
+      adapter.branchHead.mockResolvedValueOnce('not-pushed')
+      await expect(service.create(directory, input)).rejects.toThrow('重复创建保护')
+      const reopened = new ConfigStore(file)
+      await reopened.load()
+      const afterRestart = new CodeHostingService(reopened, sourceControl, {
+        github: adapter,
+        gitlab: adapter,
       })
-      adapter.listOpen.mockResolvedValue([review(8, 'release')])
-      expect((await afterRestart.inspect(directory)).creationBlocked).toBe(true)
-      await expect(
-        afterRestart.create(directory, { ...input, targetBranch: 'develop' }),
-      ).rejects.toThrow('阻止重复提交')
-      adapter.listOpen.mockResolvedValue([review(), review(8, 'release')])
-      adapter.account.mockResolvedValueOnce('other-user')
-      expect((await afterRestart.inspect(directory)).creationBlocked).toBe(true)
-      const recovered = await afterRestart.inspect(directory)
-      expect(recovered.activeReviews.map((item) => item.number)).toEqual([1, 8])
-      expect(recovered.creationBlocked).toBe(false)
-      expect(reopened.snapshot().codeHostingPendingCreates).toEqual([])
-      expect(recovered.latestReview).toMatchObject({ number: 8, checks: 'success' })
-      for (const state of ['merged', 'closed', 'open'] as const) {
+      try {
+        adapter.listOpen.mockResolvedValue([review(8, 'release')])
+        expect((await afterRestart.inspect(directory)).creationBlocked).toBe(true)
+        await expect(
+          afterRestart.create(directory, { ...input, targetBranch: 'develop' }),
+        ).rejects.toThrow('阻止重复提交')
+        adapter.listOpen.mockResolvedValue([review(), review(8, 'release')])
+        adapter.account.mockResolvedValueOnce('other-user')
+        expect((await afterRestart.inspect(directory)).creationBlocked).toBe(true)
+        const recovered = await afterRestart.inspect(directory)
+        expect(recovered.activeReviews.map((item) => item.number)).toEqual([1, 8])
+        expect(recovered.creationBlocked).toBe(false)
+        expect(reopened.snapshot().codeHostingPendingCreates).toEqual([])
+        expect(recovered.latestReview).toMatchObject({ number: 8, checks: 'success' })
+        await afterRestart.create(directory, input)
+        expect(adapter.create).toHaveBeenCalledOnce()
+      } finally {
+        afterRestart.close()
+      }
+    }, 15000)
+
+    it.each(['merged', 'closed', 'open'] as const)(
+      'finds the latest %s review on a later history page',
+      async (state) => {
+        const { service, adapter, review } = current
+        adapter.listOpen.mockResolvedValue([review(), review(8, 'release')])
         adapter.history
           .mockResolvedValueOnce({ items: [], nextPage: 2, fetchedAt: Date.now() })
           .mockResolvedValueOnce({
@@ -422,21 +469,27 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
             nextPage: null,
             fetchedAt: Date.now(),
           })
-        expect((await afterRestart.inspect(directory)).latestReview).toMatchObject({
+        expect((await service.inspect(directory)).latestReview).toMatchObject({
           number: 10,
           state,
         })
         expect(adapter.history).toHaveBeenLastCalledWith(expect.anything(), 2)
-      }
-      adapter.listOpen.mockResolvedValueOnce([])
-      expect((await afterRestart.inspect(directory)).latestReview).toBeNull()
-      await afterRestart.create(directory, input)
-      expect(adapter.create).toHaveBeenCalledOnce()
+      },
+      15000,
+    )
 
+    it('reports no latest review when history and open reviews are empty', async () => {
+      const { service, adapter } = current
+      adapter.listOpen.mockResolvedValueOnce([])
+      expect((await service.inspect(directory)).latestReview).toBeNull()
+    }, 15000)
+
+    it('blocks creation when multiple matching reviews are already open', async () => {
+      const { service, adapter, input, prepareInput, review } = current
       adapter.listOpen.mockResolvedValue([review(), review(9)])
-      expect((await afterRestart.prepare(directory, prepareInput)).existingReviews).toHaveLength(2)
-      await expect(afterRestart.create(directory, input)).rejects.toThrow('多个开放评审')
-      expect(adapter.create).toHaveBeenCalledOnce()
+      expect((await service.prepare(directory, prepareInput)).existingReviews).toHaveLength(2)
+      await expect(service.create(directory, input)).rejects.toThrow('多个开放评审')
+      expect(adapter.create).not.toHaveBeenCalled()
     }, 15000)
     it('allows later review rounds while locking concurrent create and clear requests', async () => {
       const { input, adapter, head, file, review } = current

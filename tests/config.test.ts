@@ -20,13 +20,45 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+function invalidValues(values: unknown[]) {
+  return values.map((value) => ({ value, label: JSON.stringify(value) }))
+}
+
 describe('local JSON configuration', () => {
-  it('starts with defaults and persists preferences and recent projects before a layout is saved', async () => {
+  it('defaults old configurations to enabled quota refresh and validates interval settings', async () => {
+    const { usageRefresh: _usageRefresh, ...legacyPreferences } = DEFAULT_CONFIG.preferences
+    await writeFile(file, JSON.stringify({ ...DEFAULT_CONFIG, preferences: legacyPreferences }))
+    const store = new ConfigStore(file)
+    const loaded = await store.load()
+    expect(loaded.warning).toBeUndefined()
+    expect(loaded.config.preferences.usageRefresh).toEqual({
+      enabled: true,
+      activeIntervalMinutes: 5,
+      inactiveIntervalMinutes: 30,
+    })
+    const usageRefresh = { enabled: false, activeIntervalMinutes: 2, inactiveIntervalMinutes: 60 }
+    await store.savePreferences({ ...loaded.config.preferences, usageRefresh })
+    expect((await new ConfigStore(file).load()).config.preferences.usageRefresh).toEqual(
+      usageRefresh,
+    )
+    for (const invalid of [
+      { ...usageRefresh, enabled: 'false' },
+      { ...usageRefresh, activeIntervalMinutes: 3 },
+      { ...usageRefresh, inactiveIntervalMinutes: 1 },
+    ])
+      expect(() => preferences({ ...loaded.config.preferences, usageRefresh: invalid })).toThrow()
+  })
+
+  it('starts with default configuration', async () => {
     const store = new ConfigStore(file)
     expect((await store.load()).config).toEqual(DEFAULT_CONFIG)
     expect(DEFAULT_CONFIG.preferences.fileExplorer.followSymlinks).toBe(true)
     expect(DEFAULT_CONFIG.preferences.fileIconTheme).toBe('default')
-    for (const windowBlur of [false, true]) {
+  })
+
+  it.each([false, true])(
+    'loads legacy window blur %s without writing until preferences are saved',
+    async (windowBlur) => {
       const legacyFile = join(root, 'legacy-blur.json')
       const terminalAppearance = {
         ...DEFAULT_CONFIG.preferences.terminalAppearance,
@@ -52,15 +84,13 @@ describe('local JSON configuration', () => {
       expect(await readFile(legacyFile, 'utf8')).toBe(original)
       await legacyStore.savePreferences(loaded.config.preferences)
       expect(JSON.parse(await readFile(legacyFile, 'utf8'))).toEqual(expectedConfig)
-    }
+    },
+  )
+
+  it('defaults the file icon theme and explorer symlink setting', () => {
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme: undefined }).fileIconTheme,
     ).toBe('default')
-    for (const fileIconTheme of [null, false, 1, 'invalid', {}, []]) {
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme })).toThrow(
-        '文件图标主题选项无效',
-      )
-    }
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, fileExplorer: undefined }).fileExplorer
         .followSymlinks,
@@ -71,6 +101,20 @@ describe('local JSON configuration', () => {
         fileExplorer: { showIgnored: true, followSymlinks: false },
       }).fileExplorer.followSymlinks,
     ).toBe(false)
+  })
+
+  it.each(invalidValues([null, false, 1, 'invalid', {}, []]))(
+    'rejects invalid file icon theme: $label',
+    ({ value }) => {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme: value })).toThrow(
+        '文件图标主题选项无效',
+      )
+    },
+  )
+
+  it('persists recent projects and shell preferences before a layout is saved', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     await store.remember('/tmp/中文 项目')
     await store.savePreferences({
       ...DEFAULT_CONFIG.preferences,
@@ -111,18 +155,33 @@ describe('local JSON configuration', () => {
       shellName: null,
       shellPath: '/bin/bash',
     })
+  })
+
+  it('persists terminal GPU acceleration settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     for (const terminalGpuAcceleration of ['on', 'off', 'auto'] as const) {
       await store.savePreferences({ ...store.snapshot().preferences, terminalGpuAcceleration })
       expect((await new ConfigStore(file).load()).config.preferences.terminalGpuAcceleration).toBe(
         terminalGpuAcceleration,
       )
     }
+  })
+
+  it('persists file icon theme settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     for (const fileIconTheme of ['material', 'default'] as const) {
       await store.savePreferences(preferences({ ...store.snapshot().preferences, fileIconTheme }))
       expect((await new ConfigStore(file).load()).config.preferences.fileIconTheme).toBe(
         fileIconTheme,
       )
     }
+  })
+
+  it('defaults and persists preview reuse settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, reusePreviewTabs: undefined }).reusePreviewTabs,
     ).toBe(true)
@@ -134,11 +193,20 @@ describe('local JSON configuration', () => {
         reusePreviewTabs,
       )
     }
-    for (const reusePreviewTabs of [null, 0, 'false', [], {}]) {
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, reusePreviewTabs })).toThrow(
+  })
+
+  it.each(invalidValues([null, 0, 'false', [], {}]))(
+    'rejects invalid preview reuse value: $label',
+    ({ value }) => {
+      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, reusePreviewTabs: value })).toThrow(
         '预览标签复用选项无效',
       )
-    }
+    },
+  )
+
+  it('defaults and persists terminal close confirmation settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, confirmCloseRunningTerminal: undefined })
         .confirmCloseRunningTerminal,
@@ -151,11 +219,20 @@ describe('local JSON configuration', () => {
         (await new ConfigStore(file).load()).config.preferences.confirmCloseRunningTerminal,
       ).toBe(confirmCloseRunningTerminal)
     }
-    for (const confirmCloseRunningTerminal of [null, 0, 'false', [], {}]) {
+  })
+
+  it.each(invalidValues([null, 0, 'false', [], {}]))(
+    'rejects invalid terminal close confirmation value: $label',
+    ({ value }) => {
       expect(() =>
-        preferences({ ...DEFAULT_CONFIG.preferences, confirmCloseRunningTerminal }),
+        preferences({ ...DEFAULT_CONFIG.preferences, confirmCloseRunningTerminal: value }),
       ).toThrow('终端关闭确认选项无效')
-    }
+    },
+  )
+
+  it('persists notification enablement settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     for (const notificationsEnabled of [false, true]) {
       await store.savePreferences(
         preferences({ ...store.snapshot().preferences, notificationsEnabled }),
@@ -164,11 +241,20 @@ describe('local JSON configuration', () => {
         notificationsEnabled,
       )
     }
-    for (const notificationsEnabled of [null, 0, 'false']) {
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, notificationsEnabled })).toThrow(
-        '通知开关选项无效',
-      )
-    }
+  })
+
+  it.each(invalidValues([null, 0, 'false']))(
+    'rejects invalid notification enablement value: $label',
+    ({ value }) => {
+      expect(() =>
+        preferences({ ...DEFAULT_CONFIG.preferences, notificationsEnabled: value }),
+      ).toThrow('通知开关选项无效')
+    },
+  )
+
+  it('persists turn completion notification settings', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
     for (const turnCompleteNotification of ['never', 'unfocused', 'always'] as const) {
       await store.savePreferences(
         preferences({ ...store.snapshot().preferences, turnCompleteNotification }),
@@ -177,11 +263,18 @@ describe('local JSON configuration', () => {
         turnCompleteNotification,
       )
     }
-    for (const turnCompleteNotification of [null, false, 1, 'invalid', {}, []]) {
+  })
+
+  it.each(invalidValues([null, false, 1, 'invalid', {}, []]))(
+    'rejects invalid turn completion notification value: $label',
+    ({ value }) => {
       expect(() =>
-        preferences({ ...DEFAULT_CONFIG.preferences, turnCompleteNotification }),
+        preferences({ ...DEFAULT_CONFIG.preferences, turnCompleteNotification: value }),
       ).toThrow('轮次完成通知选项无效')
-    }
+    },
+  )
+
+  it('reads built-in and custom notification sounds', async () => {
     const customSound = { path: join(root, '提示音 sound.MP3') }
     const audio = Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x00')
     await writeFile(customSound.path, audio)
@@ -189,17 +282,26 @@ describe('local JSON configuration', () => {
     expect(await readNotificationSound(customSound)).toBe(source)
     expect(await readNotificationSound('system')).toBeUndefined()
     expect(await readNotificationSound('none')).toBeUndefined()
-    await expect(readNotificationSound({ path: join(root, 'missing.mp3') })).rejects.toThrow(
-      '重新选择',
-    )
-    await expect(readNotificationSound({ path: join(root, 'sound.txt') })).rejects.toThrow(
-      '音频文件',
-    )
-    for (const invalidAudio of [Buffer.alloc(0), Buffer.alloc(5 * 1024 * 1024 + 1)]) {
-      const path = join(root, 'invalid.wav')
-      await writeFile(path, invalidAudio)
-      await expect(readNotificationSound({ path })).rejects.toThrow('不能为空，且不能超过 5 MB')
-    }
+  })
+
+  it.each([
+    ['missing.mp3', '重新选择'],
+    ['sound.txt', '音频文件'],
+  ])('rejects notification sound file %s', async (name, message) => {
+    await expect(readNotificationSound({ path: join(root, name) })).rejects.toThrow(message)
+  })
+
+  it.each([0, 5 * 1024 * 1024 + 1])('rejects notification audio of %i bytes', async (size) => {
+    const path = join(root, 'invalid.wav')
+    await writeFile(path, Buffer.alloc(size))
+    await expect(readNotificationSound({ path })).rejects.toThrow('不能为空，且不能超过 5 MB')
+  })
+
+  it('persists built-in and custom notification sounds', async () => {
+    const store = new ConfigStore(file)
+    await store.load()
+    const customSound = { path: join(root, '提示音 sound.MP3') }
+    await writeFile(customSound.path, Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x00'))
     for (const notificationSound of ['system', 'none', customSound] satisfies NotificationSound[]) {
       await store.savePreferences(
         preferences({ ...store.snapshot().preferences, notificationSound }),
@@ -208,7 +310,10 @@ describe('local JSON configuration', () => {
         notificationSound,
       )
     }
-    for (const notificationSound of [
+  })
+
+  it.each(
+    invalidValues([
       null,
       false,
       1,
@@ -218,26 +323,28 @@ describe('local JSON configuration', () => {
       {},
       [],
       { path: '/tmp/a.txt' },
-    ]) {
-      expect(() => preferences({ ...DEFAULT_CONFIG.preferences, notificationSound })).toThrow(
-        '通知提示音选项无效',
-      )
-    }
-    for (const path of ['relative.mp3', 'https://example.com/a.mp3', '/tmp/a\0.mp3'])
+    ]),
+  )('rejects invalid notification sound: $label', ({ value }) => {
+    expect(() => preferences({ ...DEFAULT_CONFIG.preferences, notificationSound: value })).toThrow(
+      '通知提示音选项无效',
+    )
+  })
+
+  it.each(['relative.mp3', 'https://example.com/a.mp3', '/tmp/a\0.mp3'])(
+    'rejects invalid notification sound path: %s',
+    (path) => {
       expect(() =>
         preferences({ ...DEFAULT_CONFIG.preferences, notificationSound: { path } }),
       ).toThrow()
-    for (const oldSound of [
-      'two-tone',
-      'bong',
-      'thump',
-      'blip',
-      'sonar',
-      'blop',
-      'ding',
-      'clack',
-      'beep',
-    ]) {
+    },
+  )
+
+  it.each(['two-tone', 'bong', 'thump', 'blip', 'sonar', 'blop', 'ding', 'clack', 'beep'])(
+    'migrates legacy notification sound %s without losing recent projects',
+    async (oldSound) => {
+      const store = new ConfigStore(file)
+      await store.load()
+      await store.remember('/tmp/中文 项目')
       const oldConfig = {
         ...store.snapshot(),
         preferences: { ...store.snapshot().preferences, notificationSound: oldSound },
@@ -247,7 +354,11 @@ describe('local JSON configuration', () => {
       expect(migrated.warning).toBeUndefined()
       expect(migrated.config.preferences.notificationSound).toBe('system')
       expect(migrated.config.recentProjects).toEqual(store.snapshot().recentProjects)
-    }
+    },
+  )
+
+  it('supplies defaults for missing legacy preferences', async () => {
+    await writeFile(file, JSON.stringify(DEFAULT_CONFIG))
     const legacy = JSON.parse(await readFile(file, 'utf8'))
     delete legacy.preferences.terminalGpuAcceleration
     delete legacy.preferences.quickCommands

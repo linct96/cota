@@ -64,6 +64,8 @@ beforeEach(() => {
       rename: vi.fn(),
       remove: vi.fn(),
       refresh: vi.fn(),
+      usageRefreshStatuses: vi.fn().mockResolvedValue({ ok: true, value: [] }),
+      onUsageRefresh: vi.fn(() => vi.fn()),
       reorder: vi.fn(),
       startOAuth: vi.fn(),
       cancelOAuth: vi.fn(),

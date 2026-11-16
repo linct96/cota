@@ -7,10 +7,9 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { createTerminalRenderer } from '../../../src/renderer/src/features/terminal/lib/terminal-renderer'
 
 describe('Workspace preferences', () => {
-  it('updates preferences with the saved result only after success', async () => {
+  it('updates preferences and the renderer only after the save succeeds', async () => {
     const terminal = { loadAddon: vi.fn(), refresh: vi.fn(), rows: 24 }
-    const fit = { fit: vi.fn() }
-    const renderer = createTerminalRenderer(terminal, fit)
+    const renderer = createTerminalRenderer(terminal, { fit: vi.fn() })
     renderer.update(useWorkspace.getState().preferences.terminalGpuAcceleration, false)
     expect(terminal.loadAddon).not.toHaveBeenCalled()
     const value = {
@@ -27,54 +26,75 @@ describe('Workspace preferences', () => {
       }),
     )
     const saving = useWorkspace.getState().savePreferences(value)
-    expect(api.savePreferences).toHaveBeenCalledExactlyOnceWith(value)
-    expect(useWorkspace.getState().preferences).toEqual(DEFAULT_CONFIG.preferences)
-    finish({ ok: true, value: saved })
-    await saving
-    expect(useWorkspace.getState().preferences).toEqual(saved)
-    renderer.update(useWorkspace.getState().preferences.terminalGpuAcceleration, true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
-    const first = vi.mocked(WebglAddon).mock.instances.at(-1)!
-    renderer.update('on', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
-    renderer.update('on', false)
-    expect(vi.mocked(first).dispose.mock.calls).toHaveLength(1)
-    expect(vi.mocked(first.onContextLoss).mock.results[0].value.dispose).toHaveBeenCalledOnce()
+    try {
+      expect(api.savePreferences).toHaveBeenCalledExactlyOnceWith(value)
+      expect(useWorkspace.getState().preferences).toEqual(DEFAULT_CONFIG.preferences)
+      finish({ ok: true, value: saved })
+      await saving
+      expect(useWorkspace.getState().preferences).toEqual(saved)
+      renderer.update(useWorkspace.getState().preferences.terminalGpuAcceleration, true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+    } finally {
+      finish({ ok: true, value: saved })
+      await saving
+      renderer.dispose()
+    }
+  })
 
-    renderer.update('auto', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
-    const automatic = vi.mocked(WebglAddon).mock.instances.at(-1)!
-    vi.mocked(automatic.onContextLoss).mock.calls[0][0]()
-    expect(vi.mocked(automatic).dispose.mock.calls).toHaveLength(1)
-    expect(terminal.refresh).toHaveBeenLastCalledWith(0, 23)
-    renderer.update('auto', false)
-    renderer.update('auto', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
-    const other = createTerminalRenderer(terminal, fit)
-    other.update('auto', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
-    other.dispose()
+  it('releases WebGL, falls back after context loss and retries only after a mode change', () => {
+    const terminal = { loadAddon: vi.fn(), refresh: vi.fn(), rows: 24 }
+    const fit = { fit: vi.fn() }
+    const renderer = createTerminalRenderer(terminal, fit)
+    try {
+      renderer.update('on', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+      const first = vi.mocked(WebglAddon).mock.instances.at(-1)!
+      renderer.update('on', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(1)
+      renderer.update('on', false)
+      expect(vi.mocked(first).dispose.mock.calls).toHaveLength(1)
+      expect(vi.mocked(first.onContextLoss).mock.results[0].value.dispose).toHaveBeenCalledOnce()
 
-    terminal.loadAddon.mockImplementationOnce(() => {
-      throw new Error('WebGL2 not supported')
-    })
-    renderer.update('on', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
-    expect(vi.mocked(vi.mocked(WebglAddon).mock.instances.at(-1)!).dispose.mock.calls).toHaveLength(
-      1,
-    )
-    renderer.update('on', false)
-    renderer.update('on', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
-    renderer.update('off', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
-    renderer.update('on', true)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
-    const last = vi.mocked(WebglAddon).mock.instances.at(-1)!
-    renderer.dispose()
-    renderer.update('on', true)
-    expect(vi.mocked(last).dispose.mock.calls).toHaveLength(1)
-    expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
+      renderer.update('auto', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+      const automatic = vi.mocked(WebglAddon).mock.instances.at(-1)!
+      vi.mocked(automatic.onContextLoss).mock.calls[0][0]()
+      expect(vi.mocked(automatic).dispose.mock.calls).toHaveLength(1)
+      expect(terminal.refresh).toHaveBeenLastCalledWith(0, 23)
+      renderer.update('auto', false)
+      renderer.update('auto', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+      const other = createTerminalRenderer(terminal, fit)
+      try {
+        other.update('auto', true)
+        expect(terminal.loadAddon).toHaveBeenCalledTimes(2)
+      } finally {
+        other.dispose()
+      }
+
+      terminal.loadAddon.mockImplementationOnce(() => {
+        throw new Error('WebGL2 not supported')
+      })
+      renderer.update('on', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+      expect(
+        vi.mocked(vi.mocked(WebglAddon).mock.instances.at(-1)!).dispose.mock.calls,
+      ).toHaveLength(1)
+      renderer.update('on', false)
+      renderer.update('on', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+      renderer.update('off', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(3)
+      renderer.update('on', true)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
+      const last = vi.mocked(WebglAddon).mock.instances.at(-1)!
+      renderer.dispose()
+      renderer.update('on', true)
+      expect(vi.mocked(last).dispose.mock.calls).toHaveLength(1)
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(4)
+    } finally {
+      renderer.dispose()
+    }
   })
 
   it('preserves preferences after a failed save, allowing retry', async () => {

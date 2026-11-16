@@ -8,19 +8,22 @@ import { gitFileKey } from '../../../src/shared/source-control'
 import { explorerRows, useFileExplorer } from '../../../src/renderer/src/state/file-explorer-store'
 import type { FileEntry } from '../../../src/shared/file-explorer'
 
+async function prepareWorkspace() {
+  const store = () => useWorkspace.getState()
+  await store().bootstrap()
+  await store().openProject()
+  const id = currentWorkspace(store())!.id
+  const scm = useSourceControl.getState()
+  const session = () => useSourceControl.getState().sessions[id]
+  return { store, id, scm, session, terminals: store().tabs }
+}
+
 describe('File and Git diff previews', () => {
-  it('reuses Git diff previews and keeps pinned diffs independent of previews and terminals', async () => {
-    const store = () => useWorkspace.getState()
-    await store().bootstrap()
-    await store().openProject()
-    const id = currentWorkspace(store())!.id
-    const scm = useSourceControl.getState()
-    const session = () => useSourceControl.getState().sessions[id]
+  it('reuses Git diff previews and pins each diff only once', async () => {
+    const { store, id, scm, session } = await prepareWorkspace()
     const first = { path: 'first.ts', area: 'unstaged' as const }
     const second = { path: 'second.ts', area: 'unstaged' as const }
     const staged = { ...second, area: 'staged' as const }
-    const terminals = store().tabs
-    scm.update(id, { draft: 'keep draft' })
     store().openDiff(id, first)
     store().openDiff(id, second)
     expect(session()).toMatchObject({ selection: second, preview: true, pinnedDiffs: [] })
@@ -43,6 +46,18 @@ describe('File and Git diff previews', () => {
     store().openDiff(id, staged)
     scm.pinDiff(id)
     expect(session()!.pinnedDiffs).toEqual([second, staged])
+  })
+
+  it('switches and closes mixed diff tabs with shortcuts without changing drafts', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
+    const first = { path: 'first.ts', area: 'unstaged' as const }
+    const second = { path: 'second.ts', area: 'unstaged' as const }
+    const staged = { ...second, area: 'staged' as const }
+    scm.update(id, { draft: 'keep draft' })
+    store().openDiff(id, second)
+    scm.pinDiff(id)
+    store().openDiff(id, staged)
+    scm.pinDiff(id)
     store().openDiff(id, first)
     scm.openChanges(id)
     expect(session()!.tabOrder).toEqual([
@@ -103,10 +118,21 @@ describe('File and Git diff previews', () => {
       pinnedDiffs: [second],
       draft: 'keep draft',
     })
+  })
+
+  it('isolates pinned diffs across workspaces and closes them without closing terminals', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
+    const first = { path: 'first.ts', area: 'unstaged' as const }
+    const second = { path: 'second.ts', area: 'unstaged' as const }
+    store().openDiff(id, second)
+    scm.pinDiff(id)
+    scm.update(id, { file: 'plain.ts', preview: true })
+    store().openDiff(id, second)
     store().openDiff('other-workspace', first)
     scm.pinDiff('other-workspace')
     scm.closePinnedDiff('other-workspace', gitFileKey(first))
     expect(session()!.pinnedDiffs).toEqual([second])
+    expect(useSourceControl.getState().sessions['other-workspace']!.tabOrder).toEqual([])
     store().shortcut('close-terminal')
     expect(session()).toMatchObject({
       pinnedDiffs: [],
@@ -115,7 +141,13 @@ describe('File and Git diff previews', () => {
     })
     expect(store().tabs).toBe(terminals)
     expect(api.closeTerminal).not.toHaveBeenCalled()
+  })
 
+  it('keeps mixed tab ordering stable across selection, reordering and reopening', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
+    const first = { path: 'first.ts', area: 'unstaged' as const }
+    scm.update(id, { file: 'plain.ts', preview: true })
+    scm.showTerminal(id)
     scm.openChanges(id)
     store().newTerminal('pi')
     const added = store().tabs.at(-1)!
@@ -154,24 +186,16 @@ describe('File and Git diff previews', () => {
     scm.closeChanges(id)
     scm.openChanges(id)
     expect(session()!.tabOrder.at(-1)).toBe('changes')
-    expect(useSourceControl.getState().sessions['other-workspace']!.tabOrder).toEqual([])
     store().updateTab(added.id, { status: 'running' })
     await store().closeTab(added.id)
     expect(session()!.tabOrder).not.toContain(`terminal:${added.id}`)
   })
 
-  it('pins ordinary file previews without replacing fixed tabs and restores them after closing', async () => {
-    const store = () => useWorkspace.getState()
-    await store().bootstrap()
-    await store().openProject()
-    const id = currentWorkspace(store())!.id
-    const scm = useSourceControl.getState()
-    const session = () => useSourceControl.getState().sessions[id]
-    const terminals = store().tabs
+  it('reuses ordinary file previews and pins files without replacing fixed tabs', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
     const first = 'src/first.ts'
     const second = 'src/second.ts'
     const third = 'src/third.ts'
-    const diff = { path: first, area: 'unstaged' as const }
 
     store().openFile(id, first)
     store().openFile(id, second)
@@ -202,7 +226,19 @@ describe('File and Git diff previews', () => {
       `file:${first}`,
       'preview',
     ])
+  })
 
+  it('switches and restores fixed files without duplicating closed tabs', async () => {
+    const { store, id, scm, session } = await prepareWorkspace()
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    const third = 'src/third.ts'
+    const diff = { path: first, area: 'unstaged' as const }
+    store().openFile(id, second)
+    scm.pinFile(id)
+    store().openFile(id, first)
+    scm.pinFile(id)
+    store().openFile(id, third)
     store().shortcut('tab-4')
     expect(session()).toMatchObject({ file: third, preview: true, activePinnedFile: undefined })
     store().shortcut('tab-3')
@@ -232,23 +268,56 @@ describe('File and Git diff previews', () => {
     store().shortcut('reopen-tab')
     expect(session()!.pinnedFiles).toEqual([first, second])
     expect(session()!.closedTabs).toEqual([])
+  })
 
+  it('keeps fixed files isolated from other workspaces and terminals', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    for (const path of [first, second]) {
+      store().openFile(id, path)
+      scm.pinFile(id)
+    }
     store().openFile('other-workspace', first)
     scm.pinFile('other-workspace')
     scm.closePinnedFile('other-workspace', first)
     expect(session()!.pinnedFiles).toEqual([first, second])
     expect(store().tabs).toBe(terminals)
     expect(api.closeTerminal).not.toHaveBeenCalled()
+  })
 
+  it('keeps preview settings and existing previews when saving fails', async () => {
+    const { store, id, scm, session } = await prepareWorkspace()
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    const third = 'src/third.ts'
+    for (const path of [first, second]) {
+      store().openFile(id, path)
+      scm.pinFile(id)
+    }
+    store().openFile(id, third)
+    const disabled = { ...store().preferences, reusePreviewTabs: false }
+    vi.mocked(api.savePreferences).mockResolvedValueOnce({ ok: false, error: '保存失败' })
+    await expect(store().savePreferences(disabled)).rejects.toThrow('保存失败')
+    expect(store().preferences.reusePreviewTabs).toBe(true)
+    expect(session()).toMatchObject({ file: third, preview: true, pinnedFiles: [first, second] })
+  })
+
+  it('pins existing previews in their original positions when preview reuse is disabled', async () => {
+    const { store, id, scm, session } = await prepareWorkspace()
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    const third = 'src/third.ts'
+    const diff = { path: first, area: 'unstaged' as const }
+    for (const path of [first, second]) {
+      store().openFile(id, path)
+      scm.pinFile(id)
+    }
     store().openFile(id, third)
     store().openDiff('other-workspace', diff)
     scm.showTerminal('other-workspace')
     const order = session()!.tabOrder
     const disabled = { ...store().preferences, reusePreviewTabs: false }
-    vi.mocked(api.savePreferences).mockResolvedValueOnce({ ok: false, error: '保存失败' })
-    await expect(store().savePreferences(disabled)).rejects.toThrow('保存失败')
-    expect(store().preferences.reusePreviewTabs).toBe(true)
-    expect(session()).toMatchObject({ file: third, preview: true })
     await store().savePreferences(disabled)
     expect(session()).toMatchObject({
       file: undefined,
@@ -265,6 +334,21 @@ describe('File and Git diff previews', () => {
       pinnedDiffs: [diff],
       activePinnedDiff: undefined,
     })
+  })
+
+  it('opens fixed files and diffs with reuse disabled, then resumes preview reuse', async () => {
+    const { store, id, scm, session } = await prepareWorkspace()
+    const first = 'src/first.ts'
+    const second = 'src/second.ts'
+    const third = 'src/third.ts'
+    const diff = { path: first, area: 'unstaged' as const }
+    for (const path of [first, second, third]) {
+      store().openFile(id, path)
+      scm.pinFile(id)
+    }
+    store().openDiff(id, diff)
+    scm.pinDiff(id)
+    await store().savePreferences({ ...store().preferences, reusePreviewTabs: false })
     store().openFile(id, 'fourth.ts')
     store().openFile(id, 'fifth.ts')
     store().openFile(id, 'fourth.ts')
@@ -295,14 +379,9 @@ describe('File and Git diff previews', () => {
     })
   })
 
-  it('reopens closed tabs in workspace-local reverse order without reviving terminal identity', async () => {
-    const store = () => useWorkspace.getState()
-    await store().bootstrap()
-    await store().openProject()
-    const first = store().tabs[0]
-    const id = first.workspaceId
-    const scm = useSourceControl.getState()
-    const session = () => useSourceControl.getState().sessions[id]
+  it('reopens mixed tabs in reverse order without reviving terminal identity', async () => {
+    const { store, id, scm, session, terminals } = await prepareWorkspace()
+    const first = terminals[0]
     const diff = { path: 'pinned.ts', area: 'staged' as const }
     const preview = {
       path: 'review.ts',
@@ -333,26 +412,6 @@ describe('File and Git diff previews', () => {
       'changes',
       'terminal',
     ])
-
-    await store().newWorkspace(first.projectPath)
-    const other = currentWorkspace(store())!.id
-    const before = store().tabs
-    store().shortcut('reopen-tab')
-    expect(store().tabs).toBe(before)
-    await store().selectProject(first.projectPath, id)
-    const history = session()!.closedTabs
-    for (const busy of [{ removingWorkspace: id }, { creatingWorktree: true }]) {
-      useWorkspace.setState(busy)
-      store().shortcut('reopen-tab')
-      expect(session()!.closedTabs).toBe(history)
-      useWorkspace.setState({ removingWorkspace: undefined, creatingWorktree: false })
-    }
-    const tabs = store().tabs
-    const activeTabs = store().activeTabs
-    while (store().tabs.length < MAX_TERMINALS) store().newTerminal()
-    store().shortcut('reopen-tab')
-    expect(session()!.closedTabs).toBe(history)
-    useWorkspace.setState({ tabs, activeTabs })
 
     store().shortcut('reopen-tab')
     const restored = store().tabs.at(-1)!
@@ -390,11 +449,65 @@ describe('File and Git diff previews', () => {
     const unchanged = store()
     store().shortcut('reopen-tab')
     expect(store()).toBe(unchanged)
-    expect(useSourceControl.getState().sessions[other]!.closedTabs).toEqual([])
+  })
 
-    // Non-terminal tabs keep the workspace open after its last terminal closes.
-    store().updateTab(restored.id, { status: 'running' })
-    await store().closeTab(restored.id)
+  it('keeps closed-terminal history scoped to its workspace', async () => {
+    const { store, id, session, terminals } = await prepareWorkspace()
+    const first = terminals[0]
+    store().newTerminal('pi')
+    const agent = store().tabs.at(-1)!
+    store().updateTab(agent.id, { status: 'exited', exitCode: 1, error: 'old failure' })
+    await store().closeTab(agent.id)
+    await store().newWorkspace(first.projectPath)
+    const other = currentWorkspace(store())!.id
+    const before = store().tabs
+    store().shortcut('reopen-tab')
+    expect(store().tabs).toBe(before)
+    await store().selectProject(first.projectPath, id)
+    store().shortcut('reopen-tab')
+    expect(store().tabs.at(-1)).toMatchObject({ workspaceId: id, provider: 'pi' })
+    expect(session()!.closedTabs).toEqual([])
+    expect(useSourceControl.getState().sessions[other]!.closedTabs).toEqual([])
+  })
+
+  it.each(['removing workspace', 'creating worktree'] as const)(
+    'does not reopen tabs while %s',
+    async (busy) => {
+      const { store, id, session } = await prepareWorkspace()
+      store().newTerminal('pi')
+      const agent = store().tabs.at(-1)!
+      store().updateTab(agent.id, { status: 'exited' })
+      await store().closeTab(agent.id)
+      const history = session()!.closedTabs
+      expect(history.at(-1)).toMatchObject({ kind: 'terminal', provider: 'pi' })
+      useWorkspace.setState(
+        busy === 'removing workspace' ? { removingWorkspace: id } : { creatingWorktree: true },
+      )
+      store().shortcut('reopen-tab')
+      expect(session()!.closedTabs).toBe(history)
+    },
+  )
+
+  it('does not reopen a terminal beyond the terminal limit', async () => {
+    const { store, session } = await prepareWorkspace()
+    store().newTerminal('pi')
+    const agent = store().tabs.at(-1)!
+    store().updateTab(agent.id, { status: 'exited' })
+    await store().closeTab(agent.id)
+    const history = session()!.closedTabs
+    expect(history.at(-1)).toMatchObject({ kind: 'terminal', provider: 'pi' })
+    for (let index = store().tabs.length; index < MAX_TERMINALS; index++) store().newTerminal()
+    expect(store().tabs).toHaveLength(MAX_TERMINALS)
+    const tabs = store().tabs
+    store().shortcut('reopen-tab')
+    expect(session()!.closedTabs).toBe(history)
+    expect(store().tabs).toBe(tabs)
+  })
+
+  it('keeps a workspace with previews open after its last terminal closes', async () => {
+    const { store, id, session, terminals } = await prepareWorkspace()
+    const first = terminals[0]
+    store().openFile(id, 'plain.ts')
     store().updateTab(first.id, { status: 'running' })
     await store().closeTab(first.id)
     expect(currentWorkspace(store())?.id).toBe(id)
@@ -407,12 +520,21 @@ describe('File and Git diff previews', () => {
       status: 'starting',
     })
     expect(store().tabs.at(-1)!.id).not.toBe(first.id)
+  })
 
+  it('limits closed-tab history to the 20 most recent tabs', async () => {
+    const { id, scm, session } = await prepareWorkspace()
     for (let index = 0; index < 25; index++) {
       scm.openChanges(id)
       scm.closeChanges(id)
     }
     expect(session()!.closedTabs).toHaveLength(20)
+  })
+
+  it('does not reopen tabs from a removed workspace', async () => {
+    const { store, id, scm } = await prepareWorkspace()
+    scm.openChanges(id)
+    scm.closeChanges(id)
     await store().removeWorkspace(id)
     const remaining = store().tabs
     store().shortcut('reopen-tab')
@@ -420,7 +542,7 @@ describe('File and Git diff previews', () => {
     expect(store().tabs.some((tab) => tab.workspaceId === id)).toBe(false)
   })
 
-  it('isolates workspace file loads, coalesces refreshes and keeps file and diff previews exclusive', async () => {
+  it('coalesces file refreshes while isolating workspace loads', async () => {
     const pending: ((entries: FileEntry[]) => void)[] = []
     const listFiles = vi.fn<DesktopAPI['listFiles']>(
       () =>
@@ -446,12 +568,24 @@ describe('File and Git diff previews', () => {
       expect(useFileExplorer.getState().sessions.a!.directories['']!.loading).toBe(false),
     )
     expect(useFileExplorer.getState().sessions.b!.directories['']!.entries?.[0].name).toBe('b.txt')
+  })
+
+  it('builds explorer rows and preserves loaded state after a refresh failure', async () => {
+    const a = { projectPath: '/a', workspaceId: 'a' }
+    const files = [{ name: 'src', path: 'src', kind: 'directory' as const }]
+    const listFiles = vi
+      .fn<DesktopAPI['listFiles']>()
+      .mockResolvedValueOnce({ ok: true, value: files })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: [{ name: 'child.ts', path: 'src/child.ts', kind: 'file' }],
+      })
+    api.listFiles = listFiles
+    await useFileExplorer.getState().load(a, '')
     useFileExplorer
       .getState()
       .update('a', { expanded: { src: true }, selected: 'src', scrollTop: 42 })
-    const child = useFileExplorer.getState().load(a, 'src')
-    pending[3]([{ name: 'child.ts', path: 'src/child.ts', kind: 'file' }])
-    await child
+    await useFileExplorer.getState().load(a, 'src')
     expect(
       explorerRows(useFileExplorer.getState().sessions.a!).map((entry) => [
         entry.path,
@@ -480,11 +614,24 @@ describe('File and Git diff previews', () => {
       expanded: { src: true },
       directories: { '': { entries: files, error: 'permission denied' } },
     })
-    const deleted = useFileExplorer.getState().load(a, '')
+  })
+
+  it('ignores a file load that completes after its workspace session is removed', async () => {
+    let finish!: (entries: FileEntry[]) => void
+    api.listFiles = vi.fn<DesktopAPI['listFiles']>(
+      () =>
+        new Promise((resolve) => {
+          finish = (entries) => resolve({ ok: true, value: entries })
+        }),
+    )
+    const deleted = useFileExplorer.getState().load({ projectPath: '/a', workspaceId: 'a' }, '')
     useFileExplorer.setState({ sessions: {} })
-    pending[4](files)
+    finish([{ name: 'src', path: 'src', kind: 'directory' }])
     await deleted
     expect(useFileExplorer.getState().sessions).toEqual({})
+  })
+
+  it('keeps file and diff previews exclusive while preserving the draft', () => {
     const scm = useSourceControl.getState()
     scm.update('a', {
       selection: { path: 'old', area: 'unstaged' },

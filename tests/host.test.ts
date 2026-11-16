@@ -119,6 +119,56 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
+function agentOptions() {
+  return {
+    id: randomUUID(),
+    workspaceId: randomUUID(),
+    projectPath: directory,
+    cwd: directory,
+    workspaceKind: 'local' as const,
+    cols: 80,
+    rows: 24,
+    kind: 'agent' as const,
+    provider: 'codex' as const,
+    launchId: randomUUID(),
+    agentCliCache: {
+      checkedAt: 1,
+      pathEnv: '/fake',
+      entries: [
+        { provider: 'pi' as const },
+        { provider: 'codex' as const, executable: '/fake/codex', version: '0.159.0' },
+        { provider: 'claude' as const },
+      ],
+    },
+  }
+}
+
+function nativeAgentEvent(agentId: string, scopedToken: string, type: string) {
+  return {
+    terminalId: agentId,
+    managed: true,
+    processId: 12346,
+    sessionId: 'native-session',
+    provider: 'codex',
+    token: scopedToken,
+    eventId: randomUUID(),
+    timestamp: Date.now(),
+    type,
+    turnId: 'native-turn',
+  }
+}
+
+async function deliverAgentEvent(value: unknown) {
+  const socket = connect(join(directory, 'agent.sock'))
+  socket.on('error', () => {})
+  await once(socket, 'connect')
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
+  const text = typeof value === 'string' ? value : `${JSON.stringify(value)}\n`
+  socket.write(text.slice(0, 10))
+  socket.end(text.slice(10))
+  await closed
+}
+
 describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
   it('rejects missing credentials and incompatible protocols before granting any capability', async () => {
     await expect(client('0'.repeat(64))).rejects.toThrow('断开')
@@ -245,7 +295,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       terminal.dispose()
     }
   })
-  it('reconnects to the same shell and final screen after the entire client disconnects', async () => {
+  it('reconnects the same shell and final screen after a failed close and client disconnect', async () => {
     const events = vi.fn()
     const first = await client(token, HOST_PROTOCOL, events)
     const options = {
@@ -305,25 +355,14 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       closing: true,
     })
     expect(await second.request('list', [])).toEqual([])
-    const agent = {
-      ...options,
-      id: randomUUID(),
-      kind: 'agent' as const,
-      provider: 'codex' as const,
-      launchId: randomUUID(),
-      agentCliCache: {
-        checkedAt: 1,
-        pathEnv: '/fake',
-        entries: [
-          { provider: 'pi' as const },
-          { provider: 'codex' as const, executable: '/fake/codex', version: '0.159.0' },
-          { provider: 'claude' as const },
-        ],
-      },
-    }
+  })
+
+  it('reconnects an Agent and accepts only events with its scoped socket credential', async () => {
+    const agent = agentOptions()
+    const second = await client()
     await second.request('create', [agent, settings])
     await second.request('create', [agent, settings])
-    expect(mocks.spawn).toHaveBeenCalledTimes(2)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
     expect(mocks.spawn).toHaveBeenLastCalledWith(
       '/fake/codex',
       [],
@@ -351,35 +390,39 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     const leaked = vi.fn()
     unauthenticated.on('data', leaked)
     unauthenticated.on('error', () => {})
-    await once(unauthenticated, 'connect')
-    const scopedToken = mocks.spawn.mock.calls[1][2].env.COTA_AGENT_TOKEN
-    await expect(client(scopedToken)).rejects.toThrow('断开')
-    const native = (type: string) => ({
-      terminalId: agent.id,
-      managed: true,
-      processId: 12346,
-      sessionId: 'native-session',
-      provider: 'codex',
-      token: scopedToken,
-      eventId: randomUUID(),
-      timestamp: Date.now(),
-      type,
-      turnId: 'native-turn',
-    })
-    const deliver = async (value: unknown) => {
-      const socket = connect(join(directory, 'agent.sock'))
-      socket.on('error', () => {})
-      await once(socket, 'connect')
-      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
-      const text = typeof value === 'string' ? value : `${JSON.stringify(value)}\n`
-      socket.write(text.slice(0, 10))
-      socket.end(text.slice(10))
-      await closed
+    try {
+      await once(unauthenticated, 'connect')
+      const scopedToken = mocks.spawn.mock.calls.at(-1)![2].env.COTA_AGENT_TOKEN
+      await expect(client(scopedToken)).rejects.toThrow('断开')
+      const native = (type: string) => nativeAgentEvent(agent.id, scopedToken, type)
+      await deliverAgentEvent({ ...native('turn-started'), token })
+      await deliverAgentEvent({ ...native('turn-started'), terminalId: randomUUID() })
+      await deliverAgentEvent('x'.repeat(4097))
+      expect((await third.request('list', []))[0].agent?.activityState).toBe('unknown')
+      await deliverAgentEvent(native('turn-started'))
+      await vi.waitFor(() =>
+        expect(agentUpdates).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'state',
+            session: expect.objectContaining({ activityState: 'working' }),
+          }),
+        ),
+      )
+      expect(leaked).not.toHaveBeenCalled()
+    } finally {
+      unauthenticated.destroy()
     }
-    await deliver({ ...native('turn-started'), token }) // The administrative token grants no event capability.
-    await deliver({ ...native('turn-started'), terminalId: options.id })
-    await deliver('x'.repeat(4097))
-    expect((await third.request('list', []))[0].agent?.activityState).toBe('unknown')
+  })
+
+  it('restores Agent state and remains usable after a failed close until process exit', async () => {
+    const agent = agentOptions()
+    const agentUpdates = vi.fn()
+    const third = await client(token, HOST_PROTOCOL, vi.fn(), agentUpdates)
+    await third.request('create', [agent, settings])
+    const process = mocks.spawn.mock.results.at(-1)!.value
+    const scopedToken = mocks.spawn.mock.calls.at(-1)![2].env.COTA_AGENT_TOKEN
+    const native = (type: string) => nativeAgentEvent(agent.id, scopedToken, type)
+    const deliver = deliverAgentEvent
     await deliver(native('turn-started'))
     await vi.waitFor(() =>
       expect(agentUpdates).toHaveBeenCalledWith(
@@ -389,8 +432,6 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         }),
       ),
     )
-    expect(leaked).not.toHaveBeenCalled()
-    unauthenticated.destroy()
     await deliver(native('attention-required'))
     let current = (await third.request('list', []))[0].agent!
     expect(current).toMatchObject({ activityState: 'needs-input', unread: true })
@@ -444,11 +485,11 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     })
     await fourth.request('write', [agent.id, 'save before retry\r'])
     await fourth.request('resize', [agent.id, 100, 30])
-    expect(mocks.spawn.mock.results[1].value.write).toHaveBeenCalledWith('save before retry\r')
-    expect(mocks.spawn.mock.results[1].value.resize).toHaveBeenCalledWith(100, 30)
+    expect(process.write).toHaveBeenCalledWith('save before retry\r')
+    expect(process.resize).toHaveBeenCalledWith(100, 30)
     expect(await fourth.request('needsCloseConfirmation', [agent.id])).toBe(true)
-    mocks.spawn.mock.results[1].value.listeners.data('agent final screen\r\n')
-    mocks.spawn.mock.results[1].value.listeners.exit({ exitCode: 9 })
+    process.listeners.data('agent final screen\r\n')
+    process.listeners.exit({ exitCode: 9 })
     const attachedAgent = await fourth.request('attach', [{ ...agent, attachmentId: randomUUID() }])
     expect(attachedAgent.snapshot).toContain('agent final screen')
     expect(attachedAgent.agent).toMatchObject({
@@ -458,7 +499,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     })
     await deliver(native('turn-started'))
     expect((await fourth.request('list', []))[0].agent?.runtimeState).toBe('exited')
-    expect(mocks.spawn).toHaveBeenCalledTimes(2)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
     await fourth.request('close', [agent.id])
   })
   it('spawns isolated Worktree shells, preserves immutable identity across reconnect and rejects missing or changed cwd', async () => {

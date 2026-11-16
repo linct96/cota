@@ -645,19 +645,8 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       })
     })
 
-    it('creates local branches with optional atomic switching while preserving staged and working files', async () => {
+    async function branchCreationFixture() {
       await git('init', '--initial-branch=main')
-      const target = { projectPath: directory, workspaceId: 'fixture' }
-      const noConfirmation = vi.fn().mockResolvedValue(false)
-      const create = {
-        ...target,
-        action: 'create-branch' as const,
-        name: 'feature/新分支',
-        head: '0'.repeat(40),
-      }
-      await expect(sourceControl.mutate(directory, create, noConfirmation)).rejects.toThrow(
-        '还没有提交',
-      )
       await git('config', 'user.name', 'Cota')
       await git('config', 'user.email', 'cota@example.test')
       await git('config', 'commit.gpgsign', 'false')
@@ -668,28 +657,74 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       await git('add', 'staged.txt')
       await writeFile(join(directory, 'staged.txt'), 'working content\n')
       await writeFile(join(directory, 'untracked.txt'), 'untracked content\n')
+      const target = { projectPath: directory, workspaceId: 'fixture' }
+      const noConfirmation = vi.fn().mockResolvedValue(false)
       const before = await sourceControl.status(directory)
-      await expect(sourceControl.mutate(directory, create, noConfirmation)).rejects.toThrow(
-        'HEAD 已改变',
-      )
-      const input = { ...create, head: before.head! }
-      for (const name of [
-        '-bad',
-        'a..b',
-        '@{-1}',
-        'HEAD',
-        ' bad ',
-        'bad\nname',
-        'a//b',
-        '.hidden',
-        'a.lock',
-        'a b',
-        'a\\b',
-      ]) {
+      const input = {
+        ...target,
+        action: 'create-branch' as const,
+        name: 'feature/新分支',
+        head: before.head!,
+      }
+      return { target, noConfirmation, before, input }
+    }
+
+    it('rejects branch creation before the first commit', async () => {
+      await git('init', '--initial-branch=main')
+      await expect(
+        sourceControl.mutate(
+          directory,
+          {
+            projectPath: directory,
+            workspaceId: 'fixture',
+            action: 'create-branch',
+            name: 'feature/新分支',
+            head: '0'.repeat(40),
+          },
+          () => Promise.resolve(false),
+        ),
+      ).rejects.toThrow('还没有提交')
+    }, 30000)
+
+    it('rejects a stale HEAD before creating a branch', async () => {
+      const { input, noConfirmation } = await branchCreationFixture()
+      await expect(
+        sourceControl.mutate(directory, { ...input, head: '0'.repeat(40) }, noConfirmation),
+      ).rejects.toThrow('HEAD 已改变')
+    }, 30000)
+
+    it.each([
+      '-bad',
+      'a..b',
+      '@{-1}',
+      'HEAD',
+      ' bad ',
+      'bad\nname',
+      'a//b',
+      '.hidden',
+      'a.lock',
+      'a b',
+      'a\\b',
+    ])(
+      'rejects invalid branch name %s',
+      async (name) => {
+        const { input, before, noConfirmation } = await branchCreationFixture()
         await expect(
           sourceControl.mutate(directory, { ...input, name }, noConfirmation),
         ).rejects.toThrow()
-      }
+        await expect(
+          sourceControl.mutate(
+            directory,
+            { ...input, action: 'create-and-switch-branch', branch: before.branch, name },
+            noConfirmation,
+          ),
+        ).rejects.toThrow()
+      },
+      30000,
+    )
+
+    it('creates a branch without switching or changing staged and working files', async () => {
+      const { input, before, noConfirmation } = await branchCreationFixture()
       expect(await sourceControl.mutate(directory, input, noConfirmation)).toBe(true)
       expect((await git('rev-parse', `refs/heads/${input.name}`)).stdout.trim()).toBe(before.head)
       await expect(git('config', '--get', `branch.${input.name}.remote`)).rejects.toThrow()
@@ -702,6 +737,12 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       expect((await git('show', ':staged.txt')).stdout).toBe('staged content\n')
       expect(await readFile(join(directory, 'staged.txt'), 'utf8')).toBe('working content\n')
       expect(await readFile(join(directory, 'untracked.txt'), 'utf8')).toBe('untracked content\n')
+      expect(noConfirmation).not.toHaveBeenCalled()
+    }, 30000)
+
+    it('atomically creates and switches only after validating state and acquiring the index lock', async () => {
+      const { input, before, noConfirmation } = await branchCreationFixture()
+      await git('branch', input.name)
       const createAndSwitch = {
         ...input,
         action: 'create-and-switch-branch' as const,
@@ -742,6 +783,17 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       await expect(
         git('config', '--get', `branch.${createAndSwitch.name}.remote`),
       ).rejects.toThrow()
+      expect(noConfirmation).not.toHaveBeenCalled()
+    }, 30000)
+
+    it('creates and switches branches from detached HEAD without changing local files', async () => {
+      const { input, before, noConfirmation } = await branchCreationFixture()
+      const createAndSwitch = {
+        ...input,
+        action: 'create-and-switch-branch' as const,
+        branch: before.branch,
+        name: 'feature/创建并切换',
+      }
       await git('switch', '--detach', 'HEAD')
       expect(
         await sourceControl.mutate(directory, { ...input, name: 'from-detached' }, noConfirmation),
@@ -828,7 +880,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       expect(noConfirmation).not.toHaveBeenCalled()
     }, 15000)
 
-    it('watches worktree and shared metadata, filters noise and cleans up races and failures', async () => {
+    async function sourceControlWatchFixture() {
       await git('init', '--initial-branch=main')
       await git('config', 'user.name', 'Cota')
       await git('config', 'user.email', 'cota@example.test')
@@ -866,7 +918,23 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           return Promise.resolve('node_modules/generated.js\0')
         return Promise.reject(Object.assign(new Error('No ignored paths'), { cause: { code: 1 } }))
       })
-      try {
+      return { linked, gitDir, common, paths, watch, referencesChanged, service, notify, id, run }
+    }
+
+    describe('source control watches', () => {
+      let fixture: Awaited<ReturnType<typeof sourceControlWatchFixture>> | undefined
+      beforeEach(async () => {
+        fixture = undefined
+        fixture = await sourceControlWatchFixture()
+      })
+      afterEach(() => {
+        fixture?.service.close()
+        fixture?.run.mockRestore()
+        vi.useRealTimers()
+      })
+
+      it('shares worktree and metadata watches across subscriptions', async () => {
+        const { linked, gitDir, common, paths, watch, service, notify, id } = fixture!
         expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         expect(paths.has(linked)).toBe(true)
         expect(paths.has(gitDir)).toBe(true)
@@ -882,6 +950,11 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         service.stop(sharedId)
         for (const { watcher } of paths.values())
           expect(vi.mocked(watcher).close.mock.calls).toHaveLength(0)
+      })
+
+      it('filters Git metadata noise and ignored worktree files', async () => {
+        const { linked, common, paths, service, notify, id, run, referencesChanged } = fixture!
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         vi.useFakeTimers()
         paths.get(linked)!.emit('change', '.git')
         paths.get(common)!.emit('change', 'index.lock')
@@ -901,6 +974,12 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         await vi.advanceTimersByTimeAsync(4000)
         expect(notify.mock.calls).toEqual([['change']])
         expect(referencesChanged).not.toHaveBeenCalled()
+      })
+
+      it('coalesces index, HEAD, ref and worktree metadata changes', async () => {
+        const { linked, gitDir, common, paths, service, notify, id, referencesChanged } = fixture!
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
+        vi.useFakeTimers()
         notify.mockClear()
         paths.get(gitDir)!.emit('rename', 'index')
         paths.get(gitDir)!.emit('rename', 'HEAD')
@@ -912,6 +991,12 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         paths.get(join(common, 'worktrees'))!.emit('change', 'another/HEAD')
         await vi.advanceTimersByTimeAsync(3000)
         expect(referencesChanged).toHaveBeenCalledExactlyOnceWith(linked, ['worktrees'], common)
+      })
+
+      it('closes all watches and suppresses pending notifications after an error', async () => {
+        const { linked, gitDir, paths, service, notify, id } = fixture!
+        expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
+        vi.useFakeTimers()
         notify.mockClear()
         paths.get(gitDir)!.emit('change', 'HEAD')
         paths.get(linked)!.watcher.emit('error', new Error('watch limit'))
@@ -920,14 +1005,19 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         expect(notify).toHaveBeenCalledTimes(1)
         for (const { watcher } of paths.values())
           expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
+      })
 
-        paths.clear()
+      it('closes all watches when shared refs are replaced', async () => {
+        const { linked, common, paths, service, notify, id } = fixture!
         expect(await service.start(id, () => Promise.resolve(linked), notify)).toBe(true)
         paths.get(common)!.emit('rename', 'refs')
         expect(notify).toHaveBeenLastCalledWith('unavailable')
         for (const { watcher } of paths.values())
           expect(vi.mocked(watcher).close.mock.calls).toHaveLength(1)
-        paths.clear()
+      })
+
+      it('cleans up unsupported, cancelled and closed watch requests', async () => {
+        const { linked, paths, watch, service, notify, id } = fixture!
         watch.mockImplementationOnce(() => {
           throw new Error('recursive watch unsupported')
         })
@@ -954,21 +1044,17 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
         await expect(
           service.start('invalid', () => Promise.resolve(linked), notify),
         ).rejects.toThrow()
-      } finally {
-        service.close()
-        vi.useRealTimers()
-      }
+      })
     })
 
     it('omits the subtitle for non-repositories', async () => {
       expect(await projectBranch(directory)).toBeNull()
     })
 
-    it('resolves hosting remotes using configured CLI endpoints without guessing the platform', async () => {
+    async function hostingRemoteFixture() {
       await git('init', '--initial-branch=feature/local')
       const gitService = new SourceControlService()
       const unborn = await gitService.repositoryContext(directory)
-      expect(unborn).toEqual({ branch: 'feature/local', head: null, tracking: undefined })
       const fullStatus = vi.spyOn(gitService, 'status')
       const status = {
         ...unborn,
@@ -977,113 +1063,157 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       }
       const readStatus = vi.spyOn(gitService, 'repositoryContext').mockResolvedValue(status)
       const config = new ConfigStore(join(directory, 'hosting-config.json'))
-      let github: HostingAccounts = { status: 'cli-unavailable', message: 'gh unavailable' }
-      let gitlab: HostingAccounts = {
-        status: 'detected',
-        accounts: [
-          { host: 'gitlab.leke.cn', account: 'fixture', active: true, status: 'connected' },
-          { host: 'gitlab.leke.cn', account: 'old', active: false, status: 'error' },
-        ],
+      const accounts: { github: HostingAccounts; gitlab: HostingAccounts } = {
+        github: { status: 'cli-unavailable', message: 'gh unavailable' },
+        gitlab: {
+          status: 'detected',
+          accounts: [
+            { host: 'gitlab.leke.cn', account: 'fixture', active: true, status: 'connected' },
+            { host: 'gitlab.leke.cn', account: 'old', active: false, status: 'error' },
+          ],
+        },
       }
       const scan = vi.fn((provider: unknown): Promise<HostingAccounts> =>
-        Promise.resolve(provider === 'github' ? github : gitlab),
+        Promise.resolve(provider === 'github' ? accounts.github : accounts.gitlab),
       )
       const service = new CodeHostingService(config, gitService, undefined, scan)
       const path = 'frontend/leke-webapp/micro-frontends/micro-frontends-web'
       await git('remote', 'add', 'origin', `https://gitlab.leke.cn/${path}.git`)
       await git('remote', 'add', 'mirror', 'https://github.com/team/mirror.git')
-      const [first, second] = await Promise.all([
-        service.context(directory),
-        service.context(directory),
-      ])
-      expect(first.source).toEqual({ provider: 'gitlab', host: 'gitlab.leke.cn', path })
-      expect(first.target).toEqual(first.source)
-      expect(first.sourceBranch).toBe('dev-ai-workflow-1.0')
-      expect(first.reason).toBeUndefined()
-      expect(second.key).toBe(first.key)
-      expect(scan).toHaveBeenCalledTimes(2)
-      expect(first.remotes).toEqual([
-        {
-          name: 'mirror',
-          repository: { provider: 'github', host: 'github.com', path: 'team/mirror' },
-        },
-        { name: 'origin', repository: first.source },
-      ])
-      readStatus.mockResolvedValue({ ...status, tracking: undefined })
-      expect((await service.context(directory)).source).toBeNull()
-      readStatus.mockResolvedValue(status)
-      await git('remote', 'remove', 'mirror')
-      await git('remote', 'set-url', 'origin', `git@gitlab.leke.cn:${path}.git`)
-      expect((await service.context(directory)).source).toEqual(first.source)
-      expect(scan).toHaveBeenCalledTimes(2)
-
-      await git('remote', 'set-url', 'origin', `https://gitlab.leke.cn.evil.test/${path}.git`)
-      expect((await service.context(directory)).source).toBeNull()
-      await git('remote', 'set-url', 'origin', `https://gitlab.leke.cn:8443/${path}.git`)
-      expect((await service.context(directory)).source).toBeNull()
-      gitlab = {
-        status: 'detected',
-        accounts: [{ host: 'gitlab.leke.cn:8443', account: '', active: true, status: 'error' }],
-      }
-      await service.accounts('gitlab')
-      // Expired credentials still identify the platform; scope access checks authorization separately.
-      expect((await service.context(directory)).source).toEqual({
-        provider: 'gitlab',
-        host: 'gitlab.leke.cn:8443',
+      return {
+        gitService,
+        unborn,
+        fullStatus,
+        status,
+        readStatus,
+        config,
+        accounts,
+        scan,
+        service,
         path,
-      })
-      const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60001)
-      try {
-        const count = scan.mock.calls.length
-        expect((await service.context(directory)).source?.provider).toBe('gitlab')
-        expect(scan).toHaveBeenCalledTimes(count)
-      } finally {
-        now.mockRestore()
       }
+    }
 
-      github = {
-        status: 'detected',
-        accounts: [
-          { host: 'github.example.com', account: 'fixture', active: true, status: 'connected' },
-        ],
-      }
-      await service.accounts('github')
-      await git('remote', 'set-url', 'origin', 'git@github.example.com:team/repo.git')
-      expect((await service.context(directory)).source).toEqual({
-        provider: 'github',
-        host: 'github.example.com',
-        path: 'team/repo',
+    describe('hosting remote resolution', () => {
+      let fixture: Awaited<ReturnType<typeof hostingRemoteFixture>> | undefined
+      beforeEach(async () => {
+        fixture = undefined
+        fixture = await hostingRemoteFixture()
       })
-      gitlab = {
-        status: 'detected',
-        accounts: [
-          { host: 'github.example.com', account: 'fixture', active: true, status: 'connected' },
-        ],
-      }
-      await service.accounts('gitlab')
-      await git('remote', 'add', 'mirror', 'https://github.com/team/mirror.git')
-      const conflict = await service.context(directory)
-      expect(conflict.source).toBeNull()
-      expect(conflict.reason).toContain('同时出现在 GitHub 和 GitLab')
-      await git('remote', 'remove', 'mirror')
-      gitlab = { status: 'disconnected', message: 'no accounts' }
-      await service.accounts('gitlab')
-      expect((await service.context(directory)).source?.provider).toBe('github')
-      github = { status: 'disconnected', message: 'no accounts' }
-      await service.accounts('github')
-      expect((await service.context(directory)).source).toBeNull()
+      afterEach(() => fixture?.service.close())
 
-      const failingScan = vi.fn((): Promise<HostingAccounts> =>
-        Promise.reject(new HostingError('response', 'safe scan failure')),
-      )
-      const failedService = new CodeHostingService(config, gitService, undefined, failingScan)
-      expect((await failedService.context(directory)).reason).toContain('自定义托管端点读取失败')
-      await git('remote', 'set-url', 'origin', 'https://github.com/team/repo.git')
-      expect((await failedService.context(directory)).source?.provider).toBe('github')
-      await git('remote', 'set-url', 'origin', 'file:///tmp/repo')
-      expect((await failedService.context(directory)).source).toBeNull()
-      expect(failingScan).toHaveBeenCalledTimes(2)
-      expect(fullStatus).not.toHaveBeenCalled()
+      it('coalesces account scans and resolves tracking remotes in HTTPS and SSH form', async () => {
+        const { unborn, fullStatus, status, readStatus, scan, service, path } = fixture!
+        expect(unborn).toEqual({ branch: 'feature/local', head: null, tracking: undefined })
+        const [first, second] = await Promise.all([
+          service.context(directory),
+          service.context(directory),
+        ])
+        expect(first.source).toEqual({ provider: 'gitlab', host: 'gitlab.leke.cn', path })
+        expect(first.target).toEqual(first.source)
+        expect(first.sourceBranch).toBe('dev-ai-workflow-1.0')
+        expect(first.reason).toBeUndefined()
+        expect(second.key).toBe(first.key)
+        expect(scan).toHaveBeenCalledTimes(2)
+        expect(first.remotes).toEqual([
+          {
+            name: 'mirror',
+            repository: { provider: 'github', host: 'github.com', path: 'team/mirror' },
+          },
+          { name: 'origin', repository: first.source },
+        ])
+        readStatus.mockResolvedValue({ ...status, tracking: undefined })
+        expect((await service.context(directory)).source).toBeNull()
+        readStatus.mockResolvedValue(status)
+        await git('remote', 'remove', 'mirror')
+        await git('remote', 'set-url', 'origin', `git@gitlab.leke.cn:${path}.git`)
+        expect((await service.context(directory)).source).toEqual(first.source)
+        expect(scan).toHaveBeenCalledTimes(2)
+        expect(fullStatus).not.toHaveBeenCalled()
+      })
+
+      it('rejects lookalike hosts and recognizes an explicitly configured port with expired credentials', async () => {
+        const { accounts, service, scan, path } = fixture!
+        await git('remote', 'remove', 'mirror')
+        await git('remote', 'set-url', 'origin', `https://gitlab.leke.cn.evil.test/${path}.git`)
+        expect((await service.context(directory)).source).toBeNull()
+        await git('remote', 'set-url', 'origin', `https://gitlab.leke.cn:8443/${path}.git`)
+        expect((await service.context(directory)).source).toBeNull()
+        accounts.gitlab = {
+          status: 'detected',
+          accounts: [{ host: 'gitlab.leke.cn:8443', account: '', active: true, status: 'error' }],
+        }
+        await service.accounts('gitlab')
+        expect((await service.context(directory)).source).toEqual({
+          provider: 'gitlab',
+          host: 'gitlab.leke.cn:8443',
+          path,
+        })
+        const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60001)
+        try {
+          const count = scan.mock.calls.length
+          expect((await service.context(directory)).source?.provider).toBe('gitlab')
+          expect(scan).toHaveBeenCalledTimes(count)
+        } finally {
+          now.mockRestore()
+        }
+      })
+
+      it('does not guess when a custom host belongs to both providers', async () => {
+        const { accounts, service } = fixture!
+        accounts.github = {
+          status: 'detected',
+          accounts: [
+            { host: 'github.example.com', account: 'fixture', active: true, status: 'connected' },
+          ],
+        }
+        await service.accounts('github')
+        await git('remote', 'set-url', 'origin', 'git@github.example.com:team/repo.git')
+        expect((await service.context(directory)).source).toEqual({
+          provider: 'github',
+          host: 'github.example.com',
+          path: 'team/repo',
+        })
+        accounts.gitlab = {
+          status: 'detected',
+          accounts: [
+            { host: 'github.example.com', account: 'fixture', active: true, status: 'connected' },
+          ],
+        }
+        await service.accounts('gitlab')
+        const conflict = await service.context(directory)
+        expect(conflict.source).toBeNull()
+        expect(conflict.reason).toContain('同时出现在 GitHub 和 GitLab')
+        await git('remote', 'remove', 'mirror')
+        accounts.gitlab = { status: 'disconnected', message: 'no accounts' }
+        await service.accounts('gitlab')
+        expect((await service.context(directory)).source?.provider).toBe('github')
+        accounts.github = { status: 'disconnected', message: 'no accounts' }
+        await service.accounts('github')
+        expect((await service.context(directory)).source).toBeNull()
+      })
+
+      it('reports custom endpoint scan errors without blocking known public hosts', async () => {
+        const { config, gitService, fullStatus } = fixture!
+        await git('remote', 'remove', 'mirror')
+        const failingScan = vi.fn((): Promise<HostingAccounts> =>
+          Promise.reject(new HostingError('response', 'safe scan failure')),
+        )
+        const failedService = new CodeHostingService(config, gitService, undefined, failingScan)
+        try {
+          expect((await failedService.context(directory)).reason).toContain(
+            '自定义托管端点读取失败',
+          )
+          await git('remote', 'set-url', 'origin', 'https://github.com/team/repo.git')
+          expect((await failedService.context(directory)).source?.provider).toBe('github')
+          await git('remote', 'set-url', 'origin', 'file:///tmp/repo')
+          expect((await failedService.context(directory)).source).toBeNull()
+          expect(failingScan).toHaveBeenCalledTimes(2)
+          expect(fullStatus).not.toHaveBeenCalled()
+        } finally {
+          failedService.close()
+        }
+      })
     })
   })
 })
