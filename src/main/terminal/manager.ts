@@ -71,8 +71,8 @@ export class TerminalManager {
     return roots.filter((root): root is TerminalProcessRoot => root !== undefined)
   }
 
-  async list(): Promise<TerminalSession[]> {
-    await Promise.allSettled(this.creations)
+  async list(includeCreating = false): Promise<TerminalSession[]> {
+    if (!includeCreating) await Promise.allSettled(this.creations)
     return [...this.sessions.values()].map(
       ({
         id,

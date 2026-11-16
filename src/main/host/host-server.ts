@@ -57,7 +57,9 @@ export async function startHost(directory: string, token: string, onStopped = ()
     const dispatch = async (method: keyof HostMethods, args: unknown[]) => {
       switch (method) {
         case 'list':
-          return manager.list()
+          if (args[0] !== undefined && typeof args[0] !== 'boolean')
+            throw new Error('终端列表选项无效。')
+          return manager.list(args[0])
         case 'processRoots':
           return manager.processRoots()
         case 'create':

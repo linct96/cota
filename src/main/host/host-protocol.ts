@@ -27,7 +27,7 @@ export const MAX_FRAME = 64 * 1024 * 1024
 
 export interface HostMethods {
   hello: { args: [token: string, version: number]; value: void }
-  list: { args: []; value: TerminalSession[] }
+  list: { args: [includeCreating?: boolean]; value: TerminalSession[] }
   processRoots: { args: []; value: TerminalProcessRoot[] }
   create: { args: [ResolvedTerminalCreate, HostTerminalPreferences]; value: void }
   attach: { args: [ResolvedTerminalAttach]; value: TerminalAttachment }
