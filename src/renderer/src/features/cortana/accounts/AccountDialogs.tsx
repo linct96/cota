@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { z } from 'zod'
 import { ExternalLink, LoaderCircle } from 'lucide-react'
@@ -7,12 +7,8 @@ import {
   accountFormSchema,
   renameAccountSchema,
 } from '../../../../../shared/accounts'
-import type {
-  AccountOAuthProgress,
-  AccountProduct,
-  AccountProfile,
-} from '../../../../../shared/accounts'
-import { unwrap } from '../../../../../shared/contracts'
+import type { AccountProduct, AccountProfile } from '../../../../../shared/accounts'
+import { oauthActive, useCortana } from '@/features/cortana/cortana-store'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -29,63 +25,59 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
 const browserSchema = z.object(accountFormSchema.shape)
-const errorText = (error: unknown) =>
-  error instanceof Error ? error.message : '操作失败，请稍后重试。'
 
 export function AddAccountDialog({
   product,
   onClose,
-  onSaved,
 }: {
   product: AccountProduct
   onClose: () => void
-  onSaved: () => void
 }) {
+  const draft = useCortana((state) => state.addDrafts[product])
+  const pending = useCortana((state) => !!state.pending[`add:${product}`])
+  const operationError = useCortana((state) => state.operationErrors[`add:${product}`])
+  const addAccount = useCortana((state) => state.addAccount)
+  const clearDraft = useCortana((state) => state.clearAddDraft)
+  const progress = useCortana((state) => state.oauthProgress)
+  const startOAuth = useCortana((state) => state.startOAuth)
+  const cancelOAuth = useCortana((state) => state.cancelOAuth)
   const [open, setOpen] = useState(true)
-  const saved = useRef(false)
   const [method, setMethod] = useState<'browser' | 'credential' | 'relay'>(
-    product === 'pi' ? 'credential' : 'browser',
+    draft?.mode || (product === 'pi' ? 'credential' : 'browser'),
   )
-  const [error, setError] = useState<string>()
-  const [progress, setProgress] = useState<AccountOAuthProgress>()
-  const progressRef = useRef<AccountOAuthProgress | undefined>(undefined)
-  const pendingRef = useRef(false)
-  const authorizing = progress?.stage === 'waiting' || progress?.stage === 'exchanging'
+  const authorizing = oauthActive(progress) && progress?.product === product
+  const error =
+    method === 'browser'
+      ? progress?.product === product && progress.stage === 'error'
+        ? progress.message
+        : undefined
+      : operationError
+  const wasPending = useRef(pending)
+  const previousOAuth = useRef(progress?.stage)
   const form = useForm({
     defaultValues: {
-      alias: '',
-      mode: 'credential' as 'credential' | 'relay',
-      credential: '',
-      apiBaseUrl: '',
-      apiKey: '',
+      alias: draft?.alias || '',
+      mode: draft?.mode || 'credential',
+      credential: draft?.credential || '',
+      apiBaseUrl: draft?.apiBaseUrl || '',
+      apiKey: draft?.apiKey || '',
     },
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: method === 'browser' ? browserSchema : accountFormSchema },
     onSubmit: async ({ value }) => {
-      if (!open || pendingRef.current || authorizing) return
-      pendingRef.current = true
-      setError(undefined)
-      try {
-        if (method === 'browser') {
-          unwrap(await window.desktop.accounts.startOAuth(product, value.alias.trim()))
-        } else {
-          unwrap(
-            await window.desktop.accounts.add({
-              ...value,
-              product,
-              alias: value.alias.trim(),
-              credential: value.credential.trim(),
-              apiBaseUrl: value.apiBaseUrl.trim(),
-              apiKey: value.apiKey.trim(),
-            }),
-          )
-          saved.current = true
-          setOpen(false)
-        }
-      } catch (cause) {
-        setError(errorText(cause))
-      } finally {
-        pendingRef.current = false
+      if (!open || pending) return
+      if (method === 'browser') {
+        if (!oauthActive(progress)) await startOAuth(product, value.alias.trim())
+      } else {
+        const saved = await addAccount({
+          ...value,
+          product,
+          alias: value.alias.trim(),
+          credential: value.credential.trim(),
+          apiBaseUrl: value.apiBaseUrl.trim(),
+          apiKey: value.apiKey.trim(),
+        })
+        if (saved) setOpen(false)
       }
     },
   })
@@ -94,51 +86,30 @@ export function AddAccountDialog({
     form.reset()
   }, [form])
   useEffect(() => {
-    const stop = window.desktop.accounts.onOAuth((next) => {
-      if (next.product !== product) return
-      progressRef.current = next
-      setProgress(next)
-      if (next.stage === 'error') setError(next.message)
-      if (next.stage === 'success') {
-        saved.current = true
-        setOpen(false)
-      }
-    })
-    return () => {
-      stop()
-      if (['waiting', 'exchanging'].includes(progressRef.current?.stage || ''))
-        void window.desktop.accounts.cancelOAuth().catch(() => {})
+    if (pending) wasPending.current = true
+    else if (wasPending.current && (operationError || !draft)) {
+      // oxlint-disable-next-line react/set-state-in-effect -- A reopened dialog follows its background save.
+      if (!operationError) setOpen(false)
+      wasPending.current = false
     }
-  }, [product])
-
-  const close = useCallback(async () => {
-    if (!open || pendingRef.current || progressRef.current?.stage === 'exchanging') return
-    if (progressRef.current?.stage === 'waiting') {
-      try {
-        unwrap(await window.desktop.accounts.cancelOAuth())
-      } catch (cause) {
-        setError(errorText(cause))
-        return
-      }
-    }
-    setOpen(false)
-  }, [open])
+  }, [pending, operationError, draft])
+  useEffect(() => {
+    if (
+      progress?.product === product &&
+      progress.stage === 'success' &&
+      previousOAuth.current !== 'success' &&
+      method === 'browser'
+    )
+      setOpen(false)
+    previousOAuth.current = progress?.stage
+  }, [progress, product, method])
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(next, details) => {
-        if (!next) {
-          details.cancel()
-          void close()
-        }
-      }}
+      onOpenChange={(next) => setOpen(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) {
-          form.reset()
-          if (saved.current) onSaved()
-          else onClose()
-        }
+        if (!next) onClose()
       }}
     >
       <DialogContent
@@ -164,33 +135,28 @@ export function AddAccountDialog({
           <Tabs
             value={method}
             onValueChange={(value) => {
-              if (authorizing || pendingRef.current) return
+              if (pending) return
               const next = value as typeof method
               setMethod(next)
               form.setFieldValue('mode', next === 'relay' ? 'relay' : 'credential')
-              setError(undefined)
             }}
             className="account-add-methods"
           >
             <TabsList className="account-add-method-list w-full" aria-label="添加方式">
               {product !== 'pi' && (
-                <TabsTrigger
-                  className="account-add-browser-tab"
-                  value="browser"
-                  disabled={authorizing}
-                >
+                <TabsTrigger className="account-add-browser-tab" value="browser" disabled={pending}>
                   浏览器登录
                 </TabsTrigger>
               )}
               <TabsTrigger
                 className="account-add-credential-tab"
                 value="credential"
-                disabled={authorizing}
+                disabled={pending}
               >
                 导入凭据
               </TabsTrigger>
-              {['codex', 'claude'].includes(product) && (
-                <TabsTrigger className="account-add-relay-tab" value="relay" disabled={authorizing}>
+              {['codex', 'claude', 'grok'].includes(product) && (
+                <TabsTrigger className="account-add-relay-tab" value="relay" disabled={pending}>
                   API 账号
                 </TabsTrigger>
               )}
@@ -198,10 +164,7 @@ export function AddAccountDialog({
           </Tabs>
           <form.Subscribe selector={(state) => state.isSubmitting}>
             {(submitting) => (
-              <fieldset
-                className="account-add-fieldset min-w-0"
-                disabled={submitting || authorizing}
-              >
+              <fieldset className="account-add-fieldset min-w-0" disabled={submitting || pending}>
                 <FieldGroup className="account-add-fields">
                   <form.Field name="alias">
                     {(field) => {
@@ -215,7 +178,6 @@ export function AddAccountDialog({
                             className="account-alias-input"
                             id="account-alias"
                             value={field.state.value}
-                            disabled={authorizing}
                             onBlur={field.handleBlur}
                             onChange={(event) => field.handleChange(event.target.value)}
                             aria-invalid={invalid}
@@ -367,7 +329,10 @@ export function AddAccountDialog({
           </form.Subscribe>
           {authorizing && (
             <Alert className="account-oauth-progress">
-              <LoaderCircle className="account-oauth-spinner animate-spin" aria-hidden="true" />
+              <LoaderCircle
+                className="account-oauth-spinner motion-safe:animate-spin"
+                aria-hidden="true"
+              />
               <AlertDescription className="account-oauth-message">
                 {progress.message}
               </AlertDescription>
@@ -381,19 +346,38 @@ export function AddAccountDialog({
           <form.Subscribe selector={(state) => state.isSubmitting}>
             {(submitting) => (
               <DialogFooter className="account-add-footer">
+                {authorizing && progress.stage === 'waiting' && (
+                  <Button
+                    className="account-oauth-cancel"
+                    variant="outline"
+                    type="button"
+                    onClick={() => void cancelOAuth()}
+                  >
+                    取消授权
+                  </Button>
+                )}
                 <Button
                   className="account-add-cancel"
                   variant="outline"
                   type="button"
-                  disabled={submitting || progress?.stage === 'exchanging'}
-                  onClick={() => void close()}
+                  onClick={() => {
+                    if (!pending && !authorizing) clearDraft(product)
+                    setOpen(false)
+                  }}
                 >
-                  {authorizing ? '取消授权' : '取消'}
+                  {submitting || pending || authorizing ? '关闭' : '取消'}
                 </Button>
                 <Button
                   className="account-add-submit"
                   type="submit"
-                  disabled={submitting || authorizing}
+                  disabled={
+                    submitting || pending || (method === 'browser' && oauthActive(progress))
+                  }
+                  title={
+                    method === 'browser' && oauthActive(progress) && !authorizing
+                      ? '已有浏览器授权正在进行'
+                      : undefined
+                  }
                 >
                   {submitting ? (
                     <LoaderCircle
@@ -422,52 +406,43 @@ export function AddAccountDialog({
 export function RenameAccountDialog({
   account,
   onClose,
-  onSaved,
 }: {
   account: AccountProfile
   onClose: () => void
-  onSaved: () => void
 }) {
+  const draft = useCortana((state) => state.renameDrafts[account.id])
+  const pending = useCortana((state) => !!state.pending[`rename:${account.id}`])
+  const error = useCortana((state) => state.operationErrors[`rename:${account.id}`])
+  const renameAccount = useCortana((state) => state.renameAccount)
+  const clearDraft = useCortana((state) => state.clearRenameDraft)
   const [open, setOpen] = useState(true)
-  const [error, setError] = useState<string>()
-  const saved = useRef(false)
-  const saving = useRef(false)
+  const wasPending = useRef(pending)
   const form = useForm({
-    defaultValues: { alias: account.alias },
+    defaultValues: { alias: draft ?? account.alias },
     validationLogic: revalidateLogic({ mode: 'blur' }),
     validators: { onDynamic: z.object({ alias: renameAccountSchema.shape.alias }) },
     onSubmit: async ({ value }) => {
-      if (!open || saving.current) return
-      saving.current = true
-      setError(undefined)
-      try {
-        unwrap(await window.desktop.accounts.rename({ id: account.id, alias: value.alias.trim() }))
-        saved.current = true
-        setOpen(false)
-      } catch (cause) {
-        setError(errorText(cause))
-      } finally {
-        saving.current = false
-      }
+      if (!open || pending) return
+      if (await renameAccount(account, value.alias.trim())) setOpen(false)
     },
   })
   useEffect(() => {
     form.reset()
   }, [form])
+  useEffect(() => {
+    if (pending) wasPending.current = true
+    else if (wasPending.current && (error || draft === undefined)) {
+      // oxlint-disable-next-line react/set-state-in-effect -- A reopened dialog follows its background save.
+      if (!error) setOpen(false)
+      wasPending.current = false
+    }
+  }, [pending, error, draft])
   return (
     <Dialog
       open={open}
-      onOpenChange={(next, details) => {
-        if (!next) {
-          if (saving.current) details.cancel()
-          else setOpen(false)
-        }
-      }}
+      onOpenChange={(next) => setOpen(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) {
-          if (saved.current) onSaved()
-          else onClose()
-        }
+        if (!next) onClose()
       }}
     >
       <DialogContent className="account-rename-dialog" showCloseButton={false}>
@@ -495,6 +470,7 @@ export function RenameAccountDialog({
                       className="account-rename-input"
                       id="account-rename"
                       value={field.state.value}
+                      disabled={pending}
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                       aria-invalid={invalid}
@@ -525,13 +501,19 @@ export function RenameAccountDialog({
                   className="account-rename-cancel"
                   type="button"
                   variant="outline"
-                  disabled={submitting}
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    if (!pending) clearDraft(account.id)
+                    setOpen(false)
+                  }}
                 >
-                  取消
+                  {submitting || pending ? '关闭' : '取消'}
                 </Button>
-                <Button className="account-rename-submit" type="submit" disabled={submitting}>
-                  {submitting ? '保存中…' : '保存'}
+                <Button
+                  className="account-rename-submit"
+                  type="submit"
+                  disabled={submitting || pending}
+                >
+                  {submitting || pending ? '保存中…' : '保存'}
                 </Button>
               </DialogFooter>
             )}

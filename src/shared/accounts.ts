@@ -5,12 +5,30 @@ export const ACCOUNT_PRODUCTS = {
   codex: { name: 'Codex', description: 'ChatGPT 登录与 API 账号' },
   claude: { name: 'Claude Code', description: 'OAuth 登录与中转账号' },
   pi: { name: 'Pi', description: '本地 OAuth 账号' },
-  grok: { name: 'Grok', description: 'Grok CLI 登录账号' },
+  grok: { name: 'Grok', description: 'Grok CLI 登录与 API 账号' },
 } as const
 
 export const accountProductSchema = z.enum(['codex', 'claude', 'pi', 'grok'])
 export type AccountProduct = z.infer<typeof accountProductSchema>
 export const accountIdSchema = z.string().min(1).max(200)
+
+export const ACTIVE_USAGE_REFRESH_MINUTES = [1, 2, 5, 10] as const
+export const INACTIVE_USAGE_REFRESH_MINUTES = [5, 10, 30, 60] as const
+export const usageRefreshSettingsSchema = z.object({
+  enabled: z.boolean(),
+  activeIntervalMinutes: z
+    .number()
+    .refine((value) => (ACTIVE_USAGE_REFRESH_MINUTES as readonly number[]).includes(value)),
+  inactiveIntervalMinutes: z
+    .number()
+    .refine((value) => (INACTIVE_USAGE_REFRESH_MINUTES as readonly number[]).includes(value)),
+})
+export type UsageRefreshSettings = z.infer<typeof usageRefreshSettingsSchema>
+export const DEFAULT_USAGE_REFRESH_SETTINGS: UsageRefreshSettings = {
+  enabled: true,
+  activeIntervalMinutes: 5,
+  inactiveIntervalMinutes: 30,
+}
 const aliasSchema = z
   .string()
   .trim()
@@ -59,6 +77,7 @@ export const renameAccountSchema = z.object({
 export const switchAccountSchema = z.object({
   id: accountIdSchema,
   force: z.boolean().default(false),
+  authRevision: z.string().min(1).max(128).optional(),
 })
 
 export interface AccountUsageWindow {
@@ -87,11 +106,30 @@ export interface AccountProfile {
   switchUnavailable?: string
 }
 
+export function supportsAutomaticUsageRefresh(
+  account: Pick<AccountProfile, 'accountType' | 'product' | 'providerKey'>,
+): boolean {
+  return (
+    account.accountType === 'oauth' &&
+    (account.product === 'codex' ||
+      account.product === 'grok' ||
+      (account.product === 'pi' && ['openai-codex', 'xai'].includes(account.providerKey)))
+  )
+}
+
 export interface AccountStatus {
   profiles: AccountProfile[]
   authPath: string
   authState: 'managed' | 'unmanaged' | 'missing'
   authMessage: string
+  authRevision?: string
+}
+
+export interface AccountUsageRefreshStatus {
+  id: string
+  product: AccountProduct
+  refreshing: boolean
+  error?: string
 }
 
 export interface AccountOAuthProgress {
@@ -108,6 +146,8 @@ export interface AccountsAPI {
   rename: (input: z.infer<typeof renameAccountSchema>) => Promise<Result<void>>
   remove: (id: string) => Promise<Result<void>>
   refresh: (id: string) => Promise<Result<void>>
+  usageRefreshStatuses: () => Promise<Result<AccountUsageRefreshStatus[]>>
+  onUsageRefresh: (listener: (status: AccountUsageRefreshStatus) => void) => () => void
   reorder: (product: AccountProduct, ids: string[]) => Promise<Result<void>>
   startOAuth: (product: AccountProduct, alias: string) => Promise<Result<void>>
   cancelOAuth: () => Promise<Result<void>>

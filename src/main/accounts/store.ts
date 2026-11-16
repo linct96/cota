@@ -12,20 +12,22 @@ import {
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
-import type { AccountProfile } from '../../shared/accounts'
-import { oauthFileSchema, providersFileSchema, storedAccountSchema } from './schema'
-import type { OAuthFile, ProvidersFile } from './schema'
+import { deriveCredentialMeta } from './credentials'
+import {
+  oauthEntrySchema,
+  oauthFileSchema,
+  providersFileSchema,
+  storedAccountSchema,
+} from './schema'
+import type { OAuthEntry, OAuthFile, ProvidersFile, StoredAccount } from './schema'
 
-export interface StoredAccount extends Omit<AccountProfile, 'isActive'> {
-  auth: string
-  sortOrder: number
-}
+export type { StoredAccount } from './schema'
 
 type Contents = { providers: string | null; oauth: string | null }
 type Revision = Contents
 type FileStamp = { size: number; mtimeMs: number; ctimeMs: number; ino: number }
 type Stamps = { providers: FileStamp | null; oauth: FileStamp | null }
-type Credentials = OAuthFile['credentials']
+type Credentials = Record<string, OAuthEntry>
 
 function readOptional(path: string): string | null {
   try {
@@ -77,11 +79,35 @@ function settled(stamp: FileStamp | null): boolean {
   return stamp === null || Date.now() - Math.max(stamp.mtimeMs, stamp.ctimeMs) > 2_000
 }
 
+function toProviderMetadata(account: StoredAccount) {
+  const {
+    auth: _auth,
+    product: _product,
+    providerKey: _providerKey,
+    accountType: _accountType,
+    accountId: _accountId,
+    ...metadata
+  } = account
+  return metadata
+}
+
+function parseEntry(id: string, rawAuth: string): OAuthEntry {
+  const parsed: unknown = JSON.parse(rawAuth)
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('账号认证信息格式无效。')
+  return oauthEntrySchema.parse({ ...parsed, id })
+}
+
 function sameCredentials(a: Credentials, b: Credentials): boolean {
-  const keys = Object.keys(a)
+  const ids = Object.keys(a)
   return (
-    keys.length === Object.keys(b).length &&
-    keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key])
+    ids.length === Object.keys(b).length &&
+    ids.every(
+      (id) =>
+        Object.hasOwn(b, id) &&
+        a[id].kind === b[id].kind &&
+        JSON.stringify(a[id].auth) === JSON.stringify(b[id].auth),
+    )
   )
 }
 
@@ -181,7 +207,7 @@ export class AccountStore {
   private stamps?: Stamps
 
   constructor(private readonly path: string) {
-    this.oauthPath = join(dirname(path), 'OAuth.json')
+    this.oauthPath = join(dirname(path), 'auth.json')
   }
 
   private observe(): Stamps {
@@ -234,19 +260,20 @@ export class AccountStore {
           ? { schemaVersion: 1, accounts: [] }
           : providersFileSchema.parse(JSON.parse(contents.providers))
       const vault: OAuthFile =
-        contents.oauth === null
-          ? { schemaVersion: 2, credentials: {} }
-          : oauthFileSchema.parse(JSON.parse(contents.oauth))
+        contents.oauth === null ? [] : oauthFileSchema.parse(JSON.parse(contents.oauth))
+      const credentials = Object.fromEntries(vault.map((entry) => [entry.id, entry]))
       const accounts = providers.accounts.map((account) => {
-        if (!Object.hasOwn(vault.credentials, account.id))
-          throw new Error('OAuth.json 缺少账号 ' + account.id + ' 的认证信息。')
+        if (!Object.hasOwn(credentials, account.id))
+          throw new Error('auth.json 缺少账号 ' + account.id + ' 的认证信息。')
+        const entry = credentials[account.id]
         return storedAccountSchema.parse({
           ...account,
-          auth: vault.credentials[account.id],
+          ...deriveCredentialMeta(entry),
+          auth: JSON.stringify({ kind: entry.kind, auth: entry.auth }),
         })
       })
       this.accounts = accounts
-      this.credentials = { ...vault.credentials }
+      this.credentials = credentials
       this.contents = contents
       this.revision = revision
       this.stamps = stamps
@@ -280,8 +307,8 @@ export class AccountStore {
     const oldContents = this.contents!
     const previousRevision = this.revision!
     const normalized = accounts.map((account) => storedAccountSchema.parse(account))
-    const metadata = normalized.map(({ auth: _auth, ...account }) => account)
-    const previousMetadata = before.map(({ auth: _auth, ...account }) => account)
+    const metadata = normalized.map(toProviderMetadata)
+    const previousMetadata = before.map(toProviderMetadata)
     const providers: ProvidersFile = providersFileSchema.parse({
       schemaVersion: 1,
       accounts: metadata,
@@ -290,26 +317,20 @@ export class AccountStore {
       oldContents.providers === null ||
       JSON.stringify(metadata) !== JSON.stringify(previousMetadata)
 
+    const nextEntries: OAuthFile = normalized.map((account) => parseEntry(account.id, account.auth))
     const nextCredentials: Credentials = Object.fromEntries(
-      normalized.map((account) => [account.id, account.auth]),
+      nextEntries.map((entry) => [entry.id, entry]),
     )
 
     // First write a superset of old and new credentials, then providers.json,
     // finally remove stale credentials. Every crash point remains readable:
-    // providers.json never references a credential absent from OAuth.json.
+    // providers.json never references a credential absent from auth.json.
     const staged: Credentials = { ...oldCredentials, ...nextCredentials }
     const stageChanged = !sameCredentials(oldCredentials, staged)
     const cleanupNeeded = !sameCredentials(staged, nextCredentials)
     const providersText = JSON.stringify(providers, null, 2) + '\n'
-    const stageText =
-      JSON.stringify(oauthFileSchema.parse({ schemaVersion: 2, credentials: staged }), null, 2) +
-      '\n'
-    const finalText =
-      JSON.stringify(
-        oauthFileSchema.parse({ schemaVersion: 2, credentials: nextCredentials }),
-        null,
-        2,
-      ) + '\n'
+    const stageText = JSON.stringify(oauthFileSchema.parse(Object.values(staged)), null, 2) + '\n'
+    const finalText = JSON.stringify(oauthFileSchema.parse(nextEntries), null, 2) + '\n'
 
     let expected = { ...previousRevision }
     let stagedWritten = false
@@ -363,7 +384,7 @@ export class AccountStore {
             restore(this.oauthPath, oldContents.oauth, assertUnchanged)
             expected.oauth = checksum(oldContents.oauth)
           } catch {
-            console.warn('无法恢复原认证文件，请检查 OAuth.json。')
+            console.warn('无法恢复原认证文件，请检查 auth.json。')
           }
         }
         this.invalidate()

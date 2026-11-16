@@ -31,6 +31,10 @@ let root: string
 let path: string
 let oauthPath: string
 
+function authJson(auth: Record<string, unknown>, kind = 'codex'): string {
+  return JSON.stringify({ kind, auth })
+}
+
 function account(id: string): StoredAccount {
   return {
     id,
@@ -42,7 +46,7 @@ function account(id: string): StoredAccount {
     accountId: 'abc',
     planType: 'plus',
     apiBaseUrl: null,
-    auth: '{"tokens":{"access_token":"TOP-SECRET"}}',
+    auth: authJson({ tokens: { access_token: 'TOP-SECRET', account_id: 'abc' } }),
     usagePrimary: null,
     usageSecondary: null,
     usageUpdatedAt: null,
@@ -53,14 +57,14 @@ function account(id: string): StoredAccount {
   }
 }
 
-function readVault(): { schemaVersion: number; credentials: Record<string, unknown> } {
+function readVault(): { id: string; kind: string; auth: Record<string, unknown> }[] {
   return JSON.parse(readFileSync(oauthPath, 'utf8'))
 }
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'cota-providers-'))
   path = join(root, 'providers.json')
-  oauthPath = join(root, 'OAuth.json')
+  oauthPath = join(root, 'auth.json')
 })
 
 afterEach(() => {
@@ -68,7 +72,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('Cortana providers.json and OAuth.json store', () => {
+describe('Cortana providers.json and auth.json store', () => {
   it('keeps provider metadata and plaintext credentials in separate private files', () => {
     const store = new AccountStore(path)
     expect(store.list()).toEqual([])
@@ -78,15 +82,24 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(raw).not.toContain('TOP-SECRET')
     expect(raw).not.toContain('authEncrypted')
     expect(raw).not.toContain('"auth"')
+    expect(raw).not.toContain('"product"')
+    expect(raw).not.toContain('"providerKey"')
+    expect(raw).not.toContain('"accountType"')
+    expect(raw).not.toContain('"accountId"')
     expect(vault).toContain('TOP-SECRET')
     expect(JSON.parse(raw)).toMatchObject({
       schemaVersion: 1,
       accounts: [{ id: 'first', alias: 'first' }],
     })
-    expect(JSON.parse(vault)).toMatchObject({
-      schemaVersion: 2,
-      credentials: { first: account('first').auth },
-    })
+    expect(JSON.parse(vault)).toEqual([
+      {
+        id: 'first',
+        kind: 'codex',
+        auth: { tokens: { access_token: 'TOP-SECRET', account_id: 'abc' } },
+      },
+    ])
+    expect(vault).not.toContain('schemaVersion')
+    expect(vault).not.toContain('credentials')
     if (process.platform !== 'win32') {
       expect(statSync(path).mode & 0o777).toBe(0o600)
       expect(statSync(oauthPath).mode & 0o777).toBe(0o600)
@@ -94,19 +107,19 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(new AccountStore(path).get('first')).toEqual(account('first'))
   })
 
-  it('writes only providers.json for metadata changes and only OAuth.json for auth changes', () => {
+  it('writes only providers.json for metadata changes and only auth.json for auth changes', () => {
     const store = new AccountStore(path)
     store.save(account('first'))
     const vaultBefore = readFileSync(oauthPath, 'utf8')
     store.save({ ...store.get('first'), alias: 'renamed' })
     expect(readFileSync(oauthPath, 'utf8')).toBe(vaultBefore)
     const providersBefore = readFileSync(path, 'utf8')
-    store.save({ ...store.get('first'), auth: '{"access_token":"NEW-SECRET"}' })
+    store.save({ ...store.get('first'), auth: authJson({ access_token: 'NEW-SECRET' }) })
     expect(readFileSync(path, 'utf8')).toBe(providersBefore)
     expect(readFileSync(oauthPath, 'utf8')).not.toBe(vaultBefore)
     expect(new AccountStore(path).get('first')).toMatchObject({
       alias: 'renamed',
-      auth: '{"access_token":"NEW-SECRET"}',
+      auth: authJson({ access_token: 'NEW-SECRET' }),
     })
   })
 
@@ -117,7 +130,7 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(store.list().map((entry) => entry.id)).toEqual(['second', 'first'])
     store.remove('second')
     expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['first'])
-    expect(Object.keys(readVault().credentials)).toEqual(['first'])
+    expect(readVault().map((entry) => entry.id)).toEqual(['first'])
     unlinkSync(path)
     unlinkSync(oauthPath)
     expect(store.list()).toEqual([])
@@ -134,7 +147,7 @@ describe('Cortana providers.json and OAuth.json store', () => {
       store.remove('a')
     })
     expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['b'])
-    expect(Object.keys(readVault().credentials)).toEqual(['b'])
+    expect(readVault().map((entry) => entry.id)).toEqual(['b'])
     expect(() => store.transaction(() => store.transaction(() => {}))).toThrow('嵌套')
   })
 
@@ -189,7 +202,7 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(store.list().map((entry) => entry.id)).toEqual(['a'])
   })
 
-  it('rolls back providers.json if removing credentials from OAuth.json fails', async () => {
+  it('rolls back providers.json if removing credentials from auth.json fails', async () => {
     const store = new AccountStore(path)
     store.save(account('a'))
     store.save(account('b'))
@@ -227,9 +240,11 @@ describe('Cortana providers.json and OAuth.json store', () => {
     writeFileSync(path, providerGood)
     for (const raw of [
       'not-json',
-      '{"schemaVersion":3,"credentials":{}}',
+      '{}',
       '{"schemaVersion":2,"credentials":{}}',
-      '{"schemaVersion":1,"credentials":{}}',
+      '[{"kind":"codex","id":"a"}]',
+      '[{"kind":"unknown","id":"a","auth":{}}]',
+      '[]',
     ]) {
       writeFileSync(oauthPath, raw)
       expect(() => store.list()).toThrow('账号配置或认证文件无效')
@@ -249,8 +264,8 @@ describe('Cortana providers.json and OAuth.json store', () => {
     other.save(account('b'))
     expect(() => store.save(account('c'))).toThrow('其他程序修改')
     expect(store.list().map((entry) => entry.id)).toEqual(['a', 'b'])
-    other.save({ ...other.get('a'), auth: '{"token":"external"}' })
-    expect(store.get('a').auth).toBe('{"token":"external"}')
+    other.save({ ...other.get('a'), auth: authJson({ token: 'external' }) })
+    expect(store.get('a').auth).toBe(authJson({ token: 'external' }))
     other.save({ ...other.get('a'), alias: 'external-edit' })
     expect(() => store.save(account('c'))).toThrow('其他程序修改')
     expect(store.get('a').alias).toBe('external-edit')
@@ -272,33 +287,33 @@ describe('Cortana providers.json and OAuth.json store', () => {
     expect(() => store.save(account('c'))).toThrow('其他程序修改')
     expect(readFileSync(path, 'utf8')).toBe(external)
     expect(store.list()).toEqual([])
-    expect(readdirSync(root)).toEqual(['OAuth.json', 'providers.json'])
+    expect(readdirSync(root)).toEqual(['auth.json', 'providers.json'])
   })
 
   it('can read a safe staged OAuth superset after an interrupted addition', () => {
     const store = new AccountStore(path)
     store.save(account('a'))
     const vault = readVault()
-    vault.credentials.orphan = vault.credentials.a
+    vault.push({ ...vault[0], id: 'orphan' })
     writeFileSync(oauthPath, JSON.stringify(vault, null, 2) + '\n')
     expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['a'])
     store.list() // Refresh the memoized snapshot after the external edit.
     store.save({ ...store.get('a'), alias: 'changed' })
-    expect(Object.keys(readVault().credentials)).toEqual(['a'])
+    expect(readVault().map((entry) => entry.id)).toEqual(['a'])
   })
 
-  it('rechecks OAuth.json after the temp file is flushed, before replacing it', () => {
+  it('rechecks auth.json after the temp file is flushed, before replacing it', () => {
     const store = new AccountStore(path)
     store.save(account('a'))
     const vault = readVault()
-    vault.credentials.a = '{"token":"EXTERNAL"}'
+    vault[0] = { ...vault[0], auth: { token: 'EXTERNAL' } }
     const external = JSON.stringify(vault, null, 2) + '\n'
     vi.mocked(fsyncSync).mockImplementationOnce(() => writeFileSync(oauthPath, external))
-    expect(() => store.save({ ...store.get('a'), auth: '{"token":"INTERNAL"}' })).toThrow(
+    expect(() => store.save({ ...store.get('a'), auth: authJson({ token: 'INTERNAL' }) })).toThrow(
       '其他程序修改',
     )
     expect(readFileSync(oauthPath, 'utf8')).toBe(external)
-    expect(store.get('a').auth).toBe('{"token":"EXTERNAL"}')
+    expect(store.get('a').auth).toBe(authJson({ token: 'EXTERNAL' }))
   })
 
   it('rejects legacy encrypted credentials without overwriting either file', () => {

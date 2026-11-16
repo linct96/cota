@@ -12,7 +12,7 @@ import type {
   TerminalEvent,
 } from '../shared/contracts'
 import type { AgentCliCache, AgentCliInstallEvent } from '../shared/agent-cli'
-import type { AccountOAuthProgress } from '../shared/accounts'
+import type { AccountOAuthProgress, AccountUsageRefreshStatus } from '../shared/accounts'
 
 function initialTheme(): DesktopAPI['initialAppearance']['theme'] {
   if (process.argv.includes('--cota-theme=dark')) return 'dark'
@@ -75,6 +75,13 @@ const api: DesktopAPI = {
     rename: (input) => ipcRenderer.invoke('accounts:rename', input),
     remove: (id) => ipcRenderer.invoke('accounts:remove', id),
     refresh: (id) => ipcRenderer.invoke('accounts:refresh', id),
+    usageRefreshStatuses: () => ipcRenderer.invoke('accounts:usage-refresh-statuses'),
+    onUsageRefresh: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, status: AccountUsageRefreshStatus) =>
+        listener(status)
+      ipcRenderer.on('accounts:usage-refresh', wrapped)
+      return () => ipcRenderer.removeListener('accounts:usage-refresh', wrapped)
+    },
     reorder: (product, ids) => ipcRenderer.invoke('accounts:reorder', product, ids),
     startOAuth: (product, alias) => ipcRenderer.invoke('accounts:oauth-start', product, alias),
     cancelOAuth: () => ipcRenderer.invoke('accounts:oauth-cancel'),
@@ -226,7 +233,7 @@ const api: DesktopAPI = {
     ipcRenderer.on('agent:clis-changed', wrapped)
     return () => ipcRenderer.removeListener('agent:clis-changed', wrapped)
   },
-  detectAgentHooks: () => ipcRenderer.invoke('agent:hooks-detect'),
+  detectAgentHooks: (provider) => ipcRenderer.invoke('agent:hooks-detect', provider),
   installAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-install', provider),
   trustAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-trust', provider),
   uninstallAgentHook: (provider) => ipcRenderer.invoke('agent:hooks-uninstall', provider),

@@ -1,7 +1,13 @@
 import type { AccountProduct, AccountUsageWindow } from '../../shared/accounts'
 import type { StoredAccount } from './store'
 import { json, jwtClaims, object, parseObject, text } from './files'
-import { CLAUDE_SCOPE } from './credentials'
+import {
+  CLAUDE_SCOPE,
+  GROK_AUTH_KEY,
+  unwrapCredential,
+  unwrapGrokAuth,
+  unwrapPiAuth,
+} from './credentials'
 
 export const OAUTH_CONFIG = {
   codex: {
@@ -25,10 +31,13 @@ export const GROK_CLIENT_ID = 'b1a00492-073a-47ea-816f-4c329264a828'
 export const GROK_SCOPE =
   'openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write'
 
+export class AccountReauthorizationError extends Error {}
+
 export class AccountNetworkError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly reauthorizationRequired = status === 401,
   ) {
     super(message)
   }
@@ -49,12 +58,21 @@ export async function requestJSON(
     throw new Error('账号服务连接失败，请检查网络后重试。')
   }
   if (!response.ok) {
+    let invalidGrant = false
+    if (response.status === 400) {
+      try {
+        invalidGrant = object(await response.json()).error === 'invalid_grant'
+      } catch {
+        // Non-JSON errors remain retryable.
+      }
+    }
     // Do not forward upstream bodies: they can echo credentials or request details.
     throw new AccountNetworkError(
-      response.status === 401 || response.status === 403
+      response.status === 401 || response.status === 403 || invalidGrant
         ? `账号认证失败（HTTP ${response.status}），请重新授权或稍后重试。`
         : `账号服务请求失败（HTTP ${response.status}）。`,
       response.status,
+      response.status === 401 || invalidGrant,
     )
   }
   try {
@@ -114,69 +132,84 @@ export async function authFromToken(
   token: Record<string, unknown>,
   previous: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
+  const { auth: prevAuth } = unwrapCredential(previous)
   const access = text(token.access_token)
   const refresh = text(token.refresh_token)
   if (!access) throw new Error('授权服务未返回有效的登录令牌。')
   if (product === 'codex') {
-    const tokens = object(previous.tokens)
+    const tokens = object(prevAuth.tokens)
     const id = text(token.id_token) || text(tokens.id_token)
     const claims = jwtClaims(id || access)
     const authClaims = object(claims['https://api.openai.com/auth'])
     return {
-      ...previous,
-      auth_mode: 'chatgpt',
-      OPENAI_API_KEY: null,
-      tokens: {
-        ...tokens,
-        access_token: access,
-        refresh_token: refresh || text(tokens.refresh_token),
-        id_token: id,
-        account_id: text(authClaims.chatgpt_account_id) || text(tokens.account_id),
+      kind: 'codex',
+      auth: {
+        ...prevAuth,
+        auth_mode: 'chatgpt',
+        OPENAI_API_KEY: null,
+        tokens: {
+          ...tokens,
+          access_token: access,
+          refresh_token: refresh || text(tokens.refresh_token),
+          id_token: id,
+          account_id: text(authClaims.chatgpt_account_id) || text(tokens.account_id),
+        },
+        last_refresh: new Date().toISOString(),
       },
-      last_refresh: new Date().toISOString(),
     }
   }
   if (product === 'claude') {
-    if (!refresh && !text(previous.refreshToken)) throw new Error('Claude 授权未返回可续期凭据。')
+    if (!refresh && !text(prevAuth.refreshToken)) throw new Error('Claude 授权未返回可续期凭据。')
     // Match Cortana: use the long-lived CLI token, not the short-lived browser access token.
     const cli = await tokenRequest('claude', {
       grant_type: 'refresh_token',
-      refresh_token: refresh || text(previous.refreshToken),
+      refresh_token: refresh || text(prevAuth.refreshToken),
       expires_in: 31536000,
       scope: CLAUDE_SCOPE,
     })
     return {
-      ...previous,
-      kind: 'claude_oauth',
-      cliToken: text(cli.access_token),
-      refreshToken: text(cli.refresh_token) || refresh || text(previous.refreshToken),
-      cliTokenExpiresAt: Date.now() + (Number(cli.expires_in) || 31536000) * 1000,
-      accountId: text(object(token.account).uuid) || text(previous.accountId),
-      email:
-        text(object(token.account).email_address || object(token.account).emailAddress) ||
-        text(previous.email),
-      scopes: CLAUDE_SCOPE,
-      source: 'oauth',
+      kind: 'claude',
+      auth: {
+        ...prevAuth,
+        env: {
+          ...object(prevAuth.env),
+          CLAUDE_CODE_OAUTH_TOKEN: text(cli.access_token),
+          CLAUDE_CODE_OAUTH_SCOPES: CLAUDE_SCOPE,
+        },
+        refreshToken: text(cli.refresh_token) || refresh || text(prevAuth.refreshToken),
+        cliTokenExpiresAt: Date.now() + (Number(cli.expires_in) || 31536000) * 1000,
+        accountId: text(object(token.account).uuid) || text(prevAuth.accountId),
+        email:
+          text(object(token.account).email_address || object(token.account).emailAddress) ||
+          text(prevAuth.email),
+        source: 'oauth',
+      },
     }
   }
+  const prevGrok = unwrapGrokAuth(prevAuth).entry
   const claims = jwtClaims(text(token.id_token) || access)
   return {
-    ...previous,
-    key: access,
-    refresh_token: refresh || text(previous.refresh_token),
-    auth_mode: 'oidc',
-    oidc_issuer: 'https://auth.x.ai',
-    oidc_client_id: GROK_CLIENT_ID,
-    user_id: text(claims.sub) || text(previous.user_id),
-    email: text(claims.email) || text(previous.email),
-    coding_data_retention_opt_out: true,
-    create_time: new Date().toISOString(),
-    expires_at: new Date(Date.now() + (Number(token.expires_in) || 3600) * 1000).toISOString(),
+    kind: 'grok',
+    auth: {
+      [GROK_AUTH_KEY]: {
+        ...prevGrok,
+        key: access,
+        refresh_token: refresh || text(prevGrok.refresh_token),
+        auth_mode: 'oidc',
+        oidc_issuer: 'https://auth.x.ai',
+        oidc_client_id: GROK_CLIENT_ID,
+        user_id: text(claims.sub) || text(prevGrok.user_id),
+        email: text(claims.email) || text(prevGrok.email),
+        coding_data_retention_opt_out: true,
+        create_time: new Date().toISOString(),
+        expires_at: new Date(Date.now() + (Number(token.expires_in) || 3600) * 1000).toISOString(),
+      },
+    },
   }
 }
 
 export async function refreshPastedCodex(value: string): Promise<Record<string, unknown>> {
-  const previous = value.trim().startsWith('{') ? parseObject(value) : {}
+  const previous = value.trim().startsWith('{') ? unwrapCredential(value).auth : {}
   const refresh = value.trim().startsWith('{')
     ? text(object(previous.tokens).refresh_token)
     : value.trim()
@@ -193,7 +226,7 @@ export async function refreshCredential(
   force = false,
 ): Promise<StoredAccount> {
   if (account.accountType === 'relay') return account
-  const auth = parseObject(account.auth)
+  const { kind, auth } = unwrapCredential(account.auth)
   const product = account.product
   let refresh = ''
   let expiry = Infinity
@@ -205,16 +238,19 @@ export async function refreshCredential(
     refresh = text(auth.refreshToken)
     expiry = typeof auth.cliTokenExpiresAt === 'number' ? auth.cliTokenExpiresAt : Infinity
   } else if (product === 'pi') {
-    refresh = text(auth.refresh)
-    expiry = Number(auth.expires)
+    const { entry } = unwrapPiAuth(auth, account.providerKey)
+    refresh = text(entry.refresh)
+    expiry = Number(entry.expires)
   } else {
-    refresh = text(auth.refresh_token)
-    expiry = Date.parse(text(auth.expires_at)) || 0
+    const { entry } = unwrapGrokAuth(auth)
+    refresh = text(entry.refresh_token)
+    expiry = Date.parse(text(entry.expires_at)) || 0
   }
   const buffer = product === 'claude' ? 7 * 86400000 : 15 * 60000
   if (!force && expiry > Date.now() + buffer) return account
   if (!refresh) {
-    if (expiry <= Date.now() || force) throw new Error('此账号没有可续期凭据，请重新授权。')
+    if (expiry <= Date.now() || force)
+      throw new AccountReauthorizationError('此账号没有可续期凭据，请重新授权。')
     return account
   }
   let token: Record<string, unknown>
@@ -236,19 +272,33 @@ export async function refreshCredential(
   }
   if (!text(token.access_token)) throw new Error('刷新认证失败，服务未返回登录令牌。')
   let next: Record<string, unknown>
-  if (product === 'pi')
+  if (product === 'pi') {
+    const { providerKey: piKey, entry } = unwrapPiAuth(auth, account.providerKey)
+    const targetKey = account.providerKey || piKey
     next = {
-      ...auth,
-      access: text(token.access_token),
-      refresh: text(token.refresh_token) || refresh,
-      expires: Date.now() + (Number(token.expires_in) || 3600) * 1000,
+      kind: kind ?? 'pi',
+      auth: {
+        [targetKey]: {
+          ...entry,
+          access: text(token.access_token),
+          refresh: text(token.refresh_token) || refresh,
+          expires: Date.now() + (Number(token.expires_in) || 3600) * 1000,
+        },
+      },
     }
-  else if (product === 'claude')
+  } else if (product === 'claude')
     next = {
-      ...auth,
-      cliToken: text(token.access_token),
-      refreshToken: text(token.refresh_token) || refresh,
-      cliTokenExpiresAt: Date.now() + (Number(token.expires_in) || 31536000) * 1000,
+      kind: kind ?? 'claude',
+      auth: {
+        ...auth,
+        env: {
+          ...object(auth.env),
+          CLAUDE_CODE_OAUTH_TOKEN: text(token.access_token),
+          CLAUDE_CODE_OAUTH_SCOPES: text(object(auth.env).CLAUDE_CODE_OAUTH_SCOPES) || CLAUDE_SCOPE,
+        },
+        refreshToken: text(token.refresh_token) || refresh,
+        cliTokenExpiresAt: Date.now() + (Number(token.expires_in) || 31536000) * 1000,
+      },
     }
   else next = await authFromToken(product, token, auth)
   return { ...account, auth: json(next), needsReauthorization: false, updatedAt: Date.now() }
@@ -268,14 +318,15 @@ function usageWindow(value: unknown): AccountUsageWindow | null {
 }
 
 export async function refreshAccountUsage(account: StoredAccount): Promise<StoredAccount> {
-  const auth = parseObject(account.auth)
+  const { auth } = unwrapCredential(account.auth)
+  const piEntry = account.product === 'pi' ? unwrapPiAuth(auth, account.providerKey).entry : auth
   if (account.product === 'claude') return { ...account, usageUpdatedAt: Date.now() }
   if (
     account.product === 'codex' ||
     (account.product === 'pi' && account.providerKey === 'openai-codex')
   ) {
     const token =
-      account.product === 'pi' ? text(auth.access) : text(object(auth.tokens).access_token)
+      account.product === 'pi' ? text(piEntry.access) : text(object(auth.tokens).access_token)
     const usage = await requestJSON('https://chatgpt.com/backend-api/wham/usage', {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -294,13 +345,15 @@ export async function refreshAccountUsage(account: StoredAccount): Promise<Store
       throw new Error('服务响应缺少可识别的额度信息。')
     return {
       ...account,
+      email: text(usage.email) || account.email,
       planType: text(usage.plan_type) || account.planType,
       usagePrimary: usageWindow(rate.primary_window),
       usageSecondary: usageWindow(rate.secondary_window),
       usageUpdatedAt: Date.now(),
     }
   }
-  const token = account.product === 'pi' ? text(auth.access) : text(auth.key)
+  const token =
+    account.product === 'pi' ? text(piEntry.access) : text(unwrapGrokAuth(auth).entry.key)
   const usage = await requestJSON('https://cli-chat-proxy.grok.com/v1/billing?format=credits', {
     headers: { Authorization: `Bearer ${token}` },
   })

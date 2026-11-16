@@ -16,6 +16,7 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -34,7 +35,7 @@ const PRODUCT_ICONS = {
 }
 
 export function CortanaLayout() {
-  const { activeProduct, agentSwitchBlocked, selectProduct } = useCortana()
+  const { activeProduct, selectProduct } = useCortana()
   const navigate = useNavigate()
   const leftPanelOpen = useLeftPanel((state) => state.open)
   const ActiveIcon = PRODUCT_ICONS[activeProduct]
@@ -52,17 +53,16 @@ export function CortanaLayout() {
           )}
           aria-label="Cortana 菜单"
         >
-          <header className="cortana-sidebar-header flex h-12 shrink-0 items-center gap-2 px-4">
+          <SidebarHeader className="cortana-sidebar-header h-12 shrink-0 flex-row items-center px-3 py-0">
             <h1 className="cortana-sidebar-title min-w-0">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <Button
-                      className="cortana-agent-trigger max-w-full justify-start"
+                      className="cortana-agent-trigger h-9 max-w-full justify-start gap-2 px-2.5 text-sm text-sidebar-foreground has-data-[icon=inline-start]:pl-2.5"
                       variant="ghost"
                       size="lg"
                       aria-label={`管理的 Agent：${ACCOUNT_PRODUCTS[activeProduct].name}`}
-                      disabled={agentSwitchBlocked}
                     />
                   }
                 >
@@ -75,7 +75,7 @@ export function CortanaLayout() {
                     {ACCOUNT_PRODUCTS[activeProduct].name}
                   </span>
                   <ChevronDown
-                    className="cortana-agent-chevron"
+                    className="cortana-agent-chevron text-app-muted-foreground"
                     data-icon="inline-end"
                     aria-hidden="true"
                   />
@@ -94,7 +94,6 @@ export function CortanaLayout() {
                         <DropdownMenuItem
                           key={product}
                           className="cortana-agent-menu-item"
-                          disabled={agentSwitchBlocked}
                           onClick={() => {
                             if (selected) return
                             selectProduct(product)
@@ -118,7 +117,7 @@ export function CortanaLayout() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </h1>
-          </header>
+          </SidebarHeader>
           <SidebarContent className="cortana-nav-list">
             <nav
               className="cortana-navigation flex min-h-0 flex-1 flex-col pt-1.5 pb-4"

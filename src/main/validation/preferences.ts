@@ -1,5 +1,6 @@
 import { extname } from 'node:path'
 import type { Preferences } from '../../shared/contracts'
+import { DEFAULT_USAGE_REFRESH_SETTINGS, usageRefreshSettingsSchema } from '../../shared/accounts'
 import type { HostTerminalPreferences } from '../host/host-protocol'
 import { NOTIFICATION_SOUND_EXTENSIONS } from '../../shared/notification-sounds'
 import type { NotificationSound } from '../../shared/notification-sounds'
@@ -74,6 +75,7 @@ export function preferences(value: unknown): Preferences {
     preventSleep = true,
     reusePreviewTabs = true,
     confirmCloseRunningTerminal = true,
+    usageRefresh = DEFAULT_USAGE_REFRESH_SETTINGS,
     commitMessagePrompt = '',
   } = value as Record<keyof Preferences, unknown>
   if (theme !== 'system' && theme !== 'light' && theme !== 'dark') throw new Error('主题选项无效。')
@@ -143,6 +145,7 @@ export function preferences(value: unknown): Preferences {
     preventSleep,
     reusePreviewTabs,
     confirmCloseRunningTerminal,
+    usageRefresh: usageRefreshSettingsSchema.parse(usageRefresh),
     commitMessagePrompt: commitMessagePrompt.trim(),
     shellName: shellPath === null ? null : shellName?.trim() || null,
     shellPath: validatedShellPath,

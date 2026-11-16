@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { ConfigStore } from './settings/config-store'
 import { AccountService } from './accounts/service'
+import { AccountUsageScheduler } from './accounts/usage-refresh'
 import { registerAccountsIPC } from './accounts/ipc'
 import { SourceControlService } from './git/source-control/service'
 import { registerGitIPC } from './git/ipc'
@@ -44,6 +45,7 @@ let manager: HostClient | undefined
 let config: ConfigStore
 let agentClis: AgentCliManagement
 let accounts: AccountService
+let usageScheduler: AccountUsageScheduler | undefined
 let worktrees: WorktreeManager
 let worktreeSetups: WorktreeSetupService
 let codeHosting: CodeHostingService | undefined
@@ -67,6 +69,7 @@ const lifecycle = new AppLifecycle({
   getWorktrees: () => worktrees,
   getWorktreeSetups: () => worktreeSetups,
   getAccounts: () => accounts,
+  getUsageScheduler: () => usageScheduler,
   closeResources: () => {
     if (git) git.close()
     else codeHosting?.close()
@@ -135,6 +138,22 @@ if (!app.requestSingleInstanceLock()) {
         renderer.send('accounts:oauth-progress', progress),
       )
       const warning = (await config.load()).warning
+      usageScheduler = new AccountUsageScheduler(
+        accounts,
+        join(app.getPath('userData'), 'usage-refresh-state.json'),
+        config.snapshot().preferences.usageRefresh,
+        () => {
+          if (lifecycle.exitPending || lifecycle.exiting) return false
+          try {
+            config.assertWritable()
+            return true
+          } catch {
+            return false
+          }
+        },
+        (status) => renderer.send('accounts:usage-refresh', status),
+      )
+      await usageScheduler.start()
       agentClis = new AgentCliManagement(config, (cache) =>
         renderer.send('agent:clis-changed', cache),
       )
@@ -142,7 +161,10 @@ if (!app.requestSingleInstanceLock()) {
         .initialize()
         .catch((error) => renderer.warn(`Agent CLI 初始化失败：${String(error)}`))
       agentSleep.setEnabled(config.snapshot().preferences.preventSleep)
-      powerMonitor.on('resume', () => agentSleep.refresh())
+      powerMonitor.on('resume', () => {
+        agentSleep.refresh()
+        usageScheduler?.wake()
+      })
       nativeTheme.themeSource = config.snapshot().preferences.theme
       worktrees = new WorktreeManager(config, join(configDirectory, 'worktrees'))
       worktreeSetups = new WorktreeSetupService(
@@ -208,7 +230,7 @@ if (!app.requestSingleInstanceLock()) {
       git = registerGitIPC({ ...common, sourceControl, codeHosting, commitMessages })
       fileWatches = registerFilesIPC(common)
       workspacePorts = registerPortsIPC(common)
-      registerAccountsIPC(handle, accounts)
+      registerAccountsIPC(handle, accounts, usageScheduler)
       registerCodeHostingIPC({ ...common, codeHosting, git })
       registerAgentsIPC({ ...common, agentClis, cliInstallTerminals, getWindow })
       registerTerminalIPC({ ...common, agentClis, trusted })
@@ -218,6 +240,7 @@ if (!app.requestSingleInstanceLock()) {
         manager: common.manager,
         agentSleep,
         fileWatches,
+        usageScheduler,
         updateWindowBackground: desktop.updateBackground,
         updateMenu,
       })

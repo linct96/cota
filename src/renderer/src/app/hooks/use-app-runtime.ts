@@ -5,11 +5,13 @@ import { useWorkspace } from '@/state/workspace'
 import { useFileExplorer } from '@/state/file-explorer-store'
 import { useSourceControl } from '@/state/source-control-store'
 import { useAgentClis } from '@/state/agent-cli-store'
+import { watchAccountUsageRefresh } from '@/features/cortana/cortana-store'
 
 export function useAppRuntime() {
   const router = useRouter()
   const workspaces = useWorkspace((state) => state.workspaces)
   useEffect(() => {
+    const stopUsageRefresh = watchAccountUsageRefresh()
     const stopAgents = window.desktop.onAgent((event) =>
       useWorkspace.getState().receiveAgent(event),
     )
@@ -45,6 +47,7 @@ export function useAppRuntime() {
       }
     })
     return () => {
+      stopUsageRefresh()
       stopAgents()
       stopAgentClis()
       stopAgentFocus()

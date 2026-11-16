@@ -22,14 +22,26 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  formatResetTime,
+  formatWindowLabel,
+  planLabel,
+  remainingQuotaPercent,
+  supportsDualQuota,
+} from './account-format'
 
 const PRODUCT_ICONS = { claude: Claude, codex: OpenAI, grok: Grok, pi: OpenAI }
 
 export function AccountRow({
   account,
   index,
-  busy,
-  disabled,
+  now,
+  switching,
+  deleting,
+  renaming,
+  refreshing,
+  refreshError,
+  operationError,
   sortingDisabled,
   onSwitch,
   onRename,
@@ -38,8 +50,13 @@ export function AccountRow({
 }: {
   account: AccountProfile
   index: number
-  busy?: string
-  disabled: boolean
+  now: number
+  switching: boolean
+  deleting: boolean
+  renaming: boolean
+  refreshing: boolean
+  refreshError?: string
+  operationError?: string
   sortingDisabled: boolean
   onSwitch: () => void
   onRename: () => void
@@ -49,7 +66,7 @@ export function AccountRow({
   const { ref, handleRef, isDragging, isDropping } = useSortable({
     id: account.id,
     index,
-    disabled: sortingDisabled || account.isActive,
+    disabled: sortingDisabled,
     data: { title: account.alias },
     transition: window.matchMedia('(prefers-reduced-motion: reduce)').matches
       ? null
@@ -63,9 +80,8 @@ export function AccountRow({
   return (
     <li
       ref={ref}
-      className="account-row flex h-17 items-center gap-3 px-2 py-3"
-      data-active={account.isActive}
-      data-busy={busy?.endsWith(`:${account.id}`) || undefined}
+      className="account-row flex min-h-17 items-center gap-3 px-2 py-3"
+      data-busy={refreshing || switching || deleting || renaming || undefined}
       data-dragging={isDragging || undefined}
       data-dropping={isDropping || undefined}
     >
@@ -74,7 +90,7 @@ export function AccountRow({
         className="account-drag-handle shrink-0 touch-none cursor-grab active:cursor-grabbing"
         type="button"
         aria-label={`拖动 ${account.alias} 排序`}
-        disabled={sortingDisabled || account.isActive}
+        disabled={sortingDisabled}
       >
         <GripVertical className="account-drag-icon" size={18} aria-hidden="true" />
       </button>
@@ -95,19 +111,57 @@ export function AccountRow({
           >
             {account.alias}
           </strong>
+          {refreshing && (
+            <output className="account-refresh-status inline-flex shrink-0">
+              <LoaderCircle
+                className="account-refresh-spinner size-3.5 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+              <span className="account-refresh-status-label sr-only">
+                {account.product === 'claude' ? '正在更新登录令牌' : '正在刷新额度'}
+              </span>
+            </output>
+          )}
+          {(renaming || deleting) && (
+            <output className="account-operation-status inline-flex shrink-0">
+              <LoaderCircle
+                className="account-operation-spinner size-3.5 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+              <span className="account-operation-status-label sr-only">
+                {deleting ? '正在删除账号' : '正在保存名称'}
+              </span>
+            </output>
+          )}
+          {(refreshError || operationError) && (
+            <Badge
+              className="account-operation-error"
+              variant="destructive"
+              title={operationError || refreshError}
+              aria-label={`操作失败：${operationError || refreshError}`}
+            >
+              操作失败
+            </Badge>
+          )}
           {account.needsReauthorization && (
             <Badge className="account-expired-badge" variant="destructive">
               已过期
             </Badge>
           )}
-          {account.planType && (
+          {account.accountType === 'relay' ? (
             <Badge className="account-plan-badge" variant="outline">
-              {planLabel(account.planType)}
+              API
             </Badge>
+          ) : (
+            account.planType && (
+              <Badge className="account-plan-badge" variant="outline">
+                {planLabel(account.planType)}
+              </Badge>
+            )
           )}
           {account.isActive && <Badge className="account-active-badge">使用中</Badge>}
         </div>
-        <AccountMeta account={account} />
+        <AccountMeta account={account} now={now} />
       </div>
       <div className="account-row-actions flex min-w-10 shrink-0 justify-end gap-1">
         {!account.isActive && (
@@ -117,10 +171,10 @@ export function AccountRow({
                 className="account-switch-button"
                 size="icon-lg"
                 aria-label={`切换 ${account.alias}`}
-                disabled={disabled || !!account.switchUnavailable}
+                disabled={switching || deleting || !!account.switchUnavailable}
                 onClick={onSwitch}
               >
-                {busy === `switch:${account.id}` ? (
+                {switching ? (
                   <LoaderCircle className="account-switch-icon animate-spin" aria-hidden="true" />
                 ) : (
                   <ArrowLeftRight className="account-switch-icon" aria-hidden="true" />
@@ -140,7 +194,7 @@ export function AccountRow({
                 variant="ghost"
                 size="icon-lg"
                 aria-label={`管理 ${account.alias}`}
-                disabled={disabled}
+                disabled={deleting}
               />
             }
           >
@@ -153,7 +207,12 @@ export function AccountRow({
                 重命名
               </DropdownMenuItem>
               {account.accountType === 'oauth' && (
-                <DropdownMenuItem className="account-refresh-menu-item" onClick={onRefresh}>
+                <DropdownMenuItem
+                  className="account-refresh-menu-item"
+                  disabled={refreshing || deleting}
+                  aria-busy={refreshing}
+                  onClick={onRefresh}
+                >
                   <RefreshCw className="account-refresh-icon" aria-hidden="true" />
                   {account.product === 'claude' ? '更新登录令牌' : '刷新额度'}
                 </DropdownMenuItem>
@@ -174,7 +233,7 @@ export function AccountRow({
   )
 }
 
-function AccountMeta({ account }: { account: AccountProfile }) {
+function AccountMeta({ account, now }: { account: AccountProfile; now: number }) {
   const items: { key: string; label: string; destructive?: boolean }[] = []
   if (account.accountType === 'relay') {
     if (account.apiBaseUrl) items.push({ key: 'api', label: account.apiBaseUrl })
@@ -182,18 +241,23 @@ function AccountMeta({ account }: { account: AccountProfile }) {
     if (account.email) items.push({ key: 'email', label: account.email })
     if (account.needsReauthorization) items.push({ key: 'reauthorize', label: '需重新授权' })
   } else {
-    if ((account.product === 'grok' || account.product === 'pi') && account.email)
-      items.push({ key: 'email', label: account.email })
+    if (account.email) items.push({ key: 'email', label: account.email })
+    const dualQuota = supportsDualQuota(account)
     for (const [index, window] of [account.usagePrimary, account.usageSecondary].entries()) {
       if (!window) continue
-      const remaining = Math.round(Math.max(0, Math.min(100, 100 - window.usedPercent)))
+      const remaining = remainingQuotaPercent(window.usedPercent)
+      const windowTag = formatWindowLabel(
+        window,
+        dualQuota ? (index === 0 ? '5h' : '7d') : undefined,
+      )
+      const prefix = windowTag ? `${windowTag} ` : ''
+      const resetSuffix =
+        window.resetsAt !== null ? ` (${formatResetTime(window.resetsAt, now)})` : ''
       items.push({
         key: `usage-${index}`,
-        label: `${remaining}% 剩余`,
+        label: `${prefix}${remaining}% 剩余${resetSuffix}`,
         destructive: remaining <= 10,
       })
-      if (window.resetsAt !== null)
-        items.push({ key: `reset-${index}`, label: formatResetTime(window.resetsAt) })
     }
     if (!account.usageUpdatedAt) items.push({ key: 'empty', label: '额度未查询' })
     else if (account.product === 'grok' && !account.usagePrimary)
@@ -218,24 +282,4 @@ function AccountMeta({ account }: { account: AccountProfile }) {
       ))}
     </div>
   )
-}
-
-function formatResetTime(value: number) {
-  const totalMinutes = Math.max(0, Math.ceil((value - Date.now()) / 60_000))
-  const days = Math.floor(totalMinutes / 1_440)
-  const hours = Math.floor((totalMinutes % 1_440) / 60)
-  const minutes = totalMinutes % 60
-  if (days) return `${days}d ${hours}h 后重置`
-  if (hours) return `${hours}h ${minutes}m 后重置`
-  return `${minutes}m 后重置`
-}
-
-function planLabel(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (normalized.includes('ultra')) return 'Ultra'
-  if (normalized.includes('pro')) return 'Pro'
-  if (normalized.includes('free')) return 'Free'
-  if (normalized === 'plus') return 'Plus'
-  if (normalized === 'team') return 'Team'
-  return value.trim()
 }

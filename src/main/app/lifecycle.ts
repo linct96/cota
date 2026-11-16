@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron'
 import type { AppExitProgress } from '../../shared/contracts'
 import type { ConfigStore } from '../settings/config-store'
 import type { AccountService } from '../accounts/service'
+import type { AccountUsageScheduler } from '../accounts/usage-refresh'
 import type { WorktreeManager } from '../git/worktrees/manager'
 import type { WorktreeSetupService } from '../git/worktrees/setup'
 import type { AgentSleepPrevention } from '../agents/runtime/sleep-prevention'
@@ -33,6 +34,7 @@ export class AppLifecycle {
       getWorktrees: () => WorktreeManager | undefined
       getWorktreeSetups: () => WorktreeSetupService | undefined
       getAccounts: () => AccountService | undefined
+      getUsageScheduler?: () => AccountUsageScheduler | undefined
       closeResources: () => void
       renderer: AppRenderer
       agentSleep: AgentSleepPrevention
@@ -136,6 +138,7 @@ export class AppLifecycle {
       deps.closeResources()
       await forceStopTerminalHost(app.getPath('userData'))
       deps.getManager()?.disconnect()
+      await deps.getUsageScheduler?.()?.close()
       await deps.getAccounts()?.close()
       await deps.getConfig()?.flush()
       deps.agentSleep.dispose()
@@ -196,6 +199,7 @@ export class AppLifecycle {
         await manager?.request('shutdown', [])
       }
       deps.closeResources()
+      await deps.getUsageScheduler?.()?.close()
       await deps.getAccounts()?.close()
       if (!stopSessions) {
         this.progress('正在断开界面连接，终端任务继续运行', true)

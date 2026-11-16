@@ -5,14 +5,13 @@ import { isSortable } from '@dnd-kit/react/sortable'
 import { Accessibility, DragDropManager, PointerActivationConstraints } from '@dnd-kit/dom'
 import type { DragDropManagerInput } from '@dnd-kit/dom'
 import { RestrictToVerticalAxis } from '@dnd-kit/abstract/modifiers'
-import { LogIn, Plus, RefreshCw, UsersRound } from 'lucide-react'
+import { LoaderCircle, LogIn, Plus, RefreshCw, UsersRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { ACCOUNT_PRODUCTS } from '../../../../../shared/accounts'
 import type { AccountProduct, AccountProfile, AccountStatus } from '../../../../../shared/accounts'
 import { unwrap } from '../../../../../shared/contracts'
 import { useDialogState } from '@/hooks/use-dialog-state'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -23,9 +22,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { useCortana } from '@/features/cortana/cortana-store'
+import { oauthActive, useCortana } from '@/features/cortana/cortana-store'
 import { AddAccountDialog, RenameAccountDialog } from './AccountDialogs'
+import { AccountQuotaSummary } from './AccountQuotaSummary'
 import { AccountRow } from './AccountRow'
+import { supportsDualQuota } from './account-format'
 
 const dragOptions: DragDropManagerInput = {
   modifiers: [RestrictToVerticalAxis],
@@ -54,23 +55,57 @@ const dragOptions: DragDropManagerInput = {
   ],
 }
 
-type Confirmation = { kind: 'switch' | 'delete'; account: AccountProfile }
+type Confirmation =
+  | { kind: 'switch'; account: AccountProfile; authRevision: string }
+  | { kind: 'delete'; account: AccountProfile }
 const errorText = (error: unknown) =>
   error instanceof Error ? error.message : '账号操作失败，请稍后重试。'
 
-export function AccountsPage() {
-  const product = useCortana((state) => state.activeProduct)
-  return <ProductAccountsPage key={product} product={product} />
+function useNowMinute(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const sync = () => setNow(Date.now())
+    let timer = document.visibilityState === 'hidden' ? undefined : window.setInterval(sync, 60_000)
+    const onVisibilityChange = () => {
+      window.clearInterval(timer)
+      if (document.visibilityState === 'hidden') {
+        timer = undefined
+        return
+      }
+      sync()
+      timer = window.setInterval(sync, 60_000)
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [])
+  return now
 }
 
-function ProductAccountsPage({ product }: { product: AccountProduct }) {
-  const setAgentSwitchBlocked = useCortana((state) => state.setAgentSwitchBlocked)
+export function AccountsPage() {
+  const product = useCortana((state) => state.activeProduct)
+  const now = useNowMinute()
+  return <ProductAccountsPage key={product} product={product} now={now} />
+}
+
+function ProductAccountsPage({ product, now }: { product: AccountProduct; now: number }) {
+  const refreshAccount = useCortana((state) => state.refreshAccount)
+  const perform = useCortana((state) => state.perform)
+  const reorderAccounts = useCortana((state) => state.reorder)
+  const refreshing = useCortana((state) => state.refreshing)
+  const refreshErrors = useCortana((state) => state.refreshErrors)
+  const usageRefreshStatuses = useCortana((state) => state.usageRefreshStatuses)
+  const pending = useCortana((state) => state.pending)
+  const operationErrors = useCortana((state) => state.operationErrors)
+  const pendingOrder = useCortana((state) => state.pendingOrders[product])
+  const statusVersion = useCortana((state) => state.statusVersions[product] ?? 0)
+  const oauthProgress = useCortana((state) => state.oauthProgress)
   const [status, setStatus] = useState<AccountStatus>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
   const [importSkipped, setImportSkipped] = useState(false)
-  const [busy, setBusy] = useState<string>()
-  const busyRef = useRef(false)
   const request = useRef(0)
   const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<AccountProfile>()
@@ -79,143 +114,129 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [dragManager] = useState(() => new DragDropManager(dragOptions))
 
-  useEffect(() => {
-    setAgentSwitchBlocked(!!busy || addOpen || !!editing || !!confirmation)
-    return () => setAgentSwitchBlocked(false)
-  }, [busy, addOpen, editing, confirmation, setAgentSwitchBlocked])
-
-  const loadStatus = useCallback(async () => {
-    const version = ++request.current
-    try {
-      const next = unwrap(await window.desktop.accounts.list(product))
-      if (version === request.current) {
-        setStatus(next)
-        setError(undefined)
+  const loadStatus = useCallback(
+    async (preserveError = false) => {
+      const version = ++request.current
+      const operationVersion = useCortana.getState().statusVersions[product] ?? 0
+      const current = () =>
+        version === request.current &&
+        operationVersion === (useCortana.getState().statusVersions[product] ?? 0)
+      try {
+        const next = unwrap(await window.desktop.accounts.list(product))
+        if (current()) {
+          setStatus(next)
+          useCortana.getState().acknowledgeOrder(product)
+          if (!preserveError) setError(undefined)
+        }
+      } catch (cause) {
+        if (current()) {
+          useCortana.getState().acknowledgeOrder(product)
+          setError(errorText(cause))
+        }
+      } finally {
+        if (current()) setLoading(false)
       }
-    } catch (cause) {
-      if (version === request.current) setError(errorText(cause))
-    } finally {
-      if (version === request.current) setLoading(false)
-    }
-  }, [product])
+    },
+    [product],
+  )
 
   const reload = useCallback(() => {
-    setLoading(true)
+    if (!status) setLoading(true)
     return loadStatus()
-  }, [loadStatus])
+  }, [loadStatus, status])
 
   useEffect(() => {
     const pendingRequest = request
     // oxlint-disable-next-line react/set-state-in-effect -- Mount fetch reads external IPC data; loading is already initialized.
-    void loadStatus()
+    void loadStatus(true)
     return () => {
       pendingRequest.current++
     }
-  }, [loadStatus])
-
-  const perform = useCallback(
-    async (label: string, action: () => Promise<unknown>, notice?: string) => {
-      if (busyRef.current) return false
-      busyRef.current = true
-      setBusy(label)
-      setError(undefined)
-      try {
-        await action()
-        await reload()
-        if (notice) toast.success(notice)
-        return true
-      } catch (cause) {
-        setError(errorText(cause))
-        return false
-      } finally {
-        busyRef.current = false
-        setBusy(undefined)
-      }
-    },
-    [reload],
-  )
-
-  const added = useCallback(() => {
-    setAddOpen(false)
-    void reload()
-    toast.success('账号已保存。')
-  }, [reload])
-  const renamed = useCallback(() => {
-    setEditing(undefined)
-    void reload()
-  }, [reload])
+  }, [loadStatus, statusVersion])
 
   function importCurrent() {
-    return perform('import-current', async () => {
+    void perform(product, `import:${product}`, ACCOUNT_PRODUCTS[product].name, async () => {
       const count = unwrap(await window.desktop.accounts.importCurrent(product))
-      toast.success(`已同步 ${count} 个账号。`)
+      return `已同步 ${count} 个账号。`
     })
   }
 
-  async function switchAccount(account: AccountProfile, force = false) {
-    if (status?.authState === 'unmanaged' && !force) {
-      setConfirmation({ kind: 'switch', account })
-      return
-    }
-    const done = await perform(
-      `switch:${account.id}`,
-      async () => unwrap(await window.desktop.accounts.switch({ id: account.id, force })),
-      '账号已切换。正在运行的 CLI 可能需要重新启动以使用新登录。',
-    )
-    if (done) setConfirmation(undefined)
+  function queueSwitch(account: AccountProfile, authRevision?: string) {
+    void perform(account.product, `switch:${account.id}`, account.alias, async () => {
+      unwrap(
+        await window.desktop.accounts.switch({
+          id: account.id,
+          force: !!authRevision,
+          authRevision,
+        }),
+      )
+      return '账号已切换。'
+    })
   }
 
-  async function confirm() {
-    if (!confirmationDialog.open || !confirmation || busyRef.current) return
-    if (confirmation.kind === 'switch') {
-      await switchAccount(confirmation.account, true)
+  function switchAccount(account: AccountProfile) {
+    if (status?.authState === 'unmanaged') {
+      if (!status.authRevision) {
+        toast.error('无法验证当前 CLI 登录，请刷新后重试。')
+        return
+      }
+      setConfirmation({ kind: 'switch', account, authRevision: status.authRevision })
       return
     }
-    const done = await perform(
-      'delete',
-      async () => unwrap(await window.desktop.accounts.remove(confirmation.account.id)),
-      '账号已删除。',
-    )
-    if (done) setConfirmation(undefined)
+    queueSwitch(account)
   }
 
-  async function reorder(id: string, targetIndex: number) {
+  function confirm() {
+    if (!confirmationDialog.open || !confirmation) return
+    const selected = confirmation
+    setConfirmation(undefined)
+    if (selected.kind === 'switch') {
+      queueSwitch(selected.account, selected.authRevision)
+    } else {
+      void perform(
+        selected.account.product,
+        `delete:${selected.account.id}`,
+        selected.account.alias,
+        async () => {
+          unwrap(await window.desktop.accounts.remove(selected.account.id))
+          return '账号已删除。'
+        },
+      )
+    }
+  }
+
+  function reorder(id: string, targetIndex: number) {
     if (!status || sortingDisabled || targetIndex < 0 || targetIndex >= orderedProfiles.length)
       return
-    const target = orderedProfiles[targetIndex]
-    const movable = status.profiles.filter((profile) => !profile.isActive)
-    const from = movable.findIndex((profile) => profile.id === id)
-    const to = movable.findIndex((profile) => profile.id === target.id)
-    if (from < 0 || to < 0 || from === to) return
-    movable.splice(to, 0, movable.splice(from, 1)[0])
-    let position = 0
-    const nextProfiles = status.profiles.map((profile) =>
-      profile.isActive ? profile : movable[position++],
-    )
-    // Commit the drag library's DOM order before a fast IPC failure can batch away the rollback.
-    flushSync(() => setStatus({ ...status, profiles: nextProfiles }))
-    const done = await perform('reorder', async () =>
-      unwrap(
-        await window.desktop.accounts.reorder(
+    const nextProfiles = [...orderedProfiles]
+    const from = nextProfiles.findIndex((profile) => profile.id === id)
+    if (from < 0 || from === targetIndex) return
+    nextProfiles.splice(targetIndex, 0, nextProfiles.splice(from, 1)[0])
+    // Commit the drag library's DOM order before a fast IPC failure can roll it back.
+    flushSync(
+      () =>
+        void reorderAccounts(
           product,
           nextProfiles.map((profile) => profile.id),
         ),
-      ),
     )
-    if (!done) setStatus(status)
   }
 
-  const orderedProfiles = [...(status?.profiles ?? [])].sort(
-    (a, b) => Number(b.isActive) - Number(a.isActive),
-  )
-  const sortingDisabled =
-    loading ||
-    !!busy ||
-    addOpen ||
-    !!editing ||
-    !!confirmation ||
-    orderedProfiles.filter((account) => !account.isActive).length < 2
+  const positions = new Map(pendingOrder?.map((id, index) => [id, index]))
+  const orderedProfiles = pendingOrder
+    ? [...(status?.profiles ?? [])].sort(
+        (a, b) =>
+          (positions.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+          (positions.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+      )
+    : (status?.profiles ?? [])
+  const activeAccount = orderedProfiles.find((account) => account.isActive)
+  const sortingDisabled = loading || !!pendingOrder || orderedProfiles.length < 2
   const showImportPrompt = status?.authState === 'unmanaged' && !importSkipped
+  const adding =
+    !!pending[`add:${product}`] ||
+    (oauthActive(oauthProgress) && oauthProgress?.product === product)
+  const addError = operationErrors[`add:${product}`]
 
   useLayoutEffect(() => {
     const cancel = () => {
@@ -245,29 +266,28 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
     <section
       className="accounts-page flex min-h-0 flex-1 flex-col"
       aria-label="账号管理"
-      aria-busy={loading || !!busy}
+      aria-busy={loading && !status}
     >
       <header className="accounts-header flex shrink-0 flex-wrap items-center justify-between gap-3 p-5">
-        <div className="accounts-heading flex min-w-0 items-center gap-2">
-          <h2 className="accounts-title text-lg font-semibold">账号管理</h2>
-          {status && (
-            <Badge
-              className="accounts-count tabular-nums"
-              variant="secondary"
-              aria-label={`${status.profiles.length} 个账号`}
-            >
-              {status.profiles.length}
-            </Badge>
-          )}
-        </div>
+        <h2 className="accounts-title text-lg font-semibold">账号管理</h2>
         <div className="accounts-actions flex flex-wrap items-center gap-2">
           <Button
             className="accounts-add-button"
-            disabled={!!busy || loading}
+            variant={addError && !adding ? 'destructive' : 'default'}
+            aria-busy={adding}
+            title={addError}
             onClick={() => setAddOpen(true)}
           >
-            <Plus className="accounts-add-icon" data-icon="inline-start" aria-hidden="true" />
-            添加账号
+            {adding ? (
+              <LoaderCircle
+                className="accounts-add-spinner motion-safe:animate-spin"
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+            ) : (
+              <Plus className="accounts-add-icon" data-icon="inline-start" aria-hidden="true" />
+            )}
+            {addError && !adding ? '添加失败' : '添加账号'}
           </Button>
         </div>
       </header>
@@ -280,7 +300,7 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                 className="accounts-error-retry"
                 variant="outline"
                 size="sm"
-                disabled={!!busy || loading}
+                disabled={loading}
                 onClick={() => void reload()}
               >
                 重新加载
@@ -311,7 +331,6 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                       className="accounts-import-skip"
                       variant="ghost"
                       size="sm"
-                      disabled={!!busy || loading}
                       onClick={() => setImportSkipped(true)}
                     >
                       暂时跳过
@@ -320,55 +339,68 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
                       className="accounts-import-accept"
                       variant="outline"
                       size="sm"
-                      disabled={!!busy || loading}
-                      onClick={() => void importCurrent()}
+                      disabled={!!pending[`import:${product}`]}
+                      onClick={importCurrent}
                     >
                       <LogIn
                         className="accounts-import-icon"
                         data-icon="inline-start"
                         aria-hidden="true"
                       />
-                      {busy === 'import-current' ? '导入中…' : '导入凭据'}
+                      {pending[`import:${product}`] ? '导入中…' : '导入凭据'}
                     </Button>
                   </div>
                 </Alert>
               )}
               {orderedProfiles.length ? (
-                <DragDropProvider
-                  manager={dragManager}
-                  {...dragOptions}
-                  onDragEnd={({ canceled, operation }) => {
-                    if (canceled || !operation.target || !isSortable(operation.source)) return
-                    void reorder(String(operation.source.id), operation.source.index)
-                  }}
-                >
-                  <ul
-                    ref={listRef}
-                    className="accounts-list flex flex-col gap-3"
-                    aria-label="已保存账号"
+                <>
+                  {activeAccount && supportsDualQuota(activeAccount) && (
+                    <AccountQuotaSummary account={activeAccount} now={now} />
+                  )}
+                  <DragDropProvider
+                    manager={dragManager}
+                    {...dragOptions}
+                    onDragEnd={({ canceled, operation }) => {
+                      if (canceled || !operation.target || !isSortable(operation.source)) return
+                      reorder(String(operation.source.id), operation.source.index)
+                    }}
                   >
-                    {orderedProfiles.map((account, index) => (
-                      <AccountRow
-                        key={account.id}
-                        account={account}
-                        index={index}
-                        busy={busy}
-                        disabled={!!busy || loading}
-                        sortingDisabled={sortingDisabled}
-                        onSwitch={() => void switchAccount(account)}
-                        onRename={() => setEditing(account)}
-                        onRefresh={() =>
-                          void perform(
-                            `refresh:${account.id}`,
-                            async () => unwrap(await window.desktop.accounts.refresh(account.id)),
-                            account.product === 'claude' ? '登录令牌已更新。' : '额度已刷新。',
-                          )
-                        }
-                        onDelete={() => setConfirmation({ kind: 'delete', account })}
-                      />
-                    ))}
-                  </ul>
-                </DragDropProvider>
+                    <ul
+                      ref={listRef}
+                      className="accounts-list flex flex-col gap-3"
+                      aria-label="已保存账号"
+                    >
+                      {orderedProfiles.map((account, index) => (
+                        <AccountRow
+                          key={account.id}
+                          account={account}
+                          index={index}
+                          now={now}
+                          switching={!!pending[`switch:${account.id}`]}
+                          deleting={!!pending[`delete:${account.id}`]}
+                          renaming={!!pending[`rename:${account.id}`]}
+                          refreshing={
+                            !!refreshing[account.id] ||
+                            !!usageRefreshStatuses[account.id]?.refreshing
+                          }
+                          refreshError={
+                            refreshErrors[account.id] || usageRefreshStatuses[account.id]?.error
+                          }
+                          operationError={
+                            operationErrors[`switch:${account.id}`] ||
+                            operationErrors[`delete:${account.id}`] ||
+                            operationErrors[`rename:${account.id}`]
+                          }
+                          sortingDisabled={sortingDisabled}
+                          onSwitch={() => switchAccount(account)}
+                          onRename={() => setEditing(account)}
+                          onRefresh={() => void refreshAccount(account)}
+                          onDelete={() => setConfirmation({ kind: 'delete', account })}
+                        />
+                      ))}
+                    </ul>
+                  </DragDropProvider>
+                </>
               ) : (
                 <Empty className="accounts-empty flex-none py-16">
                   <EmptyHeader className="accounts-empty-header">
@@ -386,23 +418,12 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
           )
         )}
       </div>
-      {addOpen && (
-        <AddAccountDialog product={product} onClose={() => setAddOpen(false)} onSaved={added} />
-      )}
-      {editing && (
-        <RenameAccountDialog
-          account={editing}
-          onClose={() => setEditing(undefined)}
-          onSaved={renamed}
-        />
-      )}
+      {addOpen && <AddAccountDialog product={product} onClose={() => setAddOpen(false)} />}
+      {editing && <RenameAccountDialog account={editing} onClose={() => setEditing(undefined)} />}
       <Dialog
         {...confirmationDialog}
-        onOpenChange={(open, details) => {
-          if (!open) {
-            if (busyRef.current) details.cancel()
-            else setConfirmation(undefined)
-          }
+        onOpenChange={(open) => {
+          if (!open) setConfirmation(undefined)
         }}
       >
         <DialogContent
@@ -430,18 +451,12 @@ function ProductAccountsPage({ product }: { product: AccountProduct }) {
               className="account-confirm-cancel"
               ref={cancelButton}
               variant="outline"
-              disabled={!!busy}
               onClick={() => setConfirmation(undefined)}
             >
               取消
             </Button>
-            <Button
-              className="account-confirm-submit"
-              variant="destructive"
-              disabled={!!busy}
-              onClick={() => void confirm()}
-            >
-              {busy ? '处理中…' : confirmation?.kind === 'switch' ? '确认切换' : '删除账号'}
+            <Button className="account-confirm-submit" variant="destructive" onClick={confirm}>
+              {confirmation?.kind === 'switch' ? '确认切换' : '删除账号'}
             </Button>
           </DialogFooter>
         </DialogContent>

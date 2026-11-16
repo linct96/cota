@@ -303,11 +303,7 @@ body:has(
   transition:
     border-color 200ms ease,
     box-shadow 200ms ease,
-    opacity 200ms ease,
-    background-color 200ms ease;
-}
-.account-row[data-active='true'] {
-  background: color-mix(in oklab, var(--primary) 5%, var(--background));
+    opacity 200ms ease;
 }
 .account-row:hover {
   border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
@@ -371,6 +367,140 @@ body:has(
   .account-row-actions:has([data-popup-open]) {
     opacity: 1;
     pointer-events: auto;
+  }
+}
+.accounts-scroll-area {
+  container: account-quota / inline-size;
+}
+.account-quota-summary {
+  --account-quota-cell-filled: var(--foreground);
+  --account-quota-cell-border: color-mix(in oklab, var(--foreground) 22%, transparent);
+  --account-quota-time-marker: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+}
+.account-quota-identity {
+  border-color: var(--border);
+}
+.account-quota-name {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+}
+.account-quota-email {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+}
+.account-quota-row {
+  grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+}
+.account-quota-row[data-marker='top'] .account-quota-label,
+.account-quota-row[data-marker='top'] .account-quota-readout {
+  padding-top: 9px;
+}
+.account-quota-row[data-marker='bottom'] .account-quota-label,
+.account-quota-row[data-marker='bottom'] .account-quota-readout {
+  padding-bottom: 9px;
+}
+.account-quota-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--foreground);
+}
+.account-quota-time-lane {
+  position: relative;
+  width: 100%;
+  height: 7px;
+}
+.account-quota-time-lane[data-pos='top'] {
+  margin-bottom: 2px;
+}
+.account-quota-time-lane[data-pos='bottom'] {
+  margin-top: 2px;
+}
+.account-quota-time-marker {
+  position: absolute;
+  top: -2px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px;
+  color: var(--account-quota-time-marker);
+  transition: left 140ms ease-out;
+}
+.account-quota-track {
+  display: grid;
+  grid-template-columns: repeat(28, minmax(0, 1fr));
+  gap: 2.5px;
+}
+.account-quota-cell {
+  height: 12px;
+  border-radius: 1.5px;
+  border: 1px solid var(--account-quota-cell-border);
+  background: transparent;
+}
+.account-quota-cell[data-state='full'] {
+  background: var(--account-quota-cell-filled);
+  border-color: var(--account-quota-cell-filled);
+}
+.account-quota-cell[data-state='half'] {
+  background: linear-gradient(to right, var(--account-quota-cell-filled) 50%, transparent 50%);
+  border-color: var(--account-quota-cell-filled);
+}
+.account-quota-cell[data-state='unknown'] {
+  border-style: dashed;
+  opacity: 0.45;
+}
+.account-quota-readout {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+.account-quota-percent {
+  flex: 0 0 4ch;
+  text-align: right;
+  font-weight: 700;
+  color: var(--foreground);
+}
+.account-quota-summary[data-low='true'] .account-quota-percent {
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+.account-quota-reset {
+  flex: 0 0 7ch;
+  overflow-wrap: anywhere;
+  color: var(--app-muted-foreground);
+  font-size: 0.625rem;
+}
+@container account-quota (max-width: 37.5rem) {
+  .account-quota-summary {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .account-quota-identity {
+    width: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding-right: 0;
+    padding-bottom: 8px;
+  }
+}
+@media (forced-colors: active) {
+  .account-quota-cell {
+    border-color: ButtonText;
+  }
+  .account-quota-cell[data-state='full'] {
+    background: Highlight;
+    border-color: Highlight;
+  }
+  .account-quota-time-marker {
+    color: CanvasText;
   }
 }
 .terminal-tab-new-button {
@@ -454,6 +584,7 @@ body:has(
 }
 @media (prefers-reduced-motion: reduce) {
   .account-row,
+  .account-quota-time-marker,
   .terminal-tab-status,
   .workspace-tab-actions-overlay::before,
   .ui-resizable-handle::before {

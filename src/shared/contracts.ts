@@ -30,7 +30,8 @@ import type {
   AgentCliStatus,
 } from './agent-cli'
 import type { TerminalLayout } from './terminal-layout'
-import type { AccountsAPI } from './accounts'
+import { DEFAULT_USAGE_REFRESH_SETTINGS } from './accounts'
+import type { AccountsAPI, UsageRefreshSettings } from './accounts'
 import type { GitBranchTarget, GitBranchView } from './git-branches'
 
 export interface WorkspaceOpener {
@@ -80,6 +81,7 @@ export interface Preferences {
   preventSleep: boolean
   reusePreviewTabs: boolean
   confirmCloseRunningTerminal: boolean
+  usageRefresh: UsageRefreshSettings
   shellName: string | null
   shellPath: string | null
   scrollback: number
@@ -584,7 +586,7 @@ export interface DesktopAPI {
   onWarning: (listener: (message: string) => void) => () => void
   readAgentClis: () => Promise<Result<AgentCliCache>>
   onAgentClis: (listener: (cache: AgentCliCache) => void) => () => void
-  detectAgentHooks: () => Promise<Result<AgentHookStatus[]>>
+  detectAgentHooks: (provider?: AgentProvider) => Promise<Result<AgentHookStatus[]>>
   installAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
   trustAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
   uninstallAgentHook: (provider: AgentProvider) => Promise<Result<AgentHookStatus | null>>
@@ -640,6 +642,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     preventSleep: true,
     reusePreviewTabs: true,
     confirmCloseRunningTerminal: true,
+    usageRefresh: DEFAULT_USAGE_REFRESH_SETTINGS,
     shellName: null,
     shellPath: null,
     scrollback: 5000,

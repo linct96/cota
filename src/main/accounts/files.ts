@@ -33,6 +33,7 @@ export interface AccountFileChange {
 export async function applyAccountFiles(
   changes: AccountFileChange[],
   assertLocked: () => void = () => {},
+  verifyBeforeWrite?: () => Promise<void>,
 ): Promise<void> {
   for (const change of changes) {
     if ((await readOptional(change.path)) !== change.before)
@@ -43,6 +44,7 @@ export async function applyAccountFiles(
     for (const change of changes) {
       if ((await readOptional(change.path)) !== change.before)
         throw new Error('认证文件已被其他程序修改，请刷新后重试。')
+      if (verifyBeforeWrite) await verifyBeforeWrite()
       assertLocked()
       if (change.after === null)
         await unlink(change.path).catch((error: NodeJS.ErrnoException) => {
@@ -125,7 +127,7 @@ export async function withPiAuthLock<T>(
   } catch (error) {
     throw new Error(
       (error as NodeJS.ErrnoException).code === 'ELOCKED'
-        ? 'Pi 正在更新认证信息，请稍后再切换账号。'
+        ? 'Pi 正在更新认证信息，请稍后重试。'
         : '无法锁定 Pi 认证信息，请检查目录权限。',
       { cause: error },
     )

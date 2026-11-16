@@ -71,7 +71,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
         id: 'agents',
         label: '智能体',
         icon: Bot,
-        keywords: 'agent cli 安装 更新 版本 codex claude pi grok hook 钩子 状态 集成',
+        keywords:
+          'agent cli 安装 更新 版本 codex claude pi grok hook 钩子 状态 集成 账号 额度 自动刷新 quota usage',
       },
       {
         id: 'file-explorer',

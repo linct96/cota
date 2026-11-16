@@ -4,6 +4,7 @@ import type { IpcHandler } from '../app/ipc'
 import type { HostClient } from '../host/host-client'
 import type { AgentSleepPrevention } from '../agents/runtime/sleep-prevention'
 import type { FileExplorerWatches } from '../files/file-explorer-watch'
+import type { AccountUsageScheduler } from '../accounts/usage-refresh'
 import { resolveShell } from '../system/shell'
 import { executable, preferences } from '../validation'
 
@@ -13,6 +14,7 @@ export function registerSettingsIPC(deps: {
   manager: HostClient
   agentSleep: AgentSleepPrevention
   fileWatches: FileExplorerWatches
+  usageScheduler: AccountUsageScheduler
   updateWindowBackground: () => void
   updateMenu: () => void
 }): void {
@@ -23,6 +25,7 @@ export function registerSettingsIPC(deps: {
     const next = preferences(value)
     if (next.shellPath) await executable(next.shellPath)
     await config.savePreferences(next)
+    deps.usageScheduler.configure(next.usageRefresh)
     agentSleep.setEnabled(next.preventSleep)
     nativeTheme.themeSource = next.theme
     deps.updateWindowBackground()
