@@ -76,7 +76,7 @@ export function SettingsPage() {
         aria-label="设置导航"
       >
         <SidebarHeader className="settings-header gap-3 px-3 pt-3.5 pb-2.5">
-          <div className="settings-heading flex items-center px-1.5">
+          <div className="settings-heading flex items-center px-2.5">
             <h2 id={titleId} className="settings-title">
               设置
             </h2>

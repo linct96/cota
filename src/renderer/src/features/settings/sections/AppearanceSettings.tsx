@@ -4,10 +4,7 @@ import { z } from 'zod'
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useWorkspace } from '@/state/workspace'
 import type { Preferences, ThemePreference } from '../../../../../shared/contracts'
-import {
-  DEFAULT_INTERFACE_COLORS,
-  interfaceColorSchema,
-} from '../../../../../shared/interface-colors'
+import { interfaceColorSchema } from '../../../../../shared/interface-colors'
 import type { InterfaceColorRole } from '../../../../../shared/interface-colors'
 import { observeDocumentTheme, resolveDocumentColor } from '@/lib/theme'
 import { Badge } from '@/components/ui/badge'
@@ -49,7 +46,6 @@ export function AppearanceSettings() {
         const state = useWorkspace.getState()
         const next = update(state.preferences)
         if (next !== state.preferences) await state.savePreferences(next)
-        return next
       } catch (cause) {
         setErrors((previous) => ({
           ...previous,
@@ -58,21 +54,8 @@ export function AppearanceSettings() {
       }
     })
     pending.current = operation
-    const saved = await operation
+    await operation
     if (pending.current === operation) setSaving(false)
-    return saved
-  }
-
-  async function resetAppearance() {
-    const saved = await changeAppearance('reset', (preferences) => ({
-      ...preferences,
-      theme: 'system',
-      interfaceColors: structuredClone(DEFAULT_INTERFACE_COLORS),
-    }))
-    if (saved) {
-      form.reset(saved.interfaceColors)
-      setErrors({})
-    }
   }
 
   function changeTheme(value: ThemePreference) {
@@ -100,7 +83,7 @@ export function AppearanceSettings() {
       className="appearance-settings flex flex-col gap-6"
       aria-labelledby="appearance-settings-title"
     >
-      <header className="appearance-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <header className="appearance-settings-header border-b pb-4">
         <div className="appearance-settings-heading flex flex-col gap-1">
           <h1
             id="appearance-settings-title"
@@ -112,26 +95,7 @@ export function AppearanceSettings() {
             自定义应用明暗主题模式与界面核心语义配色。
           </p>
         </div>
-        <Button
-          type="button"
-          className="appearance-settings-reset"
-          variant="ghost"
-          disabled={!ready || saving}
-          aria-describedby={errors.reset ? 'appearance-reset-error' : undefined}
-          onClick={() => void resetAppearance()}
-        >
-          恢复默认
-        </Button>
       </header>
-      {errors.reset && (
-        <p
-          id="appearance-reset-error"
-          className="appearance-reset-error text-xs text-destructive"
-          role="alert"
-        >
-          {errors.reset}
-        </p>
-      )}
       <Card size="sm" className="appearance-settings-card">
         <div
           className="appearance-theme-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 data-[invalid=true]:text-destructive"

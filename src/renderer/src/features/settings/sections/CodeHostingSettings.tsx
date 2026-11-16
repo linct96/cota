@@ -177,7 +177,7 @@ export function CodeHostingSettings() {
       className="code-hosting-settings flex min-h-0 flex-1 flex-col gap-5"
       aria-labelledby="code-hosting-settings-title"
     >
-      <header className="code-hosting-settings-header flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+      <header className="code-hosting-settings-header border-b pb-4">
         <div className="code-hosting-settings-heading flex flex-col gap-1">
           <h1
             id="code-hosting-settings-title"
@@ -189,61 +189,74 @@ export function CodeHostingSettings() {
             检测本机 GitHub CLI (gh) 与 GitLab CLI (glab) 授权状态，用于拉取与创建代码评审。
           </p>
         </div>
-        <Button
-          className="code-hosting-detect shrink-0"
-          variant="outline"
-          disabled={detecting || detectingVisible || !!configuring || initialPending}
-          aria-busy={detecting || detectingVisible}
-          onClick={() => void detect()}
-        >
-          <RefreshCw className="code-hosting-detect-icon" data-icon="inline-start" />
-          {detectingVisible ? '检测中…' : hasChecked ? '重新检测' : '检测连接'}
-        </Button>
       </header>
-      <LoadingContent pending={initialPending} label="代码托管配置读取中..." showLabel>
-        {!initialPending && (
-          <>
-            {cacheError && (
-              <Alert className="code-hosting-cache-error mb-3" variant="destructive">
-                <AlertDescription className="code-hosting-cache-error-message">
-                  {cacheError}
-                </AlertDescription>
-              </Alert>
-            )}
-            <Card
-              size="sm"
-              className="code-hosting-settings-card gap-0 divide-y divide-border py-0"
-              aria-busy={detecting}
-            >
-              {hostingProviderSchema.options.map((provider) => (
-                <CodeHostingConnectionRow
-                  key={provider}
-                  provider={provider}
-                  connection={connections[provider]}
-                  disabled={detecting || detectingVisible}
-                  open={configuring === provider}
-                  onOpenChange={(open) => {
-                    if (!pending.current) setConfiguring(open ? provider : undefined)
-                  }}
-                  onConnect={async (host) => {
-                    const { result, cache } = unwrap(
-                      await window.desktop.codeHosting.connection(provider, host),
-                    )
-                    if (alive.current) {
-                      setCacheError(cache.error)
-                      setConnections((previous) => ({
-                        ...previous,
-                        [provider]: cachedConnection(cache.entries[provider]),
-                      }))
-                    }
-                    return result
-                  }}
-                />
-              ))}
-            </Card>
-          </>
-        )}
-      </LoadingContent>
+      <section
+        className="code-hosting-platforms flex min-h-0 flex-1 flex-col gap-2.5"
+        aria-labelledby="code-hosting-platforms-title"
+      >
+        <div className="code-hosting-platforms-header flex flex-wrap items-center justify-between gap-3">
+          <h2
+            id="code-hosting-platforms-title"
+            className="code-hosting-platforms-title settings-section-title"
+          >
+            托管平台
+          </h2>
+          <Button
+            className="code-hosting-detect shrink-0"
+            variant="outline"
+            disabled={detecting || detectingVisible || !!configuring || initialPending}
+            aria-busy={detecting || detectingVisible}
+            onClick={() => void detect()}
+          >
+            <RefreshCw className="code-hosting-detect-icon" data-icon="inline-start" />
+            {detectingVisible ? '检测中…' : hasChecked ? '重新检测' : '检测连接'}
+          </Button>
+        </div>
+        <LoadingContent pending={initialPending} label="代码托管配置读取中..." showLabel>
+          {!initialPending && (
+            <>
+              {cacheError && (
+                <Alert className="code-hosting-cache-error mb-3" variant="destructive">
+                  <AlertDescription className="code-hosting-cache-error-message">
+                    {cacheError}
+                  </AlertDescription>
+                </Alert>
+              )}
+              <Card
+                size="sm"
+                className="code-hosting-settings-card gap-0 divide-y divide-border py-0"
+                aria-busy={detecting}
+              >
+                {hostingProviderSchema.options.map((provider) => (
+                  <CodeHostingConnectionRow
+                    key={provider}
+                    provider={provider}
+                    connection={connections[provider]}
+                    disabled={detecting || detectingVisible}
+                    open={configuring === provider}
+                    onOpenChange={(open) => {
+                      if (!pending.current) setConfiguring(open ? provider : undefined)
+                    }}
+                    onConnect={async (host) => {
+                      const { result, cache } = unwrap(
+                        await window.desktop.codeHosting.connection(provider, host),
+                      )
+                      if (alive.current) {
+                        setCacheError(cache.error)
+                        setConnections((previous) => ({
+                          ...previous,
+                          [provider]: cachedConnection(cache.entries[provider]),
+                        }))
+                      }
+                      return result
+                    }}
+                  />
+                ))}
+              </Card>
+            </>
+          )}
+        </LoadingContent>
+      </section>
     </section>
   )
 }
