@@ -3,6 +3,7 @@ import type { AccountProfile, AccountUsageWindow } from '../../../../../shared/a
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  LOW_QUOTA_THRESHOLD,
   formatCompactResetTime,
   formatWindowLabel,
   planLabel,
@@ -37,8 +38,8 @@ export function AccountQuotaSummary({ account, now }: { account: AccountProfile;
     ? remainingQuotaPercent(account.usageSecondary.usedPercent)
     : null
   const lowQuota =
-    (primaryRemaining !== null && primaryRemaining <= 15) ||
-    (secondaryRemaining !== null && secondaryRemaining <= 15)
+    (primaryRemaining !== null && primaryRemaining <= LOW_QUOTA_THRESHOLD) ||
+    (secondaryRemaining !== null && secondaryRemaining <= LOW_QUOTA_THRESHOLD)
 
   return (
     <section

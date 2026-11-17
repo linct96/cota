@@ -97,6 +97,14 @@ export const useCortana = create<CortanaState>((set, get) => ({
     set((state) => ({
       refreshing: { ...state.refreshing, [id]: true },
       refreshErrors: { ...state.refreshErrors, [id]: undefined },
+      usageRefreshStatuses: state.usageRefreshStatuses[id]?.error
+        ? {
+            ...state.usageRefreshStatuses,
+            [id]: state.usageRefreshStatuses[id].refreshing
+              ? { ...state.usageRefreshStatuses[id], error: undefined }
+              : undefined,
+          }
+        : state.usageRefreshStatuses,
     }))
     try {
       unwrap(await window.desktop.accounts.refresh(id))

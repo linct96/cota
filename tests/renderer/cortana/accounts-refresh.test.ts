@@ -224,14 +224,19 @@ describe('account refresh state', () => {
   })
 
   it('clears a failed account state when that account is retried', async () => {
+    const stop = watchAccountUsageRefresh()
+    usageRefreshListener({ id: 'a', product: 'codex', refreshing: false, error: '后台失败' })
+    expect(useCortana.getState().usageRefreshStatuses.a?.error).toBe('后台失败')
     refresh
       .mockResolvedValueOnce({ ok: false, error: '需要重新授权' })
       .mockResolvedValueOnce({ ok: true, value: undefined })
     const item = account('a')
     await useCortana.getState().refreshAccount(item)
+    expect(useCortana.getState().usageRefreshStatuses.a).toBeUndefined()
     expect(useCortana.getState().refreshErrors.a).toBe('需要重新授权')
     await useCortana.getState().refreshAccount(item)
     expect(useCortana.getState().refreshErrors.a).toBeUndefined()
-    expect(useCortana.getState().statusVersions.codex).toBe(2)
+    expect(useCortana.getState().statusVersions.codex).toBe(3)
+    stop()
   })
 })

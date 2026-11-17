@@ -330,7 +330,7 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
             <Empty className="accounts-loading">
               <EmptyHeader className="accounts-loading-header">
                 <RefreshCw
-                  className="accounts-loading-icon size-4 animate-spin"
+                  className="accounts-loading-icon size-4 motion-safe:animate-spin"
                   aria-hidden="true"
                 />
                 <EmptyTitle className="accounts-loading-title">正在加载账号…</EmptyTitle>
@@ -393,10 +393,7 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
                           deactivating={!!pending[`deactivate:${account.id}`]}
                           deleting={!!pending[`delete:${account.id}`]}
                           renaming={!!pending[`rename:${account.id}`]}
-                          refreshing={
-                            !!refreshing[account.id] ||
-                            !!usageRefreshStatuses[account.id]?.refreshing
-                          }
+                          refreshing={!!refreshing[account.id]}
                           refreshError={
                             refreshErrors[account.id] || usageRefreshStatuses[account.id]?.error
                           }

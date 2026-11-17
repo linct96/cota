@@ -2,13 +2,16 @@ import { Fragment } from 'react'
 import { useSortable } from '@dnd-kit/react/sortable'
 import { Claude, Grok, OpenAI } from '@lobehub/icons'
 import {
+  AlertTriangle,
   ArrowLeftRight,
+  Check,
   Ellipsis,
   GripVertical,
   LoaderCircle,
   LogOut,
   Pencil,
   RefreshCw,
+  RotateCw,
   Trash2,
 } from 'lucide-react'
 import type { AccountProfile } from '../../../../../shared/accounts'
@@ -24,6 +27,8 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  LOW_QUOTA_THRESHOLD,
+  formatResetCountdown,
   formatResetTime,
   formatWindowLabel,
   planLabel,
@@ -82,6 +87,17 @@ export function AccountRow({
       ? Grok
       : PRODUCT_ICONS[account.product]
   const siwc = account.product === 'pi' && account.providerKey === 'openai'
+  const canRefresh = account.accountType === 'oauth' && !siwc
+  const rowError = operationError || refreshError
+  const canRetryRefresh = !!refreshError && !operationError && canRefresh
+  const supportsQuota = account.accountType !== 'relay' && account.product !== 'claude' && !siwc
+  const hasRightQuota =
+    !!rowError ||
+    (supportsQuota &&
+      (!!account.usagePrimary ||
+        !!account.usageSecondary ||
+        !account.usageUpdatedAt ||
+        (account.product === 'grok' && !account.usagePrimary)))
   const showAvatarRing = refreshing || renaming || deleting
   const statusAnnouncement = [
     refreshing && (account.product === 'claude' ? '正在更新登录令牌' : '正在刷新额度'),
@@ -126,177 +142,224 @@ export function AccountRow({
           </span>
         )}
       </div>
-      <div className="account-row-body min-w-0 flex-1">
-        {statusAnnouncement && (
-          <output className="account-row-status sr-only">{statusAnnouncement}</output>
-        )}
-        <div className="account-row-heading mb-0.5 flex min-w-0 items-center gap-2">
-          <strong
-            className="account-row-name truncate [unicode-bidi:plaintext]"
-            title={account.alias}
-          >
-            {account.alias}
-          </strong>
-          {(refreshError || operationError) && (
-            <Badge
-              className="account-operation-error"
-              variant="destructive"
-              title={operationError || refreshError}
-              aria-label={`操作失败：${operationError || refreshError}`}
+      <div className="account-row-content flex min-w-0 flex-1 items-center gap-5">
+        <div className="account-row-body min-w-0 flex-1">
+          {statusAnnouncement && (
+            <output className="account-row-status sr-only">{statusAnnouncement}</output>
+          )}
+          <div className="account-row-heading mb-0.5 flex min-w-0 items-center gap-2">
+            <strong
+              className="account-row-name min-w-0 truncate [unicode-bidi:plaintext]"
+              title={account.alias}
             >
-              操作失败
-            </Badge>
-          )}
-          {account.needsReauthorization && (
-            <Badge className="account-expired-badge" variant="destructive">
-              已过期
-            </Badge>
-          )}
-          {siwc && (
-            <Badge className="account-provider-badge" variant="outline">
-              SIWC
-            </Badge>
-          )}
-          {account.accountType === 'relay' ? (
-            <Badge className="account-plan-badge" variant="outline">
-              API
-            </Badge>
-          ) : (
-            account.planType && (
-              <Badge className="account-plan-badge" variant="outline">
-                {planLabel(account.planType)}
+              {account.alias}
+            </strong>
+            {account.needsReauthorization && (
+              <Badge className="account-expired-badge shrink-0" variant="destructive">
+                已过期
               </Badge>
-            )
-          )}
-          {account.isActive && <Badge className="account-active-badge">使用中</Badge>}
+            )}
+            {siwc && (
+              <Badge className="account-provider-badge shrink-0" variant="outline">
+                SIWC
+              </Badge>
+            )}
+            {account.accountType === 'relay' ? (
+              <Badge className="account-plan-badge shrink-0" variant="outline">
+                API
+              </Badge>
+            ) : (
+              account.planType && (
+                <Badge className="account-plan-badge shrink-0" variant="outline">
+                  {planLabel(account.planType)}
+                </Badge>
+              )
+            )}
+            {account.isActive && <Badge className="account-active-badge shrink-0">使用中</Badge>}
+          </div>
+          <AccountMeta account={account} />
         </div>
-        <AccountMeta account={account} now={now} />
-      </div>
-      <div className="account-row-actions flex min-w-10 shrink-0 justify-end gap-1">
-        {!account.isActive && (
-          <Tooltip>
-            <TooltipTrigger render={<span className="account-switch-trigger inline-flex" />}>
-              <Button
-                className="account-switch-button"
-                size="icon-lg"
-                aria-label={`切换 ${account.alias}`}
-                disabled={switching || deleting || !!account.switchUnavailable}
-                onClick={onSwitch}
-              >
-                {switching ? (
-                  <LoaderCircle className="account-switch-icon animate-spin" aria-hidden="true" />
+        <div
+          className="account-row-right flex shrink-0 items-center gap-4.5"
+          data-has-quota={hasRightQuota || undefined}
+        >
+          <AccountQuotaBlock
+            account={account}
+            now={now}
+            error={rowError}
+            supportsQuota={supportsQuota}
+            canRetryRefresh={canRetryRefresh}
+            refreshing={refreshing}
+            deleting={deleting}
+            onRefresh={onRefresh}
+          />
+          {hasRightQuota && (
+            <Separator orientation="vertical" className="account-row-separator h-5 shrink-0" />
+          )}
+          <div className="account-row-actions flex shrink-0 items-center justify-end gap-1">
+            <div className="account-row-primary-action flex justify-end">
+              {!account.isActive ? (
+                account.needsReauthorization && canRefresh && !account.switchUnavailable ? (
+                  <Button
+                    className="account-reauthorize-button"
+                    variant="outline"
+                    size="default"
+                    aria-label={`更新 ${account.alias} 登录令牌`}
+                    aria-busy={refreshing}
+                    disabled={refreshing || deleting}
+                    onClick={onRefresh}
+                  >
+                    <RefreshCw
+                      className={
+                        refreshing
+                          ? 'account-reauthorize-icon motion-safe:animate-spin'
+                          : 'account-reauthorize-icon'
+                      }
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                    更新
+                  </Button>
+                ) : account.switchUnavailable ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={<span className="account-switch-trigger inline-flex" />}
+                    >
+                      <Button
+                        className="account-switch-button"
+                        variant="outline"
+                        size="default"
+                        aria-label={`切换 ${account.alias}`}
+                        focusableWhenDisabled
+                        disabled
+                      >
+                        <ArrowLeftRight
+                          className="account-switch-icon"
+                          data-icon="inline-start"
+                          aria-hidden="true"
+                        />
+                        切换
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent className="account-switch-tooltip">
+                      {account.switchUnavailable}
+                    </TooltipContent>
+                  </Tooltip>
                 ) : (
-                  <ArrowLeftRight className="account-switch-icon" aria-hidden="true" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="account-switch-tooltip">
-              {account.switchUnavailable || '切换'}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {account.product === 'pi' && account.isActive && (
-          <Tooltip>
-            <TooltipTrigger render={<span className="account-deactivate-trigger inline-flex" />}>
-              <Button
-                className="account-deactivate-button"
-                variant="outline"
-                size="icon-lg"
-                aria-label={`取消激活 ${account.alias}`}
-                aria-busy={deactivating}
-                disabled={switching || deactivating || deleting}
-                onClick={onDeactivate}
-              >
-                {deactivating ? (
-                  <LoaderCircle
-                    className="account-deactivate-icon motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <LogOut className="account-deactivate-icon" aria-hidden="true" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="account-deactivate-tooltip">取消激活</TooltipContent>
-          </Tooltip>
-        )}
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                className="account-menu-button"
-                variant="ghost"
-                size="icon-lg"
-                aria-label={`管理 ${account.alias}`}
-                disabled={deactivating || deleting}
-              />
-            }
-          >
-            <Ellipsis className="account-menu-icon" aria-hidden="true" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="account-menu-content" align="end">
-            <DropdownMenuGroup className="account-menu-group">
-              <DropdownMenuItem className="account-rename-menu-item" onClick={onRename}>
-                <Pencil className="account-rename-icon" aria-hidden="true" />
-                重命名
-              </DropdownMenuItem>
-              {account.accountType === 'oauth' && !siwc && (
-                <DropdownMenuItem
-                  className="account-refresh-menu-item"
-                  disabled={refreshing || deleting}
-                  aria-busy={refreshing}
-                  onClick={onRefresh}
+                  <Button
+                    className="account-switch-button"
+                    variant="outline"
+                    size="default"
+                    aria-label={`切换 ${account.alias}`}
+                    disabled={switching || deleting}
+                    onClick={onSwitch}
+                  >
+                    {switching ? (
+                      <LoaderCircle
+                        className="account-switch-icon motion-safe:animate-spin"
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <ArrowLeftRight
+                        className="account-switch-icon"
+                        data-icon="inline-start"
+                        aria-hidden="true"
+                      />
+                    )}
+                    切换
+                  </Button>
+                )
+              ) : account.product === 'pi' ? (
+                <Button
+                  className="account-deactivate-button"
+                  variant="outline"
+                  size="default"
+                  aria-label={`停用 ${account.alias}`}
+                  aria-busy={deactivating}
+                  disabled={switching || deactivating || deleting}
+                  onClick={onDeactivate}
                 >
-                  <RefreshCw className="account-refresh-icon" aria-hidden="true" />
-                  {account.product === 'claude' ? '更新登录令牌' : '刷新额度'}
-                </DropdownMenuItem>
+                  {deactivating ? (
+                    <LoaderCircle
+                      className="account-deactivate-icon motion-safe:animate-spin"
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <LogOut
+                      className="account-deactivate-icon"
+                      data-icon="inline-start"
+                      aria-hidden="true"
+                    />
+                  )}
+                  停用
+                </Button>
+              ) : (
+                <span className="account-row-active-indicator inline-flex items-center gap-1">
+                  <Check className="account-row-active-icon size-3 shrink-0" aria-hidden="true" />
+                  <span>当前</span>
+                </span>
               )}
-              <DropdownMenuItem
-                className="account-delete-menu-item"
-                variant="destructive"
-                onClick={onDelete}
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    className="account-menu-button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`管理 ${account.alias}`}
+                    disabled={deactivating || deleting}
+                  />
+                }
               >
-                <Trash2 className="account-delete-icon" aria-hidden="true" />
-                删除
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <Ellipsis className="account-menu-icon" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="account-menu-content" align="end">
+                <DropdownMenuGroup className="account-menu-group">
+                  <DropdownMenuItem className="account-rename-menu-item" onClick={onRename}>
+                    <Pencil className="account-rename-icon" aria-hidden="true" />
+                    重命名
+                  </DropdownMenuItem>
+                  {canRefresh && (
+                    <DropdownMenuItem
+                      className="account-refresh-menu-item"
+                      disabled={refreshing || deleting}
+                      aria-busy={refreshing}
+                      onClick={onRefresh}
+                    >
+                      <RefreshCw className="account-refresh-icon" aria-hidden="true" />
+                      {account.product === 'claude' ? '更新登录令牌' : '刷新额度'}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    className="account-delete-menu-item"
+                    variant="destructive"
+                    onClick={onDelete}
+                  >
+                    <Trash2 className="account-delete-icon" aria-hidden="true" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
       </div>
     </li>
   )
 }
 
-function AccountMeta({ account, now }: { account: AccountProfile; now: number }) {
-  const items: { key: string; label: string; destructive?: boolean }[] = []
+function AccountMeta({ account }: { account: AccountProfile }) {
+  const items: { key: string; label: string }[] = []
   if (account.accountType === 'relay') {
     if (account.apiBaseUrl) items.push({ key: 'api', label: account.apiBaseUrl })
   } else if (account.product === 'claude') {
     if (account.email) items.push({ key: 'email', label: account.email })
     if (account.needsReauthorization) items.push({ key: 'reauthorize', label: '需重新授权' })
-  } else {
-    if (account.email) items.push({ key: 'email', label: account.email })
-    const dualQuota = supportsDualQuota(account)
-    for (const [index, window] of [account.usagePrimary, account.usageSecondary].entries()) {
-      if (!window) continue
-      const remaining = remainingQuotaPercent(window.usedPercent)
-      const windowTag = formatWindowLabel(
-        window,
-        dualQuota ? (index === 0 ? '5h' : '7d') : undefined,
-      )
-      const prefix = windowTag ? `${windowTag} ` : ''
-      const resetSuffix =
-        window.resetsAt !== null ? ` (${formatResetTime(window.resetsAt, now)})` : ''
-      items.push({
-        key: `usage-${index}`,
-        label: `${prefix}${remaining}% 剩余${resetSuffix}`,
-        destructive: remaining <= 10,
-      })
-    }
-    if (!account.usageUpdatedAt && !(account.product === 'pi' && account.providerKey === 'openai'))
-      items.push({ key: 'empty', label: '额度未查询' })
-    else if (account.product === 'grok' && !account.usagePrimary)
-      items.push({ key: 'unavailable', label: '官方未返回额度百分比' })
+  } else if (account.email) {
+    items.push({ key: 'email', label: account.email })
   }
 
   if (!items.length) return null
@@ -307,15 +370,140 @@ function AccountMeta({ account, now }: { account: AccountProfile; now: number })
           {index > 0 && (
             <Separator orientation="vertical" className="account-meta-separator mx-2 h-3" />
           )}
-          <span
-            className="account-meta-item min-w-0 truncate tabular-nums"
-            data-destructive={item.destructive || undefined}
-            title={item.label}
-          >
+          <span className="account-meta-item min-w-0 truncate tabular-nums" title={item.label}>
             {item.label}
           </span>
         </Fragment>
       ))}
     </div>
   )
+}
+
+function AccountQuotaBlock({
+  account,
+  now,
+  error,
+  supportsQuota,
+  canRetryRefresh,
+  refreshing,
+  deleting,
+  onRefresh,
+}: {
+  account: AccountProfile
+  now: number
+  error?: string
+  supportsQuota: boolean
+  canRetryRefresh: boolean
+  refreshing: boolean
+  deleting: boolean
+  onRefresh: () => void
+}) {
+  const dualQuota = supportsDualQuota(account)
+  const windows = supportsQuota
+    ? [account.usagePrimary, account.usageSecondary]
+        .map((window, index) => {
+          if (!window) return null
+          const remaining = remainingQuotaPercent(window.usedPercent)
+          const windowLabel =
+            formatWindowLabel(window, dualQuota ? (index === 0 ? '5h' : '7d') : undefined) ?? '额度'
+          const reset = window.resetsAt !== null ? formatResetCountdown(window.resetsAt, now) : null
+          const resetTitle =
+            window.resetsAt !== null
+              ? reset?.imminent
+                ? '即将重置'
+                : formatResetTime(window.resetsAt, now)
+              : undefined
+          return {
+            key: `usage-${index}`,
+            windowLabel,
+            remaining,
+            reset,
+            resetTitle,
+            low: remaining <= LOW_QUOTA_THRESHOLD,
+          }
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : []
+
+  if (error) {
+    return (
+      <div className="account-row-error-box flex min-w-0 flex-col items-end gap-0.5">
+        <div className="account-row-error-header flex items-center gap-1.5">
+          <AlertTriangle className="account-row-error-icon size-3 shrink-0" aria-hidden="true" />
+          <p className="account-row-error line-clamp-1 wrap-break-word" title={error}>
+            {error}
+          </p>
+          {canRetryRefresh && (
+            <Button
+              className="account-row-retry-button"
+              variant="ghost"
+              size="xs"
+              disabled={refreshing || deleting}
+              onClick={onRefresh}
+            >
+              重试
+            </Button>
+          )}
+        </div>
+        {windows.length > 0 && (
+          <span className="account-row-cached-quota tabular-nums">
+            上次：{windows.map((item) => `${item.windowLabel} ${item.remaining}%`).join(' · ')}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  if (!supportsQuota) return null
+
+  if (windows.length) {
+    return (
+      <div className="account-row-quota-list flex flex-col">
+        {windows.map((item) => (
+          <div key={item.key} className="account-row-quota-item">
+            <span className="account-row-quota-label">{item.windowLabel}</span>
+            <div className="account-row-quota-bar" aria-hidden="true">
+              <div
+                className="account-row-quota-bar-fill"
+                data-low={item.low || undefined}
+                style={{ width: `${item.remaining}%` }}
+              />
+            </div>
+            <span
+              className="account-row-quota-percent tabular-nums"
+              data-low={item.low || undefined}
+              aria-label={`${item.windowLabel} 剩余 ${item.remaining}%`}
+            >
+              {item.remaining}%
+            </span>
+            {item.reset ? (
+              <span
+                className="account-row-quota-reset inline-flex items-center justify-start gap-1 tabular-nums"
+                data-imminent={item.reset.imminent || undefined}
+                title={item.resetTitle}
+              >
+                <RotateCw
+                  className="account-row-quota-reset-icon size-2.5 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{item.reset.text}</span>
+                {!item.reset.imminent && <span className="sr-only">后重置</span>}
+              </span>
+            ) : (
+              <span className="account-row-quota-reset-placeholder" aria-hidden="true" />
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const emptyLabel = !account.usageUpdatedAt
+    ? '额度未查询'
+    : account.product === 'grok' && !account.usagePrimary
+      ? '官方未返回额度百分比'
+      : ''
+  if (!emptyLabel) return null
+
+  return <span className="account-row-quota-empty truncate">{emptyLabel}</span>
 }

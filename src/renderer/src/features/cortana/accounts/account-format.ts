@@ -1,5 +1,7 @@
 import type { AccountProfile, AccountUsageWindow } from '../../../../../shared/accounts'
 
+export const LOW_QUOTA_THRESHOLD = 15
+
 /** Computes remaining quota percentage rounded to an integer in [0, 100]. */
 export function remainingQuotaPercent(usedPercent: number): number {
   return Math.round(Math.max(0, Math.min(100, 100 - usedPercent)))
@@ -43,6 +45,15 @@ export function formatCompactResetTime(value: number, now = Date.now()): string 
   if (days) return `${days}d${hours}h`
   if (hours) return `${hours}h${minutes}m`
   return `${minutes}m`
+}
+
+/** Formats compact reset countdown with imminent flag for account list rows. */
+export function formatResetCountdown(
+  value: number,
+  now = Date.now(),
+): { text: string; imminent: boolean } {
+  if (value <= now) return { text: '即将重置', imminent: true }
+  return { text: formatCompactResetTime(value, now), imminent: false }
 }
 
 /** Normalizes subscription plan names for display badges. */

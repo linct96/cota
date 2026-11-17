@@ -667,6 +667,46 @@ describe('account snapshots during queued operations', () => {
     await closing
     expect(closed).toBe(true)
   })
+
+  it('does not block other account operations during background refresh and preserves concurrent edits', async () => {
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    vi.mocked(network.refreshAccountUsage).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return { ...value, usageUpdatedAt: 456 }
+    })
+    const automatic = service.refreshAutomatically('a', { allowed: () => true, due: () => true })
+    await started.promise
+    await service.rename({ id: 'a', alias: '新别名' })
+    await service.rename({ id: 'b', alias: '账号 B' })
+    expect(new AccountStore(path).get('a').alias).toBe('新别名')
+    expect(new AccountStore(path).get('b').alias).toBe('账号 B')
+    finish.resolve()
+    expect(await automatic).toBe(true)
+    const saved = new AccountStore(path).get('a')
+    expect(saved.alias).toBe('新别名')
+    expect(saved.usageUpdatedAt).toBe(456)
+    await service.close()
+  })
+
+  it('does not resurrect an account removed during a background refresh', async () => {
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    vi.mocked(network.refreshAccountUsage).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return { ...value, usageUpdatedAt: 789 }
+    })
+    const automatic = service.refreshAutomatically('a', { allowed: () => true, due: () => true })
+    await started.promise
+    await service.remove('a')
+    expect((await service.list('codex')).profiles.map((entry) => entry.id)).toEqual(['b'])
+    finish.resolve()
+    expect(await automatic).toBe(false)
+    expect((await service.list('codex')).profiles.map((entry) => entry.id)).toEqual(['b'])
+    await service.close()
+  })
 })
 
 describe('Pi OpenAI SIWC credentials', () => {
