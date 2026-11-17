@@ -11,6 +11,7 @@ import {
   normalizeCredential,
 } from '../../../src/main/accounts/credentials'
 import { AccountService } from '../../../src/main/accounts/service'
+import { AccountOAuth } from '../../../src/main/accounts/oauth'
 import { AccountStore } from '../../../src/main/accounts/store'
 import type { StoredAccount } from '../../../src/main/accounts/store'
 import { AccountUsageScheduler } from '../../../src/main/accounts/usage-refresh'
@@ -154,6 +155,290 @@ afterEach(async () => {
   vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   rmSync(root, { recursive: true, force: true })
+})
+
+describe('refresh after saving credentials', () => {
+  it('refreshes a new account once even when periodic refresh is disabled', async () => {
+    const started = deferred<StoredAccount>()
+    const finish = deferred<void>()
+    vi.mocked(network.refreshAccountUsage).mockImplementation(async (value) => {
+      started.resolve(value)
+      await finish.promise
+      return { ...value, usageUpdatedAt: now }
+    })
+    await createScheduler(false).start()
+    await service.add({
+      product: 'codex',
+      mode: 'credential',
+      credential: account('new', 'codex').auth,
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    const saved = (await service.list('codex')).profiles[0]
+    const finished = waitForAccount(saved.id)
+    expect((await started.promise).id).toBe(saved.id)
+    expect(saved.usageUpdatedAt).toBeNull()
+    finish.resolve()
+    expect((await finished).error).toBeUndefined()
+    expect((await service.list('codex')).profiles[0].usageUpdatedAt).toBe(now)
+
+    const scanned = deferred<void>()
+    const list = service.list.bind(service)
+    vi.spyOn(service, 'list').mockImplementation(async (product) => {
+      const status = await list(product)
+      if (product === 'grok') scanned.resolve()
+      return status
+    })
+    scheduler?.configure(DEFAULT_USAGE_REFRESH_SETTINGS)
+    await scanned.promise
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+    scheduler?.configure({ ...DEFAULT_USAGE_REFRESH_SETTINGS, enabled: false })
+    now += 60 * 60_000
+    scheduler?.wake()
+    await scheduler?.close()
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes after browser authorization saves the account', async () => {
+    const queried = deferred<StoredAccount>()
+    vi.mocked(network.refreshAccountUsage).mockImplementation((value) => {
+      queried.resolve(value)
+      return Promise.resolve({ ...value, usageUpdatedAt: now })
+    })
+    vi.spyOn(AccountOAuth.prototype, 'start').mockImplementation(function (
+      this: AccountOAuth,
+      product,
+      alias,
+    ) {
+      const oauth = this as unknown as {
+        save: (
+          product: AccountProduct,
+          auth: Record<string, unknown>,
+          alias: string,
+        ) => Promise<void>
+      }
+      return oauth.save(product, JSON.parse(account('oauth', 'codex').auth), alias)
+    })
+    await createScheduler(false).start()
+    await service.startOAuth('codex', '授权账号')
+    expect((await queried.promise).alias).toBe('授权账号')
+    await scheduler?.close()
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+  })
+
+  it('refreshes each supported Pi credential after a multi-account import', async () => {
+    mkdirSync(join(root, 'pi'), { recursive: true })
+    const entries = [account('openai', 'pi'), account('xai', 'pi', { providerKey: 'xai' })].map(
+      (item) => normalizeCredential('pi', JSON.parse(item.auth)),
+    )
+    readCurrent.mockImplementation((product) => Promise.resolve(product === 'pi' ? entries : []))
+    const queried = deferred<void>()
+    let count = 0
+    vi.mocked(network.refreshAccountUsage).mockImplementation((value) => {
+      if (++count === 2) queried.resolve()
+      return Promise.resolve({ ...value, usageUpdatedAt: now })
+    })
+    await createScheduler(false).start()
+    expect(await service.importCurrent('pi')).toBe(2)
+    await queried.promise
+    await scheduler?.close()
+    expect(
+      vi.mocked(network.refreshAccountUsage).mock.calls.map(([value]) => value.providerKey),
+    ).toEqual(['openai-codex', 'xai'])
+  })
+
+  it('does not refresh unsupported or unsuccessfully imported credentials', async () => {
+    const entries = [account('openai', 'pi'), account('xai', 'pi', { providerKey: 'xai' })].map(
+      (item) => normalizeCredential('pi', JSON.parse(item.auth)),
+    )
+    entries[1] = { ...entries[1], auth: '{' }
+    readCurrent.mockResolvedValue(entries)
+    await createScheduler(false).start()
+    await expect(service.importCurrent('pi')).rejects.toThrow()
+    expect((await service.list('pi')).profiles).toEqual([])
+    await service.add({
+      product: 'claude',
+      mode: 'credential',
+      credential: account('claude', 'claude').auth,
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    await service.add({
+      product: 'pi',
+      mode: 'credential',
+      credential: JSON.stringify({
+        openai: {
+          type: 'oauth',
+          access: 'opaque-access',
+          refresh: 'refresh',
+          expires: 9e12,
+          clientId: 'client',
+          scopes: ['chatgpt.tokens.use.direct'],
+        },
+      }),
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    await service.add({
+      product: 'codex',
+      mode: 'relay',
+      credential: '',
+      alias: '',
+      apiBaseUrl: 'https://example.com',
+      apiKey: 'api-key',
+    })
+    await scheduler?.close()
+    expect(events).toEqual([])
+    expect(network.refreshAccountUsage).not.toHaveBeenCalled()
+  })
+
+  it('preserves the last quota and does not retry on a failed reimport when disabled', async () => {
+    const previous = { usedPercent: 42, windowMinutes: 300, resetsAt: null }
+    const item = account('existing', 'codex', { usagePrimary: previous, usageUpdatedAt: now })
+    new AccountStore(join(root, 'providers.json')).save(item)
+    readCurrent.mockResolvedValue([normalizeCredential('codex', JSON.parse(item.auth))])
+    vi.mocked(network.refreshAccountUsage).mockRejectedValue(new Error('额度服务不可用'))
+    await createScheduler(false).start()
+    const finished = waitForAccount(item.id)
+    expect(await service.importCurrent('codex')).toBe(1)
+    expect((await finished).error).toBe('额度服务不可用')
+    const saved = new AccountStore(join(root, 'providers.json')).get(item.id)
+    expect(saved.usagePrimary).toEqual(previous)
+    expect(saved.usageUpdatedAt).toBe(now)
+    now += 60 * 60_000
+    scheduler?.wake()
+    await scheduler?.close()
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+  })
+
+  it('does not start a saved-account refresh after shutdown', async () => {
+    const reading = deferred<void>()
+    const finishReading = deferred<ReturnType<typeof normalizeCredential>[]>()
+    readCurrent.mockImplementation(() => {
+      reading.resolve()
+      return finishReading.promise
+    })
+    const instance = createScheduler()
+    await instance.start()
+    await reading.promise
+    await service.add({
+      product: 'codex',
+      mode: 'credential',
+      credential: account('new', 'codex').auth,
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    const closing = instance.close()
+    finishReading.resolve([])
+    await closing
+    expect(network.refreshAccountUsage).not.toHaveBeenCalled()
+  })
+
+  it('keeps shared refresh-token protection for an immediate refresh', async () => {
+    const codex = account('codex', 'codex', {
+      auth: JSON.stringify({
+        kind: 'codex',
+        auth: { tokens: { access_token: 'access', refresh_token: 'shared', account_id: 'codex' } },
+      }),
+    })
+    const pi = account('pi', 'pi', {
+      auth: JSON.stringify({
+        kind: 'pi',
+        auth: {
+          'openai-codex': { type: 'oauth', access: 'pi-access', refresh: 'shared', expires: 9e12 },
+        },
+      }),
+    })
+    const store = new AccountStore(join(root, 'providers.json'))
+    store.save(codex)
+    store.save(pi)
+    await createScheduler(false).start()
+    const finished = waitForAccount(codex.id)
+    await service.add({
+      product: 'codex',
+      mode: 'credential',
+      credential: codex.auth,
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    expect((await finished).error).toContain('多个账号共用刷新令牌')
+    expect(network.refreshCredential).not.toHaveBeenCalled()
+    expect(network.refreshAccountUsage).not.toHaveBeenCalled()
+  })
+
+  it('merges an immediate refresh into a queued periodic refresh using the saved credentials', async () => {
+    const item = account('existing', 'codex', { usageUpdatedAt: now - 31 * 60_000 })
+    new AccountStore(join(root, 'providers.json')).save(item)
+    const updated = JSON.parse(item.auth)
+    updated.auth.tokens.access_token = 'new-access'
+    updated.auth.tokens.refresh_token = 'new-refresh'
+    const credential = normalizeCredential('codex', updated)
+    const reading = deferred<void>()
+    const finishImport = deferred<(typeof credential)[]>()
+    let reads = 0
+    readCurrent.mockImplementation(async () => {
+      if (++reads === 1) {
+        reading.resolve()
+        return finishImport.promise
+      }
+      return [credential]
+    })
+    const instance = createScheduler(false)
+    await instance.start()
+    const importing = service.importCurrent('codex')
+    await reading.promise
+    const queued = deferred<void>()
+    const refresh = service.refreshAutomatically.bind(service)
+    vi.spyOn(service, 'refreshAutomatically').mockImplementation((id, automatic) => {
+      queued.resolve()
+      return refresh(id, automatic)
+    })
+    instance.configure(DEFAULT_USAGE_REFRESH_SETTINGS)
+    await queued.promise
+    const finished = waitForAccount(item.id)
+    instance.configure({ ...DEFAULT_USAGE_REFRESH_SETTINGS, enabled: false })
+    finishImport.resolve([credential])
+    expect(await importing).toBe(1)
+    expect((await finished).error).toBeUndefined()
+    await instance.close()
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+    const queried = vi.mocked(network.refreshAccountUsage).mock.calls[0][0]
+    expect(queried.id).toBe(item.id)
+    expect(queried.auth).toContain('new-access')
+  })
+
+  it('runs the saved-account request if a joined periodic refresh was skipped', async () => {
+    const item = account('existing', 'codex', { usageUpdatedAt: now - 31 * 60_000 })
+    new AccountStore(join(root, 'providers.json')).save(item)
+    readCurrent.mockResolvedValue([normalizeCredential('codex', JSON.parse(item.auth))])
+    const instance = createScheduler(false)
+    await instance.start()
+    const queued = deferred<void>()
+    const skipped = deferred<boolean>()
+    const refresh = service.refreshAutomatically.bind(service)
+    vi.spyOn(service, 'refreshAutomatically')
+      .mockImplementationOnce(() => {
+        queued.resolve()
+        return skipped.promise
+      })
+      .mockImplementation(refresh)
+    instance.configure(DEFAULT_USAGE_REFRESH_SETTINGS)
+    await queued.promise
+    const finished = waitForAccount(item.id)
+    await service.importCurrent('codex')
+    skipped.resolve(false)
+    expect((await finished).error).toBeUndefined()
+    await instance.close()
+    expect(network.refreshAccountUsage).toHaveBeenCalledOnce()
+    expect(events.filter((event) => event.id === item.id).map((event) => event.refreshing)).toEqual(
+      [true, false],
+    )
+  })
 })
 
 describe('background account usage refresh', () => {

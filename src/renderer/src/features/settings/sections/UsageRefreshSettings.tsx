@@ -76,7 +76,7 @@ export function UsageRefreshSettings() {
               id="usage-refresh-enabled-label"
               className="usage-refresh-enabled-label text-xs leading-5 font-medium"
             >
-              自动刷新额度
+              定时刷新额度
             </span>
             <p
               id="usage-refresh-enabled-help"

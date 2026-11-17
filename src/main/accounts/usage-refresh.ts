@@ -20,6 +20,7 @@ export class AccountUsageScheduler {
   private readonly attempts = new Map<string, number>()
   private readonly attemptVersions = new Map<string, number>()
   private readonly statuses = new Map<string, AccountUsageRefreshStatus>()
+  private readonly savedAccounts = new Map<string, { product: AccountProduct }>()
   private writeQueue: Promise<unknown> = Promise.resolve()
   private running?: Promise<void>
   private timer?: ReturnType<typeof setInterval>
@@ -50,6 +51,11 @@ export class AccountUsageScheduler {
     if (this.stopped) return
     this.accounts.setRefreshAttemptRecorder((id) => this.recordAttempt(id))
     this.accounts.setRefreshErrorClearer((id) => this.clearError(id))
+    this.accounts.setSavedAccountRefreshRequester((product, ids) => {
+      if (this.stopped) return
+      for (const id of ids) this.savedAccounts.set(id, { product })
+      this.request()
+    })
     this.timer = setInterval(() => this.request(), REFRESH_TICK_MS)
     this.request()
   }
@@ -75,13 +81,18 @@ export class AccountUsageScheduler {
   async close(): Promise<void> {
     this.stopped = true
     this.rerun = false
+    this.savedAccounts.clear()
     if (this.timer) clearInterval(this.timer)
     await this.running?.catch(() => {})
     await this.writeQueue
   }
 
+  private canRun(): boolean {
+    return !this.stopped && this.available()
+  }
+
   private allowed(): boolean {
-    return !this.stopped && this.settings.enabled && this.available()
+    return this.settings.enabled && this.canRun()
   }
 
   private due(
@@ -149,7 +160,7 @@ export class AccountUsageScheduler {
   }
 
   private request(): void {
-    if (!this.allowed()) return
+    if (!this.canRun() || (!this.settings.enabled && !this.savedAccounts.size)) return
     if (this.running) {
       this.rerun = true
       return
@@ -173,7 +184,63 @@ export class AccountUsageScheduler {
     }
   }
 
+  private async refreshSaved(): Promise<void> {
+    while (this.canRun() && this.savedAccounts.size) {
+      const [id, saved] = this.savedAccounts.entries().next().value!
+      await this.refresh({ id, product: saved.product })
+      if (this.savedAccounts.get(id) === saved) this.savedAccounts.delete(id)
+    }
+  }
+
+  private async refresh(account: Pick<AccountProfile, 'id' | 'product'>): Promise<void> {
+    const status = { id: account.id, product: account.product, refreshing: true }
+    const attemptVersion = this.attemptVersions.get(account.id)
+    let covered: { product: AccountProduct } | undefined
+    const automatic = {
+      allowed: () => {
+        const saved = this.savedAccounts.get(account.id)
+        if (saved) covered = saved
+        return this.canRun() && (!!saved || this.settings.enabled)
+      },
+      due: (
+        latest: Pick<AccountProfile, 'usageUpdatedAt' | 'usagePrimary' | 'usageSecondary'>,
+        active: boolean,
+      ) => {
+        const saved = this.savedAccounts.get(account.id)
+        if (saved) covered = saved
+        return !!saved || this.due(account.id, latest, active)
+      },
+    }
+    this.setStatus(status)
+    try {
+      let refreshed = await this.accounts.refreshAutomatically(account.id, automatic)
+      // A joined periodic request may have been skipped before the saved account was queued.
+      if (!refreshed && !covered && this.savedAccounts.has(account.id) && this.canRun())
+        refreshed = await this.accounts.refreshAutomatically(account.id, automatic)
+      if (refreshed && !covered) covered = this.savedAccounts.get(account.id)
+      this.setStatus({ ...status, refreshing: false })
+    } catch (error) {
+      covered ??= this.savedAccounts.get(account.id)
+      if (this.attemptVersions.get(account.id) === attemptVersion) {
+        try {
+          await this.recordAttempt(account.id)
+        } catch {
+          // The original error is more useful; the in-memory attempt still limits retries.
+        }
+      }
+      this.setStatus({
+        ...status,
+        refreshing: false,
+        error: error instanceof Error ? error.message : '自动刷新额度失败。',
+      })
+    } finally {
+      if (covered && this.savedAccounts.get(account.id) === covered)
+        this.savedAccounts.delete(account.id)
+    }
+  }
+
   private async scan(): Promise<void> {
+    await this.refreshSaved()
     for (const product of ['codex', 'pi', 'grok'] satisfies AccountProduct[]) {
       if (!this.allowed()) return
       let profiles
@@ -184,6 +251,7 @@ export class AccountUsageScheduler {
         continue
       }
       for (const account of profiles) {
+        if (this.savedAccounts.size) await this.refreshSaved()
         if (!this.allowed()) return
         if (
           !supportsAutomaticUsageRefresh(account) ||
@@ -192,29 +260,7 @@ export class AccountUsageScheduler {
           !this.due(account.id, account, account.isActive)
         )
           continue
-        const status = { id: account.id, product: account.product, refreshing: true }
-        const attemptVersion = this.attemptVersions.get(account.id)
-        this.setStatus(status)
-        try {
-          await this.accounts.refreshAutomatically(account.id, {
-            allowed: () => this.allowed(),
-            due: (latest, active) => this.due(account.id, latest, active),
-          })
-          this.setStatus({ ...status, refreshing: false })
-        } catch (error) {
-          if (this.attemptVersions.get(account.id) === attemptVersion) {
-            try {
-              await this.recordAttempt(account.id)
-            } catch {
-              // The original error is more useful; the in-memory attempt still limits retries.
-            }
-          }
-          this.setStatus({
-            ...status,
-            refreshing: false,
-            error: error instanceof Error ? error.message : '自动刷新额度失败。',
-          })
-        }
+        await this.refresh(account)
       }
     }
   }

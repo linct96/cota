@@ -174,6 +174,7 @@ export class AccountService {
   private refreshTasks = new Map<string, RefreshTask>()
   private recordRefreshAttempt?: (id: string) => Promise<() => Promise<void>>
   private clearRefreshError?: (id: string) => void
+  private refreshSavedAccounts?: (product: AccountProduct, ids: string[]) => void
   private closing = false
 
   constructor(providersPath: string, emitOAuth: (progress: AccountOAuthProgress) => void) {
@@ -187,6 +188,7 @@ export class AccountService {
         this.run(() => {
           const account = this.upsert(product, normalizeCredential(product, auth), alias)
           this.clearRefreshError?.(account.id)
+          this.notifySavedAccounts(product, [account])
         }),
       emitOAuth,
     )
@@ -197,6 +199,16 @@ export class AccountService {
     const pending = this.queue.then(action)
     this.queue = pending.catch(() => {})
     return pending
+  }
+
+  private notifySavedAccounts(product: AccountProduct, accounts: StoredAccount[]): void {
+    const ids = [...new Set(accounts.filter(supportsAutomaticUsageRefresh).map(({ id }) => id))]
+    if (!ids.length) return
+    try {
+      this.refreshSavedAccounts?.(product, ids)
+    } catch {
+      console.warn('无法安排账号额度刷新。')
+    }
   }
 
   private advanceCredentialVersion(product: AccountProduct): void {
@@ -363,6 +375,7 @@ export class AccountService {
         value.alias,
       )
       this.clearRefreshError?.(account.id)
+      this.notifySavedAccounts(value.product, [account])
     })
   }
 
@@ -371,11 +384,12 @@ export class AccountService {
     return this.run(async () => {
       const current = await this.credentials.current(product)
       if (!current.length) throw new Error('未检测到可导入的账号，请先在对应 CLI 中登录。')
-      const ids: string[] = []
+      const saved: StoredAccount[] = []
       this.store.transaction(() => {
-        for (const credential of current) ids.push(this.upsert(product, credential, '').id)
+        for (const credential of current) saved.push(this.upsert(product, credential, ''))
       })
-      for (const id of ids) this.clearRefreshError?.(id)
+      for (const account of saved) this.clearRefreshError?.(account.id)
+      this.notifySavedAccounts(product, saved)
       return current.length
     })
   }
@@ -501,6 +515,12 @@ export class AccountService {
 
   setRefreshErrorClearer(clearer: (id: string) => void): void {
     this.clearRefreshError = clearer
+  }
+
+  setSavedAccountRefreshRequester(
+    requester: (product: AccountProduct, ids: string[]) => void,
+  ): void {
+    this.refreshSavedAccounts = requester
   }
 
   refresh(idInput: unknown): Promise<void> {
