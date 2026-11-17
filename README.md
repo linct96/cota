@@ -71,15 +71,22 @@ Git 面板中的冲突文件可在现有 Monaco Diff 中只读查看：“冲突
 
 正式版配置使用 `~/.cota/`，开发版使用 `~/.cota-dev/`，两者相互隔离：
 
-| 文件             | 用途                                                   |
-| ---------------- | ------------------------------------------------------ |
-| `config.json`    | 偏好设置、最近项目、分组、工作区布局和工作树初始化配置 |
-| `providers.json` | 账号列表和元数据                                       |
-| `auth.json`      | 明文 OAuth Token、刷新令牌和 API Key                   |
+| 文件                 | 用途                                                   |
+| -------------------- | ------------------------------------------------------ |
+| `config.json`        | 偏好设置、最近项目、分组、工作区布局和工作树初始化配置 |
+| `providers.json`     | 账号列表和元数据                                       |
+| `model-pricing.json` | 模型预估价格配置                                       |
+| `auth.json`          | 明文 OAuth Token、刷新令牌和 API Key                   |
 
 工作树位于同一目录下的 `worktrees/`，正式版和开发版共用 `~/.cota/hooks/`。配置文件按需生成；手动编辑前请先退出 Cota。
 
 Chromium 用户数据和工作树初始化执行记录使用系统应用数据目录；macOS 正式版为 `~/Library/Application Support/cota/`，开发版为 `~/Library/Application Support/Cota Dev/`。更新前请完全退出旧版 Cota，避免不同数据目录的实例同时写入同一配置。系统目录中已有的运行数据和兼容的 Terminal Host 可能被重新使用；原 `~/.cota/` 或 `~/.cota-dev/` 中生成的运行数据不会自动迁移或删除，对应的终端会话也不会自动接回。系统目录中的旧 `config.json`、`providers.json` 和 `OAuth.json` 不会作为应用配置读取或迁移。
+
+## Cortana 统计分析
+
+Cortana 的「统计分析」按所选 Agent 只读汇总本机 CLI 会话，支持当天、7 天、30 天和全部时间范围，包括在 Cota 外启动的会话；统计不区分账号，也不等同于账号页的剩余额度。会话正文和凭据不会上传。无法读取或解析的记录会在页面提示；已删除、未记录、通过符号链接嵌套或存放在 Cota 进程不可见的自定义目录中的会话无法统计。
+
+默认读取 Codex 的 `~/.codex/sessions` 和 `archived_sessions`、Claude Code 的 `~/.claude/projects`、Pi 的 `~/.pi/agent/sessions`、Grok 的 `~/.grok/sessions`，分别遵循 Cota 进程环境中的 `CODEX_HOME`、`CLAUDE_CONFIG_DIR`、`PI_CODING_AGENT_DIR` 和 `GROK_HOME`。支持手动管理模型价格，也可以主动从 models.dev 导入 OpenAI、Anthropic、Google、DeepSeek 和 xAI 的模型价格；费用仅为估算，未定价的用量不会按零费用计算。价格配置不会自动从原 Cortana 导入。
 
 ## Cortana 账号管理
 
