@@ -32,6 +32,7 @@ import type {
 import type { TerminalLayout } from './terminal-layout'
 import { DEFAULT_USAGE_REFRESH_SETTINGS } from './accounts'
 import type { AccountsAPI, UsageRefreshSettings } from './accounts'
+import type { UsageAnalyticsAPI } from './usage-analytics'
 import type { GitBranchTarget, GitBranchView } from './git-branches'
 
 export interface WorkspaceOpener {
@@ -509,6 +510,7 @@ export interface DesktopAPI {
   resizeAgentCliInstallTerminal: (id: string, cols: number, rows: number) => Promise<Result<void>>
   onAgentCliInstall: (listener: (event: AgentCliInstallEvent) => void) => () => void
   readonly accounts: AccountsAPI
+  readonly usageAnalytics: UsageAnalyticsAPI
   readonly codeHosting: CodeHostingAPI
   readonly platform: string
   bootstrap: () => Promise<

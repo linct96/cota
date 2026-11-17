@@ -13,6 +13,7 @@ export default defineConfig({
           index: resolve('src/main/index.ts'),
           host: resolve('src/main/host/host-entry.ts'),
           'port-scanner': resolve('src/main/ports/port-scanner-entry.ts'),
+          'analytics-worker': resolve('src/main/analytics/analytics-worker.ts'),
           'pi-extension': resolve('src/main/agents/hooks/pi-extension.ts'),
           'agent-hook': resolve('src/main/agents/hooks/hook-entry.ts'),
         },

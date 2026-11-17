@@ -41,6 +41,14 @@ beforeEach(() => {
     writeAgentCliInstallTerminal: vi.fn(),
     resizeAgentCliInstallTerminal: vi.fn(),
     onAgentCliInstall: vi.fn(),
+    usageAnalytics: {
+      query: vi.fn(),
+      listPrices: vi.fn(),
+      savePrice: vi.fn(),
+      deletePrice: vi.fn(),
+      fetchPrices: vi.fn(),
+      importPrices: vi.fn(),
+    },
     codeHosting: {
       context: vi.fn(),
       readAccounts: vi.fn(),

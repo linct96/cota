@@ -93,6 +93,14 @@ const api: DesktopAPI = {
       return () => ipcRenderer.removeListener('accounts:oauth-progress', wrapped)
     },
   },
+  usageAnalytics: {
+    query: (product, range) => ipcRenderer.invoke('analytics:query', product, range),
+    listPrices: () => ipcRenderer.invoke('analytics:prices-list'),
+    savePrice: (price, replace) => ipcRenderer.invoke('analytics:prices-save', price, replace),
+    deletePrice: (key) => ipcRenderer.invoke('analytics:prices-delete', key),
+    fetchPrices: () => ipcRenderer.invoke('analytics:prices-fetch'),
+    importPrices: (prices) => ipcRenderer.invoke('analytics:prices-import', prices),
+  },
   codeHosting: {
     context: (target) => ipcRenderer.invoke('code-hosting:context', target),
     readAccounts: () => ipcRenderer.invoke('code-hosting:accounts-read'),

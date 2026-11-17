@@ -56,10 +56,19 @@ const accountsRoute = createRoute({
   ),
 })
 
+const analyticsRoute = createRoute({
+  getParentRoute: () => cortanaRoute,
+  path: '/analytics',
+  component: lazyRouteComponent(
+    () => import('@/features/cortana/analytics/AnalyticsPage'),
+    'AnalyticsPage',
+  ),
+})
+
 const routeTree = rootRoute.addChildren([
   workspaceRoute,
   settingsRoute,
-  cortanaRoute.addChildren([accountsRoute]),
+  cortanaRoute.addChildren([accountsRoute, analyticsRoute]),
 ])
 
 export function createAppRouter(history: RouterHistory = createHashHistory()) {

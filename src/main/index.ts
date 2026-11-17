@@ -8,6 +8,8 @@ import { ConfigStore } from './settings/config-store'
 import { AccountService } from './accounts/service'
 import { AccountUsageScheduler } from './accounts/usage-refresh'
 import { registerAccountsIPC } from './accounts/ipc'
+import { registerAnalyticsIPC } from './analytics/ipc'
+import type { UsageAnalyticsService } from './analytics/service'
 import { SourceControlService } from './git/source-control/service'
 import { registerGitIPC } from './git/ipc'
 import type { GitResources } from './git/ipc'
@@ -46,6 +48,7 @@ let config: ConfigStore
 let agentClis: AgentCliManagement
 let accounts: AccountService
 let usageScheduler: AccountUsageScheduler | undefined
+let usageAnalytics: UsageAnalyticsService | undefined
 let worktrees: WorktreeManager
 let worktreeSetups: WorktreeSetupService
 let codeHosting: CodeHostingService | undefined
@@ -114,6 +117,7 @@ if (!app.requestSingleInstanceLock()) {
     appTray?.dispose()
     agentSleep.dispose()
     workspacePorts?.dispose()
+    usageAnalytics?.dispose()
   })
   void (async () => {
     try {
@@ -231,6 +235,7 @@ if (!app.requestSingleInstanceLock()) {
       fileWatches = registerFilesIPC(common)
       workspacePorts = registerPortsIPC(common)
       registerAccountsIPC(handle, accounts, usageScheduler)
+      usageAnalytics = registerAnalyticsIPC(handle, configDirectory)
       registerCodeHostingIPC({ ...common, codeHosting, git })
       registerAgentsIPC({ ...common, agentClis, cliInstallTerminals, getWindow })
       registerTerminalIPC({ ...common, agentClis, trusted })

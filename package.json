@@ -55,6 +55,7 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-resizable-panels": "^4.14.6",
+    "recharts": "3.8.0",
     "shadcn": "^4.21.5",
     "simple-icons": "12.4.0",
     "smol-toml": "^1.9.1",

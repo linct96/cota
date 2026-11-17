@@ -1,6 +1,6 @@
-import { Link, Outlet, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { ClaudeCode, Grok, OpenAI, Pi } from '@lobehub/icons'
-import { Check, ChevronDown, UsersRound } from 'lucide-react'
+import { ChartNoAxesCombined, Check, ChevronDown, UsersRound } from 'lucide-react'
 import { ACCOUNT_PRODUCTS } from '../../../../shared/accounts'
 import type { AccountProduct } from '../../../../shared/accounts'
 import { Button } from '@/components/ui/button'
@@ -36,7 +36,7 @@ const PRODUCT_ICONS = {
 
 export function CortanaLayout() {
   const { activeProduct, selectProduct } = useCortana()
-  const navigate = useNavigate()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
   const leftPanelOpen = useLeftPanel((state) => state.open)
   const ActiveIcon = PRODUCT_ICONS[activeProduct]
 
@@ -97,7 +97,6 @@ export function CortanaLayout() {
                           onClick={() => {
                             if (selected) return
                             selectProduct(product)
-                            void navigate({ to: '/cortana/accounts' })
                           }}
                         >
                           <Icon className="cortana-agent-option-icon" aria-hidden="true" />
@@ -129,17 +128,36 @@ export function CortanaLayout() {
                     <SidebarMenuItem className="cortana-nav-item">
                       <SidebarMenuButton
                         className="cortana-accounts-link"
-                        isActive
+                        isActive={pathname === '/cortana/accounts'}
                         render={
                           <Link
                             to="/cortana/accounts"
-                            aria-current="page"
+                            aria-current={pathname === '/cortana/accounts' ? 'page' : undefined}
                             className="cortana-accounts-route"
                           />
                         }
                       >
                         <UsersRound className="cortana-accounts-icon" aria-hidden="true" />
                         <span className="cortana-accounts-label">账号管理</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem className="cortana-nav-item">
+                      <SidebarMenuButton
+                        className="cortana-analytics-link"
+                        isActive={pathname === '/cortana/analytics'}
+                        render={
+                          <Link
+                            to="/cortana/analytics"
+                            aria-current={pathname === '/cortana/analytics' ? 'page' : undefined}
+                            className="cortana-analytics-route"
+                          />
+                        }
+                      >
+                        <ChartNoAxesCombined
+                          className="cortana-analytics-icon"
+                          aria-hidden="true"
+                        />
+                        <span className="cortana-analytics-label">统计分析</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>
