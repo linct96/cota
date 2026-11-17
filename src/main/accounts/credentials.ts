@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
 import type { AccountProduct } from '../../shared/accounts'
@@ -17,6 +18,7 @@ import type { AccountFileChange } from './files'
 
 export const GROK_AUTH_KEY = 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828'
 export const GROK_API_KEY = 'xai::api_key'
+export const PI_OAUTH_PROVIDERS = ['openai', 'openai-codex', 'xai'] as const
 export const CLAUDE_SCOPE =
   'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
 export const fingerprint = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -54,12 +56,15 @@ export function unwrapPiAuth(
 ): { providerKey: string; entry: Record<string, unknown> } {
   const candidate =
     (providerKey && Object.keys(object(auth[providerKey])).length > 0 ? providerKey : '') ||
-    ['openai-codex', 'xai'].find((key) => Object.keys(object(auth[key])).length > 0) ||
+    PI_OAUTH_PROVIDERS.find((key) => object(auth[key]).type === 'oauth') ||
+    PI_OAUTH_PROVIDERS.find((key) => Object.keys(object(auth[key])).length > 0) ||
     Object.keys(auth).find((key) => Object.keys(object(auth[key])).length > 0) ||
     ''
   if (candidate) return { providerKey: candidate, entry: object(auth[candidate]) }
   const resolved =
-    providerKey || text(auth.providerKey) || (text(auth.accountId) ? 'openai-codex' : 'xai')
+    providerKey ||
+    text(auth.providerKey) ||
+    (text(auth.clientId) ? 'openai' : text(auth.accountId) ? 'openai-codex' : 'xai')
   return { providerKey: resolved, entry: auth }
 }
 
@@ -106,7 +111,10 @@ export function deriveCredentialMeta(
       product: 'pi',
       providerKey,
       accountType: 'oauth',
-      accountId: text(piEntry.accountId) || text(claims.sub) || (access ? fingerprint(access) : ''),
+      accountId:
+        providerKey === 'openai'
+          ? text(claims.sub)
+          : text(piEntry.accountId) || text(claims.sub) || (access ? fingerprint(access) : ''),
     }
   }
   const { entryKey, entry: grokEntry } = unwrapGrokAuth(auth)
@@ -261,13 +269,24 @@ export function normalizeCredential(
     )
       throw new Error('Pi 认证信息须包含 type、access、refresh 和 expires。')
     providerKey = resolvedKey
-    if (!['openai-codex', 'xai'].includes(providerKey))
-      throw new Error('目前支持 Pi 的 OpenAI Codex 和 xAI OAuth 账号。')
+    if (!(PI_OAUTH_PROVIDERS as readonly string[]).includes(providerKey))
+      throw new Error('目前支持 Pi 的 OpenAI、OpenAI Codex 和 xAI OAuth 账号。')
     kind = 'pi'
     access = text(entry.access)
     const claims = jwtClaims(access)
     const authClaims = object(claims['https://api.openai.com/auth'])
-    accountId = text(entry.accountId) || text(claims.sub) || fingerprint(access)
+    if (
+      providerKey === 'openai' &&
+      (!text(entry.clientId) ||
+        !Array.isArray(entry.scopes) ||
+        !entry.scopes.every((scope) => typeof scope === 'string') ||
+        !entry.scopes.includes('chatgpt.tokens.use.direct'))
+    )
+      throw new Error('Pi OpenAI SIWC 凭据缺少客户端或 ChatGPT 授权范围。')
+    accountId =
+      providerKey === 'openai'
+        ? text(claims.sub)
+        : text(entry.accountId) || text(claims.sub) || fingerprint(access)
     name =
       text(entry.name) ||
       jwtName(claims) ||
@@ -277,7 +296,10 @@ export function normalizeCredential(
       text(claims.email) ||
       text(object(claims['https://api.openai.com/profile']).email)
     planType = providerKey === 'openai-codex' ? text(authClaims.chatgpt_plan_type) : ''
-    identity = `${providerKey}:${accountId}:${email}`
+    identity =
+      providerKey === 'openai'
+        ? `${providerKey}:${text(entry.clientId)}`
+        : `${providerKey}:${accountId}:${email}`
     payload = { [providerKey]: entry }
   } else {
     if (inputKind !== undefined && inputKind !== 'grok') throw new Error('Grok 认证信息格式无效。')
@@ -361,6 +383,11 @@ export function credentialIdentity(
     return `${account.apiBaseUrl}:${fingerprint(key)}`
   }
   return normalizeCredential(account.product, account.auth, account.providerKey).identity
+}
+
+function assertPiOAuthReplaceable(root: Record<string, unknown>, providerKey: string): void {
+  if (providerKey === 'openai' && object(root.openai).type === 'api_key')
+    throw new Error('Pi 当前 OpenAI 使用 API Key，请先在 Pi 中处理，Cota 不会覆盖该凭据。')
 }
 
 export class AccountCredentials {
@@ -468,7 +495,7 @@ export class AccountCredentials {
     if (product === 'pi') {
       return Object.entries(root)
         .filter(([, value]) => object(value).type === 'oauth')
-        .filter(([provider]) => ['openai-codex', 'xai'].includes(provider))
+        .filter(([provider]) => (PI_OAUTH_PROVIDERS as readonly string[]).includes(provider))
         .map(([provider, value]) => normalizeCredential('pi', value, provider))
     }
     const config = await this.toml(join(this.authPath('grok'), '..', 'config.toml'))
@@ -489,8 +516,46 @@ export class AccountCredentials {
     return withPiAuthLock(this.authPath('pi'), action)
   }
 
-  async apply(account: StoredAccount, expectedRevision?: string): Promise<() => Promise<void>> {
+  async assertPiOAuthReplaceable(providerKey: string): Promise<void> {
+    const path = this.authPath('pi')
+    const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error
+      return undefined
+    })
+    if (stat?.isSymbolicLink()) throw new Error('Pi 认证文件是符号链接，无法安全修改认证信息。')
+    const content = await readOptional(path)
+    assertPiOAuthReplaceable(content === null ? {} : parseObject(content, path), providerKey)
+  }
+
+  async deactivatePi(
+    providerKey: string,
+    expectedRevision: string,
+    assertLocked: () => void,
+  ): Promise<void> {
+    await this.assertPiOAuthReplaceable(providerKey)
+    const path = this.authPath('pi')
+    const before = await readOptional(path)
+    if (this.revisionOf([{ path, before }]) !== expectedRevision)
+      throw new Error('当前 Pi 登录已变化，请刷新后重试。')
+    const root = before === null ? {} : parseObject(before, path)
+    if (object(root[providerKey]).type !== 'oauth')
+      throw new Error('当前 Pi 登录已变化，请刷新后重试。')
+    delete root[providerKey]
+    await applyAccountFiles([{ path, before, after: json(root) }], assertLocked, () =>
+      this.assertPiOAuthReplaceable(providerKey),
+    )
+  }
+
+  async apply(
+    account: StoredAccount,
+    expectedRevision?: string,
+    piLock?: () => void,
+  ): Promise<() => Promise<void>> {
     if (account.product === 'pi') {
+      if (piLock) {
+        const restore = await this.applyUnlocked(account, piLock, expectedRevision)
+        return () => restore(piLock)
+      }
       const restore = await this.withPiLock((assertLocked) =>
         this.applyUnlocked(account, assertLocked, expectedRevision),
       )
@@ -567,6 +632,7 @@ export class AccountCredentials {
       }
       changes.push({ path, before, after: json({ ...root, env }) })
     } else if (product === 'pi') {
+      if (account.providerKey === 'openai') await this.assertPiOAuthReplaceable(account.providerKey)
       const { entry } = unwrapPiAuth(auth, account.providerKey)
       changes.push({
         path,

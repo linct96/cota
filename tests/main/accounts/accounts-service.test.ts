@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { lock } from 'proper-lockfile'
 import { AccountService } from '../../../src/main/accounts/service'
 import { AccountCredentials, normalizeCredential } from '../../../src/main/accounts/credentials'
 import { AccountStore } from '../../../src/main/accounts/store'
@@ -47,6 +57,27 @@ function account(id: string): StoredAccount {
     lastUsedAt: null,
     needsReauthorization: false,
     sortOrder: id === 'a' ? 0 : 1,
+  }
+}
+
+function siwc(subject: string, clientId: string, version = 'old', expires = 9e12) {
+  const payload = Buffer.from(JSON.stringify({ sub: subject, jti: version })).toString('base64url')
+  return {
+    type: 'oauth',
+    access: `header.${payload}.signature`,
+    refresh: `refresh-${clientId}-${version}`,
+    expires,
+    clientId,
+    scopes: ['offline_access', 'chatgpt.tokens.use.direct'],
+  }
+}
+
+function siwcAccount(entry: ReturnType<typeof siwc>): StoredAccount {
+  return {
+    ...account('siwc'),
+    product: 'pi',
+    providerKey: 'openai',
+    auth: JSON.stringify({ kind: 'pi', auth: { openai: entry } }),
   }
 }
 
@@ -635,5 +666,663 @@ describe('account snapshots during queued operations', () => {
     await listing
     await closing
     expect(closed).toBe(true)
+  })
+})
+
+describe('Pi OpenAI SIWC credentials', () => {
+  function setupPi(entry = siwc('current-user', 'current-client')) {
+    vi.restoreAllMocks()
+    const piHome = join(root, 'pi')
+    mkdirSync(piHome)
+    vi.stubEnv('PI_CODING_AGENT_DIR', piHome)
+    const authPath = join(piHome, 'auth.json')
+    const source = {
+      openai: entry,
+      'openai-codex': {
+        type: 'oauth',
+        access: 'codex-access',
+        refresh: 'codex-refresh',
+        expires: 9e12,
+        accountId: 'codex-account',
+      },
+      other: { type: 'api_key', key: 'unrelated' },
+    }
+    writeFileSync(authPath, JSON.stringify(source))
+    return { authPath, source }
+  }
+
+  async function addSiwc(entry: ReturnType<typeof siwc>) {
+    await service.add({
+      product: 'pi',
+      mode: 'credential',
+      credential: JSON.stringify({ openai: entry }),
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    return (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai' && profile.accountId === 'target-user',
+    )!
+  }
+
+  it.each(['openai', 'openai-codex', 'xai'] as const)(
+    'deactivates only %s, saves its rotated credential, and can switch it back',
+    async (provider) => {
+      const { authPath, source } = setupPi()
+      const initial = {
+        ...source,
+        xai: {
+          type: 'oauth',
+          access: 'xai-access',
+          refresh: 'xai-refresh',
+          expires: 9e12,
+          accountId: 'xai-account',
+        },
+      }
+      writeFileSync(authPath, JSON.stringify(initial))
+      expect(await service.importCurrent('pi')).toBe(3)
+      const target = (await service.list('pi')).profiles.find(
+        (profile) => profile.providerKey === provider,
+      )!
+      const rotated =
+        provider === 'openai'
+          ? siwc('current-user', 'current-client', 'rotated', 9e12 + 1000)
+          : {
+              ...initial[provider],
+              access: `${provider}-access-rotated`,
+              refresh: `${provider}-refresh-rotated`,
+              expires: 9e12 + 1000,
+            }
+      const current = { ...initial, [provider]: rotated }
+      writeFileSync(authPath, JSON.stringify(current))
+
+      await service.deactivate(target.id)
+      const { [provider]: _removed, ...remaining } = current
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(remaining)
+      expect(JSON.parse(new AccountStore(path).get(target.id).auth).auth[provider]).toEqual(rotated)
+      const after = (await service.list('pi')).profiles
+      expect(after.find((profile) => profile.id === target.id)?.isActive).toBe(false)
+      expect(
+        after.filter((profile) => profile.id !== target.id).every((item) => item.isActive),
+      ).toBe(true)
+
+      await service.switch({ id: target.id })
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(current)
+      expect(
+        (await service.list('pi')).profiles.find((item) => item.id === target.id)?.isActive,
+      ).toBe(true)
+      await service.close()
+    },
+  )
+
+  it.each(['openai', 'openai-codex'] as const)(
+    'keeps %s accounts mutually exclusive without changing other providers',
+    async (provider) => {
+      const { authPath, source } = setupPi()
+      await service.importCurrent('pi')
+      const previous = (await service.list('pi')).profiles.find(
+        (profile) => profile.providerKey === provider,
+      )!
+      const nextCredential =
+        provider === 'openai'
+          ? siwc('target-user', 'target-client')
+          : { ...source['openai-codex'], accountId: 'another-account', access: 'another-access' }
+      await service.add({
+        product: 'pi',
+        mode: 'credential',
+        credential: JSON.stringify({ [provider]: nextCredential }),
+        alias: 'another',
+        apiBaseUrl: '',
+        apiKey: '',
+      })
+      const next = (await service.list('pi')).profiles.find(
+        (profile) => profile.alias === 'another',
+      )!
+      await service.switch({ id: next.id })
+      const switched = (await service.list('pi')).profiles
+      expect(switched.find((item) => item.id === previous.id)?.isActive).toBe(false)
+      expect(switched.find((item) => item.id === next.id)?.isActive).toBe(true)
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+        ...source,
+        [provider]: nextCredential,
+      })
+      await service.deactivate(next.id)
+      expect(
+        (await service.list('pi')).profiles.filter((item) => item.providerKey === provider),
+      ).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: previous.id, isActive: false })]),
+      )
+      expect(
+        (await service.list('pi')).profiles.some(
+          (item) => item.providerKey === provider && item.isActive,
+        ),
+      ).toBe(false)
+      await service.close()
+    },
+  )
+
+  it('leaves an empty Pi auth file and the saved account after its last login is deactivated', async () => {
+    const { authPath, source } = setupPi()
+    writeFileSync(authPath, JSON.stringify({ 'openai-codex': source['openai-codex'] }))
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles[0]
+    await service.deactivate(target.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({})
+    const status = await service.list('pi')
+    expect(status.authState).toBe('missing')
+    expect(status.profiles).toEqual([expect.objectContaining({ id: target.id, isActive: false })])
+    await expect(service.deactivate(target.id)).rejects.toThrow('当前 Pi 登录已变化')
+    await service.close()
+  })
+
+  it('rejects inactive or non-Pi accounts and preserves unrelated API keys', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const siwcProfile = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const external = { ...source, openai: { type: 'api_key', key: 'unrelated-api-key' } }
+    writeFileSync(authPath, JSON.stringify(external))
+    await expect(service.deactivate(siwcProfile.id)).rejects.toThrow('API Key')
+    await expect(service.deactivate('a')).rejects.toThrow('仅支持取消激活 Pi')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+    const codex = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai-codex',
+    )!
+    await service.deactivate(codex.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      openai: external.openai,
+      other: source.other,
+    })
+    await service.close()
+  })
+
+  it('does not deactivate a different account that became active after listing', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const external = { ...source, openai: siwc('other-user', 'other-client') }
+    writeFileSync(authPath, JSON.stringify(external))
+    await expect(service.deactivate(target.id)).rejects.toThrow('当前 Pi 登录已变化')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+    await service.close()
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'does not replace a symlinked Pi auth file when deactivating',
+    async () => {
+      const { authPath, source } = setupPi()
+      await service.importCurrent('pi')
+      const target = (await service.list('pi')).profiles.find(
+        (profile) => profile.providerKey === 'openai-codex',
+      )!
+      const actualPath = `${authPath}.target`
+      renameSync(authPath, actualPath)
+      symlinkSync('auth.json.target', authPath)
+      await expect(service.deactivate(target.id)).rejects.toThrow('认证文件是符号链接')
+      expect(lstatSync(authPath).isSymbolicLink()).toBe(true)
+      expect(JSON.parse(readFileSync(actualPath, 'utf8'))).toEqual(source)
+      await service.close()
+    },
+  )
+
+  it('does not replace a newer saved token with an older Pi token', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const store = new AccountStore(path)
+    const saved = store.get(target.id)
+    const rotated = siwc('current-user', 'current-client', 'newer', 9e12 + 1000)
+    store.save({ ...saved, auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }) })
+    await expect(service.deactivate(target.id)).rejects.toThrow('无法确认最新的 Pi 令牌')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it('does not rewrite an unchanged saved credential during deactivation', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const store = (service as unknown as { store: AccountStore }).store
+    const save = vi.spyOn(store, 'save')
+    await service.deactivate(target.id)
+    expect(save).not.toHaveBeenCalled()
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      'openai-codex': source['openai-codex'],
+      other: source.other,
+    })
+    await service.close()
+  })
+
+  it('does not remove the Pi login if saving the rotated token fails', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const current = {
+      ...source,
+      openai: siwc('current-user', 'current-client', 'new', 9e12 + 1000),
+    }
+    writeFileSync(authPath, JSON.stringify(current))
+    const store = (service as unknown as { store: AccountStore }).store
+    vi.spyOn(store, 'save').mockImplementation(() => {
+      throw new Error('save failed')
+    })
+    await expect(service.deactivate(target.id)).rejects.toThrow('save failed')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(current)
+    await service.close()
+  })
+
+  it('preserves an external Pi change after saving a rotated token', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const rotated = siwc('current-user', 'current-client', 'new', 9e12 + 1000)
+    writeFileSync(authPath, JSON.stringify({ ...source, openai: rotated }))
+    const external = { ...source, openai: siwc('external-user', 'external-client') }
+    const store = (service as unknown as { store: AccountStore }).store
+    const save = store.save.bind(store)
+    vi.spyOn(store, 'save').mockImplementation((value) => {
+      save(value)
+      writeFileSync(authPath, JSON.stringify(external))
+    })
+    await expect(service.deactivate(target.id)).rejects.toThrow('当前 Pi 登录已变化')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it('waits for an in-flight refresh before deactivating the Pi account', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai-codex',
+    )!
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    vi.mocked(network.refreshAccountUsage).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return value
+    })
+    const refreshing = service.refresh(target.id)
+    await started.promise
+    const deactivating = service.deactivate(target.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    finish.resolve()
+    await refreshing
+    await deactivating
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      openai: source.openai,
+      other: source.other,
+    })
+    await service.close()
+  })
+
+  it('does not deactivate while Pi holds the auth lock', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (profile) => profile.providerKey === 'openai',
+    )!
+    const release = await lock(authPath)
+    try {
+      await expect(service.deactivate(target.id)).rejects.toThrow('Pi 正在更新认证信息')
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    } finally {
+      await release()
+    }
+    await service.close()
+  })
+
+  it('imports current SIWC alongside Codex and updates the same registration after rotation', async () => {
+    const { authPath, source } = setupPi()
+    expect(await service.importCurrent('pi')).toBe(2)
+    const first = await service.list('pi')
+    const profile = first.profiles.find((item) => item.providerKey === 'openai')!
+    expect(first.authState).toBe('managed')
+    expect(profile.isActive).toBe(true)
+    expect(profile.email).toBe('')
+    expect(first.profiles.map((item) => item.providerKey).sort()).toEqual([
+      'openai',
+      'openai-codex',
+    ])
+
+    source.openai = siwc('current-user', 'current-client', 'rotated')
+    writeFileSync(authPath, JSON.stringify(source))
+    expect(await service.importCurrent('pi')).toBe(2)
+    const second = await service.list('pi')
+    expect(second.profiles.find((item) => item.providerKey === 'openai')?.id).toBe(profile.id)
+    expect(new AccountStore(path).get(profile.id).auth).toContain('refresh-current-client-rotated')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    await service.close()
+  })
+
+  it('keeps separate SIWC registrations distinct even if their access token is identical', async () => {
+    const first = siwc('target-user', 'client-a')
+    const second = { ...first, clientId: 'client-b', refresh: 'different-refresh' }
+    await addSiwc(first)
+    await addSiwc(second)
+    expect((await service.list('pi')).profiles).toHaveLength(2)
+    await service.close()
+  })
+
+  it.each([{ clientId: '' }, { scopes: ['openid'] }])(
+    'rejects incomplete SIWC credentials: %j',
+    (invalid) => {
+      expect(() =>
+        normalizeCredential('pi', { openai: { ...siwc('user', 'client'), ...invalid } }),
+      ).toThrow('Pi OpenAI SIWC')
+    },
+  )
+
+  it('accepts opaque access tokens and reimports the same client registration', async () => {
+    const entry = { ...siwc('user', 'opaque-client'), access: 'opaque-access' }
+    const add = (credential: typeof entry) =>
+      service.add({
+        product: 'pi',
+        mode: 'credential',
+        credential: JSON.stringify({ openai: credential }),
+        alias: '',
+        apiBaseUrl: '',
+        apiKey: '',
+      })
+    await add(entry)
+    const first = (await service.list('pi')).profiles[0]
+    expect(first.accountId).toBe('')
+    await add({ ...entry, access: 'new-opaque-access', refresh: 'new-refresh' })
+    const profiles = (await service.list('pi')).profiles
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0].id).toBe(first.id)
+    await service.close()
+  })
+
+  it('does not merge known different users of the same SIWC registration', async () => {
+    await addSiwc(siwc('target-user', 'client'))
+    await service.add({
+      product: 'pi',
+      mode: 'credential',
+      credential: JSON.stringify({ openai: siwc('another-user', 'client') }),
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    expect((await service.list('pi')).profiles).toHaveLength(2)
+    await service.close()
+  })
+
+  it('imports Codex beside an OpenAI API key without overwriting or treating it as SIWC', async () => {
+    const { authPath, source } = setupPi()
+    const mixed = { ...source, openai: { type: 'api_key', key: 'sk-test' } }
+    writeFileSync(authPath, JSON.stringify(mixed))
+    expect(await service.importCurrent('pi')).toBe(1)
+    await service.add({
+      product: 'pi',
+      mode: 'credential',
+      credential: JSON.stringify(mixed),
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+    })
+    const codex = (await service.list('pi')).profiles
+    expect(codex.map((item) => item.providerKey)).toEqual(['openai-codex'])
+    await service.switch({ id: codex[0].id })
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(mixed)
+    vi.mocked(network.refreshCredential).mockClear()
+    await expect(
+      service.add({
+        product: 'pi',
+        mode: 'credential',
+        credential: JSON.stringify({ openai: mixed.openai }),
+        alias: '',
+        apiBaseUrl: '',
+        apiKey: '',
+      }),
+    ).rejects.toThrow('API Key 暂不支持导入')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    await expect(service.switch({ id: target.id })).rejects.toThrow('不会覆盖该凭据')
+    expect(network.refreshCredential).not.toHaveBeenCalled()
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(mixed)
+    await service.close()
+  })
+
+  it('refreshes SIWC using its issued client and preserves the rotated token and scopes', async () => {
+    const actual = await vi.importActual<typeof network>('../../../src/main/accounts/network')
+    const entry = siwc('target-user', 'issued-client', 'old', 1)
+    const rotated = siwc('target-user', 'issued-client', 'new')
+    const fetch = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
+      Promise.resolve(
+        Response.json({
+          access_token: rotated.access,
+          refresh_token: rotated.refresh,
+          expires_in: 3600,
+          scope: 'offline_access chatgpt.tokens.use.direct',
+        }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetch)
+    vi.spyOn(Date, 'now').mockReturnValue(100_000)
+    const refreshed = await actual.refreshCredential(siwcAccount(entry))
+    const body = fetch.mock.calls[0][1]?.body as URLSearchParams
+    expect(fetch.mock.calls[0][0]).toBe('https://auth.openai.com/api/accounts/oauth/token')
+    expect(body.get('client_id')).toBe('issued-client')
+    expect(body.get('refresh_token')).toBe(entry.refresh)
+    expect(body.get('resource')).toBe('https://api.openai.com/v1')
+    expect(JSON.parse(refreshed.auth).auth.openai).toEqual({
+      ...entry,
+      access: rotated.access,
+      refresh: rotated.refresh,
+      expires: 100_000 + 3_420_000,
+    })
+    await expect(actual.refreshAccountUsage(refreshed)).rejects.toThrow('暂不支持额度查询')
+    expect(fetch).toHaveBeenCalledOnce()
+    await service.close()
+  })
+
+  it('holds the Pi lock across token rotation and preserves unrelated providers', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    const rotated = siwc('target-user', 'target-client', 'new')
+    vi.mocked(network.refreshCredential).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return { ...value, auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }) }
+    })
+    const switching = service.switch({ id: target.id })
+    await started.promise
+    await expect(lock(authPath, { realpath: false })).rejects.toMatchObject({ code: 'ELOCKED' })
+    finish.resolve()
+    await switching
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({ ...source, openai: rotated })
+    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'uses the same Pi lock through a symlinked agent directory',
+    async () => {
+      const { authPath } = setupPi()
+      const alias = join(root, 'pi-alias')
+      symlinkSync(join(root, 'pi'), alias, 'dir')
+      vi.stubEnv('PI_CODING_AGENT_DIR', alias)
+      await service.importCurrent('pi')
+      const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+      const release = await lock(authPath)
+      try {
+        await expect(service.switch({ id: target.id })).rejects.toThrow('Pi 正在更新认证信息')
+        expect(network.refreshCredential).not.toHaveBeenCalled()
+      } finally {
+        await release()
+      }
+      await service.close()
+    },
+  )
+
+  it.skipIf(process.platform === 'win32')(
+    'does not replace a symlinked Pi auth file when switching SIWC',
+    async () => {
+      const { authPath, source } = setupPi()
+      const targetPath = `${authPath}.target`
+      renameSync(authPath, targetPath)
+      symlinkSync('auth.json.target', authPath)
+      await service.importCurrent('pi')
+      const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+      await expect(service.switch({ id: target.id })).rejects.toThrow('认证文件是符号链接')
+      expect(lstatSync(authPath).isSymbolicLink()).toBe(true)
+      expect(JSON.parse(readFileSync(targetPath, 'utf8'))).toEqual(source)
+      expect(network.refreshCredential).not.toHaveBeenCalled()
+      await service.close()
+    },
+  )
+
+  it('retains rotated tokens without overwriting an externally changed Pi login', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    const rotated = siwc('target-user', 'target-client', 'new')
+    vi.mocked(network.refreshCredential).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return { ...value, auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }) }
+    })
+    const switching = expect(service.switch({ id: target.id })).rejects.toThrow(
+      '授权期间检测到 CLI 登录变更',
+    )
+    await started.promise
+    const external = { ...source, openai: siwc('external-user', 'external-client') }
+    writeFileSync(authPath, JSON.stringify(external))
+    finish.resolve()
+    await switching
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it.each(['identity', 'scope'] as const)(
+    'retains rotated tokens but refuses a changed SIWC %s',
+    async (changed) => {
+      const { authPath, source } = setupPi()
+      await service.importCurrent('pi')
+      const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+      const rotated =
+        changed === 'identity'
+          ? siwc('another-user', 'target-client', 'new')
+          : { ...siwc('target-user', 'target-client', 'new'), scopes: ['openid'] }
+      vi.mocked(network.refreshCredential).mockImplementation((value) =>
+        Promise.resolve({
+          ...value,
+          auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }),
+        }),
+      )
+      await expect(service.switch({ id: target.id })).rejects.toThrow('授权不匹配')
+      const saved = new AccountStore(path).get(target.id)
+      expect(saved.auth).toContain(rotated.refresh)
+      expect(saved.needsReauthorization).toBe(true)
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+      await service.close()
+    },
+  )
+
+  it('preserves unrelated account edits made during SIWC renewal', async () => {
+    setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    const started = deferred<void>()
+    const finish = deferred<void>()
+    const rotated = siwc('target-user', 'target-client', 'new')
+    vi.mocked(network.refreshCredential).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return { ...value, auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }) }
+    })
+    const switching = service.switch({ id: target.id })
+    await started.promise
+    const external = new AccountStore(path)
+    external.save({ ...external.get(target.id), alias: '外部修改' })
+    finish.resolve()
+    await switching
+    const saved = new AccountStore(path).get(target.id)
+    expect(saved.alias).toBe('外部修改')
+    expect(saved.auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it('keeps the active rotated token if saving final account metadata fails', async () => {
+    const { authPath } = setupPi(siwc('current-user', 'current-client', 'old', 1))
+    await service.importCurrent('pi')
+    const target = (await service.list('pi')).profiles.find(
+      (item) => item.providerKey === 'openai',
+    )!
+    const rotated = siwc('current-user', 'current-client', 'new')
+    vi.mocked(network.refreshCredential).mockImplementation((value) =>
+      Promise.resolve({
+        ...value,
+        auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }),
+      }),
+    )
+    const store = (service as unknown as { store: AccountStore }).store
+    const save = store.save.bind(store)
+    vi.spyOn(store, 'save').mockImplementation((value) => {
+      if (value.id === target.id && value.lastUsedAt !== null) throw new Error('metadata failed')
+      return save(value)
+    })
+    await expect(service.switch({ id: target.id })).rejects.toThrow('登录令牌已更新')
+    expect(JSON.parse(readFileSync(authPath, 'utf8')).openai).toEqual(rotated)
+    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    await service.close()
+  })
+
+  it('marks an invalid SIWC grant for reauthorization without replacing the active login', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    const actual = await vi.importActual<typeof network>('../../../src/main/accounts/network')
+    vi.mocked(network.refreshCredential).mockImplementation(actual.refreshCredential)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(Response.json({ error: 'invalid_grant' }, { status: 400 })),
+    )
+    await expect(service.switch({ id: target.id })).rejects.toThrow('账号认证失败')
+    expect(new AccountStore(path).get(target.id).needsReauthorization).toBe(true)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    await service.close()
+  })
+
+  it('does not switch two SIWC records that share a refresh token', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc({
+      ...siwc('target-user', 'target-client'),
+      refresh: source.openai.refresh,
+    })
+    await expect(service.switch({ id: target.id })).rejects.toThrow('多个账号共用刷新令牌')
+    expect(network.refreshCredential).not.toHaveBeenCalled()
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    await service.close()
+  })
+
+  it('does not request quota for SIWC accounts', async () => {
+    const target = await addSiwc(siwc('target-user', 'target-client'))
+    await expect(service.refresh(target.id)).rejects.toThrow('暂不支持额度查询')
+    expect(
+      await service.refreshAutomatically(target.id, { allowed: () => true, due: () => true }),
+    ).toBe(false)
+    expect(network.refreshAccountUsage).not.toHaveBeenCalled()
+    await service.close()
   })
 })

@@ -11,6 +11,7 @@ export function registerAccountsIPC(
   handle('accounts:add', (input: unknown) => accounts.add(input))
   handle('accounts:import-current', (product: unknown) => accounts.importCurrent(product))
   handle('accounts:switch', (input: unknown) => accounts.switch(input))
+  handle('accounts:deactivate', (id: unknown) => accounts.deactivate(id))
   handle('accounts:rename', (input: unknown) => accounts.rename(input))
   handle('accounts:remove', (id: unknown) => accounts.remove(id))
   handle('accounts:refresh', async (id: unknown) => {

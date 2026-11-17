@@ -143,6 +143,7 @@ export interface AccountsAPI {
   add: (input: AddAccountInput) => Promise<Result<void>>
   importCurrent: (product: AccountProduct) => Promise<Result<number>>
   switch: (input: z.input<typeof switchAccountSchema>) => Promise<Result<void>>
+  deactivate: (id: string) => Promise<Result<void>>
   rename: (input: z.infer<typeof renameAccountSchema>) => Promise<Result<void>>
   remove: (id: string) => Promise<Result<void>>
   refresh: (id: string) => Promise<Result<void>>

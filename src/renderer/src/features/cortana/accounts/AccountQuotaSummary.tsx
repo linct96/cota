@@ -43,7 +43,7 @@ export function AccountQuotaSummary({ account, now }: { account: AccountProfile;
   return (
     <section
       className="account-quota-summary flex items-center gap-4 px-3.5 py-2.5"
-      aria-label="当前账号额度"
+      aria-label={`当前账号额度：${account.alias}`}
       data-low={lowQuota || undefined}
     >
       <div className="account-quota-identity flex w-60 shrink-0 items-center gap-3 border-r pr-4">

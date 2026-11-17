@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, readFile, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { lock } from 'proper-lockfile'
 
@@ -111,11 +111,15 @@ export async function withPiAuthLock<T>(
   action: (assertLocked: () => void) => Promise<T>,
 ): Promise<T> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+  const lockPath = await realpath(path).catch(async (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') throw error
+    return join(await realpath(dirname(path)), basename(path))
+  })
   let compromised: Error | undefined
   let released = false
   let release: () => Promise<void>
   try {
-    release = await lock(path, {
+    release = await lock(lockPath, {
       realpath: false,
       // Pi uses proper-lockfile too; keep the heartbeat below its 10-second sync stale limit.
       stale: 30_000,

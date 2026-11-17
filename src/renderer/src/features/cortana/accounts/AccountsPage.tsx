@@ -174,6 +174,13 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
     })
   }
 
+  function deactivateAccount(account: AccountProfile) {
+    void perform(account.product, `deactivate:${account.id}`, account.alias, async () => {
+      unwrap(await window.desktop.accounts.deactivate(account.id))
+      return '账号已取消激活。'
+    })
+  }
+
   function switchAccount(account: AccountProfile) {
     if (status?.authState === 'unmanaged') {
       if (!status.authRevision) {
@@ -230,7 +237,9 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
           (positions.get(b.id) ?? Number.MAX_SAFE_INTEGER),
       )
     : (status?.profiles ?? [])
-  const activeAccount = orderedProfiles.find((account) => account.isActive)
+  const quotaAccounts = orderedProfiles.filter(
+    (account) => account.isActive && supportsDualQuota(account),
+  )
   const sortingDisabled = loading || !!pendingOrder || orderedProfiles.length < 2
   const showImportPrompt = status?.authState === 'unmanaged' && !importSkipped
   const adding =
@@ -308,63 +317,67 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
             </AlertDescription>
           </Alert>
         )}
-        {loading && !status ? (
-          <Empty className="accounts-loading">
-            <EmptyHeader className="accounts-loading-header">
-              <RefreshCw className="accounts-loading-icon size-4 animate-spin" aria-hidden="true" />
-              <EmptyTitle className="accounts-loading-title">正在加载账号…</EmptyTitle>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          status && (
-            <>
-              {showImportPrompt && (
-                <Alert
-                  className="accounts-import-prompt flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2"
-                  role="note"
-                >
-                  <AlertDescription className="accounts-import-message">
-                    发现已有 {ACCOUNT_PRODUCTS[product].name} 登录凭据
-                  </AlertDescription>
-                  <div className="accounts-import-actions flex items-center gap-2">
-                    <Button
-                      className="accounts-import-skip"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setImportSkipped(true)}
-                    >
-                      暂时跳过
-                    </Button>
-                    <Button
-                      className="accounts-import-accept"
-                      variant="outline"
-                      size="sm"
-                      disabled={!!pending[`import:${product}`]}
-                      onClick={importCurrent}
-                    >
-                      <LogIn
-                        className="accounts-import-icon"
-                        data-icon="inline-start"
-                        aria-hidden="true"
-                      />
-                      {pending[`import:${product}`] ? '导入中…' : '导入凭据'}
-                    </Button>
-                  </div>
-                </Alert>
-              )}
-              {orderedProfiles.length ? (
-                <>
-                  {activeAccount && supportsDualQuota(activeAccount) && (
-                    <AccountQuotaSummary account={activeAccount} now={now} />
-                  )}
-                  <DragDropProvider
-                    manager={dragManager}
-                    {...dragOptions}
-                    onDragEnd={({ canceled, operation }) => {
-                      if (canceled || !operation.target || !isSortable(operation.source)) return
-                      reorder(String(operation.source.id), operation.source.index)
-                    }}
+        {/* The provider owns manager cleanup, so both must outlive the conditional list. */}
+        <DragDropProvider
+          manager={dragManager}
+          {...dragOptions}
+          onDragEnd={({ canceled, operation }) => {
+            if (canceled || !operation.target || !isSortable(operation.source)) return
+            reorder(String(operation.source.id), operation.source.index)
+          }}
+        >
+          {loading && !status ? (
+            <Empty className="accounts-loading">
+              <EmptyHeader className="accounts-loading-header">
+                <RefreshCw
+                  className="accounts-loading-icon size-4 animate-spin"
+                  aria-hidden="true"
+                />
+                <EmptyTitle className="accounts-loading-title">正在加载账号…</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            status && (
+              <>
+                {showImportPrompt && (
+                  <Alert
+                    className="accounts-import-prompt flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2"
+                    role="note"
                   >
+                    <AlertDescription className="accounts-import-message">
+                      发现已有 {ACCOUNT_PRODUCTS[product].name} 登录凭据
+                    </AlertDescription>
+                    <div className="accounts-import-actions flex items-center gap-2">
+                      <Button
+                        className="accounts-import-skip"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setImportSkipped(true)}
+                      >
+                        暂时跳过
+                      </Button>
+                      <Button
+                        className="accounts-import-accept"
+                        variant="outline"
+                        size="sm"
+                        disabled={!!pending[`import:${product}`]}
+                        onClick={importCurrent}
+                      >
+                        <LogIn
+                          className="accounts-import-icon"
+                          data-icon="inline-start"
+                          aria-hidden="true"
+                        />
+                        {pending[`import:${product}`] ? '导入中…' : '导入凭据'}
+                      </Button>
+                    </div>
+                  </Alert>
+                )}
+                {orderedProfiles.length ? (
+                  <>
+                    {quotaAccounts.map((account) => (
+                      <AccountQuotaSummary key={account.id} account={account} now={now} />
+                    ))}
                     <ul
                       ref={listRef}
                       className="accounts-list flex flex-col gap-3"
@@ -377,6 +390,7 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
                           index={index}
                           now={now}
                           switching={!!pending[`switch:${account.id}`]}
+                          deactivating={!!pending[`deactivate:${account.id}`]}
                           deleting={!!pending[`delete:${account.id}`]}
                           renaming={!!pending[`rename:${account.id}`]}
                           refreshing={
@@ -388,35 +402,37 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
                           }
                           operationError={
                             operationErrors[`switch:${account.id}`] ||
+                            operationErrors[`deactivate:${account.id}`] ||
                             operationErrors[`delete:${account.id}`] ||
                             operationErrors[`rename:${account.id}`]
                           }
                           sortingDisabled={sortingDisabled}
                           onSwitch={() => switchAccount(account)}
+                          onDeactivate={() => deactivateAccount(account)}
                           onRename={() => setEditing(account)}
                           onRefresh={() => void refreshAccount(account)}
                           onDelete={() => setConfirmation({ kind: 'delete', account })}
                         />
                       ))}
                     </ul>
-                  </DragDropProvider>
-                </>
-              ) : (
-                <Empty className="accounts-empty flex-none py-16">
-                  <EmptyHeader className="accounts-empty-header">
-                    <EmptyMedia className="accounts-empty-media" variant="icon">
-                      <UsersRound className="accounts-empty-icon" aria-hidden="true" />
-                    </EmptyMedia>
-                    <EmptyTitle className="accounts-empty-title">还没有保存账号</EmptyTitle>
-                    <EmptyDescription className="accounts-empty-description">
-                      添加一个账号，或导入当前 CLI 的登录状态。
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </>
-          )
-        )}
+                  </>
+                ) : (
+                  <Empty className="accounts-empty flex-none py-16">
+                    <EmptyHeader className="accounts-empty-header">
+                      <EmptyMedia className="accounts-empty-media" variant="icon">
+                        <UsersRound className="accounts-empty-icon" aria-hidden="true" />
+                      </EmptyMedia>
+                      <EmptyTitle className="accounts-empty-title">还没有保存账号</EmptyTitle>
+                      <EmptyDescription className="accounts-empty-description">
+                        添加一个账号，或导入当前 CLI 的登录状态。
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </>
+            )
+          )}
+        </DragDropProvider>
       </div>
       {addOpen && <AddAccountDialog product={product} onClose={() => setAddOpen(false)} />}
       {editing && <RenameAccountDialog account={editing} onClose={() => setEditing(undefined)} />}

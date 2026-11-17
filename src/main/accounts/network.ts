@@ -254,7 +254,23 @@ export async function refreshCredential(
     return account
   }
   let token: Record<string, unknown>
-  if (product === 'grok' || (product === 'pi' && account.providerKey === 'xai')) {
+  const siwc = product === 'pi' && account.providerKey === 'openai'
+  if (siwc) {
+    const { entry } = unwrapPiAuth(auth, account.providerKey)
+    const clientId = text(entry.clientId)
+    if (!clientId)
+      throw new AccountReauthorizationError('Pi OpenAI 授权缺少客户端信息，请重新登录。')
+    token = await requestJSON('https://auth.openai.com/api/accounts/oauth/token', {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        grant_type: 'refresh_token',
+        refresh_token: refresh,
+        resource: 'https://api.openai.com/v1',
+      }),
+    })
+  } else if (product === 'grok' || (product === 'pi' && account.providerKey === 'xai')) {
     token = await requestJSON('https://auth.x.ai/oauth2/token', {
       method: 'POST',
       body: new URLSearchParams({
@@ -275,6 +291,8 @@ export async function refreshCredential(
   if (product === 'pi') {
     const { providerKey: piKey, entry } = unwrapPiAuth(auth, account.providerKey)
     const targetKey = account.providerKey || piKey
+    const now = Date.now()
+    const siwcExpiry = now + Number(token.expires_in) * 1000 - 3 * 60_000
     next = {
       kind: kind ?? 'pi',
       auth: {
@@ -282,7 +300,14 @@ export async function refreshCredential(
           ...entry,
           access: text(token.access_token),
           refresh: text(token.refresh_token) || refresh,
-          expires: Date.now() + (Number(token.expires_in) || 3600) * 1000,
+          expires: siwc
+            ? Number.isFinite(siwcExpiry)
+              ? Math.max(now, siwcExpiry)
+              : now
+            : now + (Number(token.expires_in) || 3600) * 1000,
+          ...(siwc && typeof token.scope === 'string'
+            ? { scopes: token.scope.trim().split(/\s+/).filter(Boolean) }
+            : {}),
         },
       },
     }
@@ -320,6 +345,8 @@ function usageWindow(value: unknown): AccountUsageWindow | null {
 export async function refreshAccountUsage(account: StoredAccount): Promise<StoredAccount> {
   const { auth } = unwrapCredential(account.auth)
   const piEntry = account.product === 'pi' ? unwrapPiAuth(auth, account.providerKey).entry : auth
+  if (account.product === 'pi' && account.providerKey === 'openai')
+    throw new Error('此账号暂不支持额度查询。')
   if (account.product === 'claude') return { ...account, usageUpdatedAt: Date.now() }
   if (
     account.product === 'codex' ||

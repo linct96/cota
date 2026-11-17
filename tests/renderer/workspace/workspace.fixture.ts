@@ -61,6 +61,7 @@ beforeEach(() => {
       add: vi.fn(),
       importCurrent: vi.fn(),
       switch: vi.fn(),
+      deactivate: vi.fn(),
       rename: vi.fn(),
       remove: vi.fn(),
       refresh: vi.fn(),

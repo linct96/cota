@@ -6,6 +6,7 @@ import {
   Ellipsis,
   GripVertical,
   LoaderCircle,
+  LogOut,
   Pencil,
   RefreshCw,
   Trash2,
@@ -37,6 +38,7 @@ export function AccountRow({
   index,
   now,
   switching,
+  deactivating,
   deleting,
   renaming,
   refreshing,
@@ -44,6 +46,7 @@ export function AccountRow({
   operationError,
   sortingDisabled,
   onSwitch,
+  onDeactivate,
   onRename,
   onRefresh,
   onDelete,
@@ -52,6 +55,7 @@ export function AccountRow({
   index: number
   now: number
   switching: boolean
+  deactivating: boolean
   deleting: boolean
   renaming: boolean
   refreshing: boolean
@@ -59,6 +63,7 @@ export function AccountRow({
   operationError?: string
   sortingDisabled: boolean
   onSwitch: () => void
+  onDeactivate: () => void
   onRename: () => void
   onRefresh: () => void
   onDelete: () => void
@@ -76,12 +81,21 @@ export function AccountRow({
     account.product === 'pi' && account.providerKey === 'xai'
       ? Grok
       : PRODUCT_ICONS[account.product]
+  const siwc = account.product === 'pi' && account.providerKey === 'openai'
+  const showAvatarRing = refreshing || renaming || deleting
+  const statusAnnouncement = [
+    refreshing && (account.product === 'claude' ? '正在更新登录令牌' : '正在刷新额度'),
+    renaming && '正在保存名称',
+    deleting && '正在删除账号',
+  ]
+    .filter(Boolean)
+    .join('，')
 
   return (
     <li
       ref={ref}
       className="account-row flex min-h-17 items-center gap-3 px-2 py-3"
-      data-busy={refreshing || switching || deleting || renaming || undefined}
+      data-busy={switching || deactivating || undefined}
       data-dragging={isDragging || undefined}
       data-dropping={isDropping || undefined}
     >
@@ -94,7 +108,16 @@ export function AccountRow({
       >
         <GripVertical className="account-drag-icon" size={18} aria-hidden="true" />
       </button>
-      <div className="account-avatar grid size-9 shrink-0 place-items-center" aria-hidden="true">
+      <div
+        className="account-avatar relative grid size-9 shrink-0 place-items-center"
+        aria-hidden="true"
+      >
+        {showAvatarRing && (
+          <span
+            className="account-avatar-ring pointer-events-none absolute -inset-0.5 motion-safe:animate-spin"
+            data-variant={deleting ? 'destructive' : undefined}
+          />
+        )}
         {account.accountType === 'oauth' ? (
           <Icon className="account-provider-icon size-5" />
         ) : (
@@ -104,6 +127,9 @@ export function AccountRow({
         )}
       </div>
       <div className="account-row-body min-w-0 flex-1">
+        {statusAnnouncement && (
+          <output className="account-row-status sr-only">{statusAnnouncement}</output>
+        )}
         <div className="account-row-heading mb-0.5 flex min-w-0 items-center gap-2">
           <strong
             className="account-row-name truncate [unicode-bidi:plaintext]"
@@ -111,28 +137,6 @@ export function AccountRow({
           >
             {account.alias}
           </strong>
-          {refreshing && (
-            <output className="account-refresh-status inline-flex shrink-0">
-              <LoaderCircle
-                className="account-refresh-spinner size-3.5 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-              <span className="account-refresh-status-label sr-only">
-                {account.product === 'claude' ? '正在更新登录令牌' : '正在刷新额度'}
-              </span>
-            </output>
-          )}
-          {(renaming || deleting) && (
-            <output className="account-operation-status inline-flex shrink-0">
-              <LoaderCircle
-                className="account-operation-spinner size-3.5 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-              <span className="account-operation-status-label sr-only">
-                {deleting ? '正在删除账号' : '正在保存名称'}
-              </span>
-            </output>
-          )}
           {(refreshError || operationError) && (
             <Badge
               className="account-operation-error"
@@ -146,6 +150,11 @@ export function AccountRow({
           {account.needsReauthorization && (
             <Badge className="account-expired-badge" variant="destructive">
               已过期
+            </Badge>
+          )}
+          {siwc && (
+            <Badge className="account-provider-badge" variant="outline">
+              SIWC
             </Badge>
           )}
           {account.accountType === 'relay' ? (
@@ -186,6 +195,31 @@ export function AccountRow({
             </TooltipContent>
           </Tooltip>
         )}
+        {account.product === 'pi' && account.isActive && (
+          <Tooltip>
+            <TooltipTrigger render={<span className="account-deactivate-trigger inline-flex" />}>
+              <Button
+                className="account-deactivate-button"
+                variant="outline"
+                size="icon-lg"
+                aria-label={`取消激活 ${account.alias}`}
+                aria-busy={deactivating}
+                disabled={switching || deactivating || deleting}
+                onClick={onDeactivate}
+              >
+                {deactivating ? (
+                  <LoaderCircle
+                    className="account-deactivate-icon motion-safe:animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <LogOut className="account-deactivate-icon" aria-hidden="true" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="account-deactivate-tooltip">取消激活</TooltipContent>
+          </Tooltip>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -194,7 +228,7 @@ export function AccountRow({
                 variant="ghost"
                 size="icon-lg"
                 aria-label={`管理 ${account.alias}`}
-                disabled={deleting}
+                disabled={deactivating || deleting}
               />
             }
           >
@@ -206,7 +240,7 @@ export function AccountRow({
                 <Pencil className="account-rename-icon" aria-hidden="true" />
                 重命名
               </DropdownMenuItem>
-              {account.accountType === 'oauth' && (
+              {account.accountType === 'oauth' && !siwc && (
                 <DropdownMenuItem
                   className="account-refresh-menu-item"
                   disabled={refreshing || deleting}
@@ -259,11 +293,13 @@ function AccountMeta({ account, now }: { account: AccountProfile; now: number })
         destructive: remaining <= 10,
       })
     }
-    if (!account.usageUpdatedAt) items.push({ key: 'empty', label: '额度未查询' })
+    if (!account.usageUpdatedAt && !(account.product === 'pi' && account.providerKey === 'openai'))
+      items.push({ key: 'empty', label: '额度未查询' })
     else if (account.product === 'grok' && !account.usagePrimary)
       items.push({ key: 'unavailable', label: '官方未返回额度百分比' })
   }
 
+  if (!items.length) return null
   return (
     <div className="account-row-meta mt-1.5 flex min-w-0 flex-wrap items-center gap-y-1">
       {items.map((item, index) => (

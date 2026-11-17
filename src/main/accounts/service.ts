@@ -21,6 +21,7 @@ import type { StoredAccount } from './store'
 import {
   AccountCredentials,
   GROK_AUTH_KEY,
+  PI_OAUTH_PROVIDERS,
   credentialIdentity,
   fingerprint,
   normalizeCredential,
@@ -55,7 +56,10 @@ function accessFingerprint(rawAuth: string): string {
     text(env.ANTHROPIC_AUTH_TOKEN) ||
     text(env.ANTHROPIC_API_KEY)
   const piAccess =
-    text(object(auth['openai-codex']).access) || text(object(auth.xai).access) || text(auth.access)
+    text(object(auth.openai).access) ||
+    text(object(auth['openai-codex']).access) ||
+    text(object(auth.xai).access) ||
+    text(auth.access)
   const grokAccess = text(unwrapGrokAuth(auth).entry.key)
   return fingerprint(
     text(object(auth.tokens).access_token) ||
@@ -80,6 +84,11 @@ function matches(account: StoredAccount, current: CredentialDetails): boolean {
     return false
   const identity = storedIdentity(account)
   if (identity === undefined) return false
+  if (account.product === 'pi' && account.providerKey === 'openai')
+    return (
+      identity === current.identity &&
+      (!account.accountId || !current.accountId || account.accountId === current.accountId)
+    )
   return (
     identity === current.identity ||
     (account.accountType === 'oauth' &&
@@ -137,7 +146,7 @@ function refreshTokenKey(account: StoredAccount): string {
   const { auth } = unwrapCredential(account.auth)
   const openai =
     account.product === 'codex' ||
-    (account.product === 'pi' && account.providerKey === 'openai-codex')
+    (account.product === 'pi' && ['openai', 'openai-codex'].includes(account.providerKey))
   const token =
     account.product === 'codex'
       ? text(object(auth.tokens).refresh_token)
@@ -363,10 +372,17 @@ export class AccountService {
         auth = object(auth)[GROK_AUTH_KEY]
       let providerKey = ''
       if (value.product === 'pi') {
-        const provider = ['openai-codex', 'xai'].find((key) => object(auth)[key])
+        const provider = PI_OAUTH_PROVIDERS.find(
+          (key) => object(object(auth)[key]).type === 'oauth',
+        )
         if (provider) {
           providerKey = provider
           auth = object(auth)[provider]
+        } else if (
+          object(object(auth).openai).type === 'api_key' ||
+          object(auth).type === 'api_key'
+        ) {
+          throw new Error('Pi 的 OpenAI API Key 暂不支持导入。')
         }
       }
       const account = this.upsert(
@@ -398,82 +414,211 @@ export class AccountService {
     const { id, force, authRevision } = switchAccountSchema.parse(input)
     return this.run(async () => {
       let account = this.store.get(id)
-      if (account.switchUnavailable) throw new Error(account.switchUnavailable)
-      if (force) {
-        if (!authRevision) throw new Error('无法验证当前 CLI 登录，请刷新并重新确认切换。')
-        let currentRevision: string
+      const switchAccount = async (piLock?: () => void) => {
+        if (account.switchUnavailable) throw new Error(account.switchUnavailable)
+        if (piLock) await this.credentials.assertPiOAuthReplaceable(account.providerKey)
+        if (force) {
+          if (!authRevision) throw new Error('无法验证当前 CLI 登录，请刷新并重新确认切换。')
+          let currentRevision: string
+          try {
+            currentRevision = await this.credentials.revision(account.product)
+          } catch {
+            throw new Error('无法验证当前 CLI 登录，请刷新并重新确认切换。')
+          }
+          if (currentRevision !== authRevision)
+            throw new Error('当前 CLI 登录已变化，请刷新并重新确认切换。')
+        }
+        let current: CredentialDetails[] = []
+        let unreadable = false
         try {
-          currentRevision = await this.credentials.revision(account.product)
+          current = await this.credentials.current(account.product)
         } catch {
-          throw new Error('无法验证当前 CLI 登录，请刷新并重新确认切换。')
+          unreadable = true
         }
-        if (currentRevision !== authRevision)
-          throw new Error('当前 CLI 登录已变化，请刷新并重新确认切换。')
-      }
-      let current: CredentialDetails[] = []
-      let unreadable = false
-      try {
-        current = await this.credentials.current(account.product)
-      } catch {
-        unreadable = true
-      }
-      const saved = this.store.list().filter((entry) => entry.product === account.product)
-      const unmanaged =
-        unreadable ||
-        current.some((credential) => !saved.some((entry) => matches(entry, credential)))
-      if (unmanaged && !force) throw new Error('当前登录尚未保存，请先导入，或确认覆盖后切换。')
-      // Capture tokens renewed by a running CLI before replacing its active login.
-      for (const credential of current) {
-        const outgoing = saved.find((entry) => matches(entry, credential))
-        if (outgoing?.needsReauthorization && credentialsDiffer(outgoing, credential))
-          throw new Error('当前 CLI 凭据与已保存凭据不一致，请先导入当前登录或重新授权。')
-        if (outgoing && outgoing.auth !== credential.auth) {
-          const updated = mergeCurrent(outgoing, credential)
-          this.advanceCredentialVersion(outgoing.product)
-          this.store.save(updated)
-          if (outgoing.id === account.id) account = updated
+        const saved = this.store.list().filter((entry) => entry.product === account.product)
+        const unmanaged =
+          unreadable ||
+          current.some((credential) => !saved.some((entry) => matches(entry, credential)))
+        if (unmanaged && !force) throw new Error('当前登录尚未保存，请先导入，或确认覆盖后切换。')
+        // Capture tokens renewed by a running CLI before replacing its active login.
+        for (const credential of current) {
+          const outgoing = saved.find((entry) => matches(entry, credential))
+          if (outgoing?.needsReauthorization && credentialsDiffer(outgoing, credential))
+            throw new Error('当前 CLI 凭据与已保存凭据不一致，请先导入当前登录或重新授权。')
+          if (outgoing && outgoing.auth !== credential.auth) {
+            const updated = mergeCurrent(outgoing, credential)
+            this.advanceCredentialVersion(outgoing.product)
+            this.store.save(updated)
+            if (outgoing.id === account.id) account = updated
+          }
         }
-      }
-      // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
-      const before = current
-        .map((entry) => fingerprint(entry.auth))
-        .sort()
-        .join(':')
-      try {
-        account = await refreshCredential(account, account.needsReauthorization)
-      } catch (error) {
-        if (requiresReauthorization(error))
-          this.store.save({ ...account, needsReauthorization: true })
-        throw error
-      }
-      await this.commitCredential(account.product, async () => {
-        this.store.save(account) // Preserve rotated refresh tokens even if applying CLI files fails.
-        let after: CredentialDetails[] = []
-        let afterUnreadable = false
+        // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
+        const before = current
+          .map((entry) => fingerprint(entry.auth))
+          .sort()
+          .join(':')
+        if (piLock) {
+          const token = refreshTokenKey(account)
+          if (
+            token &&
+            saved.some((other) => {
+              if (other.id === id) return false
+              try {
+                return refreshTokenKey(other) === token
+              } catch {
+                return false
+              }
+            })
+          )
+            throw new Error('多个账号共用刷新令牌，请分别重新授权后再切换。')
+        }
+        const active = current.some((credential) => matches(account, credential))
+        const beforeRefresh = account.auth
+        const previousSIWC = piLock ? normalizeCredential('pi', beforeRefresh, 'openai') : undefined
         try {
-          after = await this.credentials.current(account.product)
-        } catch {
-          afterUnreadable = true
-        }
-        if (
-          unreadable !== afterUnreadable ||
-          before !==
-            // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
-            after
-              .map((entry) => fingerprint(entry.auth))
-              .sort()
-              .join(':')
-        )
-          throw new Error('授权期间检测到 CLI 登录变更，请刷新后重新确认切换。')
-        const restore = await this.credentials.apply(account, force ? authRevision : undefined)
-        try {
-          this.store.save({ ...account, lastUsedAt: Date.now(), updatedAt: Date.now() })
+          account = await refreshCredential(account, account.needsReauthorization)
         } catch (error) {
-          await restore()
+          if (requiresReauthorization(error))
+            this.store.save({ ...account, needsReauthorization: true })
           throw error
         }
+        await this.commitCredential(account.product, async () => {
+          try {
+            this.store.save(account) // Preserve rotated refresh tokens even if applying CLI files fails.
+          } catch (error) {
+            if (!piLock || account.auth === beforeRefresh) throw error
+            const latest = this.store.get(id)
+            if (
+              latest.product !== account.product ||
+              latest.providerKey !== account.providerKey ||
+              JSON.stringify(unwrapCredential(latest.auth)) !==
+                JSON.stringify(unwrapCredential(beforeRefresh))
+            )
+              throw new Error('账号认证在续期期间发生变化，无法安全保存新凭据，请重新授权。', {
+                cause: error,
+              })
+            account = {
+              ...latest,
+              auth: account.auth,
+              needsReauthorization: account.needsReauthorization,
+              updatedAt: Math.max(latest.updatedAt, account.updatedAt),
+            }
+            this.store.save(account)
+          }
+          if (previousSIWC) {
+            let sameRegistration = false
+            try {
+              const refreshed = normalizeCredential('pi', account.auth, 'openai')
+              sameRegistration =
+                refreshed.identity === previousSIWC.identity &&
+                (!refreshed.accountId ||
+                  !previousSIWC.accountId ||
+                  refreshed.accountId === previousSIWC.accountId)
+            } catch {
+              // Retain rotated credentials even if their returned scope is no longer usable.
+            }
+            if (!sameRegistration) {
+              this.store.save({ ...account, needsReauthorization: true })
+              throw new Error('续期后的 SIWC 授权不匹配；新凭据已保存，请在 Pi 中重新登录。')
+            }
+          }
+          let after: CredentialDetails[] = []
+          let afterUnreadable = false
+          try {
+            after = await this.credentials.current(account.product)
+          } catch {
+            afterUnreadable = true
+          }
+          if (
+            unreadable !== afterUnreadable ||
+            before !==
+              // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
+              after
+                .map((entry) => fingerprint(entry.auth))
+                .sort()
+                .join(':')
+          )
+            throw new Error('授权期间检测到 CLI 登录变更，请刷新后重新确认切换。')
+          const restore = await this.credentials.apply(
+            account,
+            force ? authRevision : undefined,
+            piLock,
+          )
+          try {
+            this.store.save({ ...account, lastUsedAt: Date.now(), updatedAt: Date.now() })
+          } catch (error) {
+            if (piLock && active && account.auth !== beforeRefresh)
+              throw new Error('登录令牌已更新，但无法保存账号状态，请刷新后重试。', {
+                cause: error,
+              })
+            await restore()
+            throw error
+          }
+        })
+        this.clearRefreshError?.(account.id)
+      }
+      if (account.product === 'pi' && account.providerKey === 'openai')
+        await this.credentials.withPiLock(switchAccount)
+      else await switchAccount()
+    })
+  }
+
+  deactivate(idInput: unknown): Promise<void> {
+    const id = accountIdSchema.parse(idInput)
+    return this.run(async () => {
+      let account = this.store.get(id)
+      if (
+        account.product !== 'pi' ||
+        !(PI_OAUTH_PROVIDERS as readonly string[]).includes(account.providerKey)
+      )
+        throw new Error('仅支持取消激活 Pi OAuth 账号。')
+      await this.credentials.withPiLock(async (assertLocked) => {
+        await this.credentials.assertPiOAuthReplaceable(account.providerKey)
+        const revision = await this.credentials.revision('pi')
+        const current = (await this.credentials.current('pi')).find((entry) =>
+          matches(account, entry),
+        )
+        if ((await this.credentials.revision('pi')) !== revision || !current)
+          throw new Error('当前 Pi 登录已变化，请刷新后重试。')
+        const latest = this.store.get(id)
+        if (
+          latest.product !== account.product ||
+          latest.providerKey !== account.providerKey ||
+          latest.auth !== account.auth ||
+          latest.needsReauthorization !== account.needsReauthorization
+        )
+          throw new Error('账号凭据已变化，请刷新后重试。')
+        account = latest
+        if (credentialsDiffer(account, current)) {
+          const savedExpiry = unwrapPiAuth(unwrapCredential(account.auth).auth, account.providerKey)
+            .entry.expires
+          const currentExpiry = unwrapPiAuth(
+            unwrapCredential(current.auth).auth,
+            account.providerKey,
+          ).entry.expires
+          const refreshChanged =
+            refreshTokenKey(account) !== refreshTokenKey({ ...account, auth: current.auth })
+          // shortcut: expiry estimates recency across unsynchronized writers; use a shared refresh lock for strict ordering.
+          if (
+            account.needsReauthorization ||
+            (refreshChanged &&
+              !(
+                typeof currentExpiry === 'number' &&
+                typeof savedExpiry === 'number' &&
+                currentExpiry > savedExpiry
+              ))
+          )
+            throw new Error('无法确认最新的 Pi 令牌，请先确认账号凭据或重新授权。')
+        }
+        await this.commitCredential('pi', async () => {
+          if (
+            JSON.stringify(unwrapCredential(account.auth)) !==
+            JSON.stringify(unwrapCredential(current.auth))
+          )
+            this.store.save(mergeCurrent(account, current))
+          await this.credentials.deactivatePi(account.providerKey, revision, assertLocked)
+        })
       })
-      this.clearRefreshError?.(account.id)
     })
   }
 
@@ -559,6 +704,8 @@ export class AccountService {
         return false
       if (account.switchUnavailable) throw new Error(account.switchUnavailable)
       if (account.accountType === 'relay') throw new Error('API 账号的额度请在对应服务商查看。')
+      if (account.product === 'pi' && account.providerKey === 'openai')
+        throw new Error('此账号暂不支持额度查询。')
       const prepare = async (piLock?: () => void): Promise<StoredAccount | undefined> => {
         let current: CredentialDetails[] = []
         let revision: string | undefined

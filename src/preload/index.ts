@@ -72,6 +72,7 @@ const api: DesktopAPI = {
     add: (input) => ipcRenderer.invoke('accounts:add', input),
     importCurrent: (product) => ipcRenderer.invoke('accounts:import-current', product),
     switch: (input) => ipcRenderer.invoke('accounts:switch', input),
+    deactivate: (id) => ipcRenderer.invoke('accounts:deactivate', id),
     rename: (input) => ipcRenderer.invoke('accounts:rename', input),
     remove: (id) => ipcRenderer.invoke('accounts:remove', id),
     refresh: (id) => ipcRenderer.invoke('accounts:refresh', id),
