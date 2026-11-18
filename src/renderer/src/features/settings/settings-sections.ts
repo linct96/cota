@@ -45,7 +45,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
         id: 'general',
         label: '常规',
         icon: SettingsIcon,
-        keywords: '休眠 睡眠 电源 熄灭 agent prevent sleep general',
+        keywords:
+          '休眠 睡眠 电源 熄灭 统计 分析 缓存 清除 清空 删除 analytics cache agent prevent sleep general',
       },
       {
         id: 'notifications',

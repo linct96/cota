@@ -55,6 +55,7 @@ export interface UsageAnalytics {
 }
 
 export interface UsageAnalyticsAPI {
+  clearCache: () => Promise<Result<void>>
   query: (product: AccountProduct, range: UsageRange) => Promise<Result<UsageAnalytics>>
   listPrices: () => Promise<Result<ModelPrice[]>>
   savePrice: (price: ModelPrice, replace: boolean) => Promise<Result<void>>

@@ -4,6 +4,8 @@ import { basename, dirname, extname, join, parse } from 'node:path'
 import type { AccountProduct } from '../../shared/accounts'
 import type { UsageTokens } from '../../shared/usage-analytics'
 import { object } from '../accounts/files'
+import { readSessionCache, sessionFingerprint, writeSessionCache } from './session-cache'
+import type { CachedSession } from './session-cache'
 
 export interface UsagePart {
   provider: string
@@ -30,6 +32,7 @@ export interface SessionScan {
 
 const MAX_LINE_BYTES = 8 * 1024 * 1024
 const MAX_RECORDS = 500_000
+const USAGE_KEY = Buffer.from('usage"')
 const string = (value: unknown) =>
   typeof value === 'string' && value.length <= 200 && !/[\0\r\n]/.test(value) ? value : ''
 const count = (value: unknown): number | null =>
@@ -90,15 +93,21 @@ function piTokens(value: unknown): UsageTokens | null {
   const fresh = count(usage.input)
   const read = count(usage.cacheRead)
   const write = count(usage.cacheWrite)
+  const rawOutput = count(usage.output)
+  const reasoning = count(usage.reasoning)
+  const total = count(usage.totalTokens)
   const input = fresh === null || read === null || write === null ? null : fresh + read + write
-  return tokens(
-    input,
-    count(usage.output),
-    read,
-    write,
-    count(usage.reasoning),
-    count(usage.totalTokens),
-  )
+  // 部分代理/版本（如早期 cliproxyapi-codex-responses）上报的 output 不含 reasoning，totalTokens = input + output + reasoning
+  const output =
+    input !== null &&
+    rawOutput !== null &&
+    reasoning !== null &&
+    total !== null &&
+    reasoning > 0 &&
+    total === input + rawOutput + reasoning
+      ? rawOutput + reasoning
+      : rawOutput
+  return tokens(input, output, read, write, reasoning, total)
 }
 
 function grokTokens(value: unknown): UsageTokens | null {
@@ -133,11 +142,27 @@ async function readLines(
   let parts: Buffer[] = []
   let length = 0
   let oversized = false
+  let oversizedHasUsage = false
+  let oversizedTail: Buffer = Buffer.alloc(0)
   let skipped = 0
   let index = 0
+  const scanUsage = (part: Buffer) => {
+    if (oversizedHasUsage || !part.length) return
+    const windowSize = USAGE_KEY.length - 1
+    const boundary = Buffer.concat([oversizedTail, part.subarray(0, windowSize)])
+    if (boundary.includes(USAGE_KEY) || part.includes(USAGE_KEY)) {
+      oversizedHasUsage = true
+      oversizedTail = Buffer.alloc(0)
+      return
+    }
+    const combined = part.length >= windowSize ? part : Buffer.concat([oversizedTail, part])
+    oversizedTail = Buffer.from(combined.subarray(-windowSize))
+  }
   const finish = () => {
-    if (oversized) skipped++
-    else if (length) {
+    // 无 usage 字段的超长行（如内联图片 toolResult）不影响统计，跳过时不计入异常提示
+    if (oversized) {
+      if (oversizedHasUsage) skipped++
+    } else if (length) {
       const line = Buffer.concat(parts, length).toString('utf8').trim()
       if (line) {
         try {
@@ -152,13 +177,20 @@ async function readLines(
     parts = []
     length = 0
     oversized = false
+    oversizedHasUsage = false
+    oversizedTail = Buffer.alloc(0)
   }
   const append = (part: Buffer) => {
-    if (oversized) return
+    if (oversized) {
+      scanUsage(part)
+      return
+    }
     length += part.length
     if (length > MAX_LINE_BYTES) {
       oversized = true
+      for (const prev of parts) scanUsage(prev)
       parts = []
+      scanUsage(part)
     } else parts.push(part)
   }
   for await (const raw of createReadStream(path)) {
@@ -177,20 +209,28 @@ async function readLines(
   return skipped
 }
 
-export async function scanSessions(product: AccountProduct, roots: string[]): Promise<SessionScan> {
+function addRecord(records: Map<string, UsageRecord>, id: string, record: UsageRecord): void {
+  const previous = records.get(id)
+  if (
+    !previous ||
+    record.tokens.total > previous.tokens.total ||
+    (record.tokens.total === previous.tokens.total && record.timestamp > previous.timestamp)
+  )
+    records.set(id, record)
+  if (records.size > MAX_RECORDS) throw new Error('会话记录过多，无法完成统计。')
+}
+
+export async function scanSessions(
+  product: AccountProduct,
+  roots: string[],
+  cachePath?: string,
+): Promise<SessionScan> {
   const records = new Map<string, UsageRecord>()
+  const cachedFiles = await readSessionCache(cachePath, product, roots)
+  const nextCache = new Map<string, CachedSession>()
+  let cacheChanged = false
   let skippedFiles = 0
   let skippedRecords = 0
-  const add = (id: string, record: UsageRecord) => {
-    const previous = records.get(id)
-    if (
-      !previous ||
-      record.tokens.total > previous.tokens.total ||
-      (record.tokens.total === previous.tokens.total && record.timestamp > previous.timestamp)
-    )
-      records.set(id, record)
-    if (records.size > MAX_RECORDS) throw new Error('会话记录过多，无法完成统计。')
-  }
   const directories = [...roots]
   while (directories.length) {
     const directory = directories.pop()!
@@ -216,17 +256,33 @@ export async function scanSessions(product: AccountProduct, roots: string[]): Pr
         (product === 'grok' ? entry.name !== 'updates.jsonl' : extname(entry.name) !== '.jsonl')
       )
         continue
+      const fileRecords = new Map<string, UsageRecord>()
+      const add = (id: string, record: UsageRecord) => {
+        if (cachePath) addRecord(fileRecords, id, record)
+        addRecord(records, id, record)
+      }
+      const skippedBefore = skippedRecords
       let session = path
       let model = ''
       let provider = ''
       let turn = ''
       let previous: UsageTokens | undefined
+      const piModels = new Map<string, { provider: string; model: string; api: string }>()
       const topSession =
         product === 'claude' &&
         dirname(path).endsWith(`${process.platform === 'win32' ? '\\' : '/'}subagents`)
           ? basename(dirname(dirname(path)))
           : parse(path).name
       try {
+        const fingerprint = cachePath ? await sessionFingerprint(path) : undefined
+        const cached = cachedFiles.get(path)
+        if (fingerprint && cached?.fingerprint === fingerprint) {
+          nextCache.set(path, cached)
+          for (const [id, record] of cached.records) addRecord(records, id, record)
+          skippedRecords += cached.skippedRecords
+          continue
+        }
+        cacheChanged = true
         const malformed = await readLines(path, (raw, index) => {
           const row = object(raw)
           const payload = object(row.payload)
@@ -308,6 +364,26 @@ export async function scanSessions(product: AccountProduct, roots: string[]): Pr
               return
             }
             const message = object(row.message)
+            const entryId = string(row.id)
+            let piModel = piModels.get(string(row.parentId))
+            if (row.type === 'model_change') {
+              piModel = {
+                provider: string(row.provider),
+                model: string(row.modelId),
+                api: '',
+              }
+            } else if (row.type === 'message' && message.role === 'assistant' && piModel) {
+              // A routed response may name a different model than the branch selection.
+              piModel = {
+                ...piModel,
+                api:
+                  message.provider === piModel.provider && message.model === piModel.model
+                    ? string(message.api)
+                    : '',
+              }
+            }
+            if (entryId && piModel) piModels.set(entryId, piModel)
+            if (piModels.size > MAX_RECORDS) throw new Error('会话记录过多，无法完成统计。')
             const usageValue =
               row.type === 'message' &&
               (message.role === 'assistant' || message.role === 'toolResult')
@@ -331,10 +407,17 @@ export async function scanSessions(product: AccountProduct, roots: string[]): Pr
               typeof costValue === 'number' && Number.isFinite(costValue) && costValue > 0
                 ? costValue
                 : null
-            const id = string(row.id) || `${path}:${index}`
+            const id = entryId || `${path}:${index}`
+            const inferredModel =
+              row.type === 'compaction' &&
+              row.fromHook !== true &&
+              piModel?.api &&
+              piModel.api !== 'pi-virtual'
+                ? piModel
+                : undefined
             const part = {
-              provider: string(message.provider),
-              model: string(message.model),
+              provider: string(message.provider) || inferredModel?.provider || '',
+              model: string(message.model) || inferredModel?.model || '',
               tokens: usage,
               cost,
               turns: 1,
@@ -413,11 +496,20 @@ export async function scanSessions(product: AccountProduct, roots: string[]): Pr
           })
         })
         skippedRecords += malformed
+        // A live session can change while it is being read; never cache that partial snapshot.
+        if (fingerprint && fingerprint === (await sessionFingerprint(path).catch(() => undefined)))
+          nextCache.set(path, {
+            fingerprint,
+            records: [...fileRecords],
+            skippedRecords: skippedRecords - skippedBefore,
+          })
       } catch (error) {
         if (error instanceof Error && error.message === '会话记录过多，无法完成统计。') throw error
         skippedFiles++
       }
     }
   }
+  if (cachePath && (cacheChanged || cachedFiles.size !== nextCache.size))
+    await writeSessionCache(cachePath, product, roots, nextCache)
   return { records: [...records.values()], skippedFiles, skippedRecords }
 }

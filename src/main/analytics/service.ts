@@ -1,10 +1,11 @@
+import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { accountProductSchema } from '../../shared/accounts'
 import { usageRangeSchema } from '../../shared/usage-analytics'
 import type { AccountProduct } from '../../shared/accounts'
-import type { UsageAnalytics } from '../../shared/usage-analytics'
+import type { UsageAnalytics, UsageRange } from '../../shared/usage-analytics'
 import type { Result } from '../../shared/contracts'
 import type { ModelPrices } from './pricing'
 
@@ -36,12 +37,45 @@ export function sessionRoots(
 export class UsageAnalyticsService {
   private generation = 0
   private cancel?: () => void
+  private queries = new Set<Promise<UsageAnalytics>>()
+  private clearing?: Promise<void>
+  private disposed = false
 
-  constructor(private readonly prices: ModelPrices) {}
+  constructor(
+    private readonly prices: ModelPrices,
+    private readonly cacheDirectory: string,
+  ) {}
 
   async query(productInput: unknown, rangeInput: unknown): Promise<UsageAnalytics> {
     const product = accountProductSchema.parse(productInput)
     const range = usageRangeSchema.parse(rangeInput)
+    while (this.clearing) await this.clearing.catch(() => {})
+    if (this.disposed) throw new Error('统计已取消。')
+    const query = this.runQuery(product, range)
+    this.queries.add(query)
+    try {
+      return await query
+    } finally {
+      this.queries.delete(query)
+    }
+  }
+
+  clearCache(): Promise<void> {
+    if (this.clearing) return this.clearing
+    this.clearing = (async () => {
+      try {
+        await Promise.allSettled(this.queries)
+        await rm(this.cacheDirectory, { recursive: true, force: true })
+      } catch {
+        throw new Error('无法清除统计分析缓存，请检查目录权限后重试。')
+      } finally {
+        this.clearing = undefined
+      }
+    })()
+    return this.clearing
+  }
+
+  private async runQuery(product: AccountProduct, range: UsageRange): Promise<UsageAnalytics> {
     const generation = ++this.generation
     this.cancel?.()
     const prices = await this.prices.list()
@@ -49,7 +83,13 @@ export class UsageAnalyticsService {
     return new Promise((resolveQuery, reject) => {
       const directory = __dirname.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
       const worker = new Worker(join(directory, 'analytics-worker.js'), {
-        workerData: { product, range, roots: sessionRoots(product), prices },
+        workerData: {
+          product,
+          range,
+          roots: sessionRoots(product),
+          prices,
+          cachePath: join(this.cacheDirectory, `${product}.json`),
+        },
       })
       let finished = false
       const finish = (error?: Error, value?: UsageAnalytics) => {
@@ -57,9 +97,14 @@ export class UsageAnalyticsService {
         finished = true
         if (this.cancel === cancel) this.cancel = undefined
         worker.removeAllListeners()
-        void worker.terminate()
-        if (error) reject(error)
-        else resolveQuery(value!)
+        // Cache clearing must wait for cancelled workers to stop writing too.
+        void worker.terminate().then(
+          () => {
+            if (error) reject(error)
+            else resolveQuery(value!)
+          },
+          () => reject(error ?? new Error('无法结束统计任务，请重试。')),
+        )
       }
       const cancel = () => finish(new Error('统计已取消。'))
       this.cancel = cancel
@@ -75,6 +120,7 @@ export class UsageAnalyticsService {
   }
 
   dispose(): void {
+    this.disposed = true
     this.generation++
     this.cancel?.()
   }

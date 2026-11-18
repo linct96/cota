@@ -235,7 +235,11 @@ if (!app.requestSingleInstanceLock()) {
       fileWatches = registerFilesIPC(common)
       workspacePorts = registerPortsIPC(common)
       registerAccountsIPC(handle, accounts, usageScheduler)
-      usageAnalytics = registerAnalyticsIPC(handle, configDirectory)
+      usageAnalytics = registerAnalyticsIPC(
+        handle,
+        configDirectory,
+        join(app.getPath('userData'), 'cache', 'usage-analytics'),
+      )
       registerCodeHostingIPC({ ...common, codeHosting, git })
       registerAgentsIPC({ ...common, agentClis, cliInstallTerminals, getWindow })
       registerTerminalIPC({ ...common, agentClis, trusted })

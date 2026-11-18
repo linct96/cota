@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react'
+import { LoaderCircle } from 'lucide-react'
+import { toast } from 'sonner'
+import { unwrap } from '../../../../../shared/contracts'
+import { Button } from '@/components/ui/button'
 import { useWorkspace } from '@/state/workspace'
 import { Card } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
@@ -17,6 +21,23 @@ export function GeneralSettings() {
   const [errors, setErrors] = useState<Partial<Record<GeneralPreference, string>>>({})
   const error = errors.preventSleep
   const persisting = useRef(false)
+  const clearingCache = useRef(false)
+  const [clearing, setClearing] = useState(false)
+
+  async function clearAnalyticsCache() {
+    if (clearingCache.current || !useWorkspace.getState().ready) return
+    clearingCache.current = true
+    setClearing(true)
+    try {
+      unwrap(await window.desktop.usageAnalytics.clearCache())
+      toast.success('统计分析缓存已清空。')
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : '无法清空统计分析缓存，请重试。')
+    } finally {
+      clearingCache.current = false
+      setClearing(false)
+    }
+  }
 
   async function update(key: GeneralPreference, value: boolean) {
     if (persisting.current || !useWorkspace.getState().ready) return
@@ -205,6 +226,43 @@ export function GeneralSettings() {
                 }
                 onCheckedChange={(value) => void update('confirmCloseRunningTerminal', value)}
               />
+            </div>
+          </Card>
+        </section>
+        <section className="general-settings-cache-group flex flex-col gap-2.5">
+          <h2 className="general-settings-cache-title settings-section-title">缓存</h2>
+          <Card size="sm" className="general-settings-cache-card">
+            <div className="general-settings-analytics-cache-row flex min-h-7 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4">
+              <div className="general-settings-analytics-cache-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
+                <span className="general-settings-analytics-cache-label text-xs leading-5 font-medium text-foreground">
+                  统计分析缓存
+                </span>
+                <p
+                  id="general-settings-analytics-cache-help"
+                  className="general-settings-analytics-cache-description text-xs text-muted-foreground"
+                >
+                  清空后下次统计将重新分析，不影响原始会话和模型定价。
+                </p>
+              </div>
+              <Button
+                className="general-settings-clear-analytics-cache text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                type="button"
+                variant="ghost"
+                aria-label="清空统计分析缓存"
+                aria-describedby="general-settings-analytics-cache-help"
+                aria-busy={clearing}
+                disabled={!ready || clearing}
+                onClick={() => void clearAnalyticsCache()}
+              >
+                {clearing && (
+                  <LoaderCircle
+                    className="general-settings-clear-cache-progress animate-spin"
+                    data-icon="inline-start"
+                    aria-hidden="true"
+                  />
+                )}
+                {clearing ? '清空中…' : '清空'}
+              </Button>
             </div>
           </Card>
         </section>

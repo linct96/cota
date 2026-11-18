@@ -42,6 +42,7 @@ beforeEach(() => {
     resizeAgentCliInstallTerminal: vi.fn(),
     onAgentCliInstall: vi.fn(),
     usageAnalytics: {
+      clearCache: vi.fn(),
       query: vi.fn(),
       listPrices: vi.fn(),
       savePrice: vi.fn(),

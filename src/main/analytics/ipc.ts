@@ -6,10 +6,12 @@ import { UsageAnalyticsService } from './service'
 export function registerAnalyticsIPC(
   handle: IpcHandler,
   configDirectory: string,
+  cacheDirectory: string,
 ): UsageAnalyticsService {
   const prices = new ModelPrices(join(configDirectory, 'model-pricing.json'))
-  const analytics = new UsageAnalyticsService(prices)
+  const analytics = new UsageAnalyticsService(prices, cacheDirectory)
   handle('analytics:query', (product: unknown, range: unknown) => analytics.query(product, range))
+  handle('analytics:cache-clear', () => analytics.clearCache())
   handle('analytics:prices-list', () => prices.list())
   handle('analytics:prices-save', (value: unknown, replace: unknown) => prices.save(value, replace))
   handle('analytics:prices-delete', (value: unknown) => prices.remove(value))

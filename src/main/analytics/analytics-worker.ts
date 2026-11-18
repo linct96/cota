@@ -9,8 +9,9 @@ const input = workerData as {
   range: UsageRange
   roots: string[]
   prices: ModelPrice[]
+  cachePath: string
 }
-void scanSessions(input.product, input.roots)
+void scanSessions(input.product, input.roots, input.cachePath)
   .then((scan) => aggregateUsage(scan, input.range, input.prices))
   .then(
     (value) => parentPort?.postMessage({ ok: true, value }),

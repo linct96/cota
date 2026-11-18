@@ -94,6 +94,7 @@ const api: DesktopAPI = {
     },
   },
   usageAnalytics: {
+    clearCache: () => ipcRenderer.invoke('analytics:cache-clear'),
     query: (product, range) => ipcRenderer.invoke('analytics:query', product, range),
     listPrices: () => ipcRenderer.invoke('analytics:prices-list'),
     savePrice: (price, replace) => ipcRenderer.invoke('analytics:prices-save', price, replace),
