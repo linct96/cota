@@ -737,6 +737,60 @@ body:has(
 .terminal-pane[data-focused='true'] {
   border-color: color-mix(in oklab, var(--foreground) 18%, var(--border));
 }
+.terminal-pane[data-dragging] .terminal-pane-reorder-button {
+  color: var(--foreground);
+  background-color: var(--accent);
+  cursor: grabbing;
+}
+.terminal-pane[data-drop-target] {
+  border-color: var(--ring);
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.terminal-pane-drag-preview {
+  --terminal-drag-preview-offset-y: 6px;
+  position: fixed;
+  z-index: 45;
+  inset: 0 auto auto 0;
+  display: flex;
+  align-items: center;
+  gap: --spacing(1.5);
+  width: max-content;
+  max-width: min(14rem, calc(100vw - 16px));
+  height: 28px;
+  padding-inline: --spacing(2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-xs);
+  pointer-events: none;
+  translate: clamp(8px, calc(var(--terminal-drag-x) - 50%), calc(100vw - 100% - 8px))
+    calc(var(--terminal-drag-y) + var(--terminal-drag-preview-offset-y));
+}
+.terminal-pane-drag-preview[data-above-pointer] {
+  --terminal-drag-preview-offset-y: calc(-100% - 6px);
+}
+.terminal-pane-drag-preview-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.terminal-pane-group[data-swap-transition] {
+  view-transition-name: none;
+}
+.terminal-pane-group::view-transition {
+  pointer-events: none;
+}
+.terminal-pane[data-swap-animating] {
+  view-transition-name: attr(data-terminal-swap-name type(<custom-ident>));
+  view-transition-class: terminal-swap-pane;
+}
+.terminal-pane-group::view-transition-group(.terminal-swap-pane) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
 .terminal-pane-header {
   background-color: var(--card);
   color: var(--foreground);

@@ -151,6 +151,36 @@ describe('Terminal tabs and split panes', () => {
     expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].terminalLayouts).toEqual(layout)
   })
 
+  it('swaps nested panes in place and persists the result without changing the active terminal', async () => {
+    const { store, a, b, c, layout, order } = await prepareSplitGroup()
+    const tabs = store().tabs
+    const root = layout[0].root
+    expect(root.type).toBe('split')
+    if (root.type !== 'split' || root.children[0].type !== 'split')
+      throw new Error('Expected nested split')
+    root.children[0].children[0].id = b.id
+    root.children[1].id = a.id
+
+    expect(store().swapTerminalPanes(a.id, b.id)).toBe(true)
+    expect(store().terminalLayouts).toEqual(layout)
+    expect(store().tabs).toBe(tabs)
+    expect(store().activeTabs[a.workspaceId]).toBe(c.id)
+    expect(order()).toEqual([`terminal:${a.id}`])
+    expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].terminalLayouts).toEqual(layout)
+  })
+
+  it('rejects swaps while maximized, across tabs, or onto the same pane', async () => {
+    const { store, a, b } = await prepareSplitGroup()
+    const outside = store().newTerminal()!
+    store().updateTab(outside, { status: 'running' })
+    const layouts = store().terminalLayouts
+    expect(store().swapTerminalPanes(a.id, outside)).toBe(false)
+    expect(store().swapTerminalPanes(a.id, a.id)).toBe(false)
+    useWorkspace.setState({ maximizedTerminalId: a.id })
+    expect(store().swapTerminalPanes(a.id, b.id)).toBe(false)
+    expect(store().terminalLayouts).toBe(layouts)
+  })
+
   it('exits pane maximization when splitting or closing the maximized pane', async () => {
     const { store, a, b, c, layout } = await prepareSplitGroup()
     useWorkspace.setState({ maximizedTerminalId: c.id })

@@ -97,6 +97,7 @@ export interface WorkspaceState {
   recentQuickCommands: Record<string, string>
   runQuickCommand: (id: string, workspaceId: string) => void
   splitTerminal: (id: string, direction?: 'horizontal' | 'vertical') => void
+  swapTerminalPanes: (source: string, target: string) => boolean
   resizeTerminalSplit: (id: string, ratio: number) => void
   reopenTab: () => void
   selectTab: (id: string) => void

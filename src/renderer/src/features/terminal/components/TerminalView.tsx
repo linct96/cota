@@ -29,7 +29,7 @@ export function TerminalView({
   const readingOffset = useRef<number | undefined>(undefined)
   const instance = useRef<{
     terminal: Terminal
-    fit: Pick<StableCellFitAddon, 'fit'>
+    fit: { fit: () => boolean }
     renderer: ReturnType<typeof createTerminalRenderer>
   } | null>(null)
   const gpuAcceleration = useWorkspace((state) => state.preferences.terminalGpuAcceleration)
@@ -67,7 +67,29 @@ export function TerminalView({
     terminal.open(host.current!)
     const scrolling = installTerminalScroll(terminal)
     const wheel = installTerminalWheel(terminal)
-    const viewportFit = { fit: () => scrolling.preserve(() => fit.fit()) }
+    let disposed = false
+    let pendingFit: Animation | undefined
+    const viewportFit = {
+      fit: () => {
+        if (disposed || !container?.clientWidth || !container.clientHeight) return false
+        const expansion = container.closest('[data-pane-expanding]')?.getAnimations()[0]
+        if (expansion) {
+          // Keep the terminal grid stable until the surviving pane reaches its final size.
+          if (pendingFit !== expansion) {
+            pendingFit = expansion
+            const refit = () => {
+              if (pendingFit !== expansion) return
+              pendingFit = undefined
+              viewportFit.fit()
+            }
+            void expansion.finished.then(refit, refit)
+          }
+          return false
+        }
+        scrolling.preserve(() => fit.fit())
+        return true
+      },
+    }
     const renderer = createTerminalRenderer(terminal, viewportFit)
     const appearance = installTerminalAppearance(terminal, container!, () => {
       const settings = useWorkspace.getState().preferences
@@ -85,7 +107,6 @@ export function TerminalView({
     })
     const stopTheme = observeDocumentTheme(updateAppearance)
     instance.current = { terminal, fit: viewportFit, renderer }
-    let disposed = false
     const isDisposed = () => disposed
     let connected = false
     let closing = false
@@ -98,10 +119,7 @@ export function TerminalView({
       !disposed &&
       !closing &&
       useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
-    const fitAndResize = () => {
-      if (!host.current?.clientWidth || !host.current.clientHeight) return
-      viewportFit.fit()
-    }
+    const fitAndResize = () => viewportFit.fit()
     const resize = terminal.onResize(({ cols, rows }) => {
       if (live())
         void window.desktop.resizeTerminal(id, cols, rows).then(unwrap).catch(console.error)
@@ -298,10 +316,11 @@ export function TerminalView({
     const frame = requestAnimationFrame(() => {
       const current = instance.current
       if (!current || !host.current?.clientWidth) return
-      current.fit.fit()
+      const fitted = current.fit.fit()
       // Preserve keyboard tab navigation without blocking pointer selection.
       if (!document.activeElement?.matches('[role="tab"]:focus-visible')) current.terminal.focus()
       if (
+        fitted &&
         !current.terminal.options.disableStdin &&
         useWorkspace.getState().tabs.find((item) => item.id === id)?.status === 'running'
       ) {

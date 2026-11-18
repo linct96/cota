@@ -34,6 +34,25 @@ export function mapTerminalPane(
   }
 }
 
+export function swapTerminalPaneIds(
+  node: TerminalPane,
+  source: string,
+  target: string,
+): TerminalPane {
+  if (node.type === 'terminal') {
+    if (node.id === source) return { ...node, id: target }
+    if (node.id === target) return { ...node, id: source }
+    return node
+  }
+  return {
+    ...node,
+    children: [
+      swapTerminalPaneIds(node.children[0], source, target),
+      swapTerminalPaneIds(node.children[1], source, target),
+    ],
+  }
+}
+
 export function pruneTerminalPane(node: TerminalPane, ids: Set<string>): TerminalPane | undefined {
   if (node.type === 'terminal') return ids.has(node.id) ? node : undefined
   const left = pruneTerminalPane(node.children[0], ids)

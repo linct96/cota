@@ -2,6 +2,7 @@ import { useSourceControl } from '../source-control-store'
 import {
   mapTerminalPane,
   removeTerminalPanes,
+  swapTerminalPaneIds,
   terminalPaneIds,
 } from '../../../../shared/terminal-layout'
 import type { TerminalPane } from '../../../../shared/terminal-layout'
@@ -21,6 +22,7 @@ export const createTerminalActions: StateCreator<
     | 'runQuickCommand'
     | 'newTerminal'
     | 'splitTerminal'
+    | 'swapTerminalPanes'
     | 'resizeTerminalSplit'
     | 'updateTab'
     | 'closeTab'
@@ -162,6 +164,32 @@ export const createTerminalActions: StateCreator<
             : [...state.terminalLayouts, { id, root: split, activePaneId: next }],
         }
       })
+    },
+
+    swapTerminalPanes(source, target) {
+      const state = get()
+      if (source === target || state.removingWorkspace || state.maximizedTerminalId) return false
+      if (
+        ![source, target].every((id) =>
+          state.tabs.some(
+            (tab) => tab.id === id && tab.status !== 'starting' && !tab.closingStatus,
+          ),
+        )
+      )
+        return false
+      const group = state.terminalLayouts.find(({ root }) => {
+        const ids = terminalPaneIds(root)
+        return ids.includes(source) && ids.includes(target)
+      })
+      if (!group || state.closingTerminalTabs.includes(group.id)) return false
+      set({
+        terminalLayouts: state.terminalLayouts.map((layout) =>
+          layout === group
+            ? { ...layout, root: swapTerminalPaneIds(layout.root, source, target) }
+            : layout,
+        ),
+      })
+      return true
     },
 
     resizeTerminalSplit(id, ratio) {
