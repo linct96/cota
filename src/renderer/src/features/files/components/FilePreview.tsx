@@ -107,7 +107,7 @@ export function FilePreview({
           variant="ghost"
           size="icon-sm"
           className="file-preview-refresh"
-          aria-label="刷新文件并重新连接监听"
+          aria-label="刷新文件"
           title="刷新文件"
           onClick={() => {
             reload.current?.()
@@ -127,9 +127,7 @@ export function FilePreview({
       <LoadingContent pending={!result && !error} label="正在加载文件预览">
         {error ? (
           <Alert variant="destructive" className="file-preview-error m-3 w-auto">
-            <AlertDescription className="file-preview-error-description">
-              {error} 请刷新或重新选择文件。
-            </AlertDescription>
+            <AlertDescription className="file-preview-error-description">{error}</AlertDescription>
           </Alert>
         ) : result?.kind === 'text' ? (
           <Editor identity={`${workspace.id}:${path}`} path={path} text={result.content} />
@@ -141,7 +139,7 @@ export function FilePreview({
               </EmptyTitle>
               <EmptyDescription className="file-preview-unavailable-description break-all">
                 {result.kind === 'link'
-                  ? `链接目标：${result.target}。为避免越界读取，不跟随链接。`
+                  ? `不支持预览符号链接（目标：${result.target}）。`
                   : result.reason}
               </EmptyDescription>
             </EmptyHeader>

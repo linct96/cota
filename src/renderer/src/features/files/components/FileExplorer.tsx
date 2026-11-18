@@ -14,7 +14,7 @@ import { FileTypeIcon } from './FileTypeIcon'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import {
   FileTree,
   FileTreeFile,
@@ -254,7 +254,7 @@ export function FileExplorer({
           variant="ghost"
           size="icon-sm"
           className="file-explorer-refresh"
-          title="刷新文件树并重新连接监听"
+          title="刷新文件树"
           aria-label="刷新文件树"
           onClick={() => {
             refresh()
@@ -302,9 +302,6 @@ export function FileExplorer({
           <Empty className="file-explorer-empty rounded-none">
             <EmptyHeader className="file-explorer-empty-header">
               <EmptyTitle className="file-explorer-empty-title">目录为空</EmptyTitle>
-              <EmptyDescription className="file-explorer-empty-description">
-                此工作区还没有可浏览的文件。
-              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
