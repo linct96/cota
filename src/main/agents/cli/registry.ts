@@ -82,10 +82,12 @@ export async function agentCapability(
       ? numbers[0] === 1 && (numbers[1] > 3 || (numbers[1] === 3 && numbers[2] >= 0))
       : provider === 'claude'
         ? numbers[0] === 2 && (numbers[1] > 1 || (numbers[1] === 1 && numbers[2] >= 196))
-        : numbers[0] === 0 && numbers[1] >= 124)
+        : provider === 'agy'
+          ? numbers[0] === 1 && (numbers[1] > 5 || (numbers[1] === 5 && numbers[2] >= 10))
+          : numbers[0] === 0 && numbers[1] >= 124)
   if (!supported)
     throw new Error(
-      'CLI 版本未知或不在适配范围；支持 Pi 1.3+、Claude Code 2.1.196+、Codex 0.124+（同主版本）。',
+      'CLI 版本未知或不在适配范围；支持 Pi 1.3+、Claude Code 2.1.196+、Codex 0.124+、Antigravity 1.5.10+（同主版本）。',
     )
   const directory = __dirname.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked')
   const adapter = join(directory, provider === 'pi' ? 'pi-extension.js' : 'agent-hook.js')

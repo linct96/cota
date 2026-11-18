@@ -299,6 +299,7 @@ export const AGENT_PROVIDERS = {
   pi: { name: 'Pi', command: 'pi' },
   codex: { name: 'Codex', command: 'codex' },
   claude: { name: 'Claude Code', command: 'claude' },
+  agy: { name: 'Antigravity', command: 'agy' },
 } as const
 export type AgentProvider = keyof typeof AGENT_PROVIDERS
 export type TerminalLaunch =
@@ -383,7 +384,7 @@ export interface AgentSession extends WorkspaceTarget {
   startedAt: string
   lastEventAt: string
   lastTurnId?: string
-  eventSource: 'process' | 'pi-extension' | 'claude-hooks' | 'codex-hooks'
+  eventSource: 'process' | 'pi-extension' | 'claude-hooks' | 'codex-hooks' | 'agy-hooks'
   observability: 'full' | 'partial' | 'unavailable'
   observabilityReason?: string
   revision: number

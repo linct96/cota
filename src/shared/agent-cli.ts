@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { AGENT_PROVIDERS } from './contracts'
 import type { AgentAvailability, AgentProvider } from './contracts'
 
-export const AGENT_CLI_PACKAGES: Record<AgentProvider, string> = {
+export const AGENT_CLI_PACKAGES: Partial<Record<AgentProvider, string>> = {
   pi: '@earendil-works/pi-coding-agent',
   codex: '@openai/codex',
   claude: '@anthropic-ai/claude-code',
@@ -11,6 +11,7 @@ export const AGENT_CLI_INSTALL_METHOD_LABELS = {
   brew: 'Homebrew',
   npm: 'npm',
   scoop: 'Scoop',
+  native: '官方 CLI',
   unknown: '其他来源',
 } as const
 
@@ -21,9 +22,11 @@ export interface AgentCliStatus extends AgentAvailability {
   updateError?: string
   installing?: boolean
 }
+const providers = Object.keys(AGENT_PROVIDERS) as AgentProvider[]
+
 const agentCliStatusSchema = z
   .object({
-    provider: z.enum(['pi', 'codex', 'claude']),
+    provider: z.enum(providers),
     executable: z
       .string()
       .max(32768)
@@ -31,16 +34,15 @@ const agentCliStatusSchema = z
       .optional(),
     version: z.string().max(100).optional(),
     error: z.string().max(8000).optional(),
-    installMethod: z
-      .enum(['brew', 'npm', 'scoop', 'native', 'unknown'])
-      .transform((method) => (method === 'native' ? 'unknown' : method))
-      .optional(),
+    installMethod: z.enum(['brew', 'npm', 'scoop', 'native', 'unknown']).optional(),
     latestVersion: z.string().max(100).optional(),
     updateAvailable: z.boolean().optional(),
     updateError: z.string().max(8000).optional(),
   })
   .transform((entry) => {
     const definition = AGENT_PROVIDERS[entry.provider]
+    if (entry.installMethod === 'native' && entry.provider !== 'agy')
+      entry.installMethod = 'unknown'
     // Older caches treated a missing CLI as a detection error.
     if (
       !entry.executable &&
@@ -60,8 +62,8 @@ export const agentCliCacheSchema = z.object({
     .refine((value) => !value.includes('\0')),
   entries: z
     .array(agentCliStatusSchema)
-    .length(3)
-    .refine((entries) => new Set(entries.map((entry) => entry.provider)).size === 3),
+    .length(providers.length)
+    .refine((entries) => new Set(entries.map((entry) => entry.provider)).size === providers.length),
 })
 export type AgentCliCache = z.infer<typeof agentCliCacheSchema>
 

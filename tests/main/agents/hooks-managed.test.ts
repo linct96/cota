@@ -1,8 +1,9 @@
 import { root } from '../../helpers/cli-environment.fixture'
 import { describe, expect, it } from 'vitest'
-import { readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
+  hookFiles,
   inspectAgentHook,
   installAgentHook,
   trustAgentHook,
@@ -12,6 +13,30 @@ import {
 import { codexRpc, userHookConfig } from './hooks.fixture'
 
 describe('Managed Agent Hook files', () => {
+  it('adds and removes only the named Antigravity hook', async () => {
+    const env = { HOME: root, PATH: join(root, 'bin') }
+    const { config, command } = hookFiles('agy', env)
+    expect(config).toBe(join(root, '.gemini', 'config', 'hooks.json'))
+    await mkdir(join(config, '..'), { recursive: true })
+    const existing = { 'user-hook': { enabled: false, Stop: [{ command: 'keep' }] } }
+    await writeFile(config, JSON.stringify(existing))
+    expect((await installAgentHook('agy', env)).state).toBe('installed')
+    expect(JSON.parse(await readFile(config, 'utf8'))).toEqual({
+      ...existing,
+      'cota-agent-status': Object.fromEntries(
+        ['SessionStart', 'PreInvocation', 'Stop'].map((name) => [
+          name,
+          [{ type: 'command', command: `${command}:${name}`, timeout: 2 }],
+        ]),
+      ),
+    })
+    expect((await uninstallAgentHook('agy', env)).state).toBe('missing')
+    expect(JSON.parse(await readFile(config, 'utf8'))).toEqual(existing)
+    const conflict = JSON.stringify({ 'cota-agent-status': existing['user-hook'] })
+    await writeFile(config, conflict)
+    await expect(installAgentHook('agy', env)).rejects.toThrow('不属于 Cota')
+    expect(await readFile(config, 'utf8')).toBe(conflict)
+  })
   it('installs Codex and Claude Hooks concurrently with one shared loader', async () => {
     const env = { HOME: root, PATH: join(root, 'bin') }
     const codex = await userHookConfig('codex', env)

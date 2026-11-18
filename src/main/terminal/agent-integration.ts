@@ -206,12 +206,25 @@ export class TerminalAgentIntegration {
     )
       return false
     if (event.timestamp < run.eventStartedAt) return true
+    if (event.provider === 'agy') {
+      // Antigravity emits model invocations, not turn IDs; only a terminal Stop ends this turn.
+      if (event.type === 'turn-started') {
+        if (run.agyTurn?.sessionId === sessionId) event.type = 'turn-active'
+        else run.agyTurn = { sessionId, id: randomUUID() }
+        event.turnId = run.agyTurn.id
+      } else if (event.type === 'turn-ended' || event.type === 'turn-failed') {
+        if (run.agyTurn?.sessionId !== sessionId) return true
+        event.turnId = run.agyTurn.id
+      }
+    }
     if (event.turnId)
       event.turnId = createHash('sha256').update(`${sessionId}:${event.turnId}`).digest('hex')
     event.token = run.token
     event.launchId = session.agent.launchId
     const accepted = this.agents.receive(event, channel)
     if (accepted && event.type === 'session-ended') run.ended = true
+    if (accepted && event.provider === 'agy' && ['turn-ended', 'turn-failed'].includes(event.type))
+      run.agyTurn = undefined
     return accepted
   }
 

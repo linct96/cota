@@ -22,6 +22,7 @@ const agentInstallGuides: Record<AgentProvider, string> = {
   pi: 'https://pi.dev/docs/latest/quickstart#1-install-pi',
   codex: 'https://github.com/openai/codex#installing-and-running-codex-cli',
   claude: 'https://code.claude.com/docs/en/quickstart#step-1-install-claude-code',
+  agy: 'https://antigravity.google/docs/cli-install',
 }
 
 export function registerAgentsIPC(deps: {

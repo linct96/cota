@@ -1,5 +1,6 @@
 import { connect } from 'node:net'
 import type { Socket } from 'node:net'
+import { AGENT_PROVIDERS } from '../../../shared/contracts'
 import { randomUUID } from 'node:crypto'
 import type {
   AgentEventType,
@@ -24,7 +25,7 @@ export function lifecycleEvent(
     !terminalId ||
     process.env.COTA_AGENT_MANAGED !== '1' ||
     !identity?.sessionId ||
-    !['pi', 'codex', 'claude'].includes(identity.provider)
+    !Object.hasOwn(AGENT_PROVIDERS, identity.provider)
   )
     return
   return {

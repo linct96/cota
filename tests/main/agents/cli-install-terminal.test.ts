@@ -276,7 +276,7 @@ describe('Agent CLI update terminals', () => {
       '正在更新',
     )
     expect(await restarted.run('claude', DEFAULT_CONFIG.preferences, launch)).toEqual([])
-    expect(await restarted.inspect(DEFAULT_CONFIG.preferences, false)).toHaveLength(3)
+    expect(await restarted.inspect(DEFAULT_CONFIG.preferences, false)).toHaveLength(4)
 
     const index = (provider: string) =>
       mocks.ptySpawn.mock.calls.findIndex(

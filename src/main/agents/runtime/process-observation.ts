@@ -114,7 +114,7 @@ export function agentOwner(
 
 function nativeProvider(command = ''): AgentProvider | undefined {
   const name = basename(command).replace(/\.exe$/i, '')
-  if (name === 'claude' || name === 'pi' || name === 'codex') return name
+  if (name === 'claude' || name === 'pi' || name === 'codex' || name === 'agy') return name
   if (/^codex-(?:aarch64|x86_64|arm64)(?:-[a-z0-9_]+)+$/.test(name)) return 'codex'
 }
 

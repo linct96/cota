@@ -29,6 +29,7 @@ describe('Agent CLI discovery and capabilities', () => {
       { provider: 'pi', executable: join(root, 'bin', 'pi'), version: '1.2.3' },
       { provider: 'codex', executable: join(root, 'bin', 'codex'), version: undefined },
       { provider: 'claude', executable: join(root, 'bin', 'claude'), version: undefined },
+      { provider: 'agy' },
     ])
     expect(mocks.login).toHaveBeenCalledWith(
       expect.any(String),
@@ -65,7 +66,9 @@ describe('Agent CLI discovery and capabilities', () => {
         return Promise.reject(cause)
       }
     })
-    for (const provider of ['pi', 'claude', 'codex'] as const) {
+    await writeFile(join(root, 'bin', 'agy'), '#!/bin/sh\n', { mode: 0o700 })
+    for (const provider of ['pi', 'claude', 'codex', 'agy'] as const) {
+      if (provider === 'agy') mocks.login.mockResolvedValueOnce({ stdout: '1.5.10' })
       const command = {
         executable: join(root, 'bin', provider),
         args: [] as string[],
@@ -103,6 +106,7 @@ describe('Agent CLI discovery and capabilities', () => {
       { provider: 'pi' },
       { provider: 'codex' },
       { provider: 'claude' },
+      { provider: 'agy' },
     ])
     await writeFile(join(root, 'bin', 'claude'), '#!/bin/sh\n', { mode: 0o600 })
     expect(
@@ -123,12 +127,14 @@ describe('Agent CLI discovery and capabilities', () => {
             error: `${AGENT_PROVIDERS.codex.name} CLI 已不存在，启动失败。请在设置中重新安装或检测。`,
           },
           { provider: 'pi', error: '无法执行 pi，请检查文件权限和磁盘状态。' },
+          { provider: 'agy' },
         ],
       }).entries,
     ).toEqual([
       { provider: 'claude' },
       { provider: 'codex' },
       { provider: 'pi', error: '无法执行 pi，请检查文件权限和磁盘状态。' },
+      { provider: 'agy' },
     ])
   })
 })

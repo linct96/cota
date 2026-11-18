@@ -1,4 +1,4 @@
-import { ClaudeCode, OpenAI, Pi } from '@lobehub/icons'
+import { Antigravity, ClaudeCode, OpenAI, Pi } from '@lobehub/icons'
 import { Bot } from 'lucide-react'
 import type { AgentProvider } from '../../../../../shared/contracts'
 
@@ -10,6 +10,8 @@ export interface AgentIconProps {
 
 export function AgentIcon({ provider, size = 14, className }: AgentIconProps) {
   switch (provider) {
+    case 'agy':
+      return <Antigravity size={size} className={className} />
     case 'claude':
       return <ClaudeCode size={size} className={className} />
     case 'codex':

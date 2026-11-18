@@ -362,11 +362,15 @@ describe('Agent CLI cached management', () => {
     const publish = vi.fn()
     const agents = new AgentCliManagement(config, publish)
     await agents.initialize()
-    expect(agents.read().entries).toHaveLength(3)
+    expect(agents.read().entries).toHaveLength(4)
+    expect(agents.read().entries.find((entry) => entry.provider === 'agy')).toEqual({
+      provider: 'agy',
+    })
     expect(
       agents
         .read()
-        .entries.every((entry) => entry.version === '0.159.0' && entry.installMethod === 'unknown'),
+        .entries.filter((entry) => entry.provider !== 'agy')
+        .every((entry) => entry.version === '0.159.0' && entry.installMethod === 'unknown'),
     ).toBe(true)
     const legacyCache = agentCliCacheSchema.parse({
       ...agents.read(),

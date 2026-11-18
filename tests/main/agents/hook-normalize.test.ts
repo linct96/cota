@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { normalizeHook } from '../../../src/main/agents/hooks/normalize'
 
 describe('Agent Hook event normalization', () => {
+  it('reads Antigravity lifecycle events without forwarding private payloads', () => {
+    const common = { conversationId: 'conversation', lastUserInput: 'private prompt' }
+    expect(normalizeHook('agy', common, 'SessionStart')).toEqual({ type: 'session-started' })
+    expect(normalizeHook('agy', common, 'PreInvocation')).toEqual({ type: 'turn-started' })
+    expect(normalizeHook('agy', { ...common, fullyIdle: false }, 'Stop')).toBeUndefined()
+    expect(
+      normalizeHook(
+        'agy',
+        { ...common, fullyIdle: true, terminationReason: 'NO_TOOL_CALL' },
+        'Stop',
+      ),
+    ).toEqual({ type: 'turn-ended' })
+    expect(
+      normalizeHook('agy', { ...common, fullyIdle: true, terminationReason: 'ERROR' }, 'Stop'),
+    ).toEqual({ type: 'turn-failed' })
+    expect(normalizeHook('agy', common, 'PermissionRequest')).toBeUndefined()
+  })
   it('omits a private Claude response from a turn-ending event', () => {
     expect(
       normalizeHook('claude', { hook_event_name: 'Stop', prompt_id: 'p', response: 'secret' }),

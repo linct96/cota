@@ -90,6 +90,43 @@ describe('Managed Agent event authentication', () => {
     expect(await dynamic.receiveAgentEvent({ ...manual, provider: 'codex' }, {})).toBe(false)
   })
 
+  it('keeps Antigravity invocations in one turn and starts a fresh turn after Stop', async () => {
+    const { dynamic, shell, manual, manualRows } = await managedShell()
+    mocks.capability.mockResolvedValueOnce('partial')
+    mocks.processes.mockResolvedValue(
+      manualRows.map((row) =>
+        row.pid === 60000 ? { ...row, command: '/usr/local/bin/agy', provider: undefined } : row,
+      ),
+    )
+    const update = (type: string, sessionId = manual.sessionId) =>
+      dynamic.receiveAgentEvent(
+        { ...manual, provider: 'agy', type, sessionId, eventId: randomUUID() },
+        {},
+      )
+    const state = async () => (await dynamic.list()).find((entry) => entry.id === shell.id)?.agent
+    expect(await update('session-started')).toBe(true)
+    expect((await state())?.activityState).toBe('idle')
+    expect(await update('turn-started')).toBe(true)
+    const first = (await state())?.lastTurnId
+    expect(first).toBeTruthy()
+    expect(await update('turn-started')).toBe(true)
+    expect(await update('turn-ended', 'another-conversation')).toBe(true)
+    expect(await state()).toMatchObject({ activityState: 'working', lastTurnId: first })
+    expect(await update('turn-ended')).toBe(true)
+    expect(await state()).toMatchObject({ activityState: 'completed', lastTurnId: first })
+    expect(await update('turn-started')).toBe(true)
+    expect((await state())?.lastTurnId).not.toBe(first)
+    expect(await update('turn-failed')).toBe(true)
+    expect(await state()).toMatchObject({
+      activityState: 'failed',
+      eventSource: 'agy-hooks',
+      observability: 'partial',
+    })
+    mocks.processes.mockResolvedValue(rows.filter((row) => row.pid === 98765))
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(await state()).toBeUndefined()
+  })
+
   it('marks an unobserved run unknown and replaces it when the foreground process restarts', async () => {
     const { dynamic, shell, manual, manualRows, managedUpdates } = await managedShell()
     const channel = {}

@@ -276,13 +276,16 @@ export class AgentCliManagement {
         if (cached && cacheAge < 3 * 24 * 60 * 60 * 1000) {
           status.latestVersion = cached.version
         }
-        if (checkUpdates && entry.executable && cacheAge >= 60_000) {
+        const npmPackage = AGENT_CLI_PACKAGES[entry.provider]
+        const latestUrl =
+          installation?.latestUrl ??
+          (npmPackage && `https://registry.npmjs.org/${encodeURIComponent(npmPackage)}/latest`)
+        if (checkUpdates && entry.executable && latestUrl && cacheAge >= 60_000) {
           try {
-            const response = await fetch(
-              installation?.latestUrl ??
-                `https://registry.npmjs.org/${encodeURIComponent(AGENT_CLI_PACKAGES[entry.provider])}/latest`,
-              { signal: AbortSignal.timeout(10000), redirect: 'error' },
-            )
+            const response = await fetch(latestUrl, {
+              signal: AbortSignal.timeout(10000),
+              redirect: 'error',
+            })
             if (!response.ok) throw new Error(`版本服务返回 ${response.status}`)
             const metadata = await response.json()
             const version =

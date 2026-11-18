@@ -14,9 +14,29 @@ type HookEvent = Pick<
 const identifier = (value: unknown): value is string =>
   typeof value === 'string' && /^[\w.-]{1,128}$/.test(value)
 
-export function normalizeHook(provider: AgentProvider, input: unknown): HookEvent | undefined {
+export function normalizeHook(
+  provider: AgentProvider,
+  input: unknown,
+  hookName?: string,
+): HookEvent | undefined {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return
   const data = input as Record<string, unknown>
+  if (provider === 'agy') {
+    if (hookName === 'SessionStart') return { type: 'session-started' }
+    if (hookName === 'PreInvocation') return { type: 'turn-started' }
+    if (hookName === 'Stop') {
+      const reason =
+        typeof data.terminationReason === 'string' ? data.terminationReason.toLowerCase() : ''
+      if (
+        reason === 'error' ||
+        reason === 'max_steps_exceeded' ||
+        (typeof data.error === 'string' && data.error.length > 0)
+      )
+        return { type: 'turn-failed' }
+      if (data.fullyIdle === true) return { type: 'turn-ended' }
+    }
+    return
+  }
   const name = data.hook_event_name
   if (
     ![

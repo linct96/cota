@@ -9,6 +9,7 @@ import { codexHookTrust } from './codex-trust'
 import { isWindows } from '../../system/platform'
 
 const marker = 'cota-managed-agent-hook:v1'
+const agyHook = 'cota-agent-status'
 const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
@@ -71,7 +72,9 @@ export function hookFiles(provider: AgentProvider, env: Record<string, string>) 
         )
       : provider === 'codex'
         ? join(directory(env.CODEX_HOME, join(home, '.codex')), 'hooks.json')
-        : join(directory(env.CLAUDE_CONFIG_DIR, join(home, '.claude')), 'settings.json')
+        : provider === 'agy'
+          ? join(directory(home, homedir()), '.gemini', 'config', 'hooks.json')
+          : join(directory(env.CLAUDE_CONFIG_DIR, join(home, '.claude')), 'settings.json')
   if (isWindows && /["%\r\n]/.test(loader))
     throw new Error('Hooks 路径包含 Windows 命令无法安全处理的字符。')
   return {
@@ -82,6 +85,8 @@ export function hookFiles(provider: AgentProvider, env: Record<string, string>) 
 }
 
 function eventNames(provider: AgentProvider, version?: string) {
+  // shortcut: no native permission notification; add it when Antigravity exposes a wait event.
+  if (provider === 'agy') return ['SessionStart', 'PreInvocation', 'Stop']
   const names = [
     'SessionStart',
     'UserPromptSubmit',
@@ -139,6 +144,32 @@ function configuration(raw: string | undefined) {
   return { config, hooks }
 }
 
+function agyConfiguration(raw: string | undefined, command: string) {
+  const config: unknown = raw === undefined ? {} : JSON.parse(raw)
+  if (!object(config)) throw new Error('Hooks 配置格式无效；请先修复原文件。')
+  const expected = Object.fromEntries(
+    eventNames('agy').map((name) => [
+      name,
+      [{ type: 'command', command: `${command}:${name}`, timeout: 2 }],
+    ]),
+  )
+  const hook = config[agyHook]
+  const owned =
+    object(hook) &&
+    eventNames('agy').every((name) => {
+      const handlers = hook[name]
+      return (
+        Array.isArray(handlers) &&
+        handlers.length === 1 &&
+        object(handlers[0]) &&
+        handlers[0].command === `${command}:${name}`
+      )
+    }) &&
+    Object.keys(hook).every((name) => Object.hasOwn(expected, name) || name === 'enabled')
+  if (hook !== undefined && !owned) throw new Error('同名 Antigravity Hook 不属于 Cota；不会覆盖。')
+  return { config, hook, expected }
+}
+
 export async function inspectAgentHook(
   provider: AgentProvider,
   env: Record<string, string>,
@@ -164,6 +195,17 @@ export async function inspectAgentHook(
             : raw === extension
               ? 'installed'
               : 'outdated'
+    } else if (provider === 'agy') {
+      const { hook, expected } = agyConfiguration(raw, command)
+      const script = await contents(loader)
+      if (script !== undefined && !script.includes('cota-managed-agent-hook:'))
+        status.state = 'conflict'
+      else if (hook === undefined) status.state = 'missing'
+      else
+        status.state =
+          JSON.stringify(hook) === JSON.stringify(expected) && script === launcher
+            ? 'installed'
+            : 'outdated'
     } else {
       const { hooks } = configuration(raw)
       const own = (name: string) =>
@@ -298,6 +340,10 @@ export async function installAgentHook(
     if (raw !== undefined && !raw.includes('cota-managed-agent-hook:'))
       throw new Error('目标扩展不属于 Cota。')
     await replaceFile(config, raw, extension)
+  } else if (provider === 'agy') {
+    const { config: data, expected } = agyConfiguration(raw, command)
+    await installLoader(loader)
+    await replaceFile(config, raw, `${JSON.stringify({ ...data, [agyHook]: expected }, null, 2)}\n`)
   } else {
     const { config: data, hooks } = configuration(raw)
     await installLoader(loader)
@@ -363,6 +409,12 @@ export async function uninstallAgentHook(
     if (raw !== undefined && !raw.includes('cota-managed-agent-hook:'))
       throw new Error('目标扩展不属于 Cota。')
     await replaceFile(config, raw, undefined, { backup: false })
+  } else if (provider === 'agy') {
+    const { config: data, hook } = agyConfiguration(raw, command)
+    if (hook !== undefined) {
+      const { [agyHook]: _, ...remaining } = data
+      await replaceFile(config, raw, `${JSON.stringify(remaining, null, 2)}\n`, { backup: false })
+    }
   } else {
     const { config: data, hooks } = configuration(raw)
     let changed = false

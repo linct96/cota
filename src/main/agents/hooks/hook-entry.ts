@@ -8,6 +8,9 @@ let socket: Socket | undefined
 let finished = false
 let sent = false
 let sessionId: string | undefined
+const [provider, hookName] = (process.env.COTA_AGENT_PROVIDER || '').split(':')
+const hookProvider =
+  provider === 'claude' || provider === 'codex' || provider === 'agy' ? provider : undefined
 const finish = () => {
   if (finished) return
   finished = true
@@ -26,14 +29,11 @@ const send = (metadata: NonNullable<ReturnType<typeof normalizeHook>>) => {
   clearTimeout(inputTimer)
   process.stdin.destroy()
   const { type, turnId, ...details } = metadata
-  const provider = process.env.COTA_AGENT_PROVIDER
   const event = lifecycleEvent(
     type,
     turnId,
     details,
-    sessionId && (provider === 'claude' || provider === 'codex')
-      ? { provider, sessionId }
-      : undefined,
+    sessionId && hookProvider ? { provider: hookProvider, sessionId } : undefined,
   )
   if (!event || !(socket = eventConnection())) {
     finish()
@@ -55,21 +55,17 @@ process.stdin.on('data', (chunk: Buffer) => {
 process.stdin.on('end', () => {
   if (finished || sent) return
   try {
-    const provider = process.env.COTA_AGENT_PROVIDER
-    if (provider !== 'claude' && provider !== 'codex') {
+    if (!hookProvider) {
       finish()
       return
     }
     const input: unknown = JSON.parse(Buffer.concat(chunks, size).toString('utf8'))
-    if (
-      input &&
-      typeof input === 'object' &&
-      'session_id' in input &&
-      typeof input.session_id === 'string' &&
-      /^[\w.-]{1,128}$/.test(input.session_id)
-    )
-      sessionId = input.session_id
-    const event = normalizeHook(provider, input)
+    const sessionKey = hookProvider === 'agy' ? 'conversationId' : 'session_id'
+    if (input && typeof input === 'object' && Object.hasOwn(input, sessionKey)) {
+      const value = (input as Record<string, unknown>)[sessionKey]
+      if (typeof value === 'string' && /^[\w.-]{1,128}$/.test(value)) sessionId = value
+    }
+    const event = normalizeHook(hookProvider, input, hookName)
     chunks.length = 0
     if (event) send(event)
     else finish()

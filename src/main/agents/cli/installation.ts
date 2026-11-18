@@ -6,7 +6,7 @@ import { AGENT_CLI_PACKAGES } from '../../../shared/agent-cli'
 import { resolveCommand } from '../../system/shell'
 import { isWindows } from '../../system/platform'
 
-const agentPackageNames: Record<AgentProvider, string> = {
+const agentPackageNames: Record<Exclude<AgentProvider, 'agy'>, string> = {
   pi: 'pi-coding-agent',
   codex: 'codex',
   claude: 'claude-code',
@@ -14,6 +14,7 @@ const agentPackageNames: Record<AgentProvider, string> = {
 
 export type AgentCliInstallation =
   | { method: 'brew'; prefix: string; packageName: string; cask: boolean; latestUrl: string }
+  | { method: 'native'; latestUrl: string }
   | { method: 'npm'; prefix: string; latestUrl: string }
   | { method: 'scoop'; root: string; global: boolean; packageName: string; latestUrl: string }
 
@@ -22,6 +23,17 @@ export async function detectAgentInstallation(
   executable: string,
   env: Record<string, string>,
 ): Promise<AgentCliInstallation | undefined> {
+  if (provider === 'agy') {
+    if (!['darwin', 'win32'].includes(process.platform) || !['arm64', 'x64'].includes(process.arch))
+      return
+    const platform = isWindows ? 'windows' : 'darwin'
+    const arch = process.arch === 'x64' ? 'amd64' : 'arm64'
+    return {
+      method: 'native',
+      latestUrl: `https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/${platform}_${arch}.json`,
+    }
+  }
+  const npmPackage = AGENT_CLI_PACKAGES[provider]
   let target = await realpath(executable)
   if (isWindows && /\.exe$/i.test(target)) {
     const shim = await readFile(target.replace(/\.exe$/i, '.shim'), 'utf8').catch(() => '')
@@ -103,18 +115,13 @@ export async function detectAgentInstallation(
   }
   const npm = /^(.*)\/lib\/node_modules\//.exec(normalized)
   const prefix = npm?.[1] ?? (isWindows ? dirname(executable) : undefined)
-  if (prefix) {
-    const packageRoot = join(
-      prefix,
-      ...(isWindows ? [] : ['lib']),
-      'node_modules',
-      AGENT_CLI_PACKAGES[provider],
-    )
+  if (prefix && npmPackage) {
+    const packageRoot = join(prefix, ...(isWindows ? [] : ['lib']), 'node_modules', npmPackage)
     const manifest = await readFile(join(packageRoot, 'package.json'), 'utf8')
       .then(JSON.parse)
       .catch(() => undefined)
     const bin = typeof manifest?.bin === 'string' ? manifest.bin : manifest?.bin?.[provider]
-    if (manifest?.name === AGENT_CLI_PACKAGES[provider] && typeof bin === 'string') {
+    if (manifest?.name === npmPackage && typeof bin === 'string') {
       const entry = await realpath(resolve(packageRoot, bin))
       const command = await resolveCommand(executable, [], env)
       const actual =
@@ -123,7 +130,7 @@ export async function detectAgentInstallation(
         return {
           method: 'npm',
           prefix,
-          latestUrl: `https://registry.npmjs.org/${encodeURIComponent(AGENT_CLI_PACKAGES[provider])}/latest`,
+          latestUrl: `https://registry.npmjs.org/${encodeURIComponent(npmPackage)}/latest`,
         }
       }
     }

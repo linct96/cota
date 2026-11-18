@@ -29,6 +29,7 @@ export interface Session extends TerminalSession {
       ready?: Promise<void>
       ended?: boolean
       eventStartedAt: number
+      agyTurn?: { sessionId: string; id: string }
     }
   }
   creation?: Promise<void>
