@@ -97,7 +97,7 @@ export function GeneralSettings() {
                   id="general-settings-sleep-help"
                   className="general-settings-sleep-description text-xs text-muted-foreground"
                 >
-                  检测到 Agent 正在执行任务时阻止系统自动休眠，任务结束后恢复。
+                  任务执行期间阻止休眠，完成后恢复。
                 </p>
                 {error && (
                   <p
@@ -156,7 +156,7 @@ export function GeneralSettings() {
                   id="general-settings-preview-tabs-help"
                   className="general-settings-preview-tabs-description text-xs text-muted-foreground"
                 >
-                  单击文件或 Diff 时复用预览标签，双击可固定；关闭后以固定标签打开。
+                  单击文件或 Diff 时复用预览标签，双击可固定。
                 </p>
                 {errors.reusePreviewTabs && (
                   <p
@@ -199,7 +199,7 @@ export function GeneralSettings() {
                   id="general-settings-close-confirmation-help"
                   className="general-settings-close-confirmation-description text-xs text-muted-foreground"
                 >
-                  关闭前进行确认，避免误中断任务；关闭此提醒后将直接结束程序。
+                  关闭前弹出确认；关闭后将直接结束进程。
                 </p>
                 {errors.confirmCloseRunningTerminal && (
                   <p
@@ -241,7 +241,7 @@ export function GeneralSettings() {
                   id="general-settings-analytics-cache-help"
                   className="general-settings-analytics-cache-description text-xs text-muted-foreground"
                 >
-                  清空后下次统计将重新分析，不影响原始会话和模型定价。
+                  清空后下次将重新分析，不影响原始会话与定价。
                 </p>
               </div>
               <Button

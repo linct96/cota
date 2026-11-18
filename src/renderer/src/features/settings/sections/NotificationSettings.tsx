@@ -229,7 +229,7 @@ export function NotificationSettings() {
               id="notification-settings-enabled-description"
               className="notification-settings-enabled-description text-xs text-muted-foreground"
             >
-              允许 Cota 发送系统通知。关闭后，终端状态与未读提醒不受影响。
+              关闭后不影响终端状态与未读标识。
             </p>
           </div>
           <Switch
@@ -262,8 +262,7 @@ export function NotificationSettings() {
               id="notification-settings-completion-description"
               className="notification-settings-completion-description text-xs text-muted-foreground"
             >
-              Agent
-              轮次结束时发送系统通知。「仅在未聚焦」表示对应终端处于未聚焦状态下才会发送系统通知。
+              仅在对应终端未聚焦时发送系统通知。
             </p>
           </div>
           <ToggleGroup
@@ -308,7 +307,7 @@ export function NotificationSettings() {
               id="notification-settings-sound-description"
               className="notification-settings-sound-description text-xs text-muted-foreground"
             >
-              支持 MP3、WAV、OGG、M4A 格式，不超过 5 MB；静音仅关闭提示音。
+              支持 MP3、WAV、OGG、M4A（≤ 5 MB）。
               {typeof sound !== 'string' && (
                 <code
                   className="notification-settings-sound-file mt-1 block max-w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"

@@ -111,7 +111,7 @@ export function TerminalTypographyFields({
                 id="terminal-contrast-mode-description"
                 className="terminal-contrast-mode-description"
               >
-                自动根据背景明暗增强低对比度文字的可读性；关闭则保留原始颜色。
+                自动增强低对比度文字的可读性。
               </FieldDescription>
             </div>
             <ToggleGroup
@@ -168,7 +168,7 @@ export function TerminalTypographyFields({
                     id="terminal-minimumContrastRatio-description"
                     className="terminal-contrast-ratio-description"
                   >
-                    推荐 4.5（WCAG AA）或 7.0（WCAG AAA）。数值越高文字越醒目。
+                    推荐 4.5（AA）或 7.0（AAA）。
                   </FieldDescription>
                 </div>
                 <InputNumber

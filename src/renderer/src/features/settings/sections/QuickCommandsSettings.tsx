@@ -104,7 +104,7 @@ export function QuickCommandsSettings() {
             <EmptyHeader className="quick-commands-empty-header">
               <EmptyTitle className="quick-commands-empty-title">尚未保存快捷命令</EmptyTitle>
               <EmptyDescription className="quick-commands-empty-description">
-                添加常用命令，例如 pnpm dev。保存后不会自动执行。
+                添加常用脚本或服务，从顶栏一键启动。
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

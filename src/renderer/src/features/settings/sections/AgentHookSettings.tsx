@@ -148,7 +148,7 @@ export function AgentHookSettings({
             id="agent-hook-settings-description"
             className="agent-hook-settings-description"
           >
-            安装 Hooks 或 Extension 后，可在终端标签上查看 Agent 的运行、等待输入、完成或失败状态。
+            安装后可在终端标签查看 Agent 运行状态。
           </FieldDescription>
         </div>
         <div className="agent-hook-detect-control flex min-w-0 flex-wrap items-center gap-1.5">

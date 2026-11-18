@@ -112,8 +112,7 @@ export function SourceControlSettings() {
               id="commit-message-prompt-description"
               className="source-control-prompt-description min-w-0 flex-1 basis-64"
             >
-              留空时使用中文 Conventional Commits 格式。Pi
-              的账号、提供商和模型跟随本机默认配置；请先在终端运行 pi 完成配置。
+              留空使用默认格式；模型与认证读取本机 Pi 配置。
             </FieldDescription>
             <div className="source-control-settings-actions flex shrink-0 items-center gap-2.5">
               <output className="source-control-settings-save-status text-xs text-muted-foreground">

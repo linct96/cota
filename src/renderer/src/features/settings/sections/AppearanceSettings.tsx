@@ -13,10 +13,10 @@ import { Card } from '@/components/ui/card'
 import { ColorInput } from '@/components/ui/color-input'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 
-const colorFields: { role: InterfaceColorRole; label: string; description: string }[] = [
-  { role: 'primary', label: '主题色', description: '主要按钮与强调元素的颜色。' },
-  { role: 'background', label: '背景色', description: '设置当前模式下的界面底色。' },
-  { role: 'foreground', label: '前景色', description: '主要文字与图标的颜色。' },
+const colorFields: { role: InterfaceColorRole; label: string }[] = [
+  { role: 'primary', label: '主题色' },
+  { role: 'background', label: '背景色' },
+  { role: 'foreground', label: '前景色' },
 ]
 const colorInputSchema = z
   .string()
@@ -92,7 +92,7 @@ export function AppearanceSettings() {
             外观
           </h1>
           <p className="appearance-settings-subtitle text-xs text-muted-foreground">
-            自定义应用明暗主题模式与界面核心语义配色。
+            自定义应用外观模式与界面配色。
           </p>
         </div>
       </header>
@@ -175,7 +175,7 @@ export function AppearanceSettings() {
           </Badge>
         </div>
         <div className="appearance-color-grid grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {colorFields.map(({ role, label, description }) => (
+          {colorFields.map(({ role, label }) => (
             <form.Field
               key={`${mode}.${role}`}
               name={`${mode}.${role}`}
@@ -229,12 +229,6 @@ export function AppearanceSettings() {
                           </span>
                         )}
                       </div>
-                      <p
-                        id={`appearance-${role}-help`}
-                        className="appearance-color-description text-xs text-muted-foreground"
-                      >
-                        {description}
-                      </p>
                     </div>
                     <div className="appearance-color-control flex min-w-0 flex-col gap-1.5 pt-1">
                       <ColorInput
@@ -246,11 +240,7 @@ export function AppearanceSettings() {
                         placeholder="默认"
                         disabled={!ready}
                         aria-invalid={invalid || !!saveError}
-                        aria-describedby={
-                          invalid || saveError
-                            ? `appearance-${role}-help ${errorId}`
-                            : `appearance-${role}-help`
-                        }
+                        aria-describedby={invalid || saveError ? errorId : undefined}
                         onBlur={() => {
                           const value = field.state.value
                           field.handleBlur()

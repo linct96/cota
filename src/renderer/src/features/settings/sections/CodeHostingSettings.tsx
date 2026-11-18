@@ -614,7 +614,7 @@ function CodeHostingConnectionRow({
                         id={`${hostId}-description`}
                         className="code-hosting-host-description"
                       >
-                        留空时使用 {defaultHost}。填写域名，可包含端口，不包含协议或路径。
+                        留空使用 {defaultHost}，仅填写域名（可含端口）。
                       </FieldDescription>
                       {invalid && (
                         <FieldError

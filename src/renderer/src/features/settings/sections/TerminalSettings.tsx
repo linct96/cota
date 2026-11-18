@@ -335,12 +335,6 @@ export function TerminalSettings() {
                   >
                     滚动缓冲行数
                   </span>
-                  <p
-                    id="terminal-settings-scrollback-description"
-                    className="terminal-settings-scrollback-description text-xs text-muted-foreground"
-                  >
-                    终端保留的最大历史输出行数，超出后丢弃旧输出。
-                  </p>
                   {!scrollbackDialogOpen && scrollbackError && (
                     <p
                       id="terminal-settings-scrollback-save-error"
@@ -366,7 +360,11 @@ export function TerminalSettings() {
                   <SelectTrigger
                     id="terminal-settings-scrollback"
                     aria-labelledby="terminal-settings-scrollback-label"
-                    aria-describedby="terminal-settings-scrollback-description terminal-settings-scrollback-save-error"
+                    aria-describedby={
+                      !scrollbackDialogOpen && scrollbackError
+                        ? 'terminal-settings-scrollback-save-error'
+                        : undefined
+                    }
                     className="terminal-settings-select-trigger tabular-nums"
                   >
                     <SelectValue className="terminal-settings-scrollback-value">
@@ -421,7 +419,7 @@ export function TerminalSettings() {
                     id="terminal-gpu-description"
                     className="terminal-gpu-help text-xs text-muted-foreground"
                   >
-                    WebGL 不可用时回退到兼容渲染。切换即时生效。
+                    WebGL 不可用时自动回退到兼容渲染。
                   </p>
                   {renderError && (
                     <p

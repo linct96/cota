@@ -95,7 +95,7 @@ export function TerminalThemeFields({
         </CollapsibleTrigger>
         <CollapsibleContent keepMounted className="terminal-color-overrides-content pb-2">
           <p className="terminal-color-overrides-help mt-2 px-1 text-xs text-muted-foreground">
-            留空沿用配色主题；输入 #RRGGBB 覆盖对应颜色。
+            输入 #RRGGBB 覆盖主题颜色。
           </p>
           <FieldGroup className="terminal-color-fields mt-3 grid grid-cols-2 gap-3 px-1 sm:grid-cols-3 md:grid-cols-4">
             {TERMINAL_COLOR_KEYS.map((key, index) => (

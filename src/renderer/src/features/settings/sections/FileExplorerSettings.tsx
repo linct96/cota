@@ -23,7 +23,7 @@ import { Switch } from '@/components/ui/switch'
 
 const iconThemes = [
   { value: 'default', label: '默认' },
-  { value: 'material', label: 'Material Icon Theme（占位）' },
+  { value: 'material', label: 'Material Icon Theme' },
 ] as const
 
 export function FileExplorerSettings() {
@@ -98,7 +98,7 @@ export function FileExplorerSettings() {
                   id="file-explorer-ignored-help"
                   className="file-explorer-ignored-description text-xs text-muted-foreground"
                 >
-                  显示被 .gitignore 等 Git 忽略规则排除的文件与目录，并以弱化颜色标识。
+                  显示被 .gitignore 排除的文件，并以弱化样式标识。
                 </p>
               </div>
               <Switch
@@ -130,7 +130,7 @@ export function FileExplorerSettings() {
                   id="file-explorer-symlink-help"
                   className="file-explorer-symlink-description text-xs text-muted-foreground"
                 >
-                  允许展开指向当前工作区内部的符号链接目录；循环链接和工作区外部目录仍不可展开。
+                  仅允许展开指向当前工作区内的符号链接目录。
                 </p>
               </div>
               <Switch
@@ -191,7 +191,11 @@ export function FileExplorerSettings() {
                     <SelectTrigger
                       className="file-icon-theme-select min-w-0 max-w-full"
                       aria-labelledby="file-icon-theme-label"
-                      aria-describedby="file-icon-theme-help file-icon-theme-placeholder file-explorer-settings-error"
+                      aria-describedby={
+                        error
+                          ? 'file-icon-theme-help file-explorer-settings-error'
+                          : 'file-icon-theme-help'
+                      }
                     >
                       <SelectValue className="file-icon-theme-value min-w-0 truncate" />
                     </SelectTrigger>
@@ -206,12 +210,6 @@ export function FileExplorerSettings() {
                     </SelectContent>
                   </Select>
                 </Field>
-                <p
-                  id="file-icon-theme-placeholder"
-                  className="file-icon-theme-placeholder text-xs text-muted-foreground"
-                >
-                  Material Icon Theme 暂未接入图标资源，当前使用通用文件和文件夹图标占位。
-                </p>
               </div>
               <div className="file-icon-theme-preview-content flex flex-col gap-2 bg-muted/25 p-3">
                 <p
