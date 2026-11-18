@@ -62,6 +62,7 @@ export interface WorkspaceState {
   refreshWorkspaceOpeners: () => Promise<void>
   tabs: TerminalTab[]
   terminalLayouts: TerminalLayout[]
+  maximizedTerminalId?: string
   closingTerminalTabs: string[]
   pendingAgentUpdates: Partial<Record<string, Exclude<AgentUpdate, { type: 'disconnected' }>>>
   agentConnectionLost: boolean

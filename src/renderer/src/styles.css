@@ -721,6 +721,19 @@ body:has(
   overflow: hidden;
   transition: border-color 150ms ease;
 }
+/* Keep the split tree in place so restoring never resets panel sizes or focus. */
+.terminal-pane-group[data-pane-maximized] .terminal-pane[data-maximized] {
+  position: absolute;
+  inset: --spacing(2);
+  width: auto;
+  height: auto;
+}
+.terminal-pane-group[data-pane-maximized] .terminal-pane:not([data-maximized]) {
+  display: none;
+}
+.terminal-pane-group[data-pane-maximized] .terminal-pane-resize-handle {
+  visibility: hidden;
+}
 .terminal-pane[data-focused='true'] {
   border-color: color-mix(in oklab, var(--foreground) 18%, var(--border));
 }

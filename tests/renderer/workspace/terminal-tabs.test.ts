@@ -151,6 +151,23 @@ describe('Terminal tabs and split panes', () => {
     expect(vi.mocked(api.saveLayout).mock.calls.at(-1)![0].terminalLayouts).toEqual(layout)
   })
 
+  it('exits pane maximization when splitting or closing the maximized pane', async () => {
+    const { store, a, b, c, layout } = await prepareSplitGroup()
+    useWorkspace.setState({ maximizedTerminalId: c.id })
+    store().shortcut('split-terminal')
+    expect(store().maximizedTerminalId).toBeUndefined()
+    expect(store().tabs).toHaveLength(4)
+    expect(store().terminalLayouts[0].root).toMatchObject({ type: 'split', ratio: 0.63 })
+
+    const newPane = store().tabs[3]
+    store().updateTab(newPane.id, { status: 'running' })
+    useWorkspace.setState({ maximizedTerminalId: newPane.id })
+    await store().closePane(newPane.id)
+    expect(store().maximizedTerminalId).toBeUndefined()
+    expect(store().terminalLayouts[0].root).toEqual(layout[0].root)
+    expect(store().activeTabs[a.workspaceId]).toBe(b.id)
+  })
+
   it.each(['removing workspace', 'creating worktree'] as const)(
     'does not split panes while %s',
     async (busy) => {

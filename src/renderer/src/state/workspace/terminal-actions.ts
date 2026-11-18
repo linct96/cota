@@ -147,6 +147,8 @@ export const createTerminalActions: StateCreator<
           terminalPaneIds(candidateGroup.root).includes(id),
         )
         return {
+          maximizedTerminalId:
+            state.maximizedTerminalId === id ? undefined : state.maximizedTerminalId,
           terminalLayouts: group
             ? state.terminalLayouts.map((node) =>
                 node === group
@@ -315,6 +317,8 @@ export const createTerminalActions: StateCreator<
           return {
             tabs,
             activeTabs,
+            maximizedTerminalId:
+              state.maximizedTerminalId === id ? undefined : state.maximizedTerminalId,
             selectedProject:
               !hasOtherTabs && currentWorkspace(state)?.id === tab.workspaceId
                 ? undefined

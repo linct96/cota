@@ -139,6 +139,7 @@ export const createTabActions: StateCreator<
         useSourceControl.getState().showTerminal(tab.workspaceId)
         set((state) => ({
           activeTabs: { ...state.activeTabs, [tab.workspaceId]: id },
+          maximizedTerminalId: state.maximizedTerminalId === id ? id : undefined,
           terminalLayouts: state.terminalLayouts.map((group) =>
             terminalPaneIds(group.root).includes(id) ? { ...group, activePaneId: id } : group,
           ),

@@ -1,6 +1,6 @@
 import { Fragment, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Columns2, Rows2, X } from 'lucide-react'
+import { Columns2, Maximize, Minimize, Rows2, X } from 'lucide-react'
 import { MAX_TERMINALS } from '../../../../../shared/contracts'
 import { pruneTerminalPane, terminalPaneIds } from '../../../../../shared/terminal-layout'
 import type { TerminalLayout, TerminalPane } from '../../../../../shared/terminal-layout'
@@ -11,7 +11,15 @@ import { TerminalView } from './TerminalView'
 import { Button } from '@/components/ui/button'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 
-function PaneLayout({ node }: { node: TerminalPane }) {
+function PaneLayout({
+  node,
+  canMaximize,
+  maximizedId,
+}: {
+  node: TerminalPane
+  canMaximize: boolean
+  maximizedId?: string
+}) {
   const tabs = useWorkspace((state) => state.tabs)
   const activeTabs = useWorkspace((state) => state.activeTabs)
   const removing = useWorkspace((state) => state.removingWorkspace)
@@ -19,6 +27,9 @@ function PaneLayout({ node }: { node: TerminalPane }) {
   if (node.type === 'terminal') {
     const tab = tabs.find((candidateTab) => candidateTab.id === node.id)!
     const focused = activeTabs[tab.workspaceId] === tab.id
+    const maximized = maximizedId === tab.id
+    const maximizeLabel = maximized ? '还原终端面板' : '放大终端面板'
+    const MaximizeIcon = maximized ? Minimize : Maximize
     const disabled =
       !!removing ||
       !!tab.closingStatus ||
@@ -28,6 +39,7 @@ function PaneLayout({ node }: { node: TerminalPane }) {
       <div
         className="terminal-pane flex size-full min-h-0 min-w-0 flex-col overflow-hidden"
         data-focused={focused}
+        data-maximized={maximized || undefined}
         onPointerDownCapture={() => {
           if (!focused && !removing) useWorkspace.getState().selectTab(tab.id)
         }}
@@ -42,6 +54,21 @@ function PaneLayout({ node }: { node: TerminalPane }) {
           >
             {abbreviateHomePath(tab.cwd || tab.projectPath)}
           </span>
+          {canMaximize && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="terminal-pane-maximize-button"
+              aria-label={`${maximizeLabel} ${tab.title}`}
+              title={maximizeLabel}
+              disabled={disabled}
+              onClick={() =>
+                useWorkspace.setState({ maximizedTerminalId: maximized ? undefined : tab.id })
+              }
+            >
+              <MaximizeIcon className="terminal-pane-maximize-icon" aria-hidden="true" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon-xs"
@@ -88,6 +115,8 @@ function PaneLayout({ node }: { node: TerminalPane }) {
       id={`terminal-split-${node.id}`}
       orientation={node.direction}
       className="terminal-split-group min-h-0 min-w-0"
+      disabled={!!maximizedId}
+      style={maximizedId ? { position: 'static', overflow: 'visible' } : undefined}
       defaultLayout={{
         [node.children[0].id]: node.ratio * 100,
         [node.children[1].id]: (1 - node.ratio) * 100,
@@ -111,8 +140,9 @@ function PaneLayout({ node }: { node: TerminalPane }) {
             id={child.id}
             minSize="5%"
             className="terminal-split-panel min-h-0 min-w-0 overflow-hidden"
+            style={maximizedId ? { overflow: 'visible' } : undefined}
           >
-            <PaneLayout node={child} />
+            <PaneLayout node={child} canMaximize maximizedId={maximizedId} />
           </ResizablePanel>
         </Fragment>
       ))}
@@ -148,6 +178,7 @@ function TerminalSurface({
 export function TerminalWorkspace({ activeId, visible }: { activeId?: string; visible: boolean }) {
   const tabs = useWorkspace((state) => state.tabs)
   const layouts = useWorkspace((state) => state.terminalLayouts)
+  const maximizedTerminalId = useWorkspace((state) => state.maximizedTerminalId)
   const ids = new Set(tabs.map((tab) => tab.id))
   const groups = layouts.flatMap((group) => {
     const root = pruneTerminalPane(group.root, ids)
@@ -164,20 +195,28 @@ export function TerminalWorkspace({ activeId, visible }: { activeId?: string; vi
   const activeIds = new Set(activeRoot ? terminalPaneIds(activeRoot.root) : [])
   return (
     <>
-      {roots.map((group) => (
-        <div
-          key={group.id}
-          id={`terminal-panel-${group.id}`}
-          role="tabpanel"
-          aria-labelledby={`terminal-tab-${group.id}`}
-          className={cn(
-            'terminal-pane-group col-start-1 row-start-1 min-h-0 min-w-0 overflow-hidden p-2',
-            !terminalPaneIds(group.root).includes(activeId || '') && 'hidden',
-          )}
-        >
-          <PaneLayout node={group.root} />
-        </div>
-      ))}
+      {roots.map((group) => {
+        const canMaximize = group.root.type === 'split'
+        const maximizedId =
+          group === activeRoot && canMaximize && activeId === maximizedTerminalId
+            ? activeId
+            : undefined
+        return (
+          <div
+            key={group.id}
+            id={`terminal-panel-${group.id}`}
+            role="tabpanel"
+            aria-labelledby={`terminal-tab-${group.id}`}
+            data-pane-maximized={!!maximizedId || undefined}
+            className={cn(
+              'terminal-pane-group relative col-start-1 row-start-1 min-h-0 min-w-0 overflow-hidden p-2',
+              group !== activeRoot && 'hidden',
+            )}
+          >
+            <PaneLayout node={group.root} canMaximize={canMaximize} maximizedId={maximizedId} />
+          </div>
+        )
+      })}
       {tabs.map((tab) => (
         <TerminalSurface
           key={tab.id}
