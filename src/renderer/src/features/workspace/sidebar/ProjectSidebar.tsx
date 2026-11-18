@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { useProjectBranches } from '@/features/workspace/hooks/use-project-branches'
 import { useDialogState } from '@/hooks/use-dialog-state'
-import { formatShortcut, shortcutBinding } from '../../../../../shared/shortcuts'
+import { shortcutBinding } from '../../../../../shared/shortcuts'
 import type { ProjectSidebarActions } from './project-sidebar-actions'
 import { ProjectGroup } from './ProjectGroup'
 import { AgentList } from './AgentList'
@@ -106,11 +106,6 @@ export const ProjectSidebar = memo(function ProjectSidebar({
     'open-folder',
     window.desktop.platform,
   )
-  const shortcutLabel = (id: string) =>
-    formatShortcut(
-      shortcutBinding(state.shortcuts, id, window.desktop.platform),
-      window.desktop.platform,
-    )
   const { workspaces, worktreeRecords, removeWorkspace } = state
   const actions = useMemo<ProjectSidebarActions>(
     () => ({
@@ -330,7 +325,7 @@ export const ProjectSidebar = memo(function ProjectSidebar({
                     </EmptyMedia>
                     <EmptyTitle className="project-empty-title">暂无项目</EmptyTitle>
                     <EmptyDescription className="project-empty-description">
-                      点击上方「新建项目」或按 {shortcutLabel('open-folder')} 添加
+                      打开项目目录以开始使用。
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>

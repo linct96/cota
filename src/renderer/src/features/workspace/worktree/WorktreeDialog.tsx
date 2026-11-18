@@ -239,7 +239,7 @@ export function WorktreeDialog({
                       }}
                     />
                     <FieldDescription id="worktree-name-hint" className="worktree-name-hint">
-                      可修改名称，分支名自动更新；名称需包含字母、数字或下划线。
+                      分支名将随名称同步更新。
                     </FieldDescription>
                     {invalid && (
                       <FieldError id="worktree-name-error" errors={field.state.meta.errors} />
@@ -336,7 +336,7 @@ export function WorktreeDialog({
                         className="worktree-initialize-hint"
                         id="worktree-initialize-hint"
                       >
-                        创建目录后将再次确认复制文件和命令；失败不会删除工作树。
+                        创建工作树后执行初始化。
                       </FieldDescription>
                     </div>
                   </Field>

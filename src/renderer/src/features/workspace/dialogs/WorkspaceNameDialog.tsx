@@ -258,7 +258,7 @@ export function WorkspaceNameDialog({
                 className="workspace-orphan-session flex flex-col gap-2 text-xs"
               >
                 <p className="workspace-orphan-description text-destructive break-all">
-                  终端身份与工作区登记不一致，不会自动连接：{abbreviateHomePath(session.cwd)}
+                  发现未关联的运行中终端：{abbreviateHomePath(session.cwd)}
                 </p>
                 <Button
                   type="button"

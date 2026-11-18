@@ -20,7 +20,7 @@ import { LoadingContent } from '@/components/LoadingContent'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 
 function WorkspacePortsPanel({
@@ -285,9 +285,6 @@ function WorkspacePortsPanel({
                       <EmptyTitle className="workspace-ports-empty-title">
                         未发现关联端口
                       </EmptyTitle>
-                      <EmptyDescription className="workspace-ports-empty-description">
-                        启动开发服务后刷新；归属不明的监听项可在下方查看。
-                      </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
                 )}

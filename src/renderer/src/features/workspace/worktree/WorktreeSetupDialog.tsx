@@ -121,7 +121,7 @@ export function WorktreeSetupDialog({
         )}
         {snapshot?.run && (
           <p className="worktree-setup-log-hint text-xs text-muted-foreground">
-            仅保留最近一次运行和末尾 65,536 字符日志。日志可能包含命令输出的敏感信息，请勿直接分享。
+            仅保留最近一次运行日志。
           </p>
         )}
         {error && (

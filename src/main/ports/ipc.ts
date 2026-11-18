@@ -78,7 +78,7 @@ export function registerPortsIPC(deps: {
       if (
         !(await renderer.confirm({
           title: `关闭端口 ${port.port}？`,
-          description: `将强制终止 ${port.processName}（PID ${port.pid}）。\n此进程监听的端口：${affected.join('、')}。\n同一进程的所有端口都会关闭，未保存的数据可能丢失。不会递归终止子进程；若服务被自动重启，端口可能再次出现。`,
+          description: `将强制终止 ${port.processName}（PID ${port.pid}），并关闭其监听端口：${affected.join('、')}。未保存的数据可能丢失。`,
           confirmLabel: '终止进程并关闭端口',
         }))
       )

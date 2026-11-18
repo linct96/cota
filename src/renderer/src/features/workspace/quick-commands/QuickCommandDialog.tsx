@@ -223,8 +223,8 @@ export function QuickCommandDialog({
                       id={`${id}-mode-description`}
                     >
                       {field.state.value === 'service'
-                        ? '每个工作区只运行一个实例；命令退出后服务结束。请以前台方式运行，不要使用 & 或 daemon。'
-                        : '在新终端中执行，执行后保留 Shell。'}
+                        ? '每个工作区运行一个实例（需保持前台运行）。'
+                        : '在新终端中执行。'}
                     </FieldDescription>
                     {invalid && (
                       <FieldError
@@ -263,8 +263,7 @@ export function QuickCommandDialog({
                         className="quick-command-port-description"
                         id={`${id}-port-description`}
                       >
-                        auto 自动分配，留空不分配。通过 PORT 和 COTA_PORT
-                        传入；命令须读取该环境变量。
+                        填 auto 自动分配，通过 PORT / COTA_PORT 传入。
                       </FieldDescription>
                       {invalid && (
                         <FieldError

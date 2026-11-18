@@ -128,9 +128,7 @@ export function WorktreeSetupConfigDialog({
                       className="worktree-setup-files-hint"
                       id="worktree-setup-files-hint"
                     >
-                      每行一个项目内的相对文件路径，使用 /
-                      分隔。从项目主目录复制，已有文件保留；不支持目录、符号链接、.git 和
-                      node_modules。
+                      每行一个相对文件路径，从项目主目录复制（不覆盖已有文件）。
                     </FieldDescription>
                     {invalid && (
                       <FieldError
@@ -176,8 +174,7 @@ export function WorktreeSetupConfigDialog({
                       className="worktree-setup-command-hint"
                       id="worktree-setup-command-hint"
                     >
-                      复制完成后，在工作树目录中使用当前配置的 Shell
-                      执行。仅填写会自行结束的非交互命令，不用于启动服务。全部留空可取消配置。
+                      文件复制后在工作树目录执行（需为可自行结束的非交互命令）。
                     </FieldDescription>
                     {invalid && (
                       <FieldError
