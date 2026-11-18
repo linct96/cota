@@ -766,7 +766,8 @@ body:has(
   box-shadow: var(--shadow-md);
   font-size: var(--text-xs);
   pointer-events: none;
-  translate: clamp(8px, calc(var(--terminal-drag-x) - 50%), calc(100vw - 100% - 8px))
+  /* Align the pointer with the grip center: 1px border + inline padding + 7px half-icon. */
+  translate: clamp(8px, calc(var(--terminal-drag-x) - --spacing(2) - 8px), calc(100vw - 100% - 8px))
     calc(var(--terminal-drag-y) + var(--terminal-drag-preview-offset-y));
 }
 .terminal-pane-drag-preview[data-above-pointer] {
