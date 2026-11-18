@@ -3,13 +3,14 @@ import { revalidateLogic, useForm } from '@tanstack/react-form'
 import { scrollbackFormSchema, shellFormSchema } from '@/features/settings/schemas'
 import { isWindows } from '@/lib/platform'
 import { abbreviateHomePath, folderName } from '@/lib/utils'
-import { Check, SquareTerminal } from 'lucide-react'
+import { SquareTerminal } from 'lucide-react'
 import { unwrap } from '../../../../../shared/contracts'
 import type { Preferences } from '../../../../../shared/contracts'
 import { useWorkspace } from '@/state/workspace'
 import { TerminalAppearanceSettings } from './TerminalAppearanceSettings'
+import { TerminalFontFamilyField } from './terminal-appearance/TerminalFontFamilyField'
+import { useTerminalAppearanceForm } from './terminal-appearance/use-terminal-appearance-form'
 import { LoadingContent } from '@/components/LoadingContent'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import {
@@ -48,9 +49,7 @@ const PRESET_SCROLLBACKS: ScrollbackOption[] = [
 export function TerminalSettings() {
   const preferences = useWorkspace((state) => state.preferences)
   const [saving, setSaving] = useState(false)
-  const [savedRecently, setSavedRecently] = useState(false)
   const [renderError, setRenderError] = useState<string>()
-  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 自定义 Shell 弹窗状态
   const [shellDialogOpen, setShellDialogOpen] = useState(false)
@@ -91,12 +90,6 @@ export function TerminalSettings() {
   })
 
   useEffect(() => {
-    return () => {
-      if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-    }
-  }, [])
-
-  useEffect(() => {
     let cancelled = false
     void window.desktop
       .getDefaultShell()
@@ -115,14 +108,6 @@ export function TerminalSettings() {
     }
   }, [])
 
-  function markSaved() {
-    setSavedRecently(true)
-    if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-    savedTimerRef.current = setTimeout(() => {
-      setSavedRecently(false)
-    }, 2000)
-  }
-
   function savePreferences(patch: Partial<Preferences>) {
     // 串行合并最新配置，避免常规设置与外观自动保存互相覆盖。
     const operation = pendingPreferences.current.then(() => {
@@ -133,13 +118,14 @@ export function TerminalSettings() {
     return operation
   }
 
+  const appearance = useTerminalAppearanceForm(savePreferences)
+
   async function persist(patch: Partial<Preferences>) {
     if (persisting.current) return false
     persisting.current = true
     setSaving(true)
     try {
       await savePreferences(patch)
-      markSaved()
       return true
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
@@ -190,18 +176,6 @@ export function TerminalSettings() {
           <p className="terminal-settings-subtitle text-xs text-muted-foreground">
             配置默认 Shell 环境、历史输出缓冲区、硬件加速与终端外观。
           </p>
-        </div>
-
-        <div
-          className="terminal-settings-status flex shrink-0 items-center gap-1.5 text-xs select-none"
-          aria-live="polite"
-        >
-          {!saving && savedRecently ? (
-            <Badge variant="outline" className="terminal-settings-saved">
-              <Check className="terminal-settings-saved-icon" />
-              <span className="terminal-settings-saved-label">已保存</span>
-            </Badge>
-          ) : null}
         </div>
       </header>
 
@@ -327,6 +301,25 @@ export function TerminalSettings() {
                 </div>
               </div>
 
+              <TerminalFontFamilyField form={appearance.form} />
+            </Card>
+          </section>
+          <TerminalAppearanceSettings appearance={appearance} />
+          <section
+            className="terminal-settings-performance flex flex-col gap-2.5"
+            aria-labelledby="terminal-settings-performance-title"
+          >
+            <h2
+              id="terminal-settings-performance-title"
+              className="terminal-settings-performance-title settings-section-title"
+            >
+              性能
+            </h2>
+            <Card
+              size="sm"
+              className="terminal-settings-performance-card gap-0 divide-y divide-border py-0"
+              aria-busy={saving}
+            >
               <div className="terminal-settings-scrollback-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
                 <div className="terminal-settings-scrollback-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
                   <span
@@ -458,7 +451,6 @@ export function TerminalSettings() {
               </div>
             </Card>
           </section>
-          <TerminalAppearanceSettings savePreferences={savePreferences} />
         </div>
 
         <Dialog

@@ -1,5 +1,6 @@
 import type { ITerminalOptions, ITheme, Terminal } from '@xterm/xterm'
 import type { LigaturesAddon } from '@xterm/addon-ligatures'
+import { SYSTEM_DEFAULT_TERMINAL_FONT } from '../../../../../shared/terminal-appearance'
 import type { TerminalAppearance } from '../../../../../shared/terminal-appearance'
 import { TERMINAL_THEME_CATALOG } from '../../../../../shared/terminal-themes'
 
@@ -25,7 +26,7 @@ export function resolveTerminalTheme(
 ): ITheme {
   const tokens = getComputedStyle(document.documentElement)
   const token = (name: string) => tokens.getPropertyValue(name).trim()
-  const name = dark || !settings.separateLightTheme ? settings.themeDark : settings.themeLight
+  const name = dark ? settings.themeDark : settings.themeLight
   const base =
     name === 'auto'
       ? {
@@ -55,7 +56,6 @@ export function resolveTerminalTheme(
       : TERMINAL_THEME_CATALOG[name]
   const theme: ITheme = {
     ...base,
-    ...settings.colors,
     overviewRulerBorder: 'transparent',
     scrollbarSliderBackground: token('--scrollbar-thumb'),
     scrollbarSliderHoverBackground: token('--scrollbar-thumb-hover'),
@@ -80,6 +80,32 @@ function automaticContrastRatio(background: string | undefined, dark: boolean): 
   return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? 4.5 : 3
 }
 
+const SYSTEM_FONT_STACKS: Record<string, string> = {
+  darwin: "Menlo, Monaco, 'Courier New', monospace",
+  win32: "Consolas, 'Courier New', monospace",
+}
+
+function systemDefaultFontStack(): string {
+  return (
+    SYSTEM_FONT_STACKS[window.desktop.platform] ||
+    "'DejaVu Sans Mono', 'Liberation Mono', monospace"
+  )
+}
+
+function buildTerminalFontFamily(fontFamily: string): string {
+  const trimmed = fontFamily.trim()
+  if (!trimmed || trimmed === SYSTEM_DEFAULT_TERMINAL_FONT) return systemDefaultFontStack()
+  if (trimmed.toLowerCase() === 'monospace') return 'monospace'
+  if (trimmed.includes(',') || /^['"]/.test(trimmed)) {
+    const stack = `${trimmed}, monospace`
+    const { style } = document.createElement('span')
+    style.fontFamily = stack
+    // An unclosed quote can swallow the fallback into the font name.
+    if (style.fontFamily.endsWith(', monospace')) return stack
+  }
+  return `"${trimmed.replace(/[\\"]/g, '\\$&')}", monospace`
+}
+
 export function terminalAppearanceOptions(
   settings: TerminalAppearance,
   dark = document.documentElement.classList.contains('dark'),
@@ -87,7 +113,7 @@ export function terminalAppearanceOptions(
   const theme = resolveTerminalTheme(settings, dark)
   return {
     allowTransparency: settings.backgroundOpacity < 1,
-    fontFamily: `${settings.fontFamily}, monospace`,
+    fontFamily: buildTerminalFontFamily(settings.fontFamily),
     fontSize: settings.fontSize,
     fontWeight: settings.fontWeight,
     fontWeightBold: settings.fontWeightBold,

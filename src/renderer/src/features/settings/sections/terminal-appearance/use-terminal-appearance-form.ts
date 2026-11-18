@@ -9,7 +9,6 @@ export function useTerminalAppearanceForm(
   savePreferences: (patch: Partial<Preferences>) => Promise<void>,
 ) {
   const [error, setError] = useState<string>()
-  const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [initialValues] = useState(() =>
     structuredClone(useWorkspace.getState().preferences.terminalAppearance),
@@ -30,7 +29,6 @@ export function useTerminalAppearanceForm(
       ...value,
       fontFamily: value.fontFamily.trim(),
     })
-    setSaved(false)
     if (!parsed.success) return
     const signature = JSON.stringify(parsed.data)
     if (signature === lastQueued.current) return
@@ -41,7 +39,6 @@ export function useTerminalAppearanceForm(
     latestSave.current = operation
     try {
       await operation
-      if (latestSave.current === operation) setSaved(true)
     } catch (cause) {
       if (latestSave.current === operation) {
         lastQueued.current = ''
@@ -51,7 +48,8 @@ export function useTerminalAppearanceForm(
       if (latestSave.current === operation) setSaving(false)
     }
   }
-  return { form, error, saved, saving, saveAppearance, markEdited: () => setSaved(false) }
+  return { form, error, saving, saveAppearance }
 }
 
 export type TerminalAppearanceForm = ReturnType<typeof useTerminalAppearanceForm>['form']
+export type TerminalAppearanceState = ReturnType<typeof useTerminalAppearanceForm>

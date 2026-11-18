@@ -1,19 +1,17 @@
 import { terminalAppearanceSchema } from '../../../../../shared/terminal-appearance'
-import type { Preferences } from '../../../../../shared/contracts'
 import { Button } from '@/components/ui/button'
 import { FieldError, FieldGroup } from '@/components/ui/field'
-import { useTerminalAppearanceForm } from './terminal-appearance/use-terminal-appearance-form'
+import type { TerminalAppearanceState } from './terminal-appearance/use-terminal-appearance-form'
 import { TerminalAppearancePreview } from './terminal-appearance/TerminalAppearancePreview'
 import { TerminalAppearanceGroup } from './terminal-appearance/TerminalAppearanceGroup'
 import { APPEARANCE_GROUPS } from './terminal-appearance/fields'
 
 export function TerminalAppearanceSettings({
-  savePreferences,
+  appearance,
 }: {
-  savePreferences: (patch: Partial<Preferences>) => Promise<void>
+  appearance: TerminalAppearanceState
 }) {
-  const { form, error, saved, saving, saveAppearance, markEdited } =
-    useTerminalAppearanceForm(savePreferences)
+  const { form, error, saving, saveAppearance } = appearance
   return (
     <section
       className="terminal-appearance-settings flex flex-col gap-3"
@@ -39,26 +37,17 @@ export function TerminalAppearanceSettings({
                   >
                     实时预览
                   </h2>
-                  <div className="terminal-appearance-actions flex items-center gap-2">
-                    <output className="terminal-appearance-save-status text-xs text-muted-foreground">
-                      {saving
-                        ? '自动保存中…'
-                        : saved && terminalAppearanceSchema.safeParse(values).success
-                          ? '已自动保存'
-                          : ''}
-                    </output>
-                    {error && (
-                      <Button
-                        className="terminal-appearance-retry"
-                        type="button"
-                        size="sm"
-                        disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
-                        onClick={() => void saveAppearance(form.state.values)}
-                      >
-                        重试保存
-                      </Button>
-                    )}
-                  </div>
+                  {error && (
+                    <Button
+                      className="terminal-appearance-retry"
+                      type="button"
+                      size="sm"
+                      disabled={saving || !terminalAppearanceSchema.safeParse(values).success}
+                      onClick={() => void saveAppearance(form.state.values)}
+                    >
+                      重试保存
+                    </Button>
+                  )}
                 </div>
                 <TerminalAppearancePreview settings={values} />
                 <FieldError className="terminal-appearance-save-error">{error}</FieldError>
@@ -71,8 +60,6 @@ export function TerminalAppearanceSettings({
                     group={group}
                     form={form}
                     values={values}
-                    onEdit={markEdited}
-                    saveAppearance={saveAppearance}
                   />
                 ))}
               </FieldGroup>

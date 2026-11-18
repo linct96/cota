@@ -60,7 +60,8 @@ export function TerminalAppearancePreview({ settings }: { settings: TerminalAppe
       )
         container.classList.add('terminal-mouse-hidden')
     }
-    container.addEventListener('keydown', hideMouse)
+    // xterm stops keydown from bubbling for normal terminal input.
+    container.addEventListener('keydown', hideMouse, true)
     container.addEventListener('pointermove', showMouse)
     container.addEventListener('pointerleave', showMouse)
     container.addEventListener('blur', showMouse, true)
@@ -71,7 +72,7 @@ export function TerminalAppearancePreview({ settings }: { settings: TerminalAppe
       apply.current = () => {}
       observer.disconnect()
       stopTheme()
-      container.removeEventListener('keydown', hideMouse)
+      container.removeEventListener('keydown', hideMouse, true)
       container.removeEventListener('pointermove', showMouse)
       container.removeEventListener('pointerleave', showMouse)
       container.removeEventListener('blur', showMouse, true)

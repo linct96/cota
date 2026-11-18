@@ -66,7 +66,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
         label: '终端',
         icon: SquareTerminal,
         keywords:
-          'shell zsh bash fish pwsh 缓冲 行数 scrollback gpu webgl 加速 渲染 字体 字号 行高 光标 配色 主题 透明度 毛玻璃 terminal font cursor',
+          'shell zsh bash fish pwsh 缓冲 行数 scrollback gpu webgl 加速 渲染 性能 字体 字号 行高 光标 配色 主题 背景 透明度 毛玻璃 terminal font cursor',
       },
       {
         id: 'agents',

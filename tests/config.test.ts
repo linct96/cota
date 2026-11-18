@@ -87,6 +87,42 @@ describe('local JSON configuration', () => {
     },
   )
 
+  it.each([
+    [false, 'Dracula'],
+    [true, 'GitHub Light'],
+  ])('keeps terminal themes without legacy overrides (switch %s)', async (flag, themeLight) => {
+    const terminalAppearance = {
+      ...DEFAULT_CONFIG.preferences.terminalAppearance,
+      themeDark: 'Dracula',
+      themeLight: 'GitHub Light',
+    }
+    await writeFile(
+      file,
+      JSON.stringify({
+        ...DEFAULT_CONFIG,
+        preferences: {
+          ...DEFAULT_CONFIG.preferences,
+          terminalAppearance: {
+            ...terminalAppearance,
+            separateLightTheme: flag,
+            colors: { background: '#123456', red: '#ff5555' },
+          },
+        },
+      }),
+    )
+
+    const store = new ConfigStore(file)
+    const loaded = await store.load()
+    expect(loaded.warning).toBeUndefined()
+    expect(loaded.config.preferences.terminalAppearance).toEqual({
+      ...terminalAppearance,
+      themeLight,
+    })
+    await store.savePreferences(loaded.config.preferences)
+    expect((await new ConfigStore(file).load()).config).toEqual(loaded.config)
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual(loaded.config)
+  })
+
   it('defaults the file icon theme and explorer symlink setting', () => {
     expect(
       preferences({ ...DEFAULT_CONFIG.preferences, fileIconTheme: undefined }).fileIconTheme,

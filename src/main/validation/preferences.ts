@@ -127,13 +127,22 @@ export function preferences(value: unknown): Preferences {
     (typeof preferredOpenerId !== 'string' || !/^[\w-]{1,64}$/.test(preferredOpenerId))
   )
     throw new Error('默认打开方式标识无效。')
+  const appearance = terminalAppearanceSchema.parse(terminalAppearance)
+  // Keep the effective light theme for configs that previously shared the dark theme.
+  if (
+    terminalAppearance &&
+    typeof terminalAppearance === 'object' &&
+    'separateLightTheme' in terminalAppearance &&
+    terminalAppearance.separateLightTheme === false
+  )
+    appearance.themeLight = appearance.themeDark
   return {
     theme,
     notificationsEnabled,
     notificationSound: sound,
     turnCompleteNotification,
     interfaceColors: interfaceColorsSchema.parse(interfaceColors),
-    terminalAppearance: terminalAppearanceSchema.parse(terminalAppearance),
+    terminalAppearance: appearance,
     fileExplorer: {
       showIgnored: fileExplorer.showIgnored,
       followSymlinks: fileExplorer.followSymlinks,

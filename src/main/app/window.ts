@@ -22,6 +22,8 @@ export function createAppWindow(options: {
     backgroundColor: background(),
     show: false,
     acceptFirstMouse: true,
+    // On macOS Chromium otherwise hides the pointer regardless of the terminal setting.
+    disableAutoHideCursor: process.platform === 'darwin',
     title: appName,
     ...(process.platform !== 'darwin' ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     titleBarStyle:

@@ -1,109 +1,101 @@
 import { cn } from '@/lib/utils'
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import { Card } from '@/components/ui/card'
-import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
-import { ENUM_FIELDS, NUMBER_FIELDS, SWITCH_FIELDS } from './fields'
+import { BACKGROUND_NUMBER_FIELDS, ENUM_FIELDS, NUMBER_FIELDS, SWITCH_FIELDS } from './fields'
 import type { AppearanceGroup } from './fields'
 import { TerminalTypographyFields } from './TerminalTypographyFields'
 import { TerminalThemeFields } from './TerminalThemeFields'
+
+type NumberFieldSpec = (typeof NUMBER_FIELDS)[number] | (typeof BACKGROUND_NUMBER_FIELDS)[number]
 
 export function TerminalAppearanceGroup({
   group,
   form,
   values,
-  onEdit,
-  saveAppearance,
 }: {
   group: AppearanceGroup
   form: TerminalAppearanceForm
   values: TerminalAppearance
-  onEdit: () => void
-  saveAppearance: (value: TerminalAppearance) => Promise<void>
 }) {
-  const isGridNumberGroup = group.name === 'typography' || group.name === 'background'
-  const numberFields = NUMBER_FIELDS.filter((field) => field.group === group.name).map(
-    ({ name, label, min, max, step }) => (
-      <form.Field key={name} name={name}>
-        {(field) => {
-          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-          return (
-            <Field
+  const isGridNumberGroup = group.name === 'typography'
+  const renderNumberField = ({ name, label, min, max, step }: NumberFieldSpec, grid: boolean) => (
+    <form.Field key={name} name={name}>
+      {(field) => {
+        const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+        return (
+          <Field
+            className={cn(
+              'terminal-appearance-number-field',
+              grid
+                ? 'gap-1.5'
+                : 'min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3',
+            )}
+            data-invalid={invalid}
+          >
+            <FieldLabel
+              htmlFor={`terminal-${name}`}
               className={cn(
-                'terminal-appearance-number-field',
-                isGridNumberGroup
-                  ? 'gap-1.5'
-                  : 'min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3',
+                'terminal-appearance-number-label inline-block text-xs leading-5 font-medium text-foreground',
+                !grid && 'min-w-0 flex-1 basis-64',
               )}
-              data-invalid={invalid}
             >
-              <FieldLabel
-                htmlFor={`terminal-${name}`}
-                className={cn(
-                  'terminal-appearance-number-label inline-block text-xs leading-5 font-medium text-foreground',
-                  !isGridNumberGroup && 'min-w-0 flex-1 basis-64',
-                )}
+              {label}
+              <span
+                id={`terminal-${name}-help`}
+                className="terminal-appearance-number-range ml-1 text-xs font-normal text-muted-foreground tabular-nums"
               >
-                {label}
-                <span
-                  id={`terminal-${name}-help`}
-                  className="terminal-appearance-number-range ml-1 text-xs font-normal text-muted-foreground tabular-nums"
-                >
-                  ({min}–{max})
-                </span>
-              </FieldLabel>
-              <InputNumber
-                id={`terminal-${name}`}
-                className={cn(
-                  'terminal-appearance-number-input font-mono tabular-nums',
-                  !isGridNumberGroup && 'w-28 max-w-full shrink-0',
-                )}
-                min={min}
-                max={max}
-                step={step}
-                value={
-                  Number.isNaN(field.state.value)
-                    ? null
-                    : name === 'backgroundOpacity'
-                      ? Number((1 - field.state.value).toFixed(2))
-                      : field.state.value
-                }
-                onBlur={field.handleBlur}
-                onValueChange={(value) =>
-                  field.handleChange(
-                    value === null ? NaN : name === 'backgroundOpacity' ? 1 - value : value,
-                  )
-                }
-                inputProps={{
-                  'aria-invalid': invalid,
-                  'aria-describedby': `terminal-${name}-help${name === 'backgroundOpacity' ? ' terminal-background-opacity-description' : ''} terminal-${name}-error`,
-                }}
-              />
-              {name === 'backgroundOpacity' && (
-                <p
-                  id="terminal-background-opacity-description"
-                  className="terminal-appearance-number-description text-xs text-muted-foreground"
-                >
-                  0 为不透明，1 为完全透明
-                </p>
+                ({min}–{max})
+              </span>
+            </FieldLabel>
+            <InputNumber
+              id={`terminal-${name}`}
+              className={cn(
+                'terminal-appearance-number-input font-mono tabular-nums',
+                !grid && 'w-28 max-w-full shrink-0',
               )}
-              <FieldError
-                id={`terminal-${name}-error`}
-                className={cn(
-                  'terminal-appearance-number-error',
-                  !isGridNumberGroup && 'basis-full',
-                )}
-                errors={field.state.meta.isTouched ? field.state.meta.errors : []}
-              />
-            </Field>
-          )
-        }}
-      </form.Field>
-    ),
+              min={min}
+              max={max}
+              step={step}
+              value={
+                Number.isNaN(field.state.value)
+                  ? null
+                  : name === 'backgroundOpacity'
+                    ? Number((1 - field.state.value).toFixed(2))
+                    : field.state.value
+              }
+              onBlur={field.handleBlur}
+              onValueChange={(value) =>
+                field.handleChange(
+                  value === null ? NaN : name === 'backgroundOpacity' ? 1 - value : value,
+                )
+              }
+              inputProps={{
+                'aria-invalid': invalid,
+                'aria-describedby': `terminal-${name}-help terminal-${name}-error`,
+              }}
+            />
+            <FieldError
+              id={`terminal-${name}-error`}
+              className={cn('terminal-appearance-number-error', !grid && 'basis-full')}
+              errors={field.state.meta.isTouched ? field.state.meta.errors : []}
+            />
+          </Field>
+        )
+      }}
+    </form.Field>
   )
+  const numberFields = NUMBER_FIELDS.filter((field) => field.group === group.name).map((field) =>
+    renderNumberField(field, isGridNumberGroup),
+  )
+  const backgroundFields =
+    group.name === 'typography'
+      ? BACKGROUND_NUMBER_FIELDS.map((field) => renderNumberField(field, true))
+      : null
   const choiceFields = ENUM_FIELDS.filter((field) => field.group === group.name).map(
     ({ name, label, options }) => (
       <form.Field key={name} name={name}>
@@ -125,7 +117,6 @@ export function TerminalAppearanceGroup({
               onValueChange={([value]) => {
                 if (!value || !options.some(([option]) => option === value)) return
                 field.handleChange(value as typeof field.state.value)
-                onEdit()
               }}
             >
               {options.map(([value, text]) => (
@@ -156,20 +147,13 @@ export function TerminalAppearanceGroup({
           <TerminalTypographyFields
             form={form}
             values={values}
-            onEdit={onEdit}
             numberFields={numberFields}
+            backgroundFields={backgroundFields}
             choiceFields={choiceFields}
           />
         ) : (
           <>
-            {numberFields.length > 0 &&
-              (group.name === 'cursor' ? (
-                numberFields
-              ) : (
-                <FieldGroup className="terminal-appearance-numbers grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-3">
-                  {numberFields}
-                </FieldGroup>
-              ))}
+            {numberFields}
             {choiceFields}
             {SWITCH_FIELDS.filter((field) => field.group === group.name).map(({ name, label }) => (
               <form.Field key={name} name={name}>
@@ -189,23 +173,13 @@ export function TerminalAppearanceGroup({
                       className="terminal-appearance-switch"
                       checked={field.state.value}
                       onBlur={field.handleBlur}
-                      onCheckedChange={(value) => {
-                        field.handleChange(value)
-                        onEdit()
-                      }}
+                      onCheckedChange={field.handleChange}
                     />
                   </Field>
                 )}
               </form.Field>
             ))}
-            {group.name === 'theme' && (
-              <TerminalThemeFields
-                form={form}
-                values={values}
-                onEdit={onEdit}
-                saveAppearance={saveAppearance}
-              />
-            )}
+            {group.name === 'theme' && <TerminalThemeFields form={form} />}
           </>
         )}
       </Card>

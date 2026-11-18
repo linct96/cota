@@ -1,100 +1,27 @@
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
 import type { ReactNode } from 'react'
-import { FONT_OPTIONS } from './fields'
 
 export function TerminalTypographyFields({
   form,
   values,
-  onEdit,
   numberFields,
+  backgroundFields,
   choiceFields,
 }: {
   form: TerminalAppearanceForm
   values: TerminalAppearance
-  onEdit: () => void
   numberFields: ReactNode
+  backgroundFields: ReactNode
   choiceFields: ReactNode
 }) {
   return (
     <>
-      <form.Field name="fontFamily">
-        {(field) => {
-          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-          const fonts = FONT_OPTIONS.includes(field.state.value)
-            ? FONT_OPTIONS
-            : [field.state.value, ...FONT_OPTIONS]
-          return (
-            <Field
-              className="terminal-font-family-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
-              data-invalid={invalid}
-            >
-              <div className="terminal-font-family-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                <FieldLabel
-                  htmlFor="terminal-font-family"
-                  id="terminal-font-family-label"
-                  className="terminal-font-family-label text-xs leading-5 font-medium text-foreground"
-                >
-                  字体
-                </FieldLabel>
-                <FieldError
-                  id="terminal-font-family-error"
-                  className="terminal-font-family-error"
-                  errors={field.state.meta.isTouched ? field.state.meta.errors : []}
-                />
-              </div>
-              <Select
-                items={fonts.map((font) => ({ label: font, value: font }))}
-                value={field.state.value}
-                onValueChange={(value) => {
-                  if (value === null) return
-                  field.handleChange(value)
-                  onEdit()
-                }}
-              >
-                <SelectTrigger
-                  id="terminal-font-family"
-                  aria-labelledby="terminal-font-family-label"
-                  aria-invalid={invalid}
-                  aria-describedby={invalid ? 'terminal-font-family-error' : undefined}
-                  className="terminal-font-family-select min-w-0 max-w-full shrink-0 font-mono"
-                  title={field.state.value}
-                  onBlur={field.handleBlur}
-                >
-                  <SelectValue className="min-w-0 truncate" />
-                </SelectTrigger>
-                <SelectContent className="terminal-font-options max-h-[min(16rem,var(--available-height))]">
-                  <SelectGroup className="terminal-font-options-group">
-                    {fonts.map((font) => (
-                      <SelectItem
-                        className="terminal-font-option font-mono"
-                        key={font}
-                        value={font}
-                        title={font}
-                      >
-                        <span className="terminal-font-option-label block truncate">{font}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          )
-        }}
-      </form.Field>
       {choiceFields}
-      <FieldGroup className="terminal-appearance-numbers grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-3 lg:grid-cols-5">
+      <FieldGroup className="terminal-appearance-numbers grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-4">
         {numberFields}
       </FieldGroup>
       <form.Field name="contrastMode">
@@ -125,7 +52,6 @@ export function TerminalTypographyFields({
               onValueChange={([value]) => {
                 if (value !== 'auto' && value !== 'off' && value !== 'custom') return
                 field.handleChange(value)
-                onEdit()
               }}
             >
               <ToggleGroupItem className="terminal-contrast-mode-option" value="auto">
@@ -179,10 +105,7 @@ export function TerminalTypographyFields({
                   step={0.1}
                   value={Number.isNaN(field.state.value) ? null : field.state.value}
                   onBlur={field.handleBlur}
-                  onValueChange={(value) => {
-                    field.handleChange(value ?? NaN)
-                    onEdit()
-                  }}
+                  onValueChange={(value) => field.handleChange(value ?? NaN)}
                   inputProps={{
                     'aria-invalid': invalid,
                     'aria-describedby':
@@ -199,6 +122,9 @@ export function TerminalTypographyFields({
           }}
         </form.Field>
       )}
+      <FieldGroup className="terminal-appearance-background-numbers grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-3">
+        {backgroundFields}
+      </FieldGroup>
     </>
   )
 }
