@@ -20,12 +20,12 @@ const ranges: { value: UsageRange; label: string }[] = [
   { value: 'all', label: '全部' },
 ]
 const number = new Intl.NumberFormat('zh-CN')
-const compact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 })
+const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 const currency = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 6,
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
 })
 const chartConfig = { total: { label: 'Token', color: 'var(--foreground)' } } satisfies ChartConfig
 const errorMessage = (error: unknown) =>
@@ -71,7 +71,7 @@ export function AnalyticsPage() {
 
   return (
     <section className="analytics-page flex min-h-0 flex-1 flex-col" aria-label="统计分析">
-      <header className="analytics-header flex shrink-0 flex-wrap items-center justify-between gap-3 p-5">
+      <header className="analytics-header flex shrink-0 flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-4">
         <h2 className="analytics-title text-lg font-semibold">统计分析</h2>
         <div className="analytics-actions flex flex-wrap items-center gap-2">
           <ToggleGroup
@@ -123,7 +123,7 @@ export function AnalyticsPage() {
         </div>
       </header>
       <div
-        className="analytics-scroll-area flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pb-5"
+        className="analytics-scroll-area flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 pt-1 pb-5"
         aria-busy={loading}
       >
         {error && (
@@ -144,6 +144,11 @@ export function AnalyticsPage() {
       </div>
       {pricingOpen && (
         <PricingDialog
+          unpricedModels={
+            result?.product === product && result.range === range
+              ? result.data?.models.filter((item) => item.unpricedRecords > 0)
+              : undefined
+          }
           onClose={() => setPricingOpen(false)}
           onChanged={() => setRevision((value) => value + 1)}
         />
