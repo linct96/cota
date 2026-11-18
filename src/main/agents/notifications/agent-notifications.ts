@@ -59,17 +59,17 @@ export class AgentNotifications {
       session.eventSource === 'process'
     )
       return
-    const label =
+    const status =
       session.activityState === 'needs-input'
-        ? '需要操作'
+        ? { label: '需要输入', body: '等待确认授权或回复问题' }
         : session.activityState === 'failed' && session.outcome === 'failure'
-          ? '任务失败'
+          ? { label: '已失败', body: '本轮执行出错' }
           : session.activityState === 'completed'
             ? session.outcome === 'success'
-              ? '已完成'
-              : '本轮结束（结果未知）'
+              ? { label: '已完成', body: '已完成本轮任务' }
+              : { label: '本轮结束', body: '本轮对话已结束' }
             : undefined
-    if (!label) return
+    if (!status) return
     const key = `${session.activityState}:${session.outcome}`
     const noticeKey = session.activityState === 'needs-input' ? 'needs-input' : key
     if (entry.sent.has(noticeKey)) return
@@ -87,8 +87,8 @@ export class AgentNotifications {
       return
     try {
       const notification = this.options.createNotification({
-        title: `${AGENT_PROVIDERS[session.provider].name} · ${label}`,
-        body: `${this.options.describe(session)}\n${session.activityState === 'needs-input' ? '请在原生终端中处理授权或问题。' : '点击返回对应终端查看。'}`,
+        title: `${this.options.describe(session)} - ${AGENT_PROVIDERS[session.provider].name} ${status.label}`,
+        body: status.body,
       })
       entry.notification = notification
       notification.on('click', () => {

@@ -254,7 +254,7 @@ describe('Desktop notifications and sounds', () => {
   it('sends a test notification even when completion notifications are disabled', async () => {
     mocks.config.preferences.turnCompleteNotification = 'never'
     expect(await mocks.handlers.get('notifications:test')!(event)).toMatchObject({ ok: true })
-    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cota · 测试通知' }))
+    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Cota 通知已开启' }))
   })
 
   it('opens system notification settings only for a trusted macOS renderer', async () => {

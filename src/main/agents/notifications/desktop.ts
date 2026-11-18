@@ -96,8 +96,8 @@ export function createDesktopNotifications(deps: {
       if (!Notification.isSupported()) throw new Error('当前系统不支持通知。')
       await readNotificationSound(config.snapshot().preferences.notificationSound)
       const notification = createDesktopNotification({
-        title: 'Cota · 测试通知',
-        body: '这是一条测试通知，用于确认 Cota 的系统通知是否正常显示。',
+        title: 'Cota 通知已开启',
+        body: '这是一条来自 Cota 的测试通知。',
       })
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
