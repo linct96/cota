@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   main: {
     build: {
+      // Unpacked workers cannot resolve dependencies kept inside app.asar.
+      externalizeDeps: { exclude: ['proper-lockfile', 'zod'] },
       rolldownOptions: {
         // Shared launch helpers and external CLI adapters must resolve from the same directory.
         output: { chunkFileNames: '[name]-[hash].js' },
