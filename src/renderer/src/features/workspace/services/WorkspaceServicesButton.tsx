@@ -4,13 +4,7 @@ import { MAX_TERMINALS, unwrap } from '../../../../../shared/contracts'
 import { useWorkspace } from '@/state/workspace'
 import type { TerminalTab } from '@/state/workspace'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function WorkspaceServicesButton({ workspaceId }: { workspaceId: string }) {
   const tabs = useWorkspace((state) => state.tabs)
@@ -77,9 +71,6 @@ export function WorkspaceServicesButton({ workspaceId }: { workspaceId: string }
         <DialogContent className="workspace-services-dialog max-h-[calc(100%-2rem)] overflow-y-auto">
           <DialogHeader className="workspace-services-header">
             <DialogTitle className="workspace-services-title">工作区服务</DialogTitle>
-            <DialogDescription className="workspace-services-description">
-              运行中仅表示进程尚未退出，不代表服务已就绪。关闭面板不停止服务；日志保留在原终端中。
-            </DialogDescription>
           </DialogHeader>
           <div className="workspace-services-list flex flex-col gap-3">
             {services.map((tab) => (

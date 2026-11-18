@@ -15,7 +15,6 @@ import { Card } from '@/components/ui/card'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -611,9 +610,6 @@ export function TerminalSettings() {
           <DialogContent className="terminal-settings-dialog max-w-sm">
             <DialogHeader>
               <DialogTitle>自定义滚动缓冲行数</DialogTitle>
-              <DialogDescription>
-                请输入 1,000 至 20,000 之间的整数（减小会丢弃旧输出）
-              </DialogDescription>
             </DialogHeader>
 
             <form

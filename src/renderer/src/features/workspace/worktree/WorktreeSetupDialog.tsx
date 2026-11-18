@@ -7,7 +7,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -96,9 +95,6 @@ export function WorktreeSetupDialog({
       >
         <DialogHeader className="worktree-setup-header">
           <DialogTitle className="worktree-setup-title">工作树初始化</DialogTitle>
-          <DialogDescription className="worktree-setup-description">
-            初始化失败会保留目录与已完成的修改；重新打开工作区不会自动执行。
-          </DialogDescription>
         </DialogHeader>
         <output className="worktree-setup-status text-sm">
           {snapshot

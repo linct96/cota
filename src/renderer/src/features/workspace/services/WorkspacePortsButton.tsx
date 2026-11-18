@@ -21,14 +21,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 
 function WorkspacePortsPanel({
   workspace,
@@ -360,9 +353,6 @@ export function WorkspacePortsButton({ workspace }: { workspace: ProjectWorkspac
           <SheetTitle className="workspace-ports-title">
             {(panelWorkspace || workspace).name} · 端口
           </SheetTitle>
-          <SheetDescription className="workspace-ports-description">
-            本机 TCP 监听端口，每 5 秒刷新。监听不代表服务就绪或支持 HTTP；关闭面板不停止服务。
-          </SheetDescription>
         </SheetHeader>
         {panelWorkspace && (
           <WorkspacePortsPanel

@@ -3,12 +3,10 @@ import { revalidateLogic, useForm, useStore } from '@tanstack/react-form'
 import { unwrap } from '../../../../../shared/contracts'
 import { setupFileLines, worktreeSetupSchema } from '../../../../../shared/worktree-setup'
 import { worktreeSetupFormSchema } from '@/features/workspace/worktree/schemas'
-import { abbreviateHomePath } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -86,9 +84,6 @@ export function WorktreeSetupConfigDialog({
       >
         <DialogHeader className="worktree-setup-config-header">
           <DialogTitle className="worktree-setup-config-title">工作树初始化配置</DialogTitle>
-          <DialogDescription className="worktree-setup-config-description break-all">
-            {abbreviateHomePath(projectPath)} 的本机项目配置。保存不会执行命令；每次初始化仍需确认。
-          </DialogDescription>
         </DialogHeader>
         <form
           className="worktree-setup-config-form flex flex-col gap-5"
