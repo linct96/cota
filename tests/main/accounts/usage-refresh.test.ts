@@ -5,11 +5,8 @@ import { join } from 'node:path'
 import { lock } from 'proper-lockfile'
 import { DEFAULT_USAGE_REFRESH_SETTINGS } from '../../../src/shared/accounts'
 import type { AccountProduct, AccountUsageRefreshStatus } from '../../../src/shared/accounts'
-import {
-  AccountCredentials,
-  GROK_AUTH_KEY,
-  normalizeCredential,
-} from '../../../src/main/accounts/credentials'
+import { AccountCredentials } from '../../../src/main/accounts/credentials'
+import { GROK_AUTH_KEY, normalizeCredential } from '../../../src/main/accounts/credential-data'
 import { AccountService } from '../../../src/main/accounts/service'
 import { AccountOAuth } from '../../../src/main/accounts/oauth'
 import { AccountStore } from '../../../src/main/accounts/store'

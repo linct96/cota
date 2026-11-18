@@ -20,177 +20,40 @@ import type {
 } from '../../shared/accounts'
 import { AccountStore } from './store'
 import type { StoredAccount } from './store'
+import { AccountCredentials } from './credentials'
+import { AccountRefresh } from './account-refresh'
+import type { AutomaticRefresh } from './account-refresh'
 import {
-  AccountCredentials,
   GROK_AUTH_KEY,
-  credentialIdentity,
   fingerprint,
   normalizeCredential,
   readPiCredentials,
   relayCredential,
   unwrapCredential,
-  unwrapGrokAuth,
   unwrapPiAuth,
-  wrapCredential,
-} from './credentials'
-import type { CredentialDetails } from './credentials'
-import { json, object, parseObject, text } from './files'
-import { piConfigMetadata, savedPiConfig } from './pi-config'
+} from './credential-data'
+import type { CredentialDetails } from './credential-data'
+import { credentialsDiffer, matches, mergeCurrent, refreshTokenKey } from './credential-matching'
+import { object, parseObject } from './files'
 import { AccountOAuth } from './oauth'
-import {
-  AccountNetworkError,
-  AccountReauthorizationError,
-  refreshAccountUsage,
-  refreshCredential,
-  refreshPastedCodex,
-} from './network'
+import { refreshCredential, refreshPastedCodex, requiresReauthorization } from './network'
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : '无法读取当前认证状态。'
-const requiresReauthorization = (error: unknown) =>
-  error instanceof AccountReauthorizationError ||
-  (error instanceof AccountNetworkError && error.reauthorizationRequired)
 
-function accessFingerprint(rawAuth: string): string {
-  const { auth } = unwrapCredential(rawAuth)
-  const env = object(auth.env)
-  const claudeAccess =
-    text(env.CLAUDE_CODE_OAUTH_TOKEN) ||
-    text(env.ANTHROPIC_AUTH_TOKEN) ||
-    text(env.ANTHROPIC_API_KEY)
-  const piAccess =
-    text(unwrapPiAuth(auth).entry.key) ||
-    text(object(auth.openai).key) ||
-    text(object(auth.openai).access) ||
-    text(object(auth['openai-codex']).access) ||
-    text(object(auth.xai).access) ||
-    text(auth.access)
-  const grokAccess = text(unwrapGrokAuth(auth).entry.key)
-  return fingerprint(
-    text(object(auth.tokens).access_token) ||
-      text(auth.OPENAI_API_KEY) ||
-      claudeAccess ||
-      piAccess ||
-      grokAccess,
-  )
-}
-
-function storedIdentity(account: StoredAccount): string | undefined {
-  try {
-    return credentialIdentity(account)
-  } catch {
-    // Incompatible imported credentials must remain available for rename and removal.
-    return undefined
-  }
-}
-
-function matches(account: StoredAccount, current: CredentialDetails): boolean {
-  if (account.accountType !== current.accountType || account.providerKey !== current.providerKey)
-    return false
-  const identity = storedIdentity(account)
-  if (identity === undefined) return false
-  if (account.product === 'pi' && account.providerKey === 'openai')
-    return (
-      identity === current.identity &&
-      (!account.accountId || !current.accountId || account.accountId === current.accountId)
-    )
-  return (
-    identity === current.identity ||
-    (account.accountType === 'oauth' &&
-      accessFingerprint(account.auth) === accessFingerprint(current.auth))
-  )
-}
-
-function mergeCurrent(account: StoredAccount, credential: CredentialDetails): StoredAccount {
-  const original = unwrapCredential(account.auth)
-  const incoming = unwrapCredential(credential.auth)
-  if (account.product === 'pi') {
-    const key = account.providerKey || credential.providerKey
-    const mergedEntry = {
-      ...unwrapPiAuth(original.auth, key).entry,
-      ...unwrapPiAuth(incoming.auth, key).entry,
-    }
-    return {
-      ...account,
-      email: credential.email || account.email,
-      planType: credential.planType || account.planType,
-      auth: wrapCredential('pi', {
-        [key]: mergedEntry,
-        ...piConfigMetadata(savedPiConfig(incoming.auth, key)),
-      }),
-      updatedAt: Date.now(),
-    }
-  }
-  if (account.product === 'grok') {
-    const origGrok = unwrapGrokAuth(original.auth)
-    const nextGrok = unwrapGrokAuth(incoming.auth)
-    const entryKey = nextGrok.entryKey || origGrok.entryKey
-    return {
-      ...account,
-      email: credential.email || account.email,
-      planType: credential.planType || account.planType,
-      auth: wrapCredential('grok', { [entryKey]: { ...origGrok.entry, ...nextGrok.entry } }),
-      updatedAt: Date.now(),
-    }
-  }
-  const merged = { ...original.auth, ...incoming.auth }
-  if (account.product === 'claude') {
-    merged.env = { ...object(original.auth.env), ...object(incoming.auth.env) }
-  }
-  for (const key of ['refreshToken', 'cliTokenExpiresAt', 'accountId', 'email'])
-    if (!incoming.auth[key] && original.auth[key]) merged[key] = original.auth[key]
-  const kind = incoming.kind ?? original.kind
-  return {
-    ...account,
-    email: credential.email || account.email,
-    planType: credential.planType || account.planType,
-    auth: kind ? wrapCredential(kind, merged) : json(merged),
-    updatedAt: Date.now(),
-  }
-}
-
-function refreshTokenKey(account: StoredAccount): string {
-  if (account.accountType !== 'oauth' || account.product === 'claude') return ''
-  const { auth } = unwrapCredential(account.auth)
-  const openai =
-    account.product === 'codex' ||
-    (account.product === 'pi' && ['openai', 'openai-codex'].includes(account.providerKey))
-  const token =
-    account.product === 'codex'
-      ? text(object(auth.tokens).refresh_token)
-      : account.product === 'pi'
-        ? text(unwrapPiAuth(auth, account.providerKey).entry.refresh)
-        : text(unwrapGrokAuth(auth).entry.refresh_token)
-  return token ? `${openai ? 'openai' : 'xai'}:${token}` : ''
-}
-
-function credentialsDiffer(account: StoredAccount, current: CredentialDetails): boolean {
-  return (
-    accessFingerprint(account.auth) !== accessFingerprint(current.auth) ||
-    refreshTokenKey(account) !== refreshTokenKey({ ...account, auth: current.auth })
-  )
-}
-
-type AutomaticRefresh = {
-  allowed: () => boolean
-  due: (
-    account: Pick<StoredAccount, 'usageUpdatedAt' | 'usagePrimary' | 'usageSecondary'>,
-    active: boolean,
-  ) => boolean
-}
 type RefreshTask = { manual: boolean; promise: Promise<boolean> }
 
 export class AccountService {
   private readonly store: AccountStore
   private readonly credentials: AccountCredentials
   private readonly oauth: AccountOAuth
+  private readonly refreshExecution: AccountRefresh
   private queue: Promise<unknown> = Promise.resolve()
   private credentialCommits = new Map<AccountProduct, Promise<void>>()
   private credentialVersions = new Map<AccountProduct, number>()
   private snapshotReads = new Set<Promise<AccountStatus>>()
   private backgroundRefreshes = new Set<Promise<unknown>>()
   private refreshTasks = new Map<string, RefreshTask>()
-  private recordRefreshAttempt?: (id: string) => Promise<() => Promise<void>>
   private clearRefreshError?: (id: string) => void
   private refreshSavedAccounts?: (product: AccountProduct, ids: string[]) => void
   private closing = false
@@ -201,6 +64,12 @@ export class AccountService {
       homedir(),
       () => process.env.CODEX_HOME || join(homedir(), '.codex'),
     )
+    this.refreshExecution = new AccountRefresh(this.store, this.credentials, {
+      run: (action) => this.run(action),
+      enqueue: (action) => this.enqueue(action),
+      commitCredential: (product, action) => this.commitCredential(product, action),
+      advanceCredentialVersion: (product) => this.advanceCredentialVersion(product),
+    })
     this.oauth = new AccountOAuth(
       (product, auth, alias) =>
         this.run(() => {
@@ -724,7 +593,7 @@ export class AccountService {
   }
 
   setRefreshAttemptRecorder(recorder: (id: string) => Promise<() => Promise<void>>): void {
-    this.recordRefreshAttempt = recorder
+    this.refreshExecution.setAttemptRecorder(recorder)
   }
 
   setRefreshErrorClearer(clearer: (id: string) => void): void {
@@ -749,346 +618,6 @@ export class AccountService {
     return this.requestRefresh(accountIdSchema.parse(id), automatic)
   }
 
-  private validateRefreshTarget(
-    id: string,
-    background: boolean,
-    automatic?: AutomaticRefresh,
-  ): StoredAccount | undefined {
-    if (background && automatic && !automatic.allowed()) return undefined
-    const found = this.store.list().find((entry) => entry.id === id)
-    if (!found) {
-      if (background) return undefined
-      throw new Error('账号不存在，请刷新后重试。')
-    }
-    if (
-      background &&
-      (!supportsAutomaticUsageRefresh(found) ||
-        found.needsReauthorization ||
-        found.switchUnavailable)
-    )
-      return undefined
-    if (found.switchUnavailable) throw new Error(found.switchUnavailable)
-    if (found.accountType === 'relay') throw new Error('API 账号的额度请在对应服务商查看。')
-    if (found.product === 'pi' && found.providerKey === 'openai')
-      throw new Error('此账号暂不支持额度查询。')
-    return found
-  }
-
-  private async prepareRefreshSnapshot(
-    id: string,
-    initial: StoredAccount,
-    background: boolean,
-    automatic?: AutomaticRefresh,
-  ): Promise<
-    | {
-        account: StoredAccount
-        current: CredentialDetails[]
-        revision: string | undefined
-        active: boolean
-      }
-    | undefined
-  > {
-    let account = initial
-    let current: CredentialDetails[] = []
-    let revision: string | undefined
-    try {
-      if (background) revision = await this.credentials.revision(account.product)
-      current = await this.credentials.current(account.product)
-      if (background && revision !== (await this.credentials.revision(account.product)))
-        throw new Error('当前 CLI 登录已变化，请稍后重试。')
-    } catch (error) {
-      if (background || account.needsReauthorization) throw error
-      /* Only update stored credentials if local state is unavailable. */
-    }
-    const active = current.some((credential) => matches(account, credential))
-    if (background && automatic && (!automatic.allowed() || !automatic.due(account, active)))
-      return undefined
-    const activeCredential = current.find((credential) => matches(account, credential))
-    if (
-      account.needsReauthorization &&
-      activeCredential &&
-      credentialsDiffer(account, activeCredential)
-    )
-      throw new Error('当前 CLI 凭据与已保存凭据不一致，请先导入当前登录或重新授权。')
-    const merged = activeCredential ? mergeCurrent(account, activeCredential) : account
-    if (background) {
-      const token = refreshTokenKey(merged)
-      if (
-        token &&
-        this.store.list().some((other) => {
-          if (other.id === id) return false
-          try {
-            return refreshTokenKey(other) === token
-          } catch {
-            return false
-          }
-        })
-      )
-        throw new Error('多个账号共用刷新令牌，请分别重新授权后再自动刷新。')
-    }
-    let undoAttempt: (() => Promise<void>) | undefined
-    try {
-      undoAttempt = await this.recordRefreshAttempt?.(id)
-    } catch (error) {
-      if (background) throw error
-      console.warn('无法记录额度刷新时间。', error)
-    }
-    const latestRevision = background ? await this.credentials.revision(account.product) : undefined
-    if (background && automatic && !automatic.allowed()) {
-      await undoAttempt?.()
-      return undefined
-    }
-    if (background && revision !== latestRevision)
-      throw new Error('当前 CLI 登录已变化，请稍后重试。')
-    if (
-      background &&
-      JSON.stringify(this.store.list().find((entry) => entry.id === id)) !== JSON.stringify(account)
-    )
-      throw new Error('账号配置已变化，请稍后重试。')
-    if (activeCredential) {
-      account = merged
-      this.advanceCredentialVersion(account.product)
-      this.store.save(account)
-    }
-    return { account, current, revision, active }
-  }
-
-  private mergeFreshCredential(
-    latest: StoredAccount,
-    account: StoredAccount,
-    fresh: StoredAccount,
-  ): StoredAccount {
-    if (
-      latest.product !== account.product ||
-      latest.accountType !== account.accountType ||
-      latest.providerKey !== account.providerKey ||
-      latest.accountId !== account.accountId ||
-      (latest.auth !== account.auth && latest.auth !== fresh.auth)
-    )
-      throw new Error('账号认证在续期期间发生变化，无法安全保存新凭据，请重新授权。')
-    return {
-      ...latest,
-      auth: fresh.auth,
-      needsReauthorization: fresh.needsReauthorization,
-      updatedAt: Math.max(latest.updatedAt, fresh.updatedAt),
-    }
-  }
-
-  private saveRefreshedCredential(
-    id: string,
-    account: StoredAccount,
-    fresh: StoredAccount,
-  ): StoredAccount | undefined {
-    const latest = this.store.list().find((entry) => entry.id === id)
-    if (!latest) return undefined
-    let toSave = fresh
-    if (JSON.stringify(latest) !== JSON.stringify(account))
-      toSave = this.mergeFreshCredential(latest, account, fresh)
-    try {
-      this.store.save(toSave)
-      return toSave
-    } catch (error) {
-      let currentLatest: StoredAccount
-      try {
-        currentLatest = this.store.get(id)
-      } catch {
-        throw error
-      }
-      try {
-        toSave = this.mergeFreshCredential(currentLatest, account, fresh)
-      } catch (mergeError) {
-        throw new Error(errorMessage(mergeError), { cause: error })
-      }
-      this.store.save(toSave)
-      return toSave
-    }
-  }
-
-  private markReauthorizationIfUnchanged(id: string, expectedAuth: string): void {
-    const latest = this.store.list().find((entry) => entry.id === id)
-    if (latest && latest.auth === expectedAuth)
-      this.store.save({ ...latest, needsReauthorization: true })
-  }
-
-  private async commitRefreshedCredential(
-    id: string,
-    account: StoredAccount,
-    freshInput: StoredAccount,
-    current: CredentialDetails[],
-    revision: string | undefined,
-    active: boolean,
-    background: boolean,
-    piLock?: () => void,
-  ): Promise<StoredAccount | undefined> {
-    let saved: StoredAccount | undefined
-    await this.commitCredential(account.product, async () => {
-      saved = this.saveRefreshedCredential(id, account, freshInput)
-      if (!saved) return
-      if (saved.auth !== account.auth) {
-        try {
-          if (active) {
-            const latest = await this.credentials.current(account.product)
-            if (
-              // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
-              latest
-                .map((entry) => fingerprint(entry.auth))
-                .sort()
-                .join(':') !==
-              // pi-lens-ignore: no-sort-without-comparator -- String fingerprints need canonical lexicographic order.
-              current
-                .map((entry) => fingerprint(entry.auth))
-                .sort()
-                .join(':')
-            )
-              throw new Error('当前 CLI 登录已变化，请刷新后重试。')
-            if (background) await this.credentials.updateCurrent(saved, revision, piLock)
-            else await this.credentials.apply(saved, undefined, piLock)
-          } else if (background) {
-            const latest = await this.credentials.current(account.product)
-            if (latest.some((entry) => matches(account, entry))) {
-              // Account was switched active concurrently while its credential was renewing.
-              const latestRevision = await this.credentials.revision(account.product)
-              await this.credentials.updateCurrent(saved, latestRevision, piLock)
-            }
-          }
-          piLock?.()
-        } catch (error) {
-          this.store.save({ ...saved, needsReauthorization: true })
-          throw new Error(`${errorMessage(error)} 新凭据已保存，请重新授权或确认后导入当前登录。`, {
-            cause: error,
-          })
-        }
-      }
-    })
-    return saved
-  }
-
-  private saveUsageResult(id: string, fresh: StoredAccount, usage: StoredAccount): boolean {
-    const latest = this.store.list().find((entry) => entry.id === id)
-    if (!latest || latest.auth !== fresh.auth) return false
-    this.store.save({
-      ...latest,
-      email: usage.email,
-      planType: usage.planType,
-      usagePrimary: usage.usagePrimary,
-      usageSecondary: usage.usageSecondary,
-      usageUpdatedAt: usage.usageUpdatedAt,
-      needsReauthorization: false,
-    })
-    return true
-  }
-
-  private async runManualRefresh(id: string): Promise<boolean> {
-    const found = this.validateRefreshTarget(id, false)
-    if (!found) return false
-    const snapshot = await this.prepareRefreshSnapshot(id, found, false)
-    if (!snapshot) return false
-    const { account, current, revision, active } = snapshot
-    let fresh: StoredAccount
-    try {
-      fresh = await refreshCredential(account, account.product === 'claude')
-    } catch (error) {
-      if (requiresReauthorization(error)) this.markReauthorizationIfUnchanged(id, account.auth)
-      throw error
-    }
-    const saved = await this.commitRefreshedCredential(
-      id,
-      account,
-      fresh,
-      current,
-      revision,
-      active,
-      false,
-    )
-    if (!saved) return false
-    try {
-      const usage = await refreshAccountUsage(saved)
-      return this.saveUsageResult(id, saved, usage)
-    } catch (error) {
-      if (requiresReauthorization(error)) this.markReauthorizationIfUnchanged(id, saved.auth)
-      throw error
-    }
-  }
-
-  private async runBackgroundRefresh(
-    id: string,
-    automatic: AutomaticRefresh,
-    task: RefreshTask,
-  ): Promise<boolean> {
-    const stage1 = await this.run(async () => {
-      if (task.manual) return { mode: 'manual' as const }
-      const found = this.validateRefreshTarget(id, true, automatic)
-      if (!found) return { mode: 'skip' as const }
-      if (found.product === 'pi') return { mode: 'pi' as const, account: found }
-      const snapshot = await this.prepareRefreshSnapshot(id, found, true, automatic)
-      if (!snapshot) return { mode: 'skip' as const }
-      return { mode: 'snapshot' as const, ...snapshot }
-    })
-    if (stage1.mode === 'manual') return this.run(() => this.runManualRefresh(id))
-    if (stage1.mode === 'skip') return false
-
-    let fresh: StoredAccount | undefined
-    if (stage1.mode === 'pi') {
-      // Pi's auth lock must stay outside this.run() to avoid deadlocking with switch/deactivate.
-      fresh = await this.credentials.withPiLock(async (piLock) => {
-        const snapshot = await this.prepareRefreshSnapshot(
-          id,
-          stage1.account,
-          !task.manual,
-          automatic,
-        )
-        if (!snapshot) return undefined
-        const { account, current, revision, active } = snapshot
-        let renewed: StoredAccount
-        try {
-          renewed = await refreshCredential(account, false)
-        } catch (error) {
-          if (requiresReauthorization(error)) this.markReauthorizationIfUnchanged(id, account.auth)
-          throw error
-        }
-        return this.commitRefreshedCredential(
-          id,
-          account,
-          renewed,
-          current,
-          revision,
-          active,
-          true,
-          piLock,
-        )
-      })
-    } else {
-      const { account, current, revision, active } = stage1
-      let renewed: StoredAccount
-      try {
-        renewed = await refreshCredential(account, account.product === 'claude')
-      } catch (error) {
-        if (requiresReauthorization(error))
-          await this.enqueue(() => this.markReauthorizationIfUnchanged(id, account.auth))
-        throw error
-      }
-      fresh =
-        renewed === account
-          ? account
-          : await this.enqueue(() =>
-              this.commitRefreshedCredential(id, account, renewed, current, revision, active, true),
-            )
-    }
-
-    if (!fresh) return false
-    if (!task.manual && !automatic.allowed()) return false
-    const target = fresh
-    let usage: StoredAccount
-    try {
-      usage = await refreshAccountUsage(target)
-    } catch (error) {
-      if (requiresReauthorization(error))
-        await this.enqueue(() => this.markReauthorizationIfUnchanged(id, target.auth))
-      throw error
-    }
-    return this.enqueue(() => this.saveUsageResult(id, target, usage))
-  }
-
   private requestRefresh(id: string, automatic?: AutomaticRefresh): Promise<boolean> {
     const existing = this.refreshTasks.get(id)
     if (existing) {
@@ -1097,7 +626,7 @@ export class AccountService {
     }
     const task: RefreshTask = { manual: !automatic, promise: Promise.resolve(false) }
     if (automatic) {
-      const pending = this.runBackgroundRefresh(id, automatic, task)
+      const pending = this.refreshExecution.runBackgroundRefresh(id, automatic, task)
       this.backgroundRefreshes.add(pending)
       void pending.then(
         () => this.backgroundRefreshes.delete(pending),
@@ -1105,7 +634,7 @@ export class AccountService {
       )
       task.promise = pending
     } else {
-      task.promise = this.run(() => this.runManualRefresh(id))
+      task.promise = this.run(() => this.refreshExecution.runManualRefresh(id))
     }
     this.refreshTasks.set(id, task)
     void task.promise.then(

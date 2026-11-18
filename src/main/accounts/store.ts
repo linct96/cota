@@ -12,7 +12,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { lockSync } from 'proper-lockfile'
-import { deriveCredentialMeta } from './credentials'
+import { deriveCredentialMeta } from './credential-data'
 import {
   oauthEntrySchema,
   oauthFileSchema,

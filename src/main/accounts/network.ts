@@ -7,7 +7,7 @@ import {
   unwrapCredential,
   unwrapGrokAuth,
   unwrapPiAuth,
-} from './credentials'
+} from './credential-data'
 
 export const OAUTH_CONFIG = {
   codex: {
@@ -42,6 +42,10 @@ export class AccountNetworkError extends Error {
     super(message)
   }
 }
+
+export const requiresReauthorization = (error: unknown) =>
+  error instanceof AccountReauthorizationError ||
+  (error instanceof AccountNetworkError && error.reauthorizationRequired)
 
 export async function requestJSON(
   url: string,

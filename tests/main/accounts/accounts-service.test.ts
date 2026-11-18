@@ -13,11 +13,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { lock } from 'proper-lockfile'
 import { AccountService } from '../../../src/main/accounts/service'
-import {
-  AccountCredentials,
-  normalizeCredential,
-  wrapCredential,
-} from '../../../src/main/accounts/credentials'
+import { AccountCredentials } from '../../../src/main/accounts/credentials'
+import { normalizeCredential, wrapCredential } from '../../../src/main/accounts/credential-data'
 import { AccountStore } from '../../../src/main/accounts/store'
 import type { StoredAccount } from '../../../src/main/accounts/store'
 import * as network from '../../../src/main/accounts/network'
