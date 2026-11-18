@@ -68,7 +68,7 @@ export function TopStatusBar({
         {isWindows && (
           <div className="top-status-bar-logo flex h-full w-[var(--app-navigation-width)] shrink-0 items-center justify-center">
             <OpenAI className="top-status-bar-logo-icon" size={20} aria-hidden="true" />
-            <span className="top-status-bar-logo-label sr-only">OpenAI Logo（临时占位）</span>
+            <span className="top-status-bar-logo-label sr-only">Cota</span>
           </div>
         )}
         <nav
@@ -92,7 +92,7 @@ export function TopStatusBar({
               <ArrowLeft className="history-back-icon" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {secondaryPageOpen ? '后退到工作区' : '后退（功能待接入）'}
+              {secondaryPageOpen ? '后退到工作区' : '后退'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -110,7 +110,7 @@ export function TopStatusBar({
             >
               <ArrowRight className="history-forward-icon" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent side="bottom">前进（功能待接入）</TooltipContent>
+            <TooltipContent side="bottom">前进</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger

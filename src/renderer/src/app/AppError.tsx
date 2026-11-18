@@ -44,8 +44,7 @@ export function AppError({ error }: ErrorComponentProps) {
               <h1 className="app-error-heading">应用暂时无法使用</h1>
             </EmptyTitle>
             <EmptyDescription className="app-error-description">
-              强制关闭会结束当前应用的所有终端、后台任务及旧 Terminal
-              Host，清理完成后关闭应用。请随后重新启动 Cota。未保存的内容可能丢失。
+              强制关闭将结束所有终端与后台任务并退出应用，未保存的内容可能丢失。
             </EmptyDescription>
           </EmptyHeader>
           <Button

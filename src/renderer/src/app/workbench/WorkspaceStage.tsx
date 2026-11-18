@@ -115,9 +115,7 @@ export function WorkspaceStage({
                 {projects.length ? '未选择工作区' : '没有打开的项目'}
               </EmptyTitle>
               <EmptyDescription className="workspace-empty-desc text-app-muted-foreground">
-                {projects.length
-                  ? `从左侧选择一个工作区，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`
-                  : `从左侧选择最近项目，或使用快捷键 ${shortcutLabel('open-folder')} 打开新项目。`}
+                {projects.length ? '从左侧选择工作区，或打开新项目。' : '从左侧选择项目开始使用。'}
               </EmptyDescription>
             </EmptyHeader>
             <Button
@@ -142,9 +140,6 @@ export function WorkspaceStage({
                 />
               </EmptyMedia>
               <EmptyTitle className="terminal-empty-title">当前工作区没有运行中的终端</EmptyTitle>
-              <EmptyDescription className="terminal-empty-desc text-app-muted-foreground">
-                点击上方 + 按钮，或使用快捷键 {shortcutLabel('new-terminal')} 新建终端。
-              </EmptyDescription>
             </EmptyHeader>
             <Button
               variant="outline"

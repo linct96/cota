@@ -6,7 +6,7 @@ import { useWorkspace } from '@/state/workspace'
 import { cn } from '@/lib/utils'
 import { SourceControlPanel } from '@/features/source-control/components/SourceControlPanel'
 import { FileExplorer } from '@/features/files/components/FileExplorer'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ResizableHandle, ResizablePanel } from '@/components/ui/resizable'
 import { TabsContent } from '@/components/ui/tabs'
 
@@ -128,9 +128,6 @@ export function RightPanel({
                   <EmptyTitle className="right-panel-files-no-workspace-title">
                     尚未选择工作区
                   </EmptyTitle>
-                  <EmptyDescription className="right-panel-files-no-workspace-description">
-                    选择工作区后，在这里浏览文件。
-                  </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             )}
