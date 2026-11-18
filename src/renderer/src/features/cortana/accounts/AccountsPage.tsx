@@ -466,8 +466,8 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
             </DialogTitle>
             <DialogDescription className="account-confirm-description">
               {confirmation?.kind === 'switch'
-                ? `当前登录尚未保存。切换到「${confirmation.account.alias}」会替换 CLI 的当前认证信息。你也可以取消并先导入当前登录。`
-                : `删除「${confirmation?.account.alias}」只会移除 Cota 保存的账号，CLI 当前登录不会退出。`}
+                ? `当前 CLI 登录尚未保存，切换将覆盖其认证信息。`
+                : `仅从 Cota 移除「${confirmation?.account.alias}」，不影响 CLI 当前登录。`}
             </DialogDescription>
           </DialogHeader>
           {error && (

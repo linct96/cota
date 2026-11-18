@@ -255,8 +255,8 @@ export function AddAccountDialog({
                               id="account-credential-description"
                             >
                               {product === 'pi'
-                                ? '也可先在 Pi 中执行 /login，再使用「导入当前登录」。'
-                                : '凭据将以明文保存在本机。'}
+                                ? '也可在 Pi 中登录后导入当前凭据。'
+                                : '凭据将保存在本机。'}
                             </FieldDescription>
                             {invalid && (
                               <FieldError
@@ -491,7 +491,7 @@ export function AddAccountDialog({
                   )}
                   {method === 'browser' && (
                     <FieldDescription className="account-browser-description">
-                      将在默认浏览器中完成授权，Cota 会自动接收结果。
+                      将在默认浏览器中完成授权。
                     </FieldDescription>
                   )}
                 </FieldGroup>
