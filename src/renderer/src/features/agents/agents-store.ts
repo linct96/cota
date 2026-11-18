@@ -14,7 +14,7 @@ type OAuthProgress =
   | AccountOAuthProgress
   | { product: AccountProduct; stage: 'starting'; message: string }
 
-interface CortanaState {
+interface AgentsState {
   activeProduct: AccountProduct
   refreshing: Record<string, boolean>
   refreshErrors: Record<string, string | undefined>
@@ -54,7 +54,7 @@ export function oauthActive(progress?: OAuthProgress): boolean {
 
 let stopOAuth: (() => void) | undefined
 
-export const useCortana = create<CortanaState>((set, get) => ({
+export const useAgents = create<AgentsState>((set, get) => ({
   activeProduct: 'pi',
   refreshing: {},
   refreshErrors: {},
@@ -237,7 +237,7 @@ export function watchAccountUsageRefresh(): () => void {
   const received = new Set<string>()
   const stop = api.onUsageRefresh((status) => {
     received.add(status.id)
-    useCortana.getState().receiveUsageRefresh(status)
+    useAgents.getState().receiveUsageRefresh(status)
   })
   void api
     .usageRefreshStatuses()
@@ -245,7 +245,7 @@ export function watchAccountUsageRefresh(): () => void {
     .then((statuses) => {
       if (!active) return
       const snapshot = new Map(statuses.map((status) => [status.id, status]))
-      useCortana.setState((state) => {
+      useAgents.setState((state) => {
         const next = { ...state.usageRefreshStatuses }
         // A refresh may have finished before the listener was attached.
         const changed = new Set<AccountProduct>([state.activeProduct])

@@ -72,7 +72,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('Cortana providers.json and auth.json store', () => {
+describe('Agents providers.json and auth.json store', () => {
   it('keeps provider metadata and plaintext credentials in separate private files', () => {
     const store = new AccountStore(path)
     expect(store.list()).toEqual([])

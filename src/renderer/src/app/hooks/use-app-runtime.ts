@@ -5,7 +5,7 @@ import { useWorkspace } from '@/state/workspace'
 import { useFileExplorer } from '@/state/file-explorer-store'
 import { useSourceControl } from '@/state/source-control-store'
 import { useAgentClis } from '@/state/agent-cli-store'
-import { watchAccountUsageRefresh } from '@/features/cortana/cortana-store'
+import { watchAccountUsageRefresh } from '@/features/agents/agents-store'
 
 export function useAppRuntime() {
   const router = useRouter()

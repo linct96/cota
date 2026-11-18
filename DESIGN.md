@@ -203,10 +203,10 @@ Cota 在 `src/renderer/src/styles.css` 中采用双层色彩架构：**第一层
 Cota 采用固定视口（`100vw × 100vh`，`overflow: hidden`）的四区桌面应用外壳架构：
 
 1. **顶部状态与标签栏（`--app-titlebar-height: 44px`）：** 兼作 Electron 窗口拖拽区（`-webkit-app-region: drag`）。在 macOS（`data-platform="darwin"`）下自动预留左侧 `96px` 原生红绿灯内边距；在 Windows（`data-platform="win32"`）下自动预留右侧 `138px`（`3 × 46px`）自定义窗口控制按钮避让区。
-2. **左侧主导航栏（`--app-navigation-width: 48px`）：** 极窄垂直图标栏，顶部放置主视图切换（`首页`、`Cortana`），底部放置 `设置`。
+2. **左侧主导航栏（`--app-navigation-width: 48px`）：** 极窄垂直图标栏，顶部放置主视图切换（`首页`、`Agents`），底部放置 `设置`。
 3. **内嵌主工作区画布（`flex-1`）：** 通过左上角 `18px` 圆角（`rounded-tl-2xl`）与 `1px` 顶/左边框（`border-border`）嵌入外壳。内部通过水平 `ResizablePanelGroup` 划分为三个可折叠区域：
    - **左侧项目与 Worktree 侧栏：** 默认宽度 `240px`（`min: 200px`，`max: 400px`，可折叠至 `0px`），采用 `bg-muted/40 text-app-muted-foreground` 次级灰阶。
-   - **中央主舞台（`min: 200px`，`flex-1`）：** 承载递归分屏终端（`TerminalWorkspace`）、文件预览（`FilePreview`）或变更审阅（`SourceControlDiff`）。切换到文件/Diff 预览或二级页面（`/settings`、`/cortana/accounts`）时，仅通过 CSS `hidden` 隐藏终端容器，保持底层 `xterm` 实例与 WebGL 上下文常驻挂载。
+   - **中央主舞台（`min: 200px`，`flex-1`）：** 承载递归分屏终端（`TerminalWorkspace`）、文件预览（`FilePreview`）或变更审阅（`SourceControlDiff`）。切换到文件/Diff 预览或二级页面（`/settings`、`/agents/accounts`）时，仅通过 CSS `hidden` 隐藏终端容器，保持底层 `xterm` 实例与 WebGL 上下文常驻挂载。
    - **右侧工具面板：** 关闭时为 `0px`，展开后支持 `240px` 至 `65%` 宽度调节，承载 `FileExplorer`（文件）与 `SourceControlPanel`（Git）。
 4. **列表行高与渲染优化：** 文件树行、Git 变更文件行与全量变更触发器统一固定为 `28px` 高度，并启用 `content-visibility: auto; contain-intrinsic-size: auto 28px` 保障大型仓库滚动流畅。
 
@@ -288,4 +288,4 @@ Cota 的组件遵循 **“干脆、紧凑、仪器级手感（Crisp, compact, an
 - **Don't** 在已有 `base-mira` 原生变量（如 `background`、`muted`、`secondary`）可满足语义时，重复发明同义变量别名。
 - **Don't** 在工作区面板或卡片上引入装饰性渐变、霓虹发光边框、毛玻璃模糊（`backdrop-filter: blur`）或多层弥散阴影。
 - **Don't** 在组件 JSX 中硬编码 Hex 色值或 Tailwind 默认色板类（如 `bg-slate-100`、`text-zinc-500`），必须绑定语义化 Token。
-- **Don't** 在切换文件预览、Git Diff 或二级路由（`/settings`、`/cortana`）时卸载 `TerminalWorkspace` DOM 树，必须使用 CSS `hidden` 切换可见性以保留终端缓冲区与 WebGL 上下文。
+- **Don't** 在切换文件预览、Git Diff 或二级路由（`/settings`、`/agents`）时卸载 `TerminalWorkspace` DOM 树，必须使用 CSS `hidden` 切换可见性以保留终端缓冲区与 WebGL 上下文。

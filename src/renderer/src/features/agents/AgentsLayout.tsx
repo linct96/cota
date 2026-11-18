@@ -22,7 +22,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from '@/components/ui/sidebar'
-import { useCortana } from './cortana-store'
+import { useAgents } from './agents-store'
 import { useLeftPanel } from '@/state/left-panel-store'
 import { cn } from '@/lib/utils'
 
@@ -34,32 +34,32 @@ const PRODUCT_ICONS = {
   pi: Pi,
 }
 
-export function CortanaLayout() {
-  const { activeProduct, selectProduct } = useCortana()
+export function AgentsLayout() {
+  const { activeProduct, selectProduct } = useAgents()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const leftPanelOpen = useLeftPanel((state) => state.open)
   const ActiveIcon = PRODUCT_ICONS[activeProduct]
 
   return (
-    <section className="cortana-region flex min-h-0 min-w-0 flex-1" aria-label="Cortana">
-      <SidebarProvider className="cortana-layout min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background">
+    <section className="agents-region flex min-h-0 min-w-0 flex-1" aria-label="Agents">
+      <SidebarProvider className="agents-layout min-h-0 min-w-0 flex-1 overflow-hidden rounded-tl-2xl border-t border-l bg-background">
         <Sidebar
-          id="cortana-sidebar"
+          id="agents-sidebar"
           collapsible="none"
           inert={!leftPanelOpen}
           className={cn(
-            'cortana-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none',
+            'agents-sidebar min-h-0 w-60 shrink-0 border-r border-sidebar-border select-none',
             !leftPanelOpen && 'hidden',
           )}
-          aria-label="Cortana 菜单"
+          aria-label="Agents 菜单"
         >
-          <SidebarHeader className="cortana-sidebar-header h-12 shrink-0 flex-row items-center px-3 py-0">
-            <h1 className="cortana-sidebar-title min-w-0">
+          <SidebarHeader className="agents-sidebar-header h-12 shrink-0 flex-row items-center px-3 py-0">
+            <h1 className="agents-sidebar-title min-w-0">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
                     <Button
-                      className="cortana-agent-trigger h-9 max-w-full justify-start gap-2 px-2.5 text-sm text-sidebar-foreground has-data-[icon=inline-start]:pl-2.5"
+                      className="agents-agent-trigger h-9 max-w-full justify-start gap-2 px-2.5 text-sm text-sidebar-foreground has-data-[icon=inline-start]:pl-2.5"
                       variant="ghost"
                       size="lg"
                       aria-label={`管理的 Agent：${ACCOUNT_PRODUCTS[activeProduct].name}`}
@@ -67,45 +67,45 @@ export function CortanaLayout() {
                   }
                 >
                   <ActiveIcon
-                    className="cortana-agent-icon"
+                    className="agents-agent-icon"
                     data-icon="inline-start"
                     aria-hidden="true"
                   />
-                  <span className="cortana-agent-name truncate">
+                  <span className="agents-agent-name truncate">
                     {ACCOUNT_PRODUCTS[activeProduct].name}
                   </span>
                   <ChevronDown
-                    className="cortana-agent-chevron text-app-muted-foreground"
+                    className="agents-agent-chevron text-app-muted-foreground"
                     data-icon="inline-end"
                     aria-hidden="true"
                   />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
-                  className="cortana-agent-menu min-w-44"
+                  className="agents-agent-menu min-w-44"
                   align="start"
                   sideOffset={4}
                   aria-label="切换管理的 Agent"
                 >
-                  <DropdownMenuGroup className="cortana-agent-menu-group">
+                  <DropdownMenuGroup className="agents-agent-menu-group">
                     {PRODUCT_ORDER.map((product) => {
                       const Icon = PRODUCT_ICONS[product]
                       const selected = product === activeProduct
                       return (
                         <DropdownMenuItem
                           key={product}
-                          className="cortana-agent-menu-item"
+                          className="agents-agent-menu-item"
                           onClick={() => {
                             if (selected) return
                             selectProduct(product)
                           }}
                         >
-                          <Icon className="cortana-agent-option-icon" aria-hidden="true" />
-                          <span className="cortana-agent-option-label">
+                          <Icon className="agents-agent-option-icon" aria-hidden="true" />
+                          <span className="agents-agent-option-label">
                             {ACCOUNT_PRODUCTS[product].name}
                           </span>
                           {selected && (
                             <Check
-                              className="cortana-agent-selected-icon ml-auto"
+                              className="agents-agent-selected-icon ml-auto"
                               aria-label="当前 Agent"
                             />
                           )}
@@ -117,47 +117,44 @@ export function CortanaLayout() {
               </DropdownMenu>
             </h1>
           </SidebarHeader>
-          <SidebarContent className="cortana-nav-list">
+          <SidebarContent className="agents-nav-list">
             <nav
-              className="cortana-navigation flex min-h-0 flex-1 flex-col pt-1.5 pb-4"
+              className="agents-navigation flex min-h-0 flex-1 flex-col pt-1.5 pb-4"
               aria-label="模块"
             >
-              <SidebarGroup className="cortana-nav-group shrink-0">
-                <SidebarGroupContent className="cortana-nav-group-content">
-                  <SidebarMenu className="cortana-nav-items">
-                    <SidebarMenuItem className="cortana-nav-item">
+              <SidebarGroup className="agents-nav-group shrink-0">
+                <SidebarGroupContent className="agents-nav-group-content">
+                  <SidebarMenu className="agents-nav-items">
+                    <SidebarMenuItem className="agents-nav-item">
                       <SidebarMenuButton
-                        className="cortana-accounts-link"
-                        isActive={pathname === '/cortana/accounts'}
+                        className="agents-accounts-link"
+                        isActive={pathname === '/agents/accounts'}
                         render={
                           <Link
-                            to="/cortana/accounts"
-                            aria-current={pathname === '/cortana/accounts' ? 'page' : undefined}
-                            className="cortana-accounts-route"
+                            to="/agents/accounts"
+                            aria-current={pathname === '/agents/accounts' ? 'page' : undefined}
+                            className="agents-accounts-route"
                           />
                         }
                       >
-                        <UsersRound className="cortana-accounts-icon" aria-hidden="true" />
-                        <span className="cortana-accounts-label">账号管理</span>
+                        <UsersRound className="agents-accounts-icon" aria-hidden="true" />
+                        <span className="agents-accounts-label">账号管理</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                    <SidebarMenuItem className="cortana-nav-item">
+                    <SidebarMenuItem className="agents-nav-item">
                       <SidebarMenuButton
-                        className="cortana-analytics-link"
-                        isActive={pathname === '/cortana/analytics'}
+                        className="agents-analytics-link"
+                        isActive={pathname === '/agents/analytics'}
                         render={
                           <Link
-                            to="/cortana/analytics"
-                            aria-current={pathname === '/cortana/analytics' ? 'page' : undefined}
-                            className="cortana-analytics-route"
+                            to="/agents/analytics"
+                            aria-current={pathname === '/agents/analytics' ? 'page' : undefined}
+                            className="agents-analytics-route"
                           />
                         }
                       >
-                        <ChartNoAxesCombined
-                          className="cortana-analytics-icon"
-                          aria-hidden="true"
-                        />
-                        <span className="cortana-analytics-label">统计分析</span>
+                        <ChartNoAxesCombined className="agents-analytics-icon" aria-hidden="true" />
+                        <span className="agents-analytics-label">统计分析</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>
@@ -167,8 +164,8 @@ export function CortanaLayout() {
           </SidebarContent>
         </Sidebar>
         <main
-          className="cortana-content flex min-h-0 min-w-0 flex-1 flex-col"
-          aria-label="Cortana 模块内容"
+          className="agents-content flex min-h-0 min-w-0 flex-1 flex-col"
+          aria-label="Agents 模块内容"
         >
           <Outlet />
         </main>

@@ -38,29 +38,29 @@ const settingsRoute = createRoute({
   component: lazyRouteComponent(() => import('@/features/settings/SettingsPage'), 'SettingsPage'),
 })
 
-const cortanaRoute = createRoute({
+const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/cortana',
-  component: lazyRouteComponent(() => import('@/features/cortana/CortanaLayout'), 'CortanaLayout'),
+  path: '/agents',
+  component: lazyRouteComponent(() => import('@/features/agents/AgentsLayout'), 'AgentsLayout'),
   beforeLoad: ({ location }) => {
-    if (location.pathname === '/cortana') throw redirect({ to: '/cortana/accounts' })
+    if (location.pathname === '/agents') throw redirect({ to: '/agents/accounts' })
   },
 })
 
 const accountsRoute = createRoute({
-  getParentRoute: () => cortanaRoute,
+  getParentRoute: () => agentsRoute,
   path: '/accounts',
   component: lazyRouteComponent(
-    () => import('@/features/cortana/accounts/AccountsPage'),
+    () => import('@/features/agents/accounts/AccountsPage'),
     'AccountsPage',
   ),
 })
 
 const analyticsRoute = createRoute({
-  getParentRoute: () => cortanaRoute,
+  getParentRoute: () => agentsRoute,
   path: '/analytics',
   component: lazyRouteComponent(
-    () => import('@/features/cortana/analytics/AnalyticsPage'),
+    () => import('@/features/agents/analytics/AnalyticsPage'),
     'AnalyticsPage',
   ),
 })
@@ -68,7 +68,7 @@ const analyticsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   workspaceRoute,
   settingsRoute,
-  cortanaRoute.addChildren([accountsRoute, analyticsRoute]),
+  agentsRoute.addChildren([accountsRoute, analyticsRoute]),
 ])
 
 export function createAppRouter(history: RouterHistory = createHashHistory()) {

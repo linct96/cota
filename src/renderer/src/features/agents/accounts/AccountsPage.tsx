@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { oauthActive, useCortana } from '@/features/cortana/cortana-store'
+import { oauthActive, useAgents } from '@/features/agents/agents-store'
 import { AddAccountDialog, RenameAccountDialog } from './AccountDialogs'
 import { AccountQuotaSummary } from './AccountQuotaSummary'
 import { AccountRow } from './AccountRow'
@@ -85,23 +85,23 @@ function useNowMinute(): number {
 }
 
 export function AccountsPage() {
-  const product = useCortana((state) => state.activeProduct)
+  const product = useAgents((state) => state.activeProduct)
   const now = useNowMinute()
   return <ProductAccountsPage key={product} product={product} now={now} />
 }
 
 function ProductAccountsPage({ product, now }: { product: AccountProduct; now: number }) {
-  const refreshAccount = useCortana((state) => state.refreshAccount)
-  const perform = useCortana((state) => state.perform)
-  const reorderAccounts = useCortana((state) => state.reorder)
-  const refreshing = useCortana((state) => state.refreshing)
-  const refreshErrors = useCortana((state) => state.refreshErrors)
-  const usageRefreshStatuses = useCortana((state) => state.usageRefreshStatuses)
-  const pending = useCortana((state) => state.pending)
-  const operationErrors = useCortana((state) => state.operationErrors)
-  const pendingOrder = useCortana((state) => state.pendingOrders[product])
-  const statusVersion = useCortana((state) => state.statusVersions[product] ?? 0)
-  const oauthProgress = useCortana((state) => state.oauthProgress)
+  const refreshAccount = useAgents((state) => state.refreshAccount)
+  const perform = useAgents((state) => state.perform)
+  const reorderAccounts = useAgents((state) => state.reorder)
+  const refreshing = useAgents((state) => state.refreshing)
+  const refreshErrors = useAgents((state) => state.refreshErrors)
+  const usageRefreshStatuses = useAgents((state) => state.usageRefreshStatuses)
+  const pending = useAgents((state) => state.pending)
+  const operationErrors = useAgents((state) => state.operationErrors)
+  const pendingOrder = useAgents((state) => state.pendingOrders[product])
+  const statusVersion = useAgents((state) => state.statusVersions[product] ?? 0)
+  const oauthProgress = useAgents((state) => state.oauthProgress)
   const [status, setStatus] = useState<AccountStatus>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
@@ -117,20 +117,20 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
   const loadStatus = useCallback(
     async (preserveError = false) => {
       const version = ++request.current
-      const operationVersion = useCortana.getState().statusVersions[product] ?? 0
+      const operationVersion = useAgents.getState().statusVersions[product] ?? 0
       const current = () =>
         version === request.current &&
-        operationVersion === (useCortana.getState().statusVersions[product] ?? 0)
+        operationVersion === (useAgents.getState().statusVersions[product] ?? 0)
       try {
         const next = unwrap(await window.desktop.accounts.list(product))
         if (current()) {
           setStatus(next)
-          useCortana.getState().acknowledgeOrder(product)
+          useAgents.getState().acknowledgeOrder(product)
           if (!preserveError) setError(undefined)
         }
       } catch (cause) {
         if (current()) {
-          useCortana.getState().acknowledgeOrder(product)
+          useAgents.getState().acknowledgeOrder(product)
           setError(errorText(cause))
         }
       } finally {

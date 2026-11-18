@@ -18,7 +18,7 @@ export function WorkspaceStage({
 }: {
   view: WorkspaceView
   secondaryPageOpen: boolean
-  activeNavigation: 'home' | 'settings' | 'cortana'
+  activeNavigation: 'home' | 'settings' | 'agents'
 }) {
   const state = useWorkspace(
     useShallow((currentState) => ({

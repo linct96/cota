@@ -17,9 +17,9 @@ export function App() {
   const router = useRouter()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const settingsOpen = pathname === '/settings'
-  const cortanaOpen = pathname.startsWith('/cortana')
-  const secondaryPageOpen = settingsOpen || cortanaOpen
-  const activeNavigation = settingsOpen ? 'settings' : cortanaOpen ? 'cortana' : 'home'
+  const agentsOpen = pathname.startsWith('/agents')
+  const secondaryPageOpen = settingsOpen || agentsOpen
+  const activeNavigation = settingsOpen ? 'settings' : agentsOpen ? 'agents' : 'home'
   const view = useWorkspaceView()
   const [rightTab, setRightTab] = useState('files')
   const activeRightTab = rightTab === 'git' && !view.gitAvailable ? 'files' : rightTab
@@ -40,11 +40,7 @@ export function App() {
           gitAvailable={view.gitAvailable}
           sidebarWidth={leftPanelOpen ? 240 : 0}
           leftPanelId={
-            settingsOpen
-              ? 'settings-sidebar'
-              : cortanaOpen
-                ? 'cortana-sidebar'
-                : 'workspace-projects'
+            settingsOpen ? 'settings-sidebar' : agentsOpen ? 'agents-sidebar' : 'workspace-projects'
           }
           onBack={() => void router.navigate({ to: '/' })}
         >

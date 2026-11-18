@@ -1,7 +1,7 @@
 import { useRouter } from '@tanstack/react-router'
 import { GearSixIcon } from '@phosphor-icons/react/dist/csr/GearSix'
 import { HouseIcon } from '@phosphor-icons/react/dist/csr/House'
-import { CortanaIcon } from '@/components/CortanaIcon'
+import { RobotIcon } from '@phosphor-icons/react/dist/csr/Robot'
 import { useWorkspace } from '@/state/workspace'
 import { ShortcutKbd } from '@/components/ShortcutKbd'
 import { Button } from '@/components/ui/button'
@@ -11,12 +11,12 @@ import { shortcutBinding } from '../../../shared/shortcuts'
 export function PrimaryNavigation({
   activeNavigation,
 }: {
-  activeNavigation: 'home' | 'settings' | 'cortana'
+  activeNavigation: 'home' | 'settings' | 'agents'
 }) {
   const router = useRouter()
   const shortcuts = useWorkspace((state) => state.preferences.shortcuts)
   const settingsOpen = activeNavigation === 'settings'
-  const cortanaOpen = activeNavigation === 'cortana'
+  const agentsOpen = activeNavigation === 'agents'
   return (
     <nav
       aria-label="主导航"
@@ -55,17 +55,21 @@ export function PrimaryNavigation({
                 type="button"
                 variant="navigation"
                 size="icon-xl"
-                aria-label="Cortana"
-                aria-current={cortanaOpen ? 'page' : undefined}
-                className="nav-cortana-button"
-                data-active={cortanaOpen}
-                onClick={() => void router.navigate({ to: '/cortana/accounts' })}
+                aria-label="Agents"
+                aria-current={agentsOpen ? 'page' : undefined}
+                className="nav-agents-button"
+                data-active={agentsOpen}
+                onClick={() => void router.navigate({ to: '/agents/accounts' })}
               />
             }
           >
-            <CortanaIcon className="nav-cortana-icon" active={cortanaOpen} />
+            <RobotIcon
+              className="nav-agents-icon"
+              aria-hidden="true"
+              weight={agentsOpen ? 'fill' : 'regular'}
+            />
           </TooltipTrigger>
-          <TooltipContent side="right">Cortana</TooltipContent>
+          <TooltipContent side="right">Agents</TooltipContent>
         </Tooltip>
       </div>
       <div className="primary-navigation-bottom flex flex-col items-center">

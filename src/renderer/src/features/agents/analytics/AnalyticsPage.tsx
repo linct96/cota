@@ -3,7 +3,7 @@ import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts'
 import { LoaderCircle, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import { unwrap } from '../../../../../shared/contracts'
 import type { UsageAnalytics, UsageRange } from '../../../../../shared/usage-analytics'
-import { useCortana } from '@/features/cortana/cortana-store'
+import { useAgents } from '@/features/agents/agents-store'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,7 +34,7 @@ const formatCost = (cost: number | null, missing: number) =>
   cost === null ? '—' : `${missing ? '≥ ' : ''}${currency.format(cost)}`
 
 export function AnalyticsPage() {
-  const product = useCortana((state) => state.activeProduct)
+  const product = useAgents((state) => state.activeProduct)
   const [range, setRange] = useState<UsageRange>('today')
   const [result, setResult] = useState<{
     product: string

@@ -26,12 +26,12 @@ Cota 是一款本地优先、终端优先的桌面工作区应用，将项目与
   - 运行支持递归分屏的 PTY 终端（全局最多并发 50 个终端），启动并监控 CLI Coding Agent，支持系统通知与点击通知一键定位终端。
   - 在终端旁直接浏览文件树、暂存/提交 Git 变更、对比分支、查看提交历史及审阅托管平台 PR/MR。
   - 运行工作区前台快捷任务与绑定端口（`PORT` / `COTA_PORT`）的长驻服务，并扫描本机监听端口。
-  - 通过内置 Cortana 账号模块管理并切换 Codex、Claude Code、Pi、Grok 的本地认证凭据与用量配额。
+  - 通过内置 Agents 账号模块管理并切换 Codex、Claude Code、Pi、Grok 的本地认证凭据与用量配额。
 
 ## Capabilities and Constraints
 
 - **本地优先与进程安全：** 所有工作区状态、Worktree 初始化配置与 JSON 账号配置均保存在用户本机，认证凭据独立保存在 `OAuth.json`，并通过系统密钥库（`safeStorage`）加密。
-- **Cortana 模块边界：** 仅保留账号管理核心能力（浏览器 OAuth 授权、本地登录导入、安全账号切换、配额刷新）与终端/Worktree 能力；协议转换网关与自定义模型路由不在本产品范围内。
+- **Agents 模块边界：** 仅保留账号管理核心能力（浏览器 OAuth 授权、本地登录导入、安全账号切换、配额刷新）与终端/Worktree 能力；协议转换网关与自定义模型路由不在本产品范围内。
 - **显式执行与破坏性操作保护：** Worktree 初始化命令、长驻服务启动及工作树/分支删除均需用户显式触发，绝不静默后台执行；删除未合并分支或覆盖未保存的外部 CLI 登录前强制执行预检与确认锁。
 - **主进程安全权威：** 前端校验（TanStack Form + Zod）仅用于即时交互反馈，绝不替代主进程的安全与文件系统校验。
 - **终端与服务上限：** 全局并发终端上限为 50 个；工作区服务均作为受管 PTY 终端内的前台进程运行，不创建脱离进程树的隐藏守护进程。
@@ -39,12 +39,12 @@ Cota 是一款本地优先、终端优先的桌面工作区应用，将项目与
 ## Brand Commitments
 
 - **产品名称：** Cota
-- **界面与文档语言：** 界面文案、错误反馈与文档统一使用简体中文（`zh-CN`），并保留精准的开发者技术术语（`Worktree`、`Diff`、`Agent`、`Terminal`、`Cortana`）。
+- **界面与文档语言：** 界面文案、错误反馈与文档统一使用简体中文（`zh-CN`），并保留精准的开发者技术术语（`Worktree`、`Diff`、`Agent`、`Agents`、`Terminal`）。
 - **表达风格：** 直接、克制、重事实，面向高频日常工程操作，拒绝营销化修辞。
 
 ## Evidence on Hand
 
-- 生产级应用外壳与路由实现位于 `src/renderer/src/app/App.tsx` 与 `src/renderer/src/app/router.tsx`（`/`、`/settings`、`/cortana/accounts`）。
+- 生产级应用外壳与路由实现位于 `src/renderer/src/app/App.tsx` 与 `src/renderer/src/app/router.tsx`（`/`、`/settings`、`/agents/accounts`）。
 - 跨进程 IPC 契约与领域模型定义位于 `src/shared/contracts.ts`。
 - 功能说明与研发规范记录于 `README.md` 与 `AGENTS.md`。
 - 不存在任何外部营销数据、客户背书或付费套餐信息，后续设计不得虚构此类内容。

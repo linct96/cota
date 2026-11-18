@@ -15,7 +15,7 @@ export function Workbench({
 }: {
   view: WorkspaceView
   secondaryPageOpen: boolean
-  activeNavigation: 'home' | 'settings' | 'cortana'
+  activeNavigation: 'home' | 'settings' | 'agents'
   activeRightTab: string
 }) {
   const { activeWorkspace, activeId, gitAvailable, showingDiff, projects } = view

@@ -9,7 +9,7 @@ import {
   renameAccountSchema,
 } from '../../../../../shared/accounts'
 import type { AccountProduct, AccountProfile } from '../../../../../shared/accounts'
-import { oauthActive, useCortana } from '@/features/cortana/cortana-store'
+import { oauthActive, useAgents } from '@/features/agents/agents-store'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -41,14 +41,14 @@ export function AddAccountDialog({
   product: AccountProduct
   onClose: () => void
 }) {
-  const draft = useCortana((state) => state.addDrafts[product])
-  const pending = useCortana((state) => !!state.pending[`add:${product}`])
-  const operationError = useCortana((state) => state.operationErrors[`add:${product}`])
-  const addAccount = useCortana((state) => state.addAccount)
-  const clearDraft = useCortana((state) => state.clearAddDraft)
-  const progress = useCortana((state) => state.oauthProgress)
-  const startOAuth = useCortana((state) => state.startOAuth)
-  const cancelOAuth = useCortana((state) => state.cancelOAuth)
+  const draft = useAgents((state) => state.addDrafts[product])
+  const pending = useAgents((state) => !!state.pending[`add:${product}`])
+  const operationError = useAgents((state) => state.operationErrors[`add:${product}`])
+  const addAccount = useAgents((state) => state.addAccount)
+  const clearDraft = useAgents((state) => state.clearAddDraft)
+  const progress = useAgents((state) => state.oauthProgress)
+  const startOAuth = useAgents((state) => state.startOAuth)
+  const cancelOAuth = useAgents((state) => state.cancelOAuth)
   const [open, setOpen] = useState(true)
   const [method, setMethod] = useState<'browser' | 'credential' | 'relay' | 'api_key' | 'provider'>(
     draft?.mode || (product === 'pi' ? 'credential' : 'browser'),
@@ -584,11 +584,11 @@ export function RenameAccountDialog({
   account: AccountProfile
   onClose: () => void
 }) {
-  const draft = useCortana((state) => state.renameDrafts[account.id])
-  const pending = useCortana((state) => !!state.pending[`rename:${account.id}`])
-  const error = useCortana((state) => state.operationErrors[`rename:${account.id}`])
-  const renameAccount = useCortana((state) => state.renameAccount)
-  const clearDraft = useCortana((state) => state.clearRenameDraft)
+  const draft = useAgents((state) => state.renameDrafts[account.id])
+  const pending = useAgents((state) => !!state.pending[`rename:${account.id}`])
+  const error = useAgents((state) => state.operationErrors[`rename:${account.id}`])
+  const renameAccount = useAgents((state) => state.renameAccount)
+  const clearDraft = useAgents((state) => state.clearRenameDraft)
   const [open, setOpen] = useState(true)
   const wasPending = useRef(pending)
   const form = useForm({
