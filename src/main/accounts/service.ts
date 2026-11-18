@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import {
+  OPENAI_API_URL,
   accountIdSchema,
   accountInputSchema,
   accountProductSchema,
@@ -15,16 +16,17 @@ import type {
   AccountProduct,
   AccountProfile,
   AccountStatus,
+  AccountSwitchResult,
 } from '../../shared/accounts'
 import { AccountStore } from './store'
 import type { StoredAccount } from './store'
 import {
   AccountCredentials,
   GROK_AUTH_KEY,
-  PI_OAUTH_PROVIDERS,
   credentialIdentity,
   fingerprint,
   normalizeCredential,
+  readPiCredentials,
   relayCredential,
   unwrapCredential,
   unwrapGrokAuth,
@@ -33,6 +35,7 @@ import {
 } from './credentials'
 import type { CredentialDetails } from './credentials'
 import { json, object, parseObject, text } from './files'
+import { piConfigMetadata, savedPiConfig } from './pi-config'
 import { AccountOAuth } from './oauth'
 import {
   AccountNetworkError,
@@ -56,6 +59,8 @@ function accessFingerprint(rawAuth: string): string {
     text(env.ANTHROPIC_AUTH_TOKEN) ||
     text(env.ANTHROPIC_API_KEY)
   const piAccess =
+    text(unwrapPiAuth(auth).entry.key) ||
+    text(object(auth.openai).key) ||
     text(object(auth.openai).access) ||
     text(object(auth['openai-codex']).access) ||
     text(object(auth.xai).access) ||
@@ -109,7 +114,10 @@ function mergeCurrent(account: StoredAccount, credential: CredentialDetails): St
       ...account,
       email: credential.email || account.email,
       planType: credential.planType || account.planType,
-      auth: wrapCredential('pi', { [key]: mergedEntry }),
+      auth: wrapCredential('pi', {
+        [key]: mergedEntry,
+        ...piConfigMetadata(savedPiConfig(incoming.auth, key)),
+      }),
       updatedAt: Date.now(),
     }
   }
@@ -342,6 +350,11 @@ export class AccountService {
       const profiles: AccountProfile[] = accounts.map(
         ({ auth, sortOrder: _order, ...account }) => ({
           ...account,
+          apiBaseUrl:
+            account.apiBaseUrl ??
+            (product === 'pi' && account.accountType === 'relay' && account.providerKey === 'openai'
+              ? OPENAI_API_URL
+              : null),
           isActive: current.some((credential) =>
             matches({ ...account, auth, sortOrder: _order }, credential),
           ),
@@ -367,6 +380,41 @@ export class AccountService {
   add(input: unknown): Promise<void> {
     const value = accountInputSchema.parse(input)
     return this.run(async () => {
+      if (value.mode === 'api_key' || value.mode === 'provider') {
+        this.upsert(
+          'pi',
+          normalizeCredential(
+            'pi',
+            {
+              [value.mode === 'api_key' ? 'openai' : value.providerKey!]: {
+                type: 'api_key',
+                key: value.apiKey.trim(),
+              },
+              $cota: {
+                providerConfig: {
+                  baseUrl: value.apiBaseUrl.trim() || OPENAI_API_URL,
+                  ...(value.mode === 'provider'
+                    ? {
+                        api: value.api,
+                        models: [
+                          ...new Set(
+                            value
+                              .modelIds!.trim()
+                              .split(/[,\n]/)
+                              .map((id) => id.trim()),
+                          ),
+                        ].map((id) => ({ id })),
+                      }
+                    : {}),
+                },
+              },
+            },
+            value.mode === 'api_key' ? 'openai' : value.providerKey,
+          ),
+          value.alias,
+        )
+        return
+      }
       if (value.mode === 'relay') {
         const account = this.upsert(
           value.product,
@@ -382,21 +430,22 @@ export class AccountService {
       else auth = parseObject(value.credential)
       if (value.product === 'grok' && object(auth)[GROK_AUTH_KEY])
         auth = object(auth)[GROK_AUTH_KEY]
-      let providerKey = ''
       if (value.product === 'pi') {
-        const provider = PI_OAUTH_PROVIDERS.find(
-          (key) => object(object(auth)[key]).type === 'oauth',
-        )
-        if (provider) {
-          providerKey = provider
-          auth = object(auth)[provider]
-        } else if (
-          object(object(auth).openai).type === 'api_key' ||
-          object(auth).type === 'api_key'
-        ) {
-          throw new Error('Pi 的 OpenAI API Key 暂不支持导入。')
-        }
+        const unwrapped = unwrapCredential(auth).auth
+        const root = unwrapped.models ? object(unwrapped.auth) : unwrapped
+        const models = unwrapped.models ? object(unwrapped.models) : unwrapped
+        const entries = unwrapped.$cota
+          ? [normalizeCredential('pi', auth)]
+          : readPiCredentials(root, models)
+        if (!entries.length) entries.push(normalizeCredential('pi', auth))
+        const saved: StoredAccount[] = []
+        this.store.transaction(() => {
+          for (const entry of entries) saved.push(this.upsert('pi', entry, value.alias))
+        })
+        this.notifySavedAccounts('pi', saved)
+        return
       }
+      const providerKey = ''
       const account = this.upsert(
         value.product,
         normalizeCredential(value.product, auth, providerKey),
@@ -422,13 +471,18 @@ export class AccountService {
     })
   }
 
-  switch(input: unknown): Promise<void> {
+  switch(input: unknown): Promise<AccountSwitchResult> {
     const { id, force, authRevision } = switchAccountSchema.parse(input)
     return this.run(async () => {
       let account = this.store.get(id)
+      let restartRequired = false
       const switchAccount = async (piLock?: () => void) => {
         if (account.switchUnavailable) throw new Error(account.switchUnavailable)
-        if (piLock) await this.credentials.assertPiOAuthReplaceable(account.providerKey)
+        if (piLock) {
+          normalizeCredential('pi', account.auth, account.providerKey)
+          await this.credentials.assertPiReplaceable(account.providerKey)
+        }
+        const piRevision = piLock ? await this.credentials.revision('pi') : undefined
         if (force) {
           if (!authRevision) throw new Error('无法验证当前 CLI 登录，请刷新并重新确认切换。')
           let currentRevision: string
@@ -451,6 +505,8 @@ export class AccountService {
         const unmanaged =
           unreadable ||
           current.some((credential) => !saved.some((entry) => matches(entry, credential)))
+        if (unmanaged && piLock)
+          throw new Error('当前 Pi 登录尚未保存或无法识别，请先导入当前登录再切换。')
         if (unmanaged && !force) throw new Error('当前登录尚未保存，请先导入，或确认覆盖后切换。')
         // Capture tokens renewed by a running CLI before replacing its active login.
         for (const credential of current) {
@@ -469,7 +525,7 @@ export class AccountService {
           .map((entry) => fingerprint(entry.auth))
           .sort()
           .join(':')
-        if (piLock) {
+        if (piLock && account.providerKey === 'openai') {
           const token = refreshTokenKey(account)
           if (
             token &&
@@ -486,9 +542,13 @@ export class AccountService {
         }
         const active = current.some((credential) => matches(account, credential))
         const beforeRefresh = account.auth
-        const previousSIWC = piLock ? normalizeCredential('pi', beforeRefresh, 'openai') : undefined
+        const previousSIWC =
+          piLock && account.providerKey === 'openai' && account.accountType === 'oauth'
+            ? normalizeCredential('pi', beforeRefresh, 'openai')
+            : undefined
         try {
-          account = await refreshCredential(account, account.needsReauthorization)
+          if (account.accountType === 'oauth')
+            account = await refreshCredential(account, account.needsReauthorization)
         } catch (error) {
           if (requiresReauthorization(error))
             this.store.save({ ...account, needsReauthorization: true })
@@ -551,11 +611,12 @@ export class AccountService {
                 .join(':')
           )
             throw new Error('授权期间检测到 CLI 登录变更，请刷新后重新确认切换。')
-          const restore = await this.credentials.apply(
+          const applied = await this.credentials.apply(
             account,
-            force ? authRevision : undefined,
+            piRevision ?? (force ? authRevision : undefined),
             piLock,
           )
+          restartRequired = applied.restartRequired
           try {
             this.store.save({ ...account, lastUsedAt: Date.now(), updatedAt: Date.now() })
           } catch (error) {
@@ -563,15 +624,15 @@ export class AccountService {
               throw new Error('登录令牌已更新，但无法保存账号状态，请刷新后重试。', {
                 cause: error,
               })
-            await restore()
+            await applied.restore()
             throw error
           }
         })
         this.clearRefreshError?.(account.id)
       }
-      if (account.product === 'pi' && account.providerKey === 'openai')
-        await this.credentials.withPiLock(switchAccount)
+      if (account.product === 'pi') await this.credentials.withPiLock(switchAccount)
       else await switchAccount()
+      return { restartRequired }
     })
   }
 
@@ -579,13 +640,9 @@ export class AccountService {
     const id = accountIdSchema.parse(idInput)
     return this.run(async () => {
       let account = this.store.get(id)
-      if (
-        account.product !== 'pi' ||
-        !(PI_OAUTH_PROVIDERS as readonly string[]).includes(account.providerKey)
-      )
-        throw new Error('仅支持取消激活 Pi OAuth 账号。')
+      if (account.product !== 'pi') throw new Error('仅支持取消激活 Pi 账号。')
       await this.credentials.withPiLock(async (assertLocked) => {
-        await this.credentials.assertPiOAuthReplaceable(account.providerKey)
+        await this.credentials.assertPiReplaceable(account.providerKey)
         const revision = await this.credentials.revision('pi')
         const current = (await this.credentials.current('pi')).find((entry) =>
           matches(account, entry),

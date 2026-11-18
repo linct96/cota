@@ -12,6 +12,7 @@ import {
   Pencil,
   RefreshCw,
   RotateCw,
+  Server,
   Trash2,
 } from 'lucide-react'
 import type { AccountProfile } from '../../../../../shared/accounts'
@@ -85,8 +86,21 @@ export function AccountRow({
   const Icon =
     account.product === 'pi' && account.providerKey === 'xai'
       ? Grok
-      : PRODUCT_ICONS[account.product]
-  const siwc = account.product === 'pi' && account.providerKey === 'openai'
+      : account.product === 'pi' && !['openai', 'openai-codex'].includes(account.providerKey)
+        ? Server
+        : PRODUCT_ICONS[account.product]
+  const siwc =
+    account.product === 'pi' && account.providerKey === 'openai' && account.accountType === 'oauth'
+  const piBadge =
+    account.product !== 'pi' || account.providerKey === 'xai'
+      ? null
+      : account.providerKey === 'openai'
+        ? siwc
+          ? 'SIWC'
+          : 'API Key'
+        : account.providerKey === 'openai-codex'
+          ? 'OAuth'
+          : 'Provider'
   const canRefresh = account.accountType === 'oauth' && !siwc
   const rowError = operationError || refreshError
   const canRetryRefresh = !!refreshError && !operationError && canRefresh
@@ -134,7 +148,7 @@ export function AccountRow({
             data-variant={deleting ? 'destructive' : undefined}
           />
         )}
-        {account.accountType === 'oauth' ? (
+        {account.accountType === 'oauth' || account.product === 'pi' ? (
           <Icon className="account-provider-icon size-5" />
         ) : (
           <span className="account-avatar-initial">
@@ -159,22 +173,22 @@ export function AccountRow({
                 已过期
               </Badge>
             )}
-            {siwc && (
+            {piBadge && (
               <Badge className="account-provider-badge shrink-0" variant="outline">
-                SIWC
+                {piBadge}
               </Badge>
             )}
-            {account.accountType === 'relay' ? (
-              <Badge className="account-plan-badge shrink-0" variant="outline">
-                API
-              </Badge>
-            ) : (
-              account.planType && (
-                <Badge className="account-plan-badge shrink-0" variant="outline">
-                  {planLabel(account.planType)}
-                </Badge>
-              )
-            )}
+            {account.accountType === 'relay'
+              ? !piBadge && (
+                  <Badge className="account-plan-badge shrink-0" variant="outline">
+                    API
+                  </Badge>
+                )
+              : account.planType && (
+                  <Badge className="account-plan-badge shrink-0" variant="outline">
+                    {planLabel(account.planType)}
+                  </Badge>
+                )}
             {account.isActive && <Badge className="account-active-badge shrink-0">使用中</Badge>}
           </div>
           <AccountMeta account={account} />
@@ -354,6 +368,7 @@ export function AccountRow({
 function AccountMeta({ account }: { account: AccountProfile }) {
   const items: { key: string; label: string }[] = []
   if (account.accountType === 'relay') {
+    if (account.product === 'pi') items.push({ key: 'provider', label: account.providerKey })
     if (account.apiBaseUrl) items.push({ key: 'api', label: account.apiBaseUrl })
   } else if (account.product === 'claude') {
     if (account.email) items.push({ key: 'email', label: account.email })

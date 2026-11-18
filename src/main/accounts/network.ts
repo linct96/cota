@@ -296,6 +296,8 @@ export async function refreshCredential(
     next = {
       kind: kind ?? 'pi',
       auth: {
+        // Legacy flat credentials are the entry itself; do not keep a stale copy at the root.
+        ...(entry === auth ? {} : auth),
         [targetKey]: {
           ...entry,
           access: text(token.access_token),

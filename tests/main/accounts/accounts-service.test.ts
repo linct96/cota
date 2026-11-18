@@ -13,7 +13,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { lock } from 'proper-lockfile'
 import { AccountService } from '../../../src/main/accounts/service'
-import { AccountCredentials, normalizeCredential } from '../../../src/main/accounts/credentials'
+import {
+  AccountCredentials,
+  normalizeCredential,
+  wrapCredential,
+} from '../../../src/main/accounts/credentials'
 import { AccountStore } from '../../../src/main/accounts/store'
 import type { StoredAccount } from '../../../src/main/accounts/store'
 import * as network from '../../../src/main/accounts/network'
@@ -200,7 +204,7 @@ describe('account snapshots during queued operations', () => {
         applying.resolve()
         await finishApply.promise
         currentAuth = value.auth
-        return async () => {}
+        return { restore: async () => {}, restartRequired: false }
       })
 
       const operationPromise =
@@ -369,7 +373,7 @@ describe('account snapshots during queued operations', () => {
       }
       const credentials = new AccountCredentials(root, () => codexHome)
       const revision = await credentials.revision(product)
-      const restore = await credentials.apply(
+      const { restore, restartRequired } = await credentials.apply(
         {
           ...account('a'),
           product,
@@ -378,6 +382,7 @@ describe('account snapshots during queued operations', () => {
         },
         revision,
       )
+      expect(restartRequired).toBe(false)
       expect(await credentials.revision(product)).not.toBe(revision)
       await restore()
       expect(await credentials.revision(product)).toBe(revision)
@@ -535,7 +540,7 @@ describe('account snapshots during queued operations', () => {
     readCurrent.mockResolvedValue([normalizeCredential('codex', JSON.parse(account('a').auth))])
     const apply = vi
       .spyOn(AccountCredentials.prototype, 'apply')
-      .mockResolvedValue(() => Promise.resolve())
+      .mockResolvedValue({ restore: () => Promise.resolve(), restartRequired: false })
     await expect(service.switch({ id: 'b' })).rejects.toThrow('当前 CLI 凭据与已保存凭据不一致')
     expect(apply).not.toHaveBeenCalled()
     expect(new AccountStore(path).get('a').auth).toContain('new-refresh')
@@ -709,7 +714,7 @@ describe('account snapshots during queued operations', () => {
   })
 })
 
-describe('Pi OpenAI SIWC credentials', () => {
+describe('Pi OpenAI credentials', () => {
   function setupPi(entry = siwc('current-user', 'current-client')) {
     vi.restoreAllMocks()
     const piHome = join(root, 'pi')
@@ -863,7 +868,7 @@ describe('Pi OpenAI SIWC credentials', () => {
     )!
     const external = { ...source, openai: { type: 'api_key', key: 'unrelated-api-key' } }
     writeFileSync(authPath, JSON.stringify(external))
-    await expect(service.deactivate(siwcProfile.id)).rejects.toThrow('API Key')
+    await expect(service.deactivate(siwcProfile.id)).rejects.toThrow('当前 Pi 登录已变化')
     await expect(service.deactivate('a')).rejects.toThrow('仅支持取消激活 Pi')
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
     const codex = (await service.list('pi')).profiles.find(
@@ -1101,45 +1106,495 @@ describe('Pi OpenAI SIWC credentials', () => {
     await service.close()
   })
 
-  it('imports Codex beside an OpenAI API key without overwriting or treating it as SIWC', async () => {
+  async function addApiKey(key = 'sk-test', alias = 'OpenAI Key') {
+    await service.add({
+      product: 'pi',
+      mode: 'api_key',
+      apiKey: key,
+      alias,
+      credential: '',
+      apiBaseUrl: '',
+    })
+    return (await service.list('pi')).profiles.find((item) => item.alias === alias)!
+  }
+
+  it('imports and deduplicates API keys beside OAuth without exposing keys in profiles', async () => {
     const { authPath, source } = setupPi()
     const mixed = { ...source, openai: { type: 'api_key', key: 'sk-test' } }
     writeFileSync(authPath, JSON.stringify(mixed))
-    expect(await service.importCurrent('pi')).toBe(1)
+    expect(await service.importCurrent('pi')).toBe(2)
+    const first = (await service.list('pi')).profiles.find((item) => item.accountType === 'relay')!
+    expect(first).toMatchObject({
+      providerKey: 'openai',
+      isActive: true,
+      apiBaseUrl: 'https://api.openai.com/v1',
+    })
+    expect(JSON.stringify(await service.list('pi'))).not.toContain('sk-test')
+    const legacyStore = new AccountStore(path)
+    legacyStore.save({ ...legacyStore.get(first.id), apiBaseUrl: null })
+    legacyStore.close()
+    expect(
+      (await service.list('pi')).profiles.find((item) => item.id === first.id)?.apiBaseUrl,
+    ).toBe('https://api.openai.com/v1')
+    const added = await addApiKey()
+    expect(added.id).toBe(first.id)
     await service.add({
       product: 'pi',
       mode: 'credential',
-      credential: JSON.stringify(mixed),
+      credential: JSON.stringify({ openai: mixed.openai }),
       alias: '',
       apiBaseUrl: '',
       apiKey: '',
     })
-    const codex = (await service.list('pi')).profiles
-    expect(codex.map((item) => item.providerKey)).toEqual(['openai-codex'])
-    await service.switch({ id: codex[0].id })
+    expect((await service.list('pi')).profiles).toHaveLength(2)
+    expect(new AccountStore(path).get(first.id).accountType).toBe('relay')
+    const codex = (await service.list('pi')).profiles.find(
+      (item) => item.providerKey === 'openai-codex',
+    )!
+    await service.switch({ id: codex.id })
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(mixed)
-    vi.mocked(network.refreshCredential).mockClear()
-    await expect(
-      service.add({
-        product: 'pi',
-        mode: 'credential',
-        credential: JSON.stringify({ openai: mixed.openai }),
-        alias: '',
-        apiBaseUrl: '',
-        apiKey: '',
-      }),
-    ).rejects.toThrow('API Key 暂不支持导入')
-    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
-    await expect(service.switch({ id: target.id })).rejects.toThrow('不会覆盖该凭据')
-    expect(network.refreshCredential).not.toHaveBeenCalled()
-    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(mixed)
+    await service.close()
+    service = new AccountService(path, () => {})
+    expect((await service.list('pi')).profiles.find((item) => item.id === first.id)?.isActive).toBe(
+      true,
+    )
     await service.close()
   })
 
-  it('refreshes SIWC using its issued client and preserves the rotated token and scopes', async () => {
+  it('switches between keys and SIWC, preserves other providers, and deactivates only the chosen key', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const original = (await service.list('pi')).profiles.find(
+      (item) => item.providerKey === 'openai',
+    )!
+    const first = await addApiKey()
+    const second = await addApiKey('sk-another', 'Another Key')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    for (const [target, expected] of [
+      [first, { type: 'api_key', key: 'sk-test' }],
+      [second, { type: 'api_key', key: 'sk-another' }],
+    ] as const) {
+      await expect(service.switch({ id: target.id })).resolves.toEqual({ restartRequired: false })
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({ ...source, openai: expected })
+      expect(
+        (await service.list('pi')).profiles
+          .filter((item) => item.providerKey === 'openai' && item.isActive)
+          .map((item) => item.id),
+      ).toEqual([target.id])
+    }
+    expect(network.refreshCredential).not.toHaveBeenCalled()
+    await expect(service.refresh(second.id)).rejects.toThrow()
+    expect(
+      await service.refreshAutomatically(second.id, { allowed: () => true, due: () => true }),
+    ).toBe(false)
+    expect(network.refreshAccountUsage).not.toHaveBeenCalled()
+    await expect(service.switch({ id: original.id })).resolves.toEqual({ restartRequired: false })
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    await service.switch({ id: first.id })
+    await service.deactivate(first.id)
+    const { openai: _removed, ...remaining } = source
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(remaining)
+    expect(
+      (await service.list('pi')).profiles.filter(
+        (item) => item.providerKey === 'openai' && item.isActive,
+      ),
+    ).toEqual([])
+    await service.switch({ id: first.id })
+    await service.rename({ id: first.id, alias: 'Renamed' })
+    await service.remove(first.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      ...source,
+      openai: { type: 'api_key', key: 'sk-test' },
+    })
+    expect(fetch).not.toHaveBeenCalled()
+    await service.close()
+  })
+
+  it('refuses even forced replacement of an unsaved key until it has been imported', async () => {
+    const { authPath, source } = setupPi()
+    const current = { ...source, openai: { type: 'api_key', key: 'sk-external' } }
+    writeFileSync(authPath, JSON.stringify(current))
+    const target = await addApiKey()
+    const { authRevision } = await service.list('pi')
+    await expect(service.switch({ id: target.id, force: true, authRevision })).rejects.toThrow(
+      '请先导入',
+    )
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(current)
+    await service.importCurrent('pi')
+    await service.switch({ id: target.id })
+    expect(JSON.parse(readFileSync(authPath, 'utf8')).openai.key).toBe('sk-test')
+    await service.close()
+  })
+
+  it('does not remove a different API key installed externally', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addApiKey()
+    await service.switch({ id: target.id })
+    const external = { ...source, openai: { type: 'api_key', key: 'sk-external' } }
+    writeFileSync(authPath, JSON.stringify(external))
+    await expect(service.deactivate(target.id)).rejects.toThrow('当前 Pi 登录已变化')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+    await service.close()
+  })
+
+  it.each([
+    { type: 'api_key', key: '!echo secret' },
+    { type: 'api_key', key: '$OPENAI_API_KEY' },
+    { type: 'api_key', key: '${OPENAI_API_KEY}' },
+    { type: 'api_key', key: 'sk-test', env: { SECRET: 'value' } },
+    { type: 'api_key', key: '' },
+    { type: 'api_key', key: 'sk test' },
+    { type: 'api_key' },
+    { type: 'unknown', key: 'sk-test' },
+  ])(
+    'rejects unsupported OpenAI credential configurations without overwriting them: %j',
+    async (entry) => {
+      const { authPath, source } = setupPi()
+      const target = await addApiKey()
+      const external = { ...source, openai: entry }
+      writeFileSync(authPath, JSON.stringify(external))
+      await expect(service.importCurrent('pi')).resolves.toBe(1)
+      await expect(
+        service.switch({
+          id: target.id,
+          force: true,
+          authRevision: (await service.list('pi')).authRevision,
+        }),
+      ).rejects.toThrow()
+      await expect(
+        service.add({
+          product: 'pi',
+          mode: 'credential',
+          credential: JSON.stringify({ openai: entry }),
+          alias: '',
+          apiBaseUrl: '',
+          apiKey: '',
+        }),
+      ).rejects.toThrow()
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
+      await service.close()
+    },
+  )
+
+  it('imports and switches supported Pi accounts without touching unrelated unsupported providers', async () => {
+    const { authPath, source } = setupPi()
+    const modelsPath = join(authPath, '..', 'models.json')
+    const xai = { type: 'api_key', key: 'unmanaged-xai-key' }
+    const auth = { ...source, xai }
+    const models = JSON.stringify({ providers: { xai: { api: 'unsupported-protocol' } } })
+    writeFileSync(authPath, JSON.stringify(auth))
+    writeFileSync(modelsPath, models)
+
+    await expect(service.importCurrent('pi')).resolves.toBe(2)
+    const target = await addApiKey()
+    await service.switch({ id: target.id })
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      ...auth,
+      openai: { type: 'api_key', key: 'sk-test' },
+    })
+    expect(readFileSync(modelsPath, 'utf8')).toBe(models)
+    await service.deactivate(target.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8')).xai).toEqual(xai)
+    expect(readFileSync(modelsPath, 'utf8')).toBe(models)
+    await service.close()
+  })
+
+  it('validates manual keys at the IPC boundary and rejects other providers', async () => {
+    setupPi()
+    for (const key of ['', '!echo secret', '$OPENAI_API_KEY', 'sk test']) {
+      await expect(addApiKey(key)).rejects.toThrow()
+    }
+    expect(() =>
+      service.add({
+        product: 'codex',
+        mode: 'api_key',
+        apiKey: 'sk-test',
+        alias: '',
+        credential: '',
+        apiBaseUrl: '',
+      }),
+    ).toThrow('仅支持 Pi')
+    expect(() => normalizeCredential('pi', { xai: { type: 'api_key', key: 'sk-test' } })).toThrow(
+      '仅支持',
+    )
+    await service.close()
+  })
+
+  it('restores the previous login if final API key metadata cannot be saved', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addApiKey()
+    const store = (service as unknown as { store: AccountStore }).store
+    const save = store.save.bind(store)
+    vi.spyOn(store, 'save').mockImplementation((value) => {
+      if (value.id === target.id && value.lastUsedAt !== null) throw new Error('metadata failed')
+      return save(value)
+    })
+    await expect(service.switch({ id: target.id })).rejects.toThrow('metadata failed')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    expect(new AccountStore(path).get(target.id).accountType).toBe('relay')
+    await service.close()
+  })
+
+  it('writes a custom provider to native Pi files, imports models-only keys, and clears fallback authentication', async () => {
+    const { authPath, source } = setupPi()
+    const modelsPath = join(authPath, '..', 'models.json')
+    const config = {
+      name: 'Relay Service',
+      baseUrl: 'https://relay.example/v1',
+      api: 'openai-completions',
+      models: [{ id: 'relay-model' }],
+    }
+    writeFileSync(
+      modelsPath,
+      JSON.stringify({
+        providers: { relay: { ...config, apiKey: 'relay-old' } },
+        marker: 'preserved',
+      }),
+    )
+    expect(await service.importCurrent('pi')).toBe(3)
+    const imported = (await service.list('pi')).profiles.find(
+      (item) => item.providerKey === 'relay',
+    )!
+    expect(imported).toMatchObject({
+      isActive: true,
+      accountType: 'relay',
+      alias: 'Relay Service',
+      apiBaseUrl: config.baseUrl,
+    })
+    await expect(service.deactivate(imported.id)).rejects.toThrow('备用 Key')
+    await expect(service.switch({ id: imported.id })).resolves.toEqual({ restartRequired: true })
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      ...source,
+      relay: { type: 'api_key', key: 'relay-old' },
+    })
+    expect(JSON.parse(readFileSync(modelsPath, 'utf8'))).toEqual({
+      providers: { relay: config },
+      marker: 'preserved',
+    })
+    await service.deactivate(imported.id)
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    expect(
+      (await service.list('pi')).profiles.find((item) => item.id === imported.id)?.isActive,
+    ).toBe(false)
+    await expect(service.switch({ id: imported.id })).resolves.toEqual({ restartRequired: false })
+    expect(
+      (await service.list('pi')).profiles.find((item) => item.id === imported.id)?.isActive,
+    ).toBe(true)
+    await service.close()
+    service = new AccountService(path, () => {})
+    expect(
+      (await service.list('pi')).profiles.find((item) => item.id === imported.id)?.apiBaseUrl,
+    ).toBe(config.baseUrl)
+    await service.close()
+  })
+
+  it('adds custom providers with explicit protocol and models and activates both files without changing other providers', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    await service.add({
+      product: 'pi',
+      mode: 'provider',
+      providerKey: 'my-relay',
+      api: 'openai-responses',
+      modelIds: 'model-a,model-b',
+      apiBaseUrl: 'https://relay.example/v1/',
+      apiKey: 'relay-key',
+      alias: 'Relay',
+      credential: '',
+    })
+    const target = (await service.list('pi')).profiles.find((item) => item.alias === 'Relay')!
+    expect(target).toMatchObject({
+      providerKey: 'my-relay',
+      isActive: false,
+      apiBaseUrl: 'https://relay.example/v1',
+    })
+    await expect(service.switch({ id: target.id })).resolves.toEqual({ restartRequired: true })
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({
+      ...source,
+      'my-relay': { type: 'api_key', key: 'relay-key' },
+    })
+    expect(JSON.parse(readFileSync(join(authPath, '..', 'models.json'), 'utf8'))).toEqual({
+      providers: {
+        'my-relay': {
+          baseUrl: 'https://relay.example/v1',
+          api: 'openai-responses',
+          models: [{ id: 'model-a' }, { id: 'model-b' }],
+        },
+      },
+    })
+    expect(JSON.stringify(await service.list('pi'))).not.toContain('relay-key')
+    expect(network.refreshCredential).not.toHaveBeenCalled()
+    await expect(service.switch({ id: target.id })).resolves.toEqual({ restartRequired: false })
+    await service.add({
+      product: 'pi',
+      mode: 'provider',
+      providerKey: 'my-relay',
+      api: 'openai-completions',
+      modelIds: 'model-c',
+      apiBaseUrl: 'https://relay.example/v1',
+      apiKey: 'relay-key',
+      alias: 'Updated Relay',
+      credential: '',
+    })
+    const updated = (await service.list('pi')).profiles.find(
+      (item) => item.alias === 'Updated Relay',
+    )!
+    await expect(service.switch({ id: updated.id })).resolves.toEqual({ restartRequired: true })
+    expect(
+      JSON.parse(readFileSync(join(authPath, '..', 'models.json'), 'utf8')).providers['my-relay'],
+    ).toEqual({
+      baseUrl: 'https://relay.example/v1',
+      api: 'openai-completions',
+      models: [{ id: 'model-c' }],
+    })
+    await service.close()
+  })
+
+  it('keeps identical keys at different endpoints distinct and restores the official endpoint for SIWC', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const siwcProfile = (await service.list('pi')).profiles.find(
+      (item) => item.providerKey === 'openai',
+    )!
+    const relay = {
+      product: 'pi',
+      mode: 'api_key',
+      apiKey: 'same-key',
+      apiBaseUrl: 'https://relay.example/v1',
+      alias: 'Relay',
+      credential: '',
+    }
+    await service.add(relay)
+    await service.add({ ...relay, alias: 'Official', apiBaseUrl: 'https://api.openai.com/v1' })
+    const profiles = (await service.list('pi')).profiles
+    const target = profiles.find((item) => item.alias === 'Relay')!
+    expect(profiles.filter((item) => item.accountType === 'relay')).toHaveLength(2)
+    const modelsPath = join(authPath, '..', 'models.json')
+    await expect(service.switch({ id: target.id })).resolves.toEqual({ restartRequired: true })
+    expect(JSON.parse(readFileSync(modelsPath, 'utf8')).providers.openai.baseUrl).toBe(
+      relay.apiBaseUrl,
+    )
+    expect(
+      (await service.list('pi')).profiles.find((item) => item.id === target.id)?.isActive,
+    ).toBe(true)
+    await expect(service.switch({ id: siwcProfile.id })).resolves.toEqual({ restartRequired: true })
+    expect(JSON.parse(readFileSync(modelsPath, 'utf8')).providers.openai).toBeUndefined()
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    await service.close()
+  })
+
+  it('imports a combined Pi auth/models JSON and honors auth.json over models.json keys', async () => {
+    const { authPath } = setupPi()
+    const providerConfig = {
+      baseUrl: 'https://relay.example/v1',
+      api: 'openai-responses',
+      models: [{ id: 'relay-model' }],
+    }
+    await service.add({
+      product: 'pi',
+      mode: 'credential',
+      alias: '',
+      apiBaseUrl: '',
+      apiKey: '',
+      credential: JSON.stringify({
+        auth: { relay: { type: 'api_key', key: 'primary-key' } },
+        models: { providers: { relay: { ...providerConfig, apiKey: 'fallback-key' } } },
+      }),
+    })
+    const target = (await service.list('pi')).profiles.find((item) => item.providerKey === 'relay')!
+    expect(new AccountStore(path).get(target.id).auth).toContain('primary-key')
+    expect(new AccountStore(path).get(target.id).auth).not.toContain('fallback-key')
+    expect(readFileSync(authPath, 'utf8')).not.toContain('primary-key')
+    await service.close()
+  })
+
+  it('detects model configuration changes during authorization and preserves the external file', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addSiwc(siwc('target-user', 'target-client', 'old', 1))
+    const modelsPath = join(authPath, '..', 'models.json')
+    const started = deferred<void>(),
+      finish = deferred<void>()
+    vi.mocked(network.refreshCredential).mockImplementation(async (value) => {
+      started.resolve()
+      await finish.promise
+      return value
+    })
+    const switching = expect(service.switch({ id: target.id })).rejects.toThrow()
+    await started.promise
+    const external = { providers: { openai: { baseUrl: 'https://external.example/v1' } } }
+    writeFileSync(modelsPath, JSON.stringify(external))
+    finish.resolve()
+    await switching
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    expect(JSON.parse(readFileSync(modelsPath, 'utf8'))).toEqual(external)
+    await service.close()
+  })
+
+  it('rolls back both Pi files when the final account save fails', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    await service.add({
+      product: 'pi',
+      mode: 'provider',
+      providerKey: 'relay',
+      api: 'openai-responses',
+      modelIds: 'model-a',
+      apiBaseUrl: 'https://relay.example/v1',
+      apiKey: 'relay-key',
+      alias: 'Relay',
+      credential: '',
+    })
+    const target = (await service.list('pi')).profiles.find((item) => item.alias === 'Relay')!
+    const store = (service as unknown as { store: AccountStore }).store
+    const save = store.save.bind(store)
+    vi.spyOn(store, 'save').mockImplementation((value) => {
+      if (value.id === target.id && value.lastUsedAt !== null) throw new Error('metadata failed')
+      return save(value)
+    })
+    await expect(service.switch({ id: target.id })).rejects.toThrow('metadata failed')
+    expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    expect(() => readFileSync(join(authPath, '..', 'models.json'), 'utf8')).toThrow()
+    await service.close()
+  })
+
+  it('refuses advanced routing, malformed files and mismatched fallback keys without changing either file', async () => {
+    const { authPath, source } = setupPi()
+    await service.importCurrent('pi')
+    const target = await addApiKey()
+    const modelsPath = join(authPath, '..', 'models.json')
+    for (const config of [
+      { providers: 'invalid' },
+      { providers: { openai: { headers: { Authorization: 'secret' } } } },
+      {
+        providers: {
+          openai: { models: [{ id: 'model', baseUrl: 'https://external.example/v1' }] },
+        },
+      },
+      { providers: { openai: { apiKey: 'unmanaged-fallback' } } },
+    ]) {
+      const content = JSON.stringify(config)
+      writeFileSync(modelsPath, content)
+      await expect(service.switch({ id: target.id })).rejects.toThrow()
+      expect(readFileSync(modelsPath, 'utf8')).toBe(content)
+      expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
+    }
+    await service.close()
+  })
+
+  it('refreshes SIWC using its issued client without changing the saved provider config', async () => {
     const actual = await vi.importActual<typeof network>('../../../src/main/accounts/network')
     const entry = siwc('target-user', 'issued-client', 'old', 1)
     const rotated = siwc('target-user', 'issued-client', 'new')
+    const config = { providerConfig: { modelOverrides: { 'gpt-5.4': { name: 'Work model' } } } }
+    const saved = {
+      ...siwcAccount(entry),
+      auth: wrapCredential('pi', { openai: entry, $cota: config }),
+    }
     const fetch = vi.fn((_url: string | URL | Request, _init?: RequestInit) =>
       Promise.resolve(
         Response.json({
@@ -1152,17 +1607,20 @@ describe('Pi OpenAI SIWC credentials', () => {
     )
     vi.stubGlobal('fetch', fetch)
     vi.spyOn(Date, 'now').mockReturnValue(100_000)
-    const refreshed = await actual.refreshCredential(siwcAccount(entry))
+    const refreshed = await actual.refreshCredential(saved)
     const body = fetch.mock.calls[0][1]?.body as URLSearchParams
     expect(fetch.mock.calls[0][0]).toBe('https://auth.openai.com/api/accounts/oauth/token')
     expect(body.get('client_id')).toBe('issued-client')
     expect(body.get('refresh_token')).toBe(entry.refresh)
     expect(body.get('resource')).toBe('https://api.openai.com/v1')
-    expect(JSON.parse(refreshed.auth).auth.openai).toEqual({
-      ...entry,
-      access: rotated.access,
-      refresh: rotated.refresh,
-      expires: 100_000 + 3_420_000,
+    expect(JSON.parse(refreshed.auth).auth).toEqual({
+      $cota: config,
+      openai: {
+        ...entry,
+        access: rotated.access,
+        refresh: rotated.refresh,
+        expires: 100_000 + 3_420_000,
+      },
     })
     await expect(actual.refreshAccountUsage(refreshed)).rejects.toThrow('暂不支持额度查询')
     expect(fetch).toHaveBeenCalledOnce()

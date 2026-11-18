@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { ExternalLink, LoaderCircle } from 'lucide-react'
 import {
   ACCOUNT_PRODUCTS,
+  OPENAI_API_URL,
   accountFormSchema,
   renameAccountSchema,
 } from '../../../../../shared/accounts'
@@ -14,7 +15,6 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,6 +23,14 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/c
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const browserSchema = z.object(accountFormSchema.shape)
 
@@ -42,7 +50,7 @@ export function AddAccountDialog({
   const startOAuth = useCortana((state) => state.startOAuth)
   const cancelOAuth = useCortana((state) => state.cancelOAuth)
   const [open, setOpen] = useState(true)
-  const [method, setMethod] = useState<'browser' | 'credential' | 'relay'>(
+  const [method, setMethod] = useState<'browser' | 'credential' | 'relay' | 'api_key' | 'provider'>(
     draft?.mode || (product === 'pi' ? 'credential' : 'browser'),
   )
   const authorizing = oauthActive(progress) && progress?.product === product
@@ -54,15 +62,19 @@ export function AddAccountDialog({
       : operationError
   const wasPending = useRef(pending)
   const previousOAuth = useRef(progress?.stage)
+  const defaultValues: z.input<typeof accountFormSchema> = {
+    alias: draft?.alias || '',
+    mode: draft?.mode || 'credential',
+    credential: draft?.credential || '',
+    apiBaseUrl: draft?.apiBaseUrl || (product === 'pi' ? OPENAI_API_URL : ''),
+    apiKey: draft?.apiKey || '',
+    providerKey: draft?.providerKey || '',
+    api: draft?.api || 'openai-responses',
+    modelIds: draft?.modelIds || '',
+  }
   const form = useForm({
-    defaultValues: {
-      alias: draft?.alias || '',
-      mode: draft?.mode || 'credential',
-      credential: draft?.credential || '',
-      apiBaseUrl: draft?.apiBaseUrl || '',
-      apiKey: draft?.apiKey || '',
-    },
-    validationLogic: revalidateLogic({ mode: 'blur' }),
+    defaultValues,
+    validationLogic: revalidateLogic({ mode: 'change' }),
     validators: { onDynamic: method === 'browser' ? browserSchema : accountFormSchema },
     onSubmit: async ({ value }) => {
       if (!open || pending) return
@@ -85,6 +97,9 @@ export function AddAccountDialog({
   useEffect(() => {
     form.reset()
   }, [form])
+  useEffect(() => {
+    if (form.state.isTouched) void form.validate('change')
+  }, [form, method])
   useEffect(() => {
     if (pending) wasPending.current = true
     else if (wasPending.current && (operationError || !draft)) {
@@ -120,9 +135,6 @@ export function AddAccountDialog({
           <DialogTitle className="account-add-title">
             添加 {ACCOUNT_PRODUCTS[product].name} 账号
           </DialogTitle>
-          <DialogDescription className="account-add-description">
-            保存后可在账号列表中切换使用。
-          </DialogDescription>
         </DialogHeader>
         <form
           className="account-add-form flex flex-col gap-4"
@@ -138,7 +150,10 @@ export function AddAccountDialog({
               if (pending) return
               const next = value as typeof method
               setMethod(next)
-              form.setFieldValue('mode', next === 'relay' ? 'relay' : 'credential')
+              form.setFieldValue(
+                'mode',
+                next === 'relay' || next === 'api_key' || next === 'provider' ? next : 'credential',
+              )
             }}
             className="account-add-methods"
           >
@@ -155,9 +170,20 @@ export function AddAccountDialog({
               >
                 导入凭据
               </TabsTrigger>
-              {['codex', 'claude', 'grok'].includes(product) && (
-                <TabsTrigger className="account-add-relay-tab" value="relay" disabled={pending}>
-                  API 账号
+              <TabsTrigger
+                className="account-add-relay-tab"
+                value={product === 'pi' ? 'api_key' : 'relay'}
+                disabled={pending}
+              >
+                {product === 'pi' ? 'OpenAI API Key' : 'API 账号'}
+              </TabsTrigger>
+              {product === 'pi' && (
+                <TabsTrigger
+                  className="account-add-provider-tab"
+                  value="provider"
+                  disabled={pending}
+                >
+                  自定义 Provider
                 </TabsTrigger>
               )}
             </TabsList>
@@ -244,38 +270,37 @@ export function AddAccountDialog({
                       }}
                     </form.Field>
                   )}
-                  {method === 'relay' && (
+                  {method === 'provider' && (
                     <>
-                      <form.Field name="apiBaseUrl">
+                      <form.Field name="providerKey">
                         {(field) => {
                           const invalid = field.state.meta.isTouched && !field.state.meta.isValid
                           return (
-                            <Field className="account-api-url-field" data-invalid={invalid}>
+                            <Field className="account-provider-id-field" data-invalid={invalid}>
                               <FieldLabel
-                                className="account-api-url-label"
-                                htmlFor="account-api-url"
+                                className="account-provider-id-label"
+                                htmlFor="account-provider-id"
                               >
-                                API 地址
+                                Provider ID
                               </FieldLabel>
                               <Input
-                                className="account-api-url-input"
-                                id="account-api-url"
-                                type="url"
+                                className="account-provider-id-input"
+                                id="account-provider-id"
+                                name={field.name}
                                 value={field.state.value}
-                                placeholder={
-                                  product === 'claude'
-                                    ? 'https://api.example.com'
-                                    : 'https://api.example.com/v1'
-                                }
-                                onBlur={field.handleBlur}
                                 onChange={(event) => field.handleChange(event.target.value)}
+                                onBlur={field.handleBlur}
+                                placeholder="my-relay"
+                                autoCapitalize="none"
+                                spellCheck={false}
                                 aria-invalid={invalid}
-                                aria-describedby={invalid ? 'account-api-url-error' : undefined}
+                                aria-describedby={invalid ? 'account-provider-id-error' : undefined}
+                                required
                               />
                               {invalid && (
                                 <FieldError
-                                  className="account-api-url-error"
-                                  id="account-api-url-error"
+                                  className="account-provider-id-error"
+                                  id="account-provider-id-error"
                                   errors={field.state.meta.errors}
                                 />
                               )}
@@ -283,6 +308,146 @@ export function AddAccountDialog({
                           )
                         }}
                       </form.Field>
+                      <form.Field name="api">
+                        {(field) => {
+                          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                          return (
+                            <Field className="account-provider-api-field" data-invalid={invalid}>
+                              <FieldLabel
+                                className="account-provider-api-label"
+                                htmlFor="account-provider-api"
+                              >
+                                API 协议
+                              </FieldLabel>
+                              <Select
+                                value={field.state.value}
+                                onValueChange={(value) => {
+                                  if (value) field.handleChange(value)
+                                }}
+                                items={[
+                                  { value: 'openai-responses', label: 'Responses API' },
+                                  { value: 'openai-completions', label: 'Chat Completions API' },
+                                ]}
+                              >
+                                <SelectTrigger
+                                  className="account-provider-api-trigger w-full"
+                                  id="account-provider-api"
+                                  onBlur={field.handleBlur}
+                                  aria-invalid={invalid}
+                                  aria-describedby={
+                                    invalid ? 'account-provider-api-error' : undefined
+                                  }
+                                >
+                                  <SelectValue className="account-provider-api-value" />
+                                </SelectTrigger>
+                                <SelectContent className="account-provider-api-options">
+                                  <SelectGroup className="account-provider-api-group">
+                                    <SelectItem
+                                      className="account-provider-api-option"
+                                      value="openai-responses"
+                                    >
+                                      Responses API
+                                    </SelectItem>
+                                    <SelectItem
+                                      className="account-provider-api-option"
+                                      value="openai-completions"
+                                    >
+                                      Chat Completions API
+                                    </SelectItem>
+                                  </SelectGroup>
+                                </SelectContent>
+                              </Select>
+                              {invalid && (
+                                <FieldError
+                                  className="account-provider-api-error"
+                                  id="account-provider-api-error"
+                                  errors={field.state.meta.errors}
+                                />
+                              )}
+                            </Field>
+                          )
+                        }}
+                      </form.Field>
+                      <form.Field name="modelIds">
+                        {(field) => {
+                          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                          return (
+                            <Field className="account-provider-models-field" data-invalid={invalid}>
+                              <FieldLabel
+                                className="account-provider-models-label"
+                                htmlFor="account-provider-models"
+                              >
+                                模型 ID
+                              </FieldLabel>
+                              <Textarea
+                                className="account-provider-models-input min-h-20 resize-y font-mono"
+                                id="account-provider-models"
+                                name={field.name}
+                                value={field.state.value}
+                                onChange={(event) => field.handleChange(event.target.value)}
+                                onBlur={field.handleBlur}
+                                placeholder="每行一个模型 ID"
+                                spellCheck={false}
+                                aria-invalid={invalid}
+                                aria-describedby={
+                                  invalid ? 'account-provider-models-error' : undefined
+                                }
+                                required
+                              />
+                              {invalid && (
+                                <FieldError
+                                  className="account-provider-models-error"
+                                  id="account-provider-models-error"
+                                  errors={field.state.meta.errors}
+                                />
+                              )}
+                            </Field>
+                          )
+                        }}
+                      </form.Field>
+                    </>
+                  )}
+                  {(method === 'relay' || method === 'api_key' || method === 'provider') && (
+                    <>
+                      {
+                        <form.Field name="apiBaseUrl">
+                          {(field) => {
+                            const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+                            return (
+                              <Field className="account-api-url-field" data-invalid={invalid}>
+                                <FieldLabel
+                                  className="account-api-url-label"
+                                  htmlFor="account-api-url"
+                                >
+                                  API 地址
+                                </FieldLabel>
+                                <Input
+                                  className="account-api-url-input"
+                                  id="account-api-url"
+                                  type="url"
+                                  value={field.state.value}
+                                  placeholder={
+                                    product === 'claude'
+                                      ? 'https://api.example.com'
+                                      : 'https://api.example.com/v1'
+                                  }
+                                  onBlur={field.handleBlur}
+                                  onChange={(event) => field.handleChange(event.target.value)}
+                                  aria-invalid={invalid}
+                                  aria-describedby={invalid ? 'account-api-url-error' : undefined}
+                                />
+                                {invalid && (
+                                  <FieldError
+                                    className="account-api-url-error"
+                                    id="account-api-url-error"
+                                    errors={field.state.meta.errors}
+                                  />
+                                )}
+                              </Field>
+                            )
+                          }}
+                        </form.Field>
+                      }
                       <form.Field name="apiKey">
                         {(field) => {
                           const invalid = field.state.meta.isTouched && !field.state.meta.isValid
@@ -292,13 +457,19 @@ export function AddAccountDialog({
                                 className="account-api-key-label"
                                 htmlFor="account-api-key"
                               >
-                                API Key
+                                {method === 'api_key' ? 'OpenAI API Key' : 'API Key'}
                               </FieldLabel>
                               <Input
                                 className="account-api-key-input"
                                 id="account-api-key"
                                 type="password"
                                 autoComplete="new-password"
+                                autoCapitalize="none"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                name="apiKey"
+                                required
+                                maxLength={16384}
                                 value={field.state.value}
                                 onBlur={field.handleBlur}
                                 onChange={(event) => field.handleChange(event.target.value)}
@@ -343,8 +514,8 @@ export function AddAccountDialog({
               <AlertDescription className="account-add-error-message">{error}</AlertDescription>
             </Alert>
           )}
-          <form.Subscribe selector={(state) => state.isSubmitting}>
-            {(submitting) => (
+          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting] as const}>
+            {([canSubmit, submitting]) => (
               <DialogFooter className="account-add-footer">
                 {authorizing && progress.stage === 'waiting' && (
                   <Button
@@ -371,7 +542,10 @@ export function AddAccountDialog({
                   className="account-add-submit"
                   type="submit"
                   disabled={
-                    submitting || pending || (method === 'browser' && oauthActive(progress))
+                    !canSubmit ||
+                    submitting ||
+                    pending ||
+                    (method === 'browser' && oauthActive(progress))
                   }
                   title={
                     method === 'browser' && oauthActive(progress) && !authorizing

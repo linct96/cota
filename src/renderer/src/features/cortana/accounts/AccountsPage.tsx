@@ -163,13 +163,17 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
 
   function queueSwitch(account: AccountProfile, authRevision?: string) {
     void perform(account.product, `switch:${account.id}`, account.alias, async () => {
-      unwrap(
+      const { restartRequired } = unwrap(
         await window.desktop.accounts.switch({
           id: account.id,
           force: !!authRevision,
           authRevision,
         }),
       )
+      if (account.product === 'pi')
+        return restartRequired
+          ? 'Provider 配置已更新，请重启 Pi 后继续使用。'
+          : '账号已切换，后续请求生效。'
       return '账号已切换。'
     })
   }
@@ -183,11 +187,23 @@ function ProductAccountsPage({ product, now }: { product: AccountProduct; now: n
 
   function switchAccount(account: AccountProfile) {
     if (status?.authState === 'unmanaged') {
+      if (account.product === 'pi') {
+        toast.error('请先导入当前 Pi 登录，再切换账号。')
+        return
+      }
       if (!status.authRevision) {
         toast.error('无法验证当前 CLI 登录，请刷新后重试。')
         return
       }
       setConfirmation({ kind: 'switch', account, authRevision: status.authRevision })
+      return
+    }
+    if (account.product === 'pi') {
+      if (!status?.authRevision) {
+        toast.error('无法验证 Pi 配置，请刷新后重试。')
+        return
+      }
+      queueSwitch(account, status.authRevision)
       return
     }
     queueSwitch(account)

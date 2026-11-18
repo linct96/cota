@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parse as parseToml, stringify as stringifyToml } from 'smol-toml'
+import { piOpenAIApiKeySchema } from '../../shared/accounts'
 import type { AccountProduct } from '../../shared/accounts'
 import type { CredentialKind, OAuthEntry, StoredAccount } from './schema'
 import {
@@ -15,6 +16,13 @@ import {
   withPiAuthLock,
 } from './files'
 import type { AccountFileChange } from './files'
+import {
+  PI_DEFAULT_URLS,
+  piConfigMetadata,
+  piProviderConfig,
+  savedPiConfig,
+  stablePiConfig,
+} from './pi-config'
 
 export const GROK_AUTH_KEY = 'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828'
 export const GROK_API_KEY = 'xai::api_key'
@@ -64,7 +72,11 @@ export function unwrapPiAuth(
   const resolved =
     providerKey ||
     text(auth.providerKey) ||
-    (text(auth.clientId) ? 'openai' : text(auth.accountId) ? 'openai-codex' : 'xai')
+    (auth.type === 'api_key' || text(auth.clientId)
+      ? 'openai'
+      : text(auth.accountId)
+        ? 'openai-codex'
+        : 'xai')
   return { providerKey: resolved, entry: auth }
 }
 
@@ -105,6 +117,8 @@ export function deriveCredentialMeta(
   }
   if (kind === 'pi') {
     const { providerKey, entry: piEntry } = unwrapPiAuth(auth)
+    if (piEntry.type === 'api_key')
+      return { product: 'pi', providerKey, accountType: 'relay', accountId: '' }
     const access = text(piEntry.access)
     const claims = jwtClaims(access)
     return {
@@ -260,6 +274,29 @@ export function normalizeCredential(
   } else if (product === 'pi') {
     if (inputKind !== undefined && inputKind !== 'pi') throw new Error('Pi 认证信息格式无效。')
     const { providerKey: resolvedKey, entry } = unwrapPiAuth(auth, providerKey)
+    if (entry.type === 'api_key') {
+      if (['openai-codex', 'xai'].includes(resolvedKey))
+        throw new Error('此 Pi Provider 仅支持 OAuth。')
+      const config = savedPiConfig(auth, resolvedKey)
+      if (entry.env !== undefined)
+        throw new Error('暂不支持带环境变量配置的 Pi API Key，请直接填写 Key。')
+      const result = piOpenAIApiKeySchema.safeParse(entry.key)
+      if (!result.success) throw new Error(result.error.issues[0]?.message || 'API Key 无效。')
+      return {
+        auth: wrapCredential('pi', {
+          [resolvedKey]: { type: 'api_key', key: result.data },
+          ...piConfigMetadata(config),
+        }),
+        accountType: 'relay',
+        providerKey: resolvedKey,
+        apiBaseUrl: text(config.baseUrl) || PI_DEFAULT_URLS.get(resolvedKey) || null,
+        accountId: '',
+        name: text(config.name),
+        email: '',
+        planType: '',
+        identity: `${resolvedKey}:api_key:${fingerprint(stablePiConfig(config))}:${fingerprint(result.data)}`,
+      }
+    }
     if (
       entry.type !== 'oauth' ||
       !text(entry.access) ||
@@ -300,7 +337,10 @@ export function normalizeCredential(
       providerKey === 'openai'
         ? `${providerKey}:${text(entry.clientId)}`
         : `${providerKey}:${accountId}:${email}`
-    payload = { [providerKey]: entry }
+    const config = savedPiConfig(auth, providerKey)
+    if (PI_DEFAULT_URLS.has(providerKey) && config.baseUrl)
+      throw new Error('OpenAI OAuth 存在非官方端点覆盖，请先在 Pi 中确认配置。')
+    payload = { [providerKey]: entry, ...piConfigMetadata(config) }
   } else {
     if (inputKind !== undefined && inputKind !== 'grok') throw new Error('Grok 认证信息格式无效。')
     kind = 'grok'
@@ -371,6 +411,8 @@ export function credentialIdentity(
   account: Pick<StoredAccount, 'product' | 'auth' | 'accountType' | 'providerKey' | 'apiBaseUrl'>,
 ): string {
   const { auth } = unwrapCredential(account.auth)
+  if (account.product === 'pi')
+    return normalizeCredential('pi', account.auth, account.providerKey).identity
   if (account.accountType === 'relay') {
     const env = object(auth.env)
     const grokEntry = unwrapGrokAuth(auth).entry
@@ -385,9 +427,64 @@ export function credentialIdentity(
   return normalizeCredential(account.product, account.auth, account.providerKey).identity
 }
 
-function assertPiOAuthReplaceable(root: Record<string, unknown>, providerKey: string): void {
-  if (providerKey === 'openai' && object(root.openai).type === 'api_key')
-    throw new Error('Pi 当前 OpenAI 使用 API Key，请先在 Pi 中处理，Cota 不会覆盖该凭据。')
+function piProviders(models: Record<string, unknown>): Record<string, unknown> {
+  if (
+    models.providers !== undefined &&
+    (models.providers === null ||
+      typeof models.providers !== 'object' ||
+      Array.isArray(models.providers))
+  )
+    throw new Error('Pi models.json 的 providers 必须是 JSON 对象。')
+  return object(models.providers)
+}
+
+function readPiCredential(
+  root: Record<string, unknown>,
+  providers: Record<string, unknown>,
+  key: string,
+): CredentialDetails | undefined {
+  const rawConfig = Object.hasOwn(providers, key) ? providers[key] : undefined
+  const config = object(rawConfig)
+  const known = (PI_OAUTH_PROVIDERS as readonly string[]).includes(key)
+  if (!known && !Object.keys(config).length) return undefined
+  const entry = Object.hasOwn(root, key)
+    ? root[key]
+    : config.apiKey !== undefined
+      ? { type: 'api_key', key: config.apiKey }
+      : undefined
+  if (entry === undefined || (!known && object(entry).type !== 'api_key')) return undefined
+  const providerConfig = key === 'xai' ? {} : piProviderConfig(rawConfig, key)
+  return normalizeCredential('pi', { [key]: entry, ...piConfigMetadata(providerConfig) }, key)
+}
+
+function assertPiTargetSupported(
+  root: Record<string, unknown>,
+  providers: Record<string, unknown>,
+  key: string,
+): void {
+  if (
+    (Object.hasOwn(root, key) || Object.hasOwn(object(providers[key]), 'apiKey')) &&
+    !readPiCredential(root, providers, key)
+  )
+    throw new Error('无法识别目标 Pi Provider 的现有凭据，请先在 Pi 中确认。')
+}
+
+export function readPiCredentials(
+  root: Record<string, unknown>,
+  models: Record<string, unknown>,
+  skipUnsupported = false,
+): CredentialDetails[] {
+  const providers = piProviders(models)
+  const entries: CredentialDetails[] = []
+  for (const key of new Set([...Object.keys(root), ...Object.keys(providers)])) {
+    try {
+      const entry = readPiCredential(root, providers, key)
+      if (entry) entries.push(entry)
+    } catch (error) {
+      if (!skipUnsupported) throw error
+    }
+  }
+  return entries
 }
 
 export class AccountCredentials {
@@ -424,7 +521,9 @@ export class AccountCredentials {
         ? [join(this.codexHome(), 'config.toml'), path]
         : product === 'grok'
           ? [join(path, '..', 'config.toml'), path]
-          : [path]
+          : product === 'pi'
+            ? [join(path, '..', 'models.json'), path]
+            : [path]
     const changes = await Promise.all(
       paths.map(async (file) => ({ path: file, before: await readOptional(file) })),
     )
@@ -493,10 +592,9 @@ export class AccountCredentials {
       return []
     }
     if (product === 'pi') {
-      return Object.entries(root)
-        .filter(([, value]) => object(value).type === 'oauth')
-        .filter(([provider]) => (PI_OAUTH_PROVIDERS as readonly string[]).includes(provider))
-        .map(([provider, value]) => normalizeCredential('pi', value, provider))
+      const modelsPath = join(path, '..', 'models.json')
+      const models = await readOptional(modelsPath)
+      return readPiCredentials(root, models === null ? {} : parseObject(models, modelsPath), true)
     }
     const config = await this.toml(join(this.authPath('grok'), '..', 'config.toml'))
     const preferredMethod =
@@ -516,15 +614,24 @@ export class AccountCredentials {
     return withPiAuthLock(this.authPath('pi'), action)
   }
 
-  async assertPiOAuthReplaceable(providerKey: string): Promise<void> {
-    const path = this.authPath('pi')
+  private async assertPiAuthFile(path: string): Promise<void> {
     const stat = await lstat(path).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') throw error
       return undefined
     })
     if (stat?.isSymbolicLink()) throw new Error('Pi 认证文件是符号链接，无法安全修改认证信息。')
-    const content = await readOptional(path)
-    assertPiOAuthReplaceable(content === null ? {} : parseObject(content, path), providerKey)
+  }
+
+  async assertPiReplaceable(providerKey: string): Promise<void> {
+    const path = this.authPath('pi')
+    await this.assertPiAuthFile(path)
+    const modelsPath = join(path, '..', 'models.json')
+    const [auth, models] = await Promise.all([readOptional(path), readOptional(modelsPath)])
+    assertPiTargetSupported(
+      auth === null ? {} : parseObject(auth, path),
+      piProviders(models === null ? {} : parseObject(models, modelsPath)),
+      providerKey,
+    )
   }
 
   async deactivatePi(
@@ -532,17 +639,36 @@ export class AccountCredentials {
     expectedRevision: string,
     assertLocked: () => void,
   ): Promise<void> {
-    await this.assertPiOAuthReplaceable(providerKey)
+    await this.assertPiReplaceable(providerKey)
     const path = this.authPath('pi')
     const before = await readOptional(path)
-    if (this.revisionOf([{ path, before }]) !== expectedRevision)
+    const modelsPath = join(path, '..', 'models.json')
+    const modelsBefore = await readOptional(modelsPath)
+    const changes = [
+      { path: modelsPath, before: modelsBefore, after: modelsBefore },
+      { path, before, after: before },
+    ]
+    if (this.revisionOf(changes) !== expectedRevision)
       throw new Error('当前 Pi 登录已变化，请刷新后重试。')
     const root = before === null ? {} : parseObject(before, path)
-    if (object(root[providerKey]).type !== 'oauth')
+    const modelsRoot = modelsBefore === null ? {} : parseObject(modelsBefore, modelsPath)
+    const providers = piProviders(modelsRoot)
+    assertPiTargetSupported(root, providers, providerKey)
+    const provider = object(providers[providerKey])
+    if (Object.hasOwn(provider, 'apiKey'))
+      throw new Error('models.json 仍有备用 Key，请先激活已导入的账号以统一凭据存储，再取消激活。')
+    if (!['oauth', 'api_key'].includes(text(object(root[providerKey]).type)))
       throw new Error('当前 Pi 登录已变化，请刷新后重试。')
     delete root[providerKey]
-    await applyAccountFiles([{ path, before, after: json(root) }], assertLocked, () =>
-      this.assertPiOAuthReplaceable(providerKey),
+    changes[1].after = json(root)
+    await applyAccountFiles(
+      changes.filter((change) => change.before !== change.after),
+      assertLocked,
+      async () => {
+        if ((await readOptional(modelsPath)) !== modelsBefore)
+          throw new Error('Pi 模型配置已变化，请刷新后重试。')
+        await this.assertPiAuthFile(path)
+      },
     )
   }
 
@@ -550,16 +676,16 @@ export class AccountCredentials {
     account: StoredAccount,
     expectedRevision?: string,
     piLock?: () => void,
-  ): Promise<() => Promise<void>> {
+  ): Promise<{ restore: () => Promise<void>; restartRequired: boolean }> {
     if (account.product === 'pi') {
       if (piLock) {
-        const restore = await this.applyUnlocked(account, piLock, expectedRevision)
-        return () => restore(piLock)
+        const applied = await this.applyUnlocked(account, piLock, expectedRevision)
+        return { ...applied, restore: () => applied.restore(piLock) }
       }
-      const restore = await this.withPiLock((assertLocked) =>
+      const applied = await this.withPiLock((assertLocked) =>
         this.applyUnlocked(account, assertLocked, expectedRevision),
       )
-      return () => this.withPiLock(restore)
+      return { ...applied, restore: () => this.withPiLock(applied.restore) }
     }
     return this.applyUnlocked(account, undefined, expectedRevision)
   }
@@ -582,7 +708,10 @@ export class AccountCredentials {
     assertLocked?: () => void,
     expectedRevision?: string,
     authOnly = false,
-  ): Promise<(assertRestoreLocked?: () => void) => Promise<void>> {
+  ): Promise<{
+    restore: (assertRestoreLocked?: () => void) => Promise<void>
+    restartRequired: boolean
+  }> {
     const { product } = account
     const { auth } = unwrapCredential(account.auth)
     const path = this.authPath(product)
@@ -632,8 +761,52 @@ export class AccountCredentials {
       }
       changes.push({ path, before, after: json({ ...root, env }) })
     } else if (product === 'pi') {
-      if (account.providerKey === 'openai') await this.assertPiOAuthReplaceable(account.providerKey)
-      const { entry } = unwrapPiAuth(auth, account.providerKey)
+      await this.assertPiAuthFile(path)
+      const normalized = unwrapCredential(
+        normalizeCredential('pi', account.auth, account.providerKey).auth,
+      )
+      const { entry } = unwrapPiAuth(normalized.auth, account.providerKey)
+      const modelsPath = join(path, '..', 'models.json')
+      const stat = await lstat(modelsPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error
+        return undefined
+      })
+      if (stat?.isSymbolicLink()) throw new Error('Pi 模型配置是符号链接，无法安全修改。')
+      const modelsBefore = await readOptional(modelsPath)
+      const modelsRoot = modelsBefore === null ? {} : parseObject(modelsBefore, modelsPath)
+      const providers = piProviders(modelsRoot)
+      assertPiTargetSupported(root, providers, account.providerKey)
+      const existing = providers[account.providerKey]
+      let modelsAfter = modelsBefore
+      if (
+        !authOnly &&
+        (account.accountType === 'relay' || PI_DEFAULT_URLS.has(account.providerKey))
+      ) {
+        if (existing !== undefined) piProviderConfig(existing, account.providerKey)
+        const fallbackKey = object(existing).apiKey
+        if (
+          fallbackKey !== undefined &&
+          root[account.providerKey] !== undefined &&
+          (object(root[account.providerKey]).type !== 'api_key' ||
+            object(root[account.providerKey]).key !== fallbackKey)
+        )
+          throw new Error(
+            'models.json 的备用 Key 与当前凭据不一致，请先在 Pi 中确认，Cota 不会删除该凭据。',
+          )
+        const targetConfig = savedPiConfig(normalized.auth, account.providerKey)
+        if (stablePiConfig(existing ?? {}) !== stablePiConfig(targetConfig)) {
+          if (
+            existing !== undefined &&
+            root[account.providerKey] === undefined &&
+            object(existing).apiKey === undefined
+          )
+            throw new Error('现有 Pi Provider 配置尚未绑定可导入的凭据，请先在 Pi 中确认后再切换。')
+          if (Object.keys(targetConfig).length) providers[account.providerKey] = targetConfig
+          else delete providers[account.providerKey]
+          modelsAfter = json({ ...modelsRoot, providers })
+        }
+      }
+      changes.push({ path: modelsPath, before: modelsBefore, after: modelsAfter })
       changes.push({
         path,
         before,
@@ -686,21 +859,38 @@ export class AccountCredentials {
     }
     if (expectedRevision && this.revisionOf(changes) !== expectedRevision)
       throw new Error('当前 CLI 登录已变化，请刷新并重新确认切换。')
-    const written = authOnly ? changes.filter((change) => change.path === path) : changes
+    const written = (authOnly ? changes.filter((change) => change.path === path) : changes).filter(
+      (change) => change.before !== change.after,
+    )
     const verifyBeforeWrite =
       authOnly && expectedRevision
         ? async () => {
             if ((await this.revision(product)) !== expectedRevision)
               throw new Error('当前 CLI 登录已变化，请刷新并重新确认切换。')
           }
-        : undefined
+        : product === 'pi'
+          ? async () => {
+              const modelChange = changes.find((change) => change.path !== path)
+              if ((await readOptional(path)) !== before)
+                throw new Error('Pi 认证文件已变化，请刷新后重试。')
+              if (modelChange) {
+                const content = await readOptional(modelChange.path)
+                if (content !== modelChange.before && content !== modelChange.after)
+                  throw new Error('Pi 模型配置已变化，请刷新后重试。')
+              }
+            }
+          : undefined
     await applyAccountFiles(written, assertLocked, verifyBeforeWrite)
-    return async (assertRestoreLocked) => {
-      const reversed: AccountFileChange[] = []
-      for (const change of written) {
-        reversed.push({ path: change.path, before: change.after, after: change.before })
-      }
-      await applyAccountFiles(reversed, assertRestoreLocked)
+    return {
+      // shortcut: running Pi can retain old routes with new credentials; coordinate runtime reload before supporting hot Provider changes.
+      restartRequired: product === 'pi' && written.some((change) => change.path !== path),
+      restore: async (assertRestoreLocked) => {
+        const reversed: AccountFileChange[] = []
+        for (const change of written) {
+          reversed.push({ path: change.path, before: change.after, after: change.before })
+        }
+        await applyAccountFiles(reversed, assertRestoreLocked)
+      },
     }
   }
 
