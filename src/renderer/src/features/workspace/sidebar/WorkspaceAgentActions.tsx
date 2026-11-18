@@ -80,7 +80,7 @@ export const WorkspaceAgentActions = memo(function WorkspaceAgentActions({
               {agentIndicatorState(tab) !== 'other' && (
                 <span
                   className={cn(
-                    'project-item-agent-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2',
+                    'project-item-agent-status pointer-events-none absolute right-0 bottom-0 inline-flex translate-x-1/2 translate-y-1/2 rounded-full p-px [&_.dot-status]:size-2',
                     agentActive ? 'bg-background' : 'bg-muted',
                   )}
                 >

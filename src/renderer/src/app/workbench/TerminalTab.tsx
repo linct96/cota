@@ -69,7 +69,7 @@ export function TerminalTab({
             <TerminalIcon className="terminal-tab-icon size-3.5 shrink-0" />
           )}
           {indicatorState !== 'other' && (
-            <span className="terminal-tab-status pointer-events-none absolute -right-0.5 -bottom-0.5 inline-flex rounded-full p-px [&_.dot-status]:size-2">
+            <span className="terminal-tab-status pointer-events-none absolute right-0 bottom-0 inline-flex translate-x-1/2 translate-y-1/2 rounded-full p-px [&_.dot-status]:size-2">
               <DotStatus state={indicatorState} />
             </span>
           )}
