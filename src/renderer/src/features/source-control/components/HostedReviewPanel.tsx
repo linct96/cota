@@ -259,7 +259,7 @@ export function HostedReviewPanel({
                       {review.state === 'open' && review.head !== snapshot.context.head && (
                         <div className="hosted-review-unpushed flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/60 px-2 py-2 text-muted-foreground">
                           <span className="hosted-review-unpushed-text min-w-0 flex-1 basis-40">
-                            本地 HEAD 与评审版本不同，请先推送再刷新。
+                            本地提交尚未推送，请推送后刷新。
                             {!targetRef && '目标分支尚未获取，请先 Fetch 后再比较。'}
                           </span>
                           <Button
@@ -321,7 +321,7 @@ export function HostedReviewPanel({
               {merging ? ` #${merging.input.number}` : ''}？
             </AlertDialogTitle>
             <AlertDialogDescription className="hosted-review-merge-description">
-              仅合并远端已推送的提交，本地分支不变。
+              将在远端合并当前评审，本地分支不受影响。
             </AlertDialogDescription>
           </AlertDialogHeader>
           {merging && (
@@ -343,9 +343,6 @@ export function HostedReviewPanel({
                 <span className="hosted-review-merge-target min-w-0 break-all font-mono [unicode-bidi:plaintext]">
                   {merging.input.targetBranch}
                 </span>
-              </p>
-              <p className="hosted-review-merge-policy text-muted-foreground">
-                远端来源分支可能按仓库设置自动删除。
               </p>
             </div>
           )}

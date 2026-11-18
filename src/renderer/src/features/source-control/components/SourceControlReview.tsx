@@ -302,9 +302,11 @@ export function CommitHistoryContent({
                     <EmptyTitle className="source-control-history-empty-title">
                       {base ? '暂无提交差异' : '暂无提交'}
                     </EmptyTitle>
-                    <EmptyDescription className="source-control-history-empty-description">
-                      {base ? '当前比较范围内没有新增提交。' : '完成首次提交后，历史会显示在这里。'}
-                    </EmptyDescription>
+                    {base && (
+                      <EmptyDescription className="source-control-history-empty-description">
+                        当前比较范围内没有新增提交。
+                      </EmptyDescription>
+                    )}
                   </EmptyHeader>
                 </Empty>
               )}

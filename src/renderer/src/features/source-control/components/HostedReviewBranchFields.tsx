@@ -37,6 +37,12 @@ export function HostedReviewBranchFields({
               label: remote ? `${remote}/${branch.name}` : branch.name,
               date: branch.date,
             }))
+            const statusMessage =
+              !creation && !initializing
+                ? '远端分支读取失败，请重试。'
+                : creation && !branches.length
+                  ? '暂无远端分支，请先推送后重新打开。'
+                  : undefined
             return (
               <Field
                 className={`create-hosted-review-${name}-field`}
@@ -64,7 +70,11 @@ export function HostedReviewBranchFields({
                     onBlur: field.handleBlur,
                     'aria-label': fieldLabel,
                     'aria-invalid': invalid,
-                    'aria-describedby': `review-${name}-${invalid ? 'error' : 'description'}`,
+                    'aria-describedby': invalid
+                      ? `review-${name}-error`
+                      : statusMessage
+                        ? `review-${name}-description`
+                        : undefined,
                   }}
                   onValueChange={(branch) => {
                     if (branch === null || branch.value === field.state.value) return
@@ -72,31 +82,29 @@ export function HostedReviewBranchFields({
                     branchChanged()
                   }}
                 />
-                <div className={`create-hosted-review-${name}-feedback grid`}>
-                  <FieldDescription
-                    id={`review-${name}-description`}
-                    className={cn(
-                      `create-hosted-review-${name}-description col-start-1 row-start-1`,
-                      invalid && 'invisible',
+                {(statusMessage || invalid) && (
+                  <div className={`create-hosted-review-${name}-feedback grid`}>
+                    {statusMessage && (
+                      <FieldDescription
+                        id={`review-${name}-description`}
+                        className={cn(
+                          `create-hosted-review-${name}-description col-start-1 row-start-1`,
+                          invalid && 'invisible',
+                        )}
+                        aria-hidden={invalid}
+                      >
+                        {statusMessage}
+                      </FieldDescription>
                     )}
-                    aria-hidden={invalid}
-                  >
-                    {!creation && !initializing
-                      ? '远端分支读取失败，请重试。'
-                      : creation && !branches.length
-                        ? '暂无远端分支，请先推送后重新打开。'
-                        : name === 'sourceBranch'
-                          ? '选择要合并的远端分支。'
-                          : '选择接收改动的远端分支。'}
-                  </FieldDescription>
-                  {invalid && (
-                    <FieldError
-                      id={`review-${name}-error`}
-                      className={`create-hosted-review-${name}-error col-start-1 row-start-1`}
-                      errors={field.state.meta.errors}
-                    />
-                  )}
-                </div>
+                    {invalid && (
+                      <FieldError
+                        id={`review-${name}-error`}
+                        className={`create-hosted-review-${name}-error col-start-1 row-start-1`}
+                        errors={field.state.meta.errors}
+                      />
+                    )}
+                  </div>
+                )}
               </Field>
             )
           }}

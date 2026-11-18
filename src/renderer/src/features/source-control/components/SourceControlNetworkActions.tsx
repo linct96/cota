@@ -150,7 +150,7 @@ export function SourceControlNetworkActions({
                           ? '请先解决现有合并冲突。'
                           : mergePending
                             ? '请先完成当前合并提交，再拉取。'
-                            : '从上游拉取，仅允许快进，不自动 stash；本地更改可能被覆盖时由 Git 拒绝合并。'
+                            : '从上游拉取（仅快进）'
                       }
                       onClick={() => void remoteAction('pull')}
                     >

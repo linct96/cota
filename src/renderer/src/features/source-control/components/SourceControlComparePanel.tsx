@@ -11,7 +11,7 @@ import { ComparisonCommits, ReviewFiles } from './SourceControlReview'
 import { LoadingContent } from '@/components/LoadingContent'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Field } from '@/components/ui/field'
 import { SourceControlSectionLayout } from './SourceControlSection'
 
@@ -202,7 +202,7 @@ export function SourceControlComparePanel({
           {remote && fetchError && (
             <Alert variant="destructive" className="source-control-compare-fetch-error">
               <AlertDescription className="source-control-compare-fetch-error-detail whitespace-pre-wrap break-words select-text">
-                获取远端分支失败，比较将使用本地缓存，可能不是最新结果。请点击分支右侧的刷新按钮重试。
+                获取远端分支失败，当前使用本地缓存对比。
                 {'\n'}
                 {fetchError}
               </AlertDescription>
@@ -238,9 +238,6 @@ export function SourceControlComparePanel({
                       <EmptyTitle className="source-control-comparison-empty-title">
                         无文件差异
                       </EmptyTitle>
-                      <EmptyDescription className="source-control-comparison-empty-description">
-                        当前分支与比较目标之间没有文件差异。
-                      </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
                 )}

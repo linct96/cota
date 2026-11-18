@@ -8,7 +8,7 @@ import { buildGitChangeTree } from '@/features/source-control/lib/source-control
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { SourceControlFileStats } from './SourceControlFileStats'
 import { SourceFileExplorer } from './SourceFileExplorer'
 import { FileTreeActions, FileTreeFile } from '@/components/ui/file-tree'
@@ -79,7 +79,7 @@ export function SourceControlFileGroups({
           size="sm"
           className="source-control-stage-all"
           disabled={disabled || !stageable.length}
-          title="暂存所有未暂存和未跟踪文件，不含冲突文件与子模块"
+          title="暂存所有更改"
           onClick={() => filesAction('stage', stageable)}
         >
           <Plus className="source-control-stage-all-icon" data-icon="inline-start" />
@@ -94,9 +94,6 @@ export function SourceControlFileGroups({
                 <Check className="source-control-clean-icon" />
               </EmptyMedia>
               <EmptyTitle className="source-control-clean-title">工作区干净</EmptyTitle>
-              <EmptyDescription className="source-control-clean-description">
-                没有未提交的更改。
-              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}

@@ -27,7 +27,13 @@ export function HostedReviewDetailsFields({
                 field.handleChange(event.target.value)
               },
               'aria-invalid': invalid,
-              'aria-describedby': `review-${name}-description${invalid ? ` review-${name}-error` : ''}`,
+              'aria-describedby':
+                [
+                  name === 'description' && `review-${name}-description`,
+                  invalid && `review-${name}-error`,
+                ]
+                  .filter(Boolean)
+                  .join(' ') || undefined,
             }
             return (
               <Field
@@ -47,12 +53,14 @@ export function HostedReviewDetailsFields({
                 ) : (
                   <Input {...props} className="create-hosted-review-title-input" maxLength={240} />
                 )}
-                <FieldDescription
-                  id={`review-${name}-description`}
-                  className={`create-hosted-review-${name}-description`}
-                >
-                  {name === 'title' ? '简要说明本次改动。' : '可选，支持 Markdown。'}
-                </FieldDescription>
+                {name === 'description' && (
+                  <FieldDescription
+                    id={`review-${name}-description`}
+                    className={`create-hosted-review-${name}-description`}
+                  >
+                    支持 Markdown
+                  </FieldDescription>
+                )}
                 {invalid && (
                   <FieldError
                     id={`review-${name}-error`}

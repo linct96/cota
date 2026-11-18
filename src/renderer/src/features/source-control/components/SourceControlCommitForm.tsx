@@ -143,9 +143,7 @@ export function SourceControlCommitForm({
             {hasConflicts ? '合并存在冲突' : '合并待提交'}
           </AlertTitle>
           <AlertDescription className="source-control-merge-status-description">
-            {hasConflicts
-              ? '请在编辑器中解决冲突并暂存，然后完成合并。'
-              : '请审阅合并结果并完成合并提交，再同步。'}
+            {hasConflicts ? '解决冲突并暂存后提交以完成合并。' : '审阅后提交以完成合并。'}
           </AlertDescription>
         </Alert>
       )}
@@ -175,7 +173,14 @@ export function SourceControlCommitForm({
                     maxLength={20000}
                     value={field.state.value}
                     aria-invalid={invalid}
-                    aria-describedby={`commit-description-${workspace.id}${invalid ? ` commit-error-${workspace.id}` : ''}`}
+                    aria-describedby={
+                      [
+                        generation.state !== 'idle' && `commit-description-${workspace.id}`,
+                        invalid && `commit-error-${workspace.id}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                    }
                     disabled={pending}
                     onBlur={field.handleBlur}
                     onChange={(event) => {
@@ -183,20 +188,18 @@ export function SourceControlCommitForm({
                       update(workspace.id, { draft: event.target.value })
                     }}
                   />
-                  <FieldDescription
-                    id={`commit-description-${workspace.id}`}
-                    className="source-control-commit-description"
-                    aria-live="polite"
-                    aria-atomic="true"
-                  >
-                    {generation.state === 'running'
-                      ? '正在使用 Pi 生成提交信息…'
-                      : generation.state === 'stopping'
-                        ? '正在停止生成…'
-                        : status?.merge
-                          ? '完成当前合并提交；未暂存的更改不会提交。'
-                          : '仅提交已暂存的更改。'}
-                  </FieldDescription>
+                  {generation.state !== 'idle' && (
+                    <FieldDescription
+                      id={`commit-description-${workspace.id}`}
+                      className="source-control-commit-description"
+                      aria-live="polite"
+                      aria-atomic="true"
+                    >
+                      {generation.state === 'running'
+                        ? '正在使用 Pi 生成提交信息…'
+                        : '正在停止生成…'}
+                    </FieldDescription>
+                  )}
                   {invalid && (
                     <FieldError
                       id={`commit-error-${workspace.id}`}

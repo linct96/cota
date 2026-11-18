@@ -126,8 +126,7 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
                 (creation && sourceBranch && targetBranch && !branchesAvailable)) && (
                 <Alert variant="destructive" className="create-hosted-review-branches-error">
                   <AlertDescription className="create-hosted-review-branches-error-description">
-                    {branchError ||
-                      '所选分支已不在远端分支列表中，请重新选择或刷新；已保留表单输入。'}
+                    {branchError || '所选分支在远端已不存在，请重新选择或刷新。'}
                   </AlertDescription>
                 </Alert>
               )}
