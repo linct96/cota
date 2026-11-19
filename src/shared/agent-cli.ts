@@ -96,6 +96,7 @@ export interface AgentCliInstallRun {
   provider: AgentProvider
   status: 'running' | 'succeeded' | 'failed' | 'not-installed'
   error?: string
+  canCancel?: boolean
 }
 
 export interface AgentCliInstallEvent {
@@ -103,6 +104,7 @@ export interface AgentCliInstallEvent {
   revision: number
   attachmentId?: string
   data?: string
+  removed?: true
 }
 
 export interface AgentCliInstallTerminal {

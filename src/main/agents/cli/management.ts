@@ -20,7 +20,8 @@ import {
   resolveCommand,
 } from '../../system/shell'
 import { detectAgentInstallation } from './installation'
-import type { ExecuteCliInstall } from './install-terminal'
+import { AgentCliUpdateInterruptedError } from './update-command'
+import type { ExecuteCliInstall } from './update-command'
 
 export class AgentCliManagement {
   private installing = new Set<AgentProvider>()
@@ -360,6 +361,7 @@ export class AgentCliManagement {
           const command = await resolveCommand(executable, ['update'], env)
           await assertIdle()
           const { stdout, stderr } = await execute(command).catch((cause: unknown) => {
+            if (cause instanceof AgentCliUpdateInterruptedError) throw cause
             const error = cause as Error & { stderr?: string }
             throw new Error(`更新失败：${(error.stderr || error.message).slice(-8000)}`)
           })

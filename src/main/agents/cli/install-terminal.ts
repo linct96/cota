@@ -13,11 +13,8 @@ import type {
 } from '../../../shared/agent-cli'
 import { dimensions, terminalId } from '../../validation'
 import { stopProcessTree } from '../../system/process-tree'
-import type { resolveCommand } from '../../system/shell'
-
-export type ExecuteCliInstall = (
-  command: Awaited<ReturnType<typeof resolveCommand>>,
-) => Promise<{ stdout: string; stderr: string }>
+import { AgentCliUpdateInterruptedError } from './update-command'
+import type { ExecuteCliInstall } from './update-command'
 
 interface Job {
   run: AgentCliInstallRun
@@ -33,6 +30,8 @@ interface Job {
   stop?: () => Promise<void>
   attachmentId?: string
   cancelled: boolean
+  cancelRequested?: true
+  removed?: true
   done: Promise<unknown>
 }
 
@@ -53,13 +52,10 @@ export class AgentCliInstallTerminals {
   async run(
     provider: AgentProvider,
     operation: (execute: ExecuteCliInstall) => Promise<AgentCliInstallResult>,
-  ): Promise<AgentCliInstallResult> {
+  ): Promise<AgentCliInstallResult | undefined> {
     const previous = this.jobs.get(provider)
     if (previous?.run.status === 'running') throw new Error('该 CLI 正在更新，请等待完成。')
-    if (previous) {
-      this.resetAttachment(previous)
-      previous.screen.write('', () => previous.screen.dispose())
-    }
+    if (previous) this.disposeJob(previous)
     const screen = new Terminal({
       cols: 100,
       rows: 28,
@@ -69,7 +65,7 @@ export class AgentCliInstallTerminals {
     const serializer = new SerializeAddon()
     screen.loadAddon(serializer)
     const job: Job = {
-      run: { id: randomUUID(), provider, status: 'running' },
+      run: { id: randomUUID(), provider, status: 'running', canCancel: true },
       screen,
       serializer,
       revision: 0,
@@ -89,6 +85,7 @@ export class AgentCliInstallTerminals {
     const done = (async () => {
       try {
         const result = await operation((command) => this.execute(job, command))
+        if (job.cancelRequested) return
         job.run.status = result.status.executable ? 'succeeded' : 'not-installed'
         this.append(
           job,
@@ -98,16 +95,48 @@ export class AgentCliInstallTerminals {
         )
         return result
       } catch (error) {
+        if (job.cancelRequested && error instanceof AgentCliUpdateInterruptedError) return
         job.run.status = 'failed'
         job.run.error = error instanceof Error ? error.message : String(error)
         this.append(job, `\r\n${job.run.error}\r\n`)
         throw error
       } finally {
-        this.publish({ run: { ...job.run }, revision: job.revision })
+        job.run.canCancel = false
+        if (job.cancelRequested && job.run.status === 'running') this.removeJob(job)
+        else this.publish({ run: { ...job.run }, revision: job.revision })
       }
     })()
     job.done = done
     return done
+  }
+
+  async cancel(provider: AgentProvider, id: string): Promise<void> {
+    const job = this.jobs.get(provider)
+    if (job?.run.id !== id || !job.run.canCancel)
+      throw new Error('当前更新已进入收尾阶段或已结束，无法中止。')
+    job.cancelled = true
+    job.cancelRequested = true
+    await job.stop?.()
+    await job.done
+  }
+
+  dismiss(provider: AgentProvider, id: string): void {
+    const job = this.jobs.get(provider)
+    if (job?.run.id !== id || job.run.status === 'running')
+      throw new Error('此更新日志已失效或更新尚未结束。')
+    this.removeJob(job)
+  }
+
+  private removeJob(job: Job): void {
+    job.removed = true
+    this.jobs.delete(job.run.provider)
+    this.disposeJob(job)
+    this.publish({ run: { ...job.run }, revision: job.revision, removed: true })
+  }
+
+  private disposeJob(job: Job): void {
+    this.resetAttachment(job)
+    job.screen.write('', () => job.screen.dispose())
   }
 
   async snapshot(
@@ -122,7 +151,9 @@ export class AgentCliInstallTerminals {
       job.screen.write('', () => {
         if (this.jobs.get(provider) !== job) {
           resolve(
-            epoch === this.attachmentEpoch ? this.snapshot(provider, attachmentId) : undefined,
+            !job.removed && epoch === this.attachmentEpoch
+              ? this.snapshot(provider, attachmentId)
+              : undefined,
           )
           return
         }
@@ -250,11 +281,16 @@ export class AgentCliInstallTerminals {
     })
   }
 
+  private markFinishing(job: Job): void {
+    job.run.canCancel = false
+    this.publish({ run: { ...job.run }, revision: job.revision })
+  }
+
   private execute(
     job: Job,
     command: Parameters<ExecuteCliInstall>[0],
   ): ReturnType<ExecuteCliInstall> {
-    if (job.cancelled) return Promise.reject(new Error('更新已中断。'))
+    if (job.cancelled) return Promise.reject(new AgentCliUpdateInterruptedError())
     return new Promise((resolve, reject) => {
       let output = ''
       let timedOut = false
@@ -281,14 +317,17 @@ export class AgentCliInstallTerminals {
             await exitDone
             job.child = undefined
             job.stop = undefined
-            reject(new Error(timedOut ? '更新超时。' : '更新已中断。'))
+            reject(timedOut ? new Error('更新超时。') : new AgentCliUpdateInterruptedError())
           })
           .catch((error) => {
             stopping = undefined
             throw error
           }))
       const timeout = setTimeout(() => {
-        timedOut = true
+        if (!job.cancelRequested) {
+          timedOut = true
+          this.markFinishing(job)
+        }
         job.cancelled = true
         void job.stop!().catch((error) => {
           // Keep the install lock until cleanup succeeds; quitting can retry cleanup.
@@ -304,6 +343,7 @@ export class AgentCliInstallTerminals {
         data.dispose()
         exit.dispose()
         if (job.cancelled) return
+        this.markFinishing(job)
         job.child = undefined
         job.stop = undefined
         this.append(job, '\r\n命令已退出，正在检测 CLI…\r\n')

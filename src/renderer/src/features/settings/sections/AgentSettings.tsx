@@ -121,13 +121,14 @@ export function AgentSettings() {
   useEffect(() => {
     let disposed = false
     const received = new Set<AgentProvider>()
-    const unsubscribe = window.desktop.onAgentCliInstall(({ run, data }) => {
+    const unsubscribe = window.desktop.onAgentCliInstall(({ run, data, removed }) => {
       if (data !== undefined) return
       received.add(run.provider)
-      setInstallRuns((current) => [
-        ...current.filter((item) => item.provider !== run.provider),
-        run,
-      ])
+      setInstallRuns((current) =>
+        removed
+          ? current.filter((item) => item.id !== run.id)
+          : [...current.filter((item) => item.provider !== run.provider), run],
+      )
     })
     void window.desktop
       .listAgentCliInstalls()
@@ -250,7 +251,7 @@ export function AgentSettings() {
           智能体
         </h1>
         <p className="agent-settings-subtitle text-xs text-muted-foreground">
-          检测本机已安装的 Coding Agent CLI 工具，并管理终端状态感知集成。
+          管理 Coding Agent CLI 工具、终端状态集成与账号额度同步。
         </p>
       </header>
       <LoadingContent pending={!cache && !cacheError} label="智能体配置读取中..." showLabel>

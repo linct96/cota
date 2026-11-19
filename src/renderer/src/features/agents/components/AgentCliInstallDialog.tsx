@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { XIcon } from 'lucide-react'
 import { Terminal } from '@xterm/xterm'
 import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
 import type { AgentProvider } from '../../../../../shared/contracts'
@@ -16,6 +17,7 @@ import { installTerminalWheel } from '@/features/terminal/lib/terminal-wheel'
 import { observeDocumentTheme } from '@/lib/theme'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -116,8 +118,9 @@ function AgentCliInstallTerminal({
     const observer = new ResizeObserver(fitTerminal)
     observer.observe(container)
     const apply = (event: AgentCliInstallEvent) => {
-      if (event.run.id !== current?.id) return
-      if (current.status !== event.run.status) setRun(event.run)
+      if (event.removed || event.run.id !== current?.id) return
+      if (current.status !== event.run.status || current.canCancel !== event.run.canCancel)
+        setRun(event.run)
       current = event.run
       terminal.options.disableStdin = current.status !== 'running'
       if (event.data !== undefined && event.revision > revision) {
@@ -209,23 +212,61 @@ export function AgentCliInstallDialog({
 }) {
   const [run, setRun] = useState<AgentCliInstallRun>()
   const [error, setError] = useState<string>()
+  const [pending, setPending] = useState(false)
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const running = run?.status === 'running'
+
+  async function finish() {
+    if (!run || pending) return
+    setPending(true)
+    setError(undefined)
+    try {
+      unwrap(
+        await (running
+          ? window.desktop.cancelAgentCliUpdate(provider, run.id)
+          : window.desktop.dismissAgentCliInstallLog(provider, run.id)),
+      )
+      onClose()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setPending(false)
+    }
+  }
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose()
+      onOpenChange={(next, details) => {
+        if (next) return
+        if (pending) details.cancel()
+        else onClose()
       }}
       onOpenChangeComplete={onOpenChangeComplete}
     >
       <DialogContent
         className="agent-cli-install-dialog flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-2xl"
         showCloseButton={false}
+        initialFocus={closeButton}
       >
-        <DialogHeader className="agent-cli-install-header">
+        <DialogHeader className="agent-cli-install-header pr-8">
           <DialogTitle className="agent-cli-install-title">
-            {AGENT_PROVIDERS[provider].name} 更新进度
+            {AGENT_PROVIDERS[provider].name} {run && !running ? '更新日志' : '更新进度'}
           </DialogTitle>
+          <DialogClose
+            render={
+              <Button
+                ref={closeButton}
+                className="agent-cli-install-close-dialog absolute top-2 right-2"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="关闭弹窗"
+                aria-disabled={pending}
+              />
+            }
+          >
+            <XIcon aria-hidden="true" />
+          </DialogClose>
         </DialogHeader>
         <section
           className="agent-cli-install-terminal-region terminal-screen-container h-[40vh] min-h-0 shrink overflow-hidden rounded-md border"
@@ -250,11 +291,27 @@ export function AgentCliInstallDialog({
               ? '更新失败'
               : run?.status === 'not-installed'
                 ? '未安装'
-                : '更新中…'}
+                : running
+                  ? '更新中…'
+                  : ''}
         </output>
         <DialogFooter className="agent-cli-install-footer shrink-0">
-          <Button className="agent-cli-install-close" variant="outline" onClick={onClose}>
-            关闭
+          <Button
+            className="agent-cli-install-finish"
+            variant={running ? 'destructive' : 'outline'}
+            disabled={!run || pending || (running && !run.canCancel)}
+            aria-busy={pending}
+            onClick={() => void finish()}
+          >
+            {running
+              ? pending
+                ? '正在中止…'
+                : run.canCancel
+                  ? '中止更新'
+                  : '正在完成更新…'
+              : pending
+                ? '正在关闭…'
+                : '关闭日志'}
           </Button>
         </DialogFooter>
       </DialogContent>

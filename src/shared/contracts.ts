@@ -487,7 +487,9 @@ export interface DesktopAPI {
     provider?: AgentProvider,
   ) => Promise<Result<AgentCliStatus[]>>
   openAgentCliInstallGuide: (provider: AgentProvider) => Promise<Result<void>>
-  updateAgentCli: (provider: AgentProvider) => Promise<Result<AgentCliInstallResult>>
+  updateAgentCli: (provider: AgentProvider) => Promise<Result<AgentCliInstallResult | undefined>>
+  cancelAgentCliUpdate: (provider: AgentProvider, id: string) => Promise<Result<void>>
+  dismissAgentCliInstallLog: (provider: AgentProvider, id: string) => Promise<Result<void>>
   listAgentCliInstalls: () => Promise<Result<AgentCliInstallRun[]>>
   readAgentCliInstallTerminal: (
     provider: AgentProvider,

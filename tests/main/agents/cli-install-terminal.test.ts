@@ -88,6 +88,97 @@ describe('Agent CLI update terminals', () => {
     }
   })
 
+  it('dismisses only the completed run and releases its log attachment', async () => {
+    const { installChild, progress, terminals, updating, finish } = startTerminal()
+    try {
+      const { run } = (await terminals.snapshot('codex', crypto.randomUUID()))!
+      expect(() => terminals.dismiss('codex', run.id)).toThrow('尚未结束')
+      installChild.emit('data', 'last output\r\n')
+      installChild.emit('exit', { exitCode: 0 })
+      await updating
+      expect(() => terminals.dismiss('codex', crypto.randomUUID())).toThrow('已失效')
+      const pendingSnapshot = terminals.snapshot('codex', crypto.randomUUID())
+      terminals.dismiss('codex', run.id)
+      expect(await pendingSnapshot).toBeUndefined()
+      expect(await terminals.snapshot('codex')).toBeUndefined()
+      expect(terminals.list()).toEqual([])
+      expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ removed: true }))
+    } finally {
+      await finish()
+    }
+  })
+
+  it('stops the selected process tree and drops the run only after cleanup succeeds', async () => {
+    const { installChild, progress, terminals, updating, finish } = startTerminal()
+    const stop = vi
+      .spyOn(processTree, 'stopProcessTree')
+      .mockRejectedValueOnce(new Error('cleanup failed'))
+      .mockImplementation(() => {
+        installChild.emit('exit', { exitCode: 0 })
+        return Promise.resolve()
+      })
+    try {
+      const [run] = terminals.list()
+      await expect(terminals.cancel('codex', crypto.randomUUID())).rejects.toThrow('无法中止')
+      expect(stop).not.toHaveBeenCalled()
+      await expect(terminals.cancel('codex', run.id)).rejects.toThrow('cleanup failed')
+      expect(terminals.running).toBe(true)
+      await terminals.cancel('codex', run.id)
+      expect(stop).toHaveBeenLastCalledWith(12345)
+      await expect(updating).resolves.toBeUndefined()
+      expect(terminals.running).toBe(false)
+      expect(await terminals.snapshot('codex')).toBeUndefined()
+      expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ removed: true }))
+    } finally {
+      await terminals.close()
+      await finish()
+    }
+  })
+
+  it.each([false, true])(
+    'discards an interrupted update only when cache synchronization succeeds (disk failure: %s)',
+    async (diskFailure) => {
+      const { restarted, restored } = await cliManagement()
+      if (diskFailure) vi.spyOn(restored, 'save').mockRejectedValue(new Error('disk full'))
+      const { installChild, progress, terminals } = installTerminal()
+      vi.spyOn(processTree, 'stopProcessTree').mockImplementation(() => {
+        installChild.emit('exit', { exitCode: 0 })
+        return Promise.resolve()
+      })
+      const updating = terminals.run('codex', (execute) =>
+        restarted.update('codex', DEFAULT_CONFIG.preferences, () => Promise.resolve(), execute),
+      )
+      void updating.catch(() => {})
+      try {
+        await vi.waitFor(() => expect(mocks.ptySpawn).toHaveBeenCalledOnce())
+        const [run] = terminals.list()
+        const cancelling = terminals.cancel('codex', run.id)
+        if (diskFailure) {
+          const message = '缓存同步失败：disk full'
+          await Promise.all([
+            expect(cancelling).rejects.toThrow(message),
+            expect(updating).rejects.toThrow(message),
+          ])
+          const snapshot = await terminals.snapshot('codex')
+          expect(snapshot?.run).toMatchObject({ id: run.id, status: 'failed', canCancel: false })
+          expect(snapshot?.output).toContain(message)
+          expect(progress.mock.calls.some(([event]) => event.removed)).toBe(false)
+        } else {
+          await cancelling
+          await expect(updating).resolves.toBeUndefined()
+          expect(await terminals.snapshot('codex')).toBeUndefined()
+          expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ removed: true }))
+        }
+        expect(restarted.isUpdating('codex')).toBe(false)
+        expect(terminals.running).toBe(false)
+      } finally {
+        terminals.detachAll()
+        installChild.emit('exit', { exitCode: 0 })
+        await updating.catch(() => {})
+      }
+    },
+  )
+
   it('answers terminal queries only when no renderer is attached', async () => {
     const { installChild, write, terminals, finish } = startTerminal()
     const attachment = '00000000-0000-0000-0000-000000000001'
@@ -179,7 +270,7 @@ describe('Agent CLI update terminals', () => {
         ),
       )
       installChild.emit('exit', { exitCode: 0 })
-      expect((await updating).output.length).toBe(4096)
+      expect((await updating)?.output.length).toBe(4096)
     } finally {
       await finish()
     }
@@ -404,7 +495,7 @@ describe('Agent CLI update terminals', () => {
     const missing = await terminals.run('codex', (execute) =>
       restarted.update('codex', DEFAULT_CONFIG.preferences, idle, execute),
     )
-    expect(missing.status).toEqual({ provider: 'codex' })
+    expect(missing?.status).toEqual({ provider: 'codex' })
     expect(restarted.read().entries.codex).not.toHaveProperty('executable')
     const snapshot = (await terminals.snapshot('codex'))!
     expect(snapshot.run).toMatchObject({ status: 'not-installed' })
@@ -446,7 +537,7 @@ describe('Agent CLI update terminals', () => {
     const absent = await terminals.run('codex', (execute) =>
       restarted.update('codex', DEFAULT_CONFIG.preferences, idle, execute),
     )
-    expect(absent.status).toEqual({ provider: 'codex' })
+    expect(absent?.status).toEqual({ provider: 'codex' })
     expect(mocks.ptySpawn).not.toHaveBeenCalled()
   })
 
@@ -486,7 +577,7 @@ describe('Agent CLI update terminals', () => {
         command === 'codex' ? Promise.reject(missingCodex) : findProgram(command, env),
       )
       installChild.emit('exit', { exitCode: 0 })
-      expect((await undetected).status.executable).toBeUndefined()
+      expect((await undetected)?.status).toEqual({ provider: 'codex' })
       expect((await terminals.snapshot('codex'))?.run.status).toBe('not-installed')
       expect((await terminals.snapshot('codex'))?.run.error).toBeUndefined()
       expect(mocks.ptySpawn.mock.calls.some(([executable]) => executable.endsWith('/npm'))).toBe(

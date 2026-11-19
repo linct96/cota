@@ -7,7 +7,7 @@ import { DEFAULT_CONFIG } from '../../../src/shared/contracts'
 import { agentCliCacheSchema } from '../../../src/shared/agent-cli'
 import { AgentCliCacheStore } from '../../../src/main/agents/cli/cache'
 import { AgentCliManagement } from '../../../src/main/agents/cli/management'
-import type { ExecuteCliInstall } from '../../../src/main/agents/cli/install-terminal'
+import type { ExecuteCliInstall } from '../../../src/main/agents/cli/update-command'
 import { ConfigStore } from '../../../src/main/settings/config-store'
 import { cliManagement } from './cli-install.fixture'
 

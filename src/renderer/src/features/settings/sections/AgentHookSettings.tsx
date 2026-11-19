@@ -76,8 +76,9 @@ export function AgentHookSettings({
   }, [])
 
   useEffect(() => {
-    const unsubscribe = window.desktop.onAgentCliInstall(({ run, data }) => {
-      if (data === undefined && run.status !== 'running') void detectProvider(run.provider)
+    const unsubscribe = window.desktop.onAgentCliInstall(({ run, data, removed }) => {
+      if (!removed && data === undefined && run.status !== 'running')
+        void detectProvider(run.provider)
     })
     void Promise.all(providers.map(detectProvider))
     return unsubscribe

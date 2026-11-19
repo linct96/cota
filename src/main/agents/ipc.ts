@@ -69,6 +69,12 @@ export function registerAgentsIPC(deps: {
       ),
     )
   })
+  handle('agent:cli-update-cancel', (value: unknown, id: unknown) =>
+    cliInstallTerminals.cancel(agentProvider(value), terminalId(id)),
+  )
+  handle('agent:cli-install-dismiss', (value: unknown, id: unknown) =>
+    cliInstallTerminals.dismiss(agentProvider(value), terminalId(id)),
+  )
   handle('agent:cli-install-list', () => cliInstallTerminals.list())
   handle('agent:cli-install-terminal', (value: unknown, attachment: unknown) =>
     cliInstallTerminals.snapshot(agentProvider(value), terminalId(attachment)),

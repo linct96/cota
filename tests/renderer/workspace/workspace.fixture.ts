@@ -34,6 +34,8 @@ beforeEach(() => {
     inspectAgentClis: vi.fn(),
     openAgentCliInstallGuide: vi.fn(),
     updateAgentCli: vi.fn(),
+    cancelAgentCliUpdate: vi.fn(),
+    dismissAgentCliInstallLog: vi.fn(),
     listAgentCliInstalls: vi.fn(),
     readAgentCliInstallTerminal: vi.fn(),
     detachAgentCliInstallTerminal: vi.fn(),

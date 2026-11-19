@@ -50,6 +50,10 @@ const api: DesktopAPI = {
     ipcRenderer.invoke('agent:cli-inspect', checkUpdates, provider),
   openAgentCliInstallGuide: (provider) => ipcRenderer.invoke('agent:cli-install-guide', provider),
   updateAgentCli: (provider) => ipcRenderer.invoke('agent:cli-update', provider),
+  cancelAgentCliUpdate: (provider, id) =>
+    ipcRenderer.invoke('agent:cli-update-cancel', provider, id),
+  dismissAgentCliInstallLog: (provider, id) =>
+    ipcRenderer.invoke('agent:cli-install-dismiss', provider, id),
   listAgentCliInstalls: () => ipcRenderer.invoke('agent:cli-install-list'),
   readAgentCliInstallTerminal: (provider, attachmentId) =>
     ipcRenderer.invoke('agent:cli-install-terminal', provider, attachmentId),
