@@ -2,15 +2,9 @@ import { useRef, useState } from 'react'
 import { useWorkspace } from '@/state/workspace'
 import type { Preferences } from '../../../../../shared/contracts'
 import { FileTypeIcon } from '@/features/files/components/FileTypeIcon'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card } from '@/components/ui/card'
-import { Field, FieldDescription, FieldError, FieldGroup } from '@/components/ui/field'
-import {
-  FileTree,
-  FileTreeFile,
-  FileTreeFolder,
-  FileTreeIcon,
-  FileTreeName,
-} from '@/components/ui/file-tree'
+import { FieldGroup } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
@@ -24,6 +18,38 @@ import { Switch } from '@/components/ui/switch'
 const iconThemes = [
   { value: 'default', label: '默认' },
   { value: 'material', label: 'Material Icon Theme' },
+] as const
+
+const previewItems = [
+  { path: 'src', label: 'src', directory: true, open: true },
+  { path: 'src/components', label: 'components', directory: true, open: false },
+  { path: 'src/components/Button.tsx', label: 'Button.tsx' },
+  { path: 'src/App.tsx', label: 'App.tsx' },
+  { path: 'src/styles.css', label: 'styles.css' },
+  { path: 'package.json', label: 'package.json' },
+  { path: 'README.md', label: 'README.md' },
+  { path: 'unknown.xyz', label: 'unknown.xyz' },
+] as const
+
+const ruleFields = [
+  {
+    key: 'showIgnored',
+    classPrefix: 'file-explorer-ignored',
+    id: 'file-explorer-show-ignored',
+    labelId: 'file-explorer-show-ignored-label',
+    helpId: 'file-explorer-ignored-help',
+    label: '显示 Git 忽略的文件',
+    description: '显示被 .gitignore 排除的文件，并以弱化样式标识。',
+  },
+  {
+    key: 'followSymlinks',
+    classPrefix: 'file-explorer-symlink',
+    id: 'file-explorer-follow-symlinks',
+    labelId: 'file-explorer-follow-symlinks-label',
+    helpId: 'file-explorer-symlink-help',
+    label: '跟随符号链接目录',
+    description: '仅允许展开指向当前工作区内的符号链接目录。',
+  },
 ] as const
 
 export function FileExplorerSettings() {
@@ -53,7 +79,7 @@ export function FileExplorerSettings() {
   }
   return (
     <section
-      className="file-explorer-settings flex flex-col gap-6"
+      className="file-explorer-settings flex flex-col gap-5"
       aria-labelledby="file-explorer-settings-title"
     >
       <header className="file-explorer-settings-heading flex flex-col gap-1 border-b pb-4">
@@ -67,84 +93,64 @@ export function FileExplorerSettings() {
           控制工作区文件树的过滤规则、符号链接展开行为与文件图标主题。
         </p>
       </header>
+      {error && (
+        <Alert
+          id="file-explorer-settings-error"
+          className="file-explorer-settings-error"
+          variant="destructive"
+        >
+          <AlertDescription className="file-explorer-settings-error-message">
+            {error}
+          </AlertDescription>
+        </Alert>
+      )}
       <FieldGroup className="file-explorer-settings-groups gap-6">
         <section
           className="file-explorer-settings-group flex flex-col gap-2.5"
           aria-labelledby="file-explorer-settings-group-title"
         >
-          <div className="file-explorer-settings-group-header flex flex-wrap items-center justify-between gap-3">
-            <h2
-              id="file-explorer-settings-group-title"
-              className="file-explorer-settings-group-title settings-section-title"
-            >
-              浏览规则
-            </h2>
-          </div>
+          <h2
+            id="file-explorer-settings-group-title"
+            className="file-explorer-settings-group-title settings-section-title"
+          >
+            浏览规则
+          </h2>
           <Card size="sm" className="file-explorer-settings-card gap-0 divide-y divide-border py-0">
-            <Field
-              className="file-explorer-ignored-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
-              disabled={!ready || saving}
-              data-disabled={!ready || saving}
-              aria-busy={saving}
-            >
-              <div className="file-explorer-ignored-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                <span
-                  id="file-explorer-show-ignored-label"
-                  className="file-explorer-ignored-label text-xs leading-5 font-medium text-foreground"
+            {ruleFields.map(({ key, classPrefix, id, labelId, helpId, label, description }) => (
+              <div
+                key={key}
+                className={`${classPrefix}-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3`}
+              >
+                <div
+                  className={`${classPrefix}-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5`}
                 >
-                  显示 Git 忽略的文件
-                </span>
-                <p
-                  id="file-explorer-ignored-help"
-                  className="file-explorer-ignored-description text-xs text-muted-foreground"
-                >
-                  显示被 .gitignore 排除的文件，并以弱化样式标识。
-                </p>
+                  <span
+                    id={labelId}
+                    className={`${classPrefix}-label text-xs leading-5 font-medium text-foreground`}
+                  >
+                    {label}
+                  </span>
+                  <p
+                    id={helpId}
+                    className={`${classPrefix}-description text-xs text-muted-foreground`}
+                  >
+                    {description}
+                  </p>
+                </div>
+                <Switch
+                  id={id}
+                  aria-labelledby={labelId}
+                  className={`${classPrefix}-switch`}
+                  checked={options[key]}
+                  disabled={!ready || saving}
+                  aria-busy={saving}
+                  aria-describedby={error ? `${helpId} file-explorer-settings-error` : helpId}
+                  onCheckedChange={(checked) =>
+                    void update({ fileExplorer: { ...options, [key]: checked } })
+                  }
+                />
               </div>
-              <Switch
-                id="file-explorer-show-ignored"
-                aria-labelledby="file-explorer-show-ignored-label"
-                className="file-explorer-ignored-switch"
-                checked={options.showIgnored}
-                disabled={!ready || saving}
-                aria-describedby="file-explorer-ignored-help"
-                onCheckedChange={(checked) =>
-                  void update({ fileExplorer: { ...options, showIgnored: checked } })
-                }
-              />
-            </Field>
-            <Field
-              className="file-explorer-symlink-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
-              disabled={!ready || saving}
-              data-disabled={!ready || saving}
-              aria-busy={saving}
-            >
-              <div className="file-explorer-symlink-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                <span
-                  id="file-explorer-follow-symlinks-label"
-                  className="file-explorer-symlink-label text-xs leading-5 font-medium text-foreground"
-                >
-                  跟随符号链接目录
-                </span>
-                <p
-                  id="file-explorer-symlink-help"
-                  className="file-explorer-symlink-description text-xs text-muted-foreground"
-                >
-                  仅允许展开指向当前工作区内的符号链接目录。
-                </p>
-              </div>
-              <Switch
-                id="file-explorer-follow-symlinks"
-                aria-labelledby="file-explorer-follow-symlinks-label"
-                className="file-explorer-symlink-switch"
-                checked={options.followSymlinks}
-                disabled={!ready || saving}
-                aria-describedby="file-explorer-symlink-help"
-                onCheckedChange={(checked) =>
-                  void update({ fileExplorer: { ...options, followSymlinks: checked } })
-                }
-              />
-            </Field>
+            ))}
           </Card>
         </section>
         <section
@@ -155,123 +161,79 @@ export function FileExplorerSettings() {
             id="file-explorer-appearance-title"
             className="file-explorer-appearance-title settings-section-title"
           >
-            图标与预览
+            图标
           </h2>
-          <Card size="sm" className="file-explorer-appearance-card gap-0 py-0">
-            <div className="file-explorer-appearance-layout grid grid-cols-1 divide-y divide-border md:grid-cols-[1fr_240px] md:divide-x md:divide-y-0">
-              <div className="file-explorer-appearance-content flex flex-col justify-between gap-4 p-4">
-                <Field
-                  className="file-icon-theme-field flex-col items-start gap-2.5"
-                  disabled={!ready || saving}
-                  data-disabled={!ready || saving}
-                  aria-busy={saving}
+          <Card
+            size="sm"
+            className="file-explorer-appearance-card gap-0 divide-y divide-border py-0"
+          >
+            <div className="file-icon-theme-row flex min-h-7 w-full min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
+              <div className="file-icon-theme-text flex min-w-0 max-w-3/5 flex-1 basis-64 flex-col gap-0.5">
+                <span
+                  id="file-icon-theme-label"
+                  className="file-icon-theme-label text-xs leading-5 font-medium text-foreground"
                 >
-                  <div className="file-icon-theme-text flex min-w-0 flex-col gap-0.5">
-                    <span
-                      id="file-icon-theme-label"
-                      className="file-icon-theme-label text-xs leading-5 font-medium text-foreground"
-                    >
-                      文件图标主题
-                    </span>
-                    <FieldDescription
-                      id="file-icon-theme-help"
-                      className="file-icon-theme-description"
-                    >
-                      统一设置文件浏览器、Git 变更与文件预览中的文件和文件夹图标。
-                    </FieldDescription>
-                  </div>
-                  <Select
-                    items={iconThemes}
-                    value={iconTheme}
-                    disabled={!ready || saving}
-                    onValueChange={(value) => {
-                      if (value && value !== iconTheme) void update({ fileIconTheme: value })
-                    }}
-                  >
-                    <SelectTrigger
-                      className="file-icon-theme-select min-w-0 max-w-full"
-                      aria-labelledby="file-icon-theme-label"
-                      aria-describedby={
-                        error
-                          ? 'file-icon-theme-help file-explorer-settings-error'
-                          : 'file-icon-theme-help'
-                      }
-                    >
-                      <SelectValue className="file-icon-theme-value min-w-0 truncate" />
-                    </SelectTrigger>
-                    <SelectContent className="file-icon-theme-options max-h-[min(16rem,var(--available-height))]">
-                      <SelectGroup className="file-icon-theme-options-group">
-                        {iconThemes.map(({ value, label }) => (
-                          <SelectItem className="file-icon-theme-option" key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <div className="file-icon-theme-preview-content flex flex-col gap-2 bg-muted/25 p-3">
+                  文件图标主题
+                </span>
                 <p
-                  id="file-icon-theme-preview-label"
-                  className="file-icon-theme-preview-label px-1 text-xs font-medium text-muted-foreground"
+                  id="file-icon-theme-help"
+                  className="file-icon-theme-description text-xs text-muted-foreground"
                 >
-                  实时预览
+                  统一设置文件浏览器、Git 变更与文件预览中的文件和文件夹图标。
                 </p>
-                <FileTree
-                  className="file-icon-theme-preview"
-                  aria-labelledby="file-icon-theme-preview-label"
-                >
-                  <FileTreeFolder
-                    path="src"
-                    name="src"
-                    defaultOpen
-                    icon={(open) => <FileTypeIcon path="src" directory open={open} />}
-                  >
-                    <FileTreeFolder
-                      path="src/components"
-                      name="components"
-                      icon={(open) => <FileTypeIcon path="src/components" directory open={open} />}
-                    >
-                      <FileTreeFile
-                        path="src/components/Button.tsx"
-                        className="file-icon-theme-preview-file"
-                      >
-                        <FileTreeIcon>
-                          <FileTypeIcon path="src/components/Button.tsx" />
-                        </FileTreeIcon>
-                        <FileTreeName className="file-explorer-entry-name">Button.tsx</FileTreeName>
-                      </FileTreeFile>
-                    </FileTreeFolder>
-                    {['App.tsx', 'styles.css'].map((name) => (
-                      <FileTreeFile
-                        key={name}
-                        path={`src/${name}`}
-                        className="file-icon-theme-preview-file"
-                      >
-                        <FileTreeIcon>
-                          <FileTypeIcon path={`src/${name}`} />
-                        </FileTreeIcon>
-                        <FileTreeName className="file-explorer-entry-name">{name}</FileTreeName>
-                      </FileTreeFile>
-                    ))}
-                  </FileTreeFolder>
-                  {['package.json', 'README.md', 'unknown.xyz'].map((name) => (
-                    <FileTreeFile key={name} path={name} className="file-icon-theme-preview-file">
-                      <FileTreeIcon>
-                        <FileTypeIcon path={name} />
-                      </FileTreeIcon>
-                      <FileTreeName className="file-explorer-entry-name">{name}</FileTreeName>
-                    </FileTreeFile>
-                  ))}
-                </FileTree>
               </div>
+              <Select
+                items={iconThemes}
+                value={iconTheme}
+                disabled={!ready || saving}
+                onValueChange={(value) => {
+                  if (value && value !== iconTheme) void update({ fileIconTheme: value })
+                }}
+              >
+                <SelectTrigger
+                  id="file-icon-theme"
+                  className="file-icon-theme-select min-w-0 max-w-full"
+                  aria-labelledby="file-icon-theme-label"
+                  aria-busy={saving}
+                  aria-describedby={
+                    error
+                      ? 'file-icon-theme-help file-explorer-settings-error'
+                      : 'file-icon-theme-help'
+                  }
+                >
+                  <SelectValue className="file-icon-theme-value min-w-0 truncate" />
+                </SelectTrigger>
+                <SelectContent className="file-icon-theme-options max-h-[min(16rem,var(--available-height))]">
+                  <SelectGroup className="file-icon-theme-options-group">
+                    {iconThemes.map(({ value, label }) => (
+                      <SelectItem className="file-icon-theme-option" key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
             </div>
+            <ul
+              className="file-icon-theme-preview grid grid-cols-2 gap-x-4 gap-y-2 bg-muted/25 px-4 py-3 sm:grid-cols-4"
+              aria-label="文件图标主题预览"
+            >
+              {previewItems.map((item) => (
+                <li
+                  key={item.path}
+                  className="file-icon-theme-preview-item flex min-w-0 items-center gap-2 text-xs"
+                >
+                  <FileTypeIcon
+                    path={item.path}
+                    directory={'directory' in item ? item.directory : false}
+                    open={'open' in item ? item.open : false}
+                  />
+                  <span className="file-explorer-entry-name min-w-0 truncate">{item.label}</span>
+                </li>
+              ))}
+            </ul>
           </Card>
         </section>
-        <FieldError id="file-explorer-settings-error" className="file-explorer-settings-error">
-          {error}
-        </FieldError>
       </FieldGroup>
     </section>
   )
