@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
+import { Card } from '@/components/ui/card'
 import { StableCellFitAddon } from '@/features/terminal/lib/terminal-stable-cell-fit-addon'
 import { installTerminalPreviewInput } from '@/features/terminal/lib/terminal-preview-input'
 import {
@@ -83,13 +84,12 @@ export function TerminalAppearancePreview({ settings }: { settings: TerminalAppe
   }, [])
   useEffect(() => apply.current(settings), [settings])
   return (
-    <section
-      className="terminal-appearance-preview"
+    <Card
+      size="sm"
+      className="terminal-appearance-preview gap-0 py-0 focus-within:ring-2 focus-within:ring-ring/50"
       aria-label="终端外观预览：包含 Git Diff、中英文、粗体、斜体、弱化文字、字体连字、易混淆字符、ANSI 十六色和光标示例"
     >
-      <div className="terminal-appearance-preview-frame h-42 overflow-hidden rounded-lg border focus-within:ring-2 focus-within:ring-ring/50">
-        <div ref={host} className="terminal-appearance-preview-screen terminal-screen h-full" />
-      </div>
-    </section>
+      <div ref={host} className="terminal-appearance-preview-screen terminal-screen h-42" />
+    </Card>
   )
 }

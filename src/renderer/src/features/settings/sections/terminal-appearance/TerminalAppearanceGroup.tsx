@@ -1,152 +1,174 @@
-import { cn } from '@/lib/utils'
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
 import { Card } from '@/components/ui/card'
-import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
 import { BACKGROUND_NUMBER_FIELDS, ENUM_FIELDS, NUMBER_FIELDS, SWITCH_FIELDS } from './fields'
 import type { AppearanceGroup } from './fields'
+import { TerminalSettingRow } from './TerminalSettingRow'
 import { TerminalTypographyFields } from './TerminalTypographyFields'
 import { TerminalThemeFields } from './TerminalThemeFields'
 
 type NumberFieldSpec = (typeof NUMBER_FIELDS)[number] | (typeof BACKGROUND_NUMBER_FIELDS)[number]
 
+function formatFieldError(errors: ({ message?: string } | undefined)[]): string | undefined {
+  const messages = [...new Set(errors.map((error) => error?.message).filter(Boolean))]
+  return messages.length ? messages.join(' ') : undefined
+}
+
+function toKebabCase(name: string): string {
+  return name.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)
+}
+
 export function TerminalAppearanceGroup({
   group,
   form,
   values,
+  ready,
+  saving,
 }: {
   group: AppearanceGroup
   form: TerminalAppearanceForm
   values: TerminalAppearance
+  ready: boolean
+  saving: boolean
 }) {
-  const isGridNumberGroup = group.name === 'typography'
-  const renderNumberField = ({ name, label, min, max, step }: NumberFieldSpec, grid: boolean) => (
-    <form.Field key={name} name={name}>
-      {(field) => {
-        const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-        return (
-          <Field
-            className={cn(
-              'terminal-appearance-number-field',
-              grid
-                ? 'gap-1.5'
-                : 'min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3',
-            )}
-            data-invalid={invalid}
-          >
-            <FieldLabel
-              htmlFor={`terminal-${name}`}
-              className={cn(
-                'terminal-appearance-number-label inline-block text-xs leading-5 font-medium text-foreground',
-                !grid && 'min-w-0 flex-1 basis-64',
-              )}
-            >
-              {label}
-              <span
-                id={`terminal-${name}-help`}
-                className="terminal-appearance-number-range ml-1 text-xs font-normal text-muted-foreground tabular-nums"
-              >
-                ({min}–{max})
-              </span>
-            </FieldLabel>
-            <InputNumber
-              id={`terminal-${name}`}
-              className={cn(
-                'terminal-appearance-number-input font-mono tabular-nums',
-                !grid && 'w-28 max-w-full shrink-0',
-              )}
-              min={min}
-              max={max}
-              step={step}
-              value={
-                Number.isNaN(field.state.value)
-                  ? null
-                  : name === 'backgroundOpacity'
-                    ? Number((1 - field.state.value).toFixed(2))
-                    : field.state.value
-              }
-              onBlur={field.handleBlur}
-              onValueChange={(value) =>
-                field.handleChange(
-                  value === null ? NaN : name === 'backgroundOpacity' ? 1 - value : value,
+  const renderNumberField = ({ name, label, description, min, max, step }: NumberFieldSpec) => {
+    const prefix = `terminal-${toKebabCase(name)}`
+    return (
+      <form.Field key={name} name={name}>
+        {(field) => {
+          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+          const errorMessage = field.state.meta.isTouched
+            ? formatFieldError(field.state.meta.errors)
+            : undefined
+          const describedBy = errorMessage
+            ? `terminal-${name}-description terminal-${name}-error`
+            : `terminal-${name}-description`
+
+          return (
+            <TerminalSettingRow
+              className={`${prefix}-row`}
+              textClassName={`${prefix}-text`}
+              labelId={`terminal-${name}-label`}
+              label={label}
+              labelClassName={`${prefix}-label`}
+              descriptionId={`terminal-${name}-description`}
+              description={description}
+              descriptionClassName={`${prefix}-description tabular-nums`}
+              invalid={invalid}
+              error={
+                errorMessage && (
+                  <p
+                    id={`terminal-${name}-error`}
+                    className={`${prefix}-error text-xs text-destructive`}
+                    role="alert"
+                  >
+                    {errorMessage}
+                  </p>
                 )
               }
-              inputProps={{
-                'aria-invalid': invalid,
-                'aria-describedby': `terminal-${name}-help terminal-${name}-error`,
-              }}
-            />
-            <FieldError
-              id={`terminal-${name}-error`}
-              className={cn('terminal-appearance-number-error', !grid && 'basis-full')}
-              errors={field.state.meta.isTouched ? field.state.meta.errors : []}
-            />
-          </Field>
-        )
-      }}
-    </form.Field>
-  )
-  const numberFields = NUMBER_FIELDS.filter((field) => field.group === group.name).map((field) =>
-    renderNumberField(field, isGridNumberGroup),
+            >
+              <InputNumber
+                id={`terminal-${name}`}
+                className={`${prefix}-input w-28 max-w-full shrink-0 font-mono tabular-nums`}
+                min={min}
+                max={max}
+                step={step}
+                disabled={!ready}
+                value={
+                  Number.isNaN(field.state.value)
+                    ? null
+                    : name === 'backgroundOpacity'
+                      ? Number((1 - field.state.value).toFixed(2))
+                      : field.state.value
+                }
+                onBlur={field.handleBlur}
+                onValueChange={(value) =>
+                  field.handleChange(
+                    value === null ? NaN : name === 'backgroundOpacity' ? 1 - value : value,
+                  )
+                }
+                inputProps={{
+                  'aria-labelledby': `terminal-${name}-label`,
+                  'aria-busy': saving,
+                  'aria-invalid': invalid,
+                  'aria-describedby': describedBy,
+                }}
+              />
+            </TerminalSettingRow>
+          )
+        }}
+      </form.Field>
+    )
+  }
+
+  const numberFields = NUMBER_FIELDS.filter((field) => field.group === group.name).map(
+    renderNumberField,
   )
   const backgroundFields =
-    group.name === 'typography'
-      ? BACKGROUND_NUMBER_FIELDS.map((field) => renderNumberField(field, true))
-      : null
+    group.name === 'typography' ? BACKGROUND_NUMBER_FIELDS.map(renderNumberField) : null
   const choiceFields = ENUM_FIELDS.filter((field) => field.group === group.name).map(
-    ({ name, label, options }) => (
-      <form.Field key={name} name={name}>
-        {(field) => (
-          <Field className="terminal-appearance-choice-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-            <p
-              id={`terminal-${name}-label`}
-              className="terminal-appearance-choice-label min-w-0 flex-1 basis-64 text-xs leading-5 font-medium text-foreground"
+    ({ name, label, options }) => {
+      const prefix = `terminal-${toKebabCase(name)}`
+      return (
+        <form.Field key={name} name={name}>
+          {(field) => (
+            <TerminalSettingRow
+              className={`${prefix}-row`}
+              textClassName={`${prefix}-text`}
+              labelId={`terminal-${name}-label`}
+              label={label}
+              labelClassName={`${prefix}-label`}
             >
-              {label}
-            </p>
-            <ToggleGroup
-              className="terminal-appearance-choices"
-              variant="outline"
-              spacing={0}
-              value={[field.state.value]}
-              aria-labelledby={`terminal-${name}-label`}
-              onBlur={field.handleBlur}
-              onValueChange={([value]) => {
-                if (!value || !options.some(([option]) => option === value)) return
-                field.handleChange(value as typeof field.state.value)
-              }}
-            >
-              {options.map(([value, text]) => (
-                <ToggleGroupItem className="terminal-appearance-choice" key={value} value={value}>
-                  {text}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </Field>
-        )}
-      </form.Field>
-    ),
+              <ToggleGroup
+                id={`terminal-${name}`}
+                className={`${prefix}-options shrink-0`}
+                variant="outline"
+                spacing={0}
+                disabled={!ready}
+                value={[field.state.value]}
+                aria-labelledby={`terminal-${name}-label`}
+                aria-busy={saving}
+                onBlur={field.handleBlur}
+                onValueChange={([value]) => {
+                  if (!value || !options.some(([option]) => option === value)) return
+                  field.handleChange(value as typeof field.state.value)
+                }}
+              >
+                {options.map(([value, text]) => (
+                  <ToggleGroupItem className={`${prefix}-option`} key={value} value={value}>
+                    {text}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </TerminalSettingRow>
+          )}
+        </form.Field>
+      )
+    },
   )
+
   return (
     <section
       key={group.name}
       className="terminal-appearance-group flex min-w-0 flex-col gap-2.5"
       aria-labelledby={`terminal-appearance-${group.name}-title`}
     >
-      <h3
+      <h2
         id={`terminal-appearance-${group.name}-title`}
         className="terminal-appearance-group-title settings-section-title"
       >
         {group.label}
-      </h3>
+      </h2>
       <Card size="sm" className="terminal-appearance-card gap-0 divide-y divide-border py-0">
         {group.name === 'typography' ? (
           <TerminalTypographyFields
             form={form}
             values={values}
+            ready={ready}
+            saving={saving}
             numberFields={numberFields}
             backgroundFields={backgroundFields}
             choiceFields={choiceFields}
@@ -155,31 +177,36 @@ export function TerminalAppearanceGroup({
           <>
             {numberFields}
             {choiceFields}
-            {SWITCH_FIELDS.filter((field) => field.group === group.name).map(({ name, label }) => (
-              <form.Field key={name} name={name}>
-                {(field) => (
-                  <Field className="terminal-appearance-switch-field min-h-7 flex-row items-center justify-between gap-4 px-4 py-3">
-                    <div className="terminal-appearance-switch-text flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span
-                        id={`terminal-${name}-label`}
-                        className="terminal-appearance-switch-label text-xs leading-5 font-medium text-foreground"
-                      >
-                        {label}
-                      </span>
-                    </div>
-                    <Switch
-                      id={`terminal-${name}`}
-                      aria-labelledby={`terminal-${name}-label`}
-                      className="terminal-appearance-switch"
-                      checked={field.state.value}
-                      onBlur={field.handleBlur}
-                      onCheckedChange={field.handleChange}
-                    />
-                  </Field>
-                )}
-              </form.Field>
-            ))}
-            {group.name === 'theme' && <TerminalThemeFields form={form} />}
+            {SWITCH_FIELDS.filter((field) => field.group === group.name).map(({ name, label }) => {
+              const prefix = `terminal-${toKebabCase(name)}`
+              return (
+                <form.Field key={name} name={name}>
+                  {(field) => (
+                    <TerminalSettingRow
+                      className={`${prefix}-row`}
+                      textClassName={`${prefix}-text`}
+                      labelId={`terminal-${name}-label`}
+                      label={label}
+                      labelClassName={`${prefix}-label`}
+                    >
+                      <Switch
+                        id={`terminal-${name}`}
+                        aria-labelledby={`terminal-${name}-label`}
+                        aria-busy={saving}
+                        className={`${prefix}-switch`}
+                        checked={field.state.value}
+                        disabled={!ready}
+                        onBlur={field.handleBlur}
+                        onCheckedChange={field.handleChange}
+                      />
+                    </TerminalSettingRow>
+                  )}
+                </form.Field>
+              )
+            })}
+            {group.name === 'theme' && (
+              <TerminalThemeFields form={form} ready={ready} saving={saving} />
+            )}
           </>
         )}
       </Card>

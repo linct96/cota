@@ -1,19 +1,28 @@
+import type { ReactNode } from 'react'
 import type { TerminalAppearance } from '../../../../../../shared/terminal-appearance'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { InputNumber } from '@/components/ui/input-number'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
-import type { ReactNode } from 'react'
+import { TerminalSettingRow } from './TerminalSettingRow'
+
+function formatFieldError(errors: ({ message?: string } | undefined)[]): string | undefined {
+  const messages = [...new Set(errors.map((error) => error?.message).filter(Boolean))]
+  return messages.length ? messages.join(' ') : undefined
+}
 
 export function TerminalTypographyFields({
   form,
   values,
+  ready,
+  saving,
   numberFields,
   backgroundFields,
   choiceFields,
 }: {
   form: TerminalAppearanceForm
   values: TerminalAppearance
+  ready: boolean
+  saving: boolean
   numberFields: ReactNode
   backgroundFields: ReactNode
   choiceFields: ReactNode
@@ -21,33 +30,29 @@ export function TerminalTypographyFields({
   return (
     <>
       {choiceFields}
-      <FieldGroup className="terminal-appearance-numbers grid grid-cols-2 gap-3 px-4 py-3 sm:grid-cols-4">
-        {numberFields}
-      </FieldGroup>
+      {numberFields}
       <form.Field name="contrastMode">
         {(field) => (
-          <Field className="terminal-contrast-mode-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-            <div className="terminal-contrast-mode-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-              <p
-                id="terminal-contrastMode-label"
-                className="terminal-contrast-mode-label text-xs leading-5 font-medium text-foreground"
-              >
-                文字对比度
-              </p>
-              <FieldDescription
-                id="terminal-contrast-mode-description"
-                className="terminal-contrast-mode-description"
-              >
-                自动增强低对比度文字的可读性。
-              </FieldDescription>
-            </div>
+          <TerminalSettingRow
+            className="terminal-contrast-mode-row"
+            textClassName="terminal-contrast-mode-text"
+            labelId="terminal-contrastMode-label"
+            label="文字对比度"
+            labelClassName="terminal-contrast-mode-label"
+            descriptionId="terminal-contrastMode-description"
+            description="自动增强低对比度文字的可读性。"
+            descriptionClassName="terminal-contrast-mode-description"
+          >
             <ToggleGroup
+              id="terminal-contrastMode"
               className="terminal-contrast-mode-options shrink-0"
               variant="outline"
               spacing={0}
+              disabled={!ready}
               value={[field.state.value]}
               aria-labelledby="terminal-contrastMode-label"
-              aria-describedby="terminal-contrast-mode-description"
+              aria-describedby="terminal-contrastMode-description"
+              aria-busy={saving}
               onBlur={field.handleBlur}
               onValueChange={([value]) => {
                 if (value !== 'auto' && value !== 'off' && value !== 'custom') return
@@ -64,67 +69,65 @@ export function TerminalTypographyFields({
                 自定义
               </ToggleGroupItem>
             </ToggleGroup>
-          </Field>
+          </TerminalSettingRow>
         )}
       </form.Field>
       {values.contrastMode === 'custom' && (
         <form.Field name="minimumContrastRatio">
           {(field) => {
             const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+            const errorMessage = field.state.meta.isTouched
+              ? formatFieldError(field.state.meta.errors)
+              : undefined
 
             return (
-              <Field
-                className="terminal-contrast-ratio-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3"
-                data-invalid={invalid}
-              >
-                <div className="terminal-contrast-ratio-text flex min-w-0 flex-1 basis-64 flex-col gap-0.5">
-                  <FieldLabel
-                    htmlFor="terminal-minimumContrastRatio"
-                    className="terminal-contrast-ratio-label inline-block text-xs leading-5 font-medium text-foreground"
-                  >
-                    最低对比度
-                    <span
-                      id="terminal-minimumContrastRatio-help"
-                      className="terminal-contrast-ratio-range ml-1.5 text-xs font-normal text-muted-foreground tabular-nums"
+              <TerminalSettingRow
+                className="terminal-contrast-ratio-row"
+                textClassName="terminal-contrast-ratio-text"
+                labelId="terminal-minimumContrastRatio-label"
+                label="最低对比度"
+                labelClassName="terminal-contrast-ratio-label"
+                descriptionId="terminal-minimumContrastRatio-description"
+                description="范围 1–21，推荐 4.5（AA）或 7.0（AAA）。"
+                descriptionClassName="terminal-contrast-ratio-description tabular-nums"
+                invalid={invalid}
+                error={
+                  errorMessage && (
+                    <p
+                      id="terminal-minimumContrastRatio-error"
+                      className="terminal-contrast-ratio-error text-xs text-destructive"
+                      role="alert"
                     >
-                      (1–21)
-                    </span>
-                  </FieldLabel>
-                  <FieldDescription
-                    id="terminal-minimumContrastRatio-description"
-                    className="terminal-contrast-ratio-description"
-                  >
-                    推荐 4.5（AA）或 7.0（AAA）。
-                  </FieldDescription>
-                </div>
+                      {errorMessage}
+                    </p>
+                  )
+                }
+              >
                 <InputNumber
                   id="terminal-minimumContrastRatio"
                   className="terminal-contrast-ratio-input w-28 max-w-full shrink-0 font-mono tabular-nums"
                   min={1}
                   max={21}
                   step={0.1}
+                  disabled={!ready}
                   value={Number.isNaN(field.state.value) ? null : field.state.value}
                   onBlur={field.handleBlur}
                   onValueChange={(value) => field.handleChange(value ?? NaN)}
                   inputProps={{
+                    'aria-labelledby': 'terminal-minimumContrastRatio-label',
+                    'aria-busy': saving,
                     'aria-invalid': invalid,
-                    'aria-describedby':
-                      'terminal-minimumContrastRatio-help terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error',
+                    'aria-describedby': errorMessage
+                      ? 'terminal-minimumContrastRatio-description terminal-minimumContrastRatio-error'
+                      : 'terminal-minimumContrastRatio-description',
                   }}
                 />
-                <FieldError
-                  id="terminal-minimumContrastRatio-error"
-                  className="terminal-contrast-ratio-error basis-full"
-                  errors={field.state.meta.isTouched ? field.state.meta.errors : []}
-                />
-              </Field>
+              </TerminalSettingRow>
             )
           }}
         </form.Field>
       )}
-      <FieldGroup className="terminal-appearance-background-numbers grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-3">
-        {backgroundFields}
-      </FieldGroup>
+      {backgroundFields}
     </>
   )
 }

@@ -1,5 +1,4 @@
 import { TERMINAL_THEME_CATALOG } from '../../../../../../shared/terminal-themes'
-import { Field } from '@/components/ui/field'
 import {
   Select,
   SelectContent,
@@ -9,55 +8,77 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { TerminalAppearanceForm } from './use-terminal-appearance-form'
+import { TerminalSettingRow } from './TerminalSettingRow'
 
-export function TerminalThemeFields({ form }: { form: TerminalAppearanceForm }) {
+const THEME_OPTIONS = [
+  { value: 'auto', label: '跟随应用主题' },
+  ...Object.keys(TERMINAL_THEME_CATALOG)
+    .sort()
+    .map((theme) => ({ value: theme, label: theme })),
+]
+
+export function TerminalThemeFields({
+  form,
+  ready,
+  saving,
+}: {
+  form: TerminalAppearanceForm
+  ready: boolean
+  saving: boolean
+}) {
   return (
     <>
-      {(['themeDark', 'themeLight'] as const).map((name) => (
-        <form.Field key={name} name={name}>
-          {(field) => (
-            <Field className="terminal-theme-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
-              <span
-                id={`terminal-${name}-label`}
-                className="terminal-theme-label text-xs leading-5 font-medium text-foreground"
+      {(['themeDark', 'themeLight'] as const).map((name) => {
+        const prefix = name === 'themeDark' ? 'terminal-theme-dark' : 'terminal-theme-light'
+        return (
+          <form.Field key={name} name={name}>
+            {(field) => (
+              <TerminalSettingRow
+                className={`${prefix}-row`}
+                textClassName={`${prefix}-text`}
+                labelId={`terminal-${name}-label`}
+                label={name === 'themeDark' ? '深色模式主题' : '浅色模式主题'}
+                labelClassName={`${prefix}-label`}
               >
-                {name === 'themeDark' ? '深色模式主题' : '浅色模式主题'}
-              </span>
-              <Select
-                value={field.state.value}
-                onValueChange={(value) => {
-                  if (value) field.handleChange(value)
-                }}
-              >
-                <SelectTrigger
-                  id={`terminal-${name}`}
-                  aria-labelledby={`terminal-${name}-label`}
-                  className="terminal-theme-trigger min-w-0 max-w-full"
-                  onBlur={field.handleBlur}
+                <Select
+                  items={THEME_OPTIONS}
+                  value={field.state.value}
+                  disabled={!ready}
+                  onValueChange={(value) => {
+                    if (value) field.handleChange(value)
+                  }}
                 >
-                  <SelectValue className="terminal-theme-value">
-                    {field.state.value === 'auto' ? '跟随应用主题' : field.state.value}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent className="terminal-theme-content max-h-[min(16rem,var(--available-height))]">
-                  <SelectGroup className="terminal-theme-items">
-                    <SelectItem className="terminal-theme-item" value="auto">
-                      跟随应用主题
-                    </SelectItem>
-                    {Object.keys(TERMINAL_THEME_CATALOG)
-                      .sort()
-                      .map((theme) => (
-                        <SelectItem className="terminal-theme-item" key={theme} value={theme}>
-                          {theme}
+                  <SelectTrigger
+                    id={`terminal-${name}`}
+                    aria-labelledby={`terminal-${name}-label`}
+                    aria-busy={saving}
+                    className={`${prefix}-trigger min-w-0 max-w-64`}
+                    onBlur={field.handleBlur}
+                  >
+                    <SelectValue className={`${prefix}-value min-w-0 truncate`} />
+                  </SelectTrigger>
+                  <SelectContent
+                    align="end"
+                    className={`${prefix}-content max-h-[min(16rem,var(--available-height))]`}
+                  >
+                    <SelectGroup className={`${prefix}-items`}>
+                      {THEME_OPTIONS.map((option) => (
+                        <SelectItem
+                          className={`${prefix}-item`}
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
                         </SelectItem>
                       ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
-        </form.Field>
-      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </TerminalSettingRow>
+            )}
+          </form.Field>
+        )
+      })}
     </>
   )
 }
