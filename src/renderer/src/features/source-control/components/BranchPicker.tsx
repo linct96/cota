@@ -176,7 +176,7 @@ export function BranchPicker<T extends BranchOption>({
           data-icon="inline-start"
           aria-hidden="true"
         />
-        <span className="branch-picker-trigger-label min-w-0 flex-1 truncate text-left">
+        <span className="branch-picker-trigger-label min-w-0 flex-1 truncate text-left [unicode-bidi:plaintext]">
           {displayLabel}
         </span>
       </ComboboxTrigger>
@@ -208,7 +208,7 @@ export function BranchPicker<T extends BranchOption>({
                       title={branch.label}
                     >
                       <BranchIcon className="branch-picker-option-icon" aria-hidden="true" />
-                      <span className="branch-picker-option-label min-w-0 truncate">
+                      <span className="branch-picker-option-label min-w-0 truncate [unicode-bidi:plaintext]">
                         {branch.label}
                       </span>
                     </ComboboxItem>
