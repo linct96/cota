@@ -1,7 +1,11 @@
-import { GitPullRequest } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import type { HostedReview } from '../../../../../shared/code-hosting'
 import { Button } from '@/components/ui/button'
-import { HostedReviewStatus } from './HostedReviewStatus'
+import {
+  HostedReviewStateIcon,
+  formatReviewRelativeTime,
+  hostedReviewStateLabel,
+} from './HostedReviewStatus'
 
 export function HostedReviewItem({
   review,
@@ -14,54 +18,54 @@ export function HostedReviewItem({
   disabled: boolean
   onOpen: () => void
 }) {
+  const timestamp = review.mergedAt || review.closedAt || review.updatedAt
+  const relativeTime = formatReviewRelativeTime(timestamp)
+
   return (
-    <div
-      className="hosted-review-item flex min-w-0 flex-col gap-1.5 px-2 py-2"
-      data-disabled={disabled}
+    <Button
+      type="button"
+      variant="ghost"
+      className="hosted-review-item group/review-item h-auto w-full min-w-0 items-start justify-start gap-2 px-2 py-1.5 text-left"
+      disabled={disabled}
+      aria-label={`在网页打开 ${label} #${review.number}：${review.title}（${hostedReviewStateLabel(review)}）`}
+      title={`${label} #${review.number} · ${review.title}\n${review.sourceBranch} → ${review.targetBranch}`}
+      onClick={onOpen}
     >
-      <div className="hosted-review-header flex min-w-0 items-start justify-between gap-2">
-        <div className="hosted-review-summary flex min-w-0 flex-wrap items-center gap-1.5">
-          <GitPullRequest
-            className="hosted-review-item-icon size-3.5 shrink-0 text-app-muted-foreground"
+      <span className="hosted-review-item-icon-slot mt-0.5 flex shrink-0 items-center">
+        <HostedReviewStateIcon review={review} />
+      </span>
+      <span className="hosted-review-item-body flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="hosted-review-item-header flex min-w-0 items-center justify-between gap-1.5">
+          <span className="hosted-review-title min-w-0 flex-1 truncate font-medium text-foreground">
+            {review.title}
+          </span>
+          <ArrowUpRight
+            className="hosted-review-item-external size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/review-item:opacity-100 group-focus-visible/review-item:opacity-100"
             aria-hidden="true"
           />
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            className="hosted-review-number min-w-0 px-0 font-mono tabular-nums"
-            disabled={disabled}
-            aria-label={`在网页打开 ${label} #${review.number}`}
-            title={`在网页打开 ${label} #${review.number}`}
-            onClick={onOpen}
-          >
-            #{review.number}
-          </Button>
-          <HostedReviewStatus review={review} />
-        </div>
-      </div>
-      <div className="hosted-review-title min-w-0 truncate font-medium" title={review.title}>
-        {review.title}
-      </div>
-      <div className="hosted-review-meta flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-app-muted-foreground">
-        <span
-          className="hosted-review-branches min-w-0 basis-full truncate font-mono [unicode-bidi:plaintext]"
-          title={`${review.sourceBranch} → ${review.targetBranch}`}
-        >
-          {review.sourceBranch} → {review.targetBranch}
         </span>
-        {review.state !== 'open' && (
-          <span className="hosted-review-ended shrink-0 tabular-nums">
-            {review.state === 'merged' ? '合并于' : '关闭于'}{' '}
-            {new Date(review.mergedAt || review.closedAt || review.updatedAt).toLocaleDateString()}
+        <span className="hosted-review-meta flex min-w-0 items-center gap-1.5 text-2xs text-app-muted-foreground">
+          <span className="hosted-review-number shrink-0 font-mono tabular-nums">
+            #{review.number}
           </span>
-        )}
-      </div>
-      {review.checksError && (
-        <output className="hosted-review-checks-error text-muted-foreground">
-          {review.checksError}
-        </output>
-      )}
-    </div>
+          <span className="text-muted-foreground/50" aria-hidden="true">
+            ·
+          </span>
+          <span className="hosted-review-target min-w-0 truncate font-mono [unicode-bidi:plaintext]">
+            {review.targetBranch}
+          </span>
+          <span className="shrink-0 text-muted-foreground/50" aria-hidden="true">
+            ·
+          </span>
+          <time
+            className="hosted-review-time shrink-0 tabular-nums"
+            dateTime={timestamp}
+            title={new Date(timestamp).toLocaleString()}
+          >
+            {relativeTime}
+          </time>
+        </span>
+      </span>
+    </Button>
   )
 }

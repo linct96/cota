@@ -53,6 +53,7 @@ export function useHostedReviewCreation({
   const [error, setError] = useState<string>()
   const [revision, setRevision] = useState(0)
   const [unlocking, setUnlocking] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const mounted = useRef(true)
   const branchAccessInvalidated = useRef(false)
   const titleEdited = useRef(!!defaults?.title)
@@ -109,6 +110,7 @@ export function useHostedReviewCreation({
   })
   const submitting = useStore(form.store, (state) => state.isSubmitting)
   const canSubmit = useStore(form.store, (state) => state.canSubmit)
+  const draft = useStore(form.store, (state) => state.values.draft)
   const submittingVisible = useLoadingIndicator(submitting)
   const busy = submitting || unlocking
   const fieldsDisabled = busy || !creation
@@ -119,6 +121,7 @@ export function useHostedReviewCreation({
     !!creation &&
     creation.sourceBranches.some((branch) => branch.name === sourceBranch) &&
     creation.targetBranches.some((branch) => branch.name === targetBranch)
+  const branchesUnavailable = !!creation && !!sourceBranch && !!targetBranch && !branchesAvailable
   const [preparation, setPreparation] = useState<{
     key: string
     result?: HostedReviewPreparation
@@ -132,6 +135,29 @@ export function useHostedReviewCreation({
     !!sourceBranch &&
     !!targetBranch &&
     (!preflight || preparingKey === branchKey)
+  const preflightStatus = preflight?.result?.status
+  const isPreflightBlocked =
+    !initializing &&
+    !preparing &&
+    (branchesUnavailable ||
+      !!preflight?.error ||
+      (!!preflightStatus && preflightStatus !== 'ready'))
+  const composerDisabled = fieldsDisabled || isPreflightBlocked
+  const canCreate =
+    canSubmit &&
+    !fieldsDisabled &&
+    branchesAvailable &&
+    !initializing &&
+    !preparing &&
+    preflightStatus === 'ready'
+  const sourceRepo = creation?.context.source
+  const targetRepo = creation?.context.target
+  const isFork =
+    !!sourceRepo &&
+    !!targetRepo &&
+    (sourceRepo.provider !== targetRepo.provider ||
+      sourceRepo.host !== targetRepo.host ||
+      sourceRepo.path !== targetRepo.path)
 
   function invalidateUnavailableBranches(response: Result<unknown>) {
     if (
@@ -163,6 +189,7 @@ export function useHostedReviewCreation({
     setPreparation(undefined)
     setPreparingKey(undefined)
     setError(undefined)
+    setDirty(false)
     titleEdited.current = !!defaults?.title
     descriptionEdited.current = !!defaults?.description
     form.reset()
@@ -273,14 +300,11 @@ export function useHostedReviewCreation({
           invalidateUnavailableBranches(response)
           const result = unwrap(response)
           setPreparation({ key: branchKey, result })
-          if (result.defaultTitle && !titleEdited.current && !form.state.isSubmitting)
-            form.setFieldValue('title', result.defaultTitle)
-          if (
-            result.defaultDescription !== undefined &&
-            !descriptionEdited.current &&
-            !form.state.isSubmitting
-          )
-            form.setFieldValue('description', result.defaultDescription)
+          if (result.status === 'ready' && !form.state.isSubmitting) {
+            if (!titleEdited.current) form.setFieldValue('title', result.defaultTitle ?? '')
+            if (!descriptionEdited.current)
+              form.setFieldValue('description', result.defaultDescription ?? '')
+          }
         }
       } catch (cause) {
         if (!disposed)
@@ -333,6 +357,7 @@ export function useHostedReviewCreation({
     const review = created.current
     created.current = undefined
     setError(undefined)
+    setDirty(false)
     setClosing(false)
     if (review) {
       onCreated(review)
@@ -352,12 +377,15 @@ export function useHostedReviewCreation({
   function branchChanged() {
     setPreparation(undefined)
     setPreparingKey(undefined)
-    if (!titleEdited.current) form.setFieldValue('title', '')
-    if (!descriptionEdited.current) form.setFieldValue('description', '')
   }
   function markTextEdited(name: 'title' | 'description') {
     if (name === 'title') titleEdited.current = true
     else descriptionEdited.current = true
+    setDirty(true)
+  }
+  function submit() {
+    if (!canCreate) return
+    void form.handleSubmit()
   }
   async function openReview(number: number) {
     try {
@@ -372,8 +400,13 @@ export function useHostedReviewCreation({
     label,
     visible: open && !closing,
     busy,
+    dirty,
+    draft,
+    isFork,
     unlocking,
     fieldsDisabled,
+    composerDisabled,
+    isPreflightBlocked,
     initializing,
     creation,
     branchRefreshing,
@@ -383,9 +416,10 @@ export function useHostedReviewCreation({
     sourceBranch,
     targetBranch,
     branchesAvailable,
+    branchesUnavailable,
     preflight,
     preparing,
-    canSubmit,
+    canCreate,
     submittingVisible,
     requestClose,
     finishClose,
@@ -394,6 +428,7 @@ export function useHostedReviewCreation({
     retryPreparation,
     branchChanged,
     markTextEdited,
+    submit,
     unlockCreation,
     openReview,
   }

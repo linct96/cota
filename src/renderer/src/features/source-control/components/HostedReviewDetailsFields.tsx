@@ -1,98 +1,107 @@
-import { Checkbox } from '@/components/ui/checkbox'
-import { Field, FieldDescription, FieldError, FieldLabel } from '@/components/ui/field'
+import type { RefObject } from 'react'
+import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { HostedReviewCreation } from '../hooks/use-hosted-review-creation'
 
 export function HostedReviewDetailsFields({
   form,
-  fieldsDisabled,
+  label,
+  composerDisabled,
   markTextEdited,
-}: Pick<HostedReviewCreation, 'form' | 'fieldsDisabled' | 'markTextEdited'>) {
+  titleInputRef,
+}: Pick<HostedReviewCreation, 'form' | 'label' | 'composerDisabled' | 'markTextEdited'> & {
+  titleInputRef: RefObject<HTMLInputElement | null>
+}) {
   return (
-    <>
-      {(['title', 'description'] as const).map((name) => (
-        <form.Field key={name} name={name}>
-          {(field) => {
-            const invalid = field.state.meta.isTouched && !field.state.meta.isValid
-            const props = {
-              id: `review-${name}`,
-              name: field.name,
-              value: field.state.value,
-              disabled: fieldsDisabled,
-              required: name === 'title',
-              onBlur: field.handleBlur,
-              onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-                markTextEdited(name)
-                field.handleChange(event.target.value)
-              },
-              'aria-invalid': invalid,
-              'aria-describedby':
-                [
-                  name === 'description' && `review-${name}-description`,
-                  invalid && `review-${name}-error`,
-                ]
-                  .filter(Boolean)
-                  .join(' ') || undefined,
-            }
-            return (
-              <Field
-                className={`create-hosted-review-${name}-field`}
-                data-invalid={invalid}
-                data-disabled={fieldsDisabled}
+    <div className="create-hosted-review-composer flex min-h-0 flex-1 flex-col gap-3">
+      <form.Field name="title">
+        {(field) => {
+          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+          return (
+            <Field
+              className="create-hosted-review-title-field gap-1.5"
+              data-invalid={invalid}
+              data-disabled={composerDisabled}
+            >
+              <FieldLabel
+                htmlFor="review-title"
+                className="create-hosted-review-title-label sr-only"
               >
-                <FieldLabel htmlFor={props.id} className={`create-hosted-review-${name}-label`}>
-                  {name === 'title' ? '标题' : '描述'}
-                </FieldLabel>
-                {name === 'description' ? (
-                  <Textarea
-                    {...props}
-                    className="create-hosted-review-description-input h-36 min-h-24 resize-y field-sizing-fixed"
-                    maxLength={65000}
-                  />
-                ) : (
-                  <Input {...props} className="create-hosted-review-title-input" maxLength={240} />
-                )}
-                {name === 'description' && (
-                  <FieldDescription
-                    id={`review-${name}-description`}
-                    className={`create-hosted-review-${name}-description`}
-                  >
-                    支持 Markdown
-                  </FieldDescription>
-                )}
-                {invalid && (
-                  <FieldError
-                    id={`review-${name}-error`}
-                    className={`create-hosted-review-${name}-error`}
-                    errors={field.state.meta.errors}
-                  />
-                )}
-              </Field>
-            )
-          }}
-        </form.Field>
-      ))}
-      <form.Field name="draft">
-        {(field) => (
-          <Field
-            className="create-hosted-review-draft-field flex-row items-center gap-2"
-            data-disabled={fieldsDisabled}
-          >
-            <Checkbox
-              id="review-draft"
-              className="create-hosted-review-draft-input"
-              checked={field.state.value}
-              disabled={fieldsDisabled}
-              onCheckedChange={field.handleChange}
-              onBlur={field.handleBlur}
-            />
-            <FieldLabel htmlFor="review-draft" className="create-hosted-review-draft-label">
-              创建为草稿
-            </FieldLabel>
-          </Field>
-        )}
+                标题
+              </FieldLabel>
+              <Input
+                ref={titleInputRef}
+                id="review-title"
+                name={field.name}
+                value={field.state.value}
+                disabled={composerDisabled}
+                required
+                maxLength={240}
+                placeholder={`${label} 标题`}
+                aria-invalid={invalid}
+                aria-describedby={invalid ? 'review-title-error' : undefined}
+                onBlur={field.handleBlur}
+                onChange={(event) => {
+                  markTextEdited('title')
+                  field.handleChange(event.target.value)
+                }}
+                className="create-hosted-review-title-input h-auto rounded-none border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-semibold shadow-none focus-visible:border-ring focus-visible:ring-0 aria-invalid:border-destructive aria-invalid:ring-0 md:text-sm dark:bg-transparent dark:aria-invalid:ring-0"
+              />
+              {invalid && (
+                <FieldError
+                  id="review-title-error"
+                  className="create-hosted-review-title-error"
+                  errors={field.state.meta.errors}
+                />
+              )}
+            </Field>
+          )
+        }}
       </form.Field>
-    </>
+
+      <form.Field name="description">
+        {(field) => {
+          const invalid = field.state.meta.isTouched && !field.state.meta.isValid
+          return (
+            <Field
+              className="create-hosted-review-description-field min-h-0 flex-1 gap-1.5"
+              data-invalid={invalid}
+              data-disabled={composerDisabled}
+            >
+              <FieldLabel
+                htmlFor="review-description"
+                className="create-hosted-review-description-label sr-only"
+              >
+                描述
+              </FieldLabel>
+              <Textarea
+                id="review-description"
+                name={field.name}
+                value={field.state.value}
+                disabled={composerDisabled}
+                maxLength={65000}
+                placeholder="补充改动背景、验证方式或关联 Issue…"
+                aria-invalid={invalid}
+                aria-describedby={invalid ? 'review-description-error' : undefined}
+                onBlur={field.handleBlur}
+                onChange={(event) => {
+                  markTextEdited('description')
+                  field.handleChange(event.target.value)
+                }}
+                className="create-hosted-review-description-input min-h-48 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-0 text-xs/relaxed shadow-none field-sizing-fixed focus-visible:ring-0 aria-invalid:ring-0 md:text-xs/relaxed dark:bg-transparent dark:aria-invalid:ring-0"
+              />
+              {invalid && (
+                <FieldError
+                  id="review-description-error"
+                  className="create-hosted-review-description-error"
+                  errors={field.state.meta.errors}
+                />
+              )}
+            </Field>
+          )
+        }}
+      </form.Field>
+    </div>
   )
 }
