@@ -58,8 +58,11 @@ export class AccountService {
   private refreshSavedAccounts?: (product: AccountProduct, ids: string[]) => void
   private closing = false
 
-  constructor(providersPath: string, emitOAuth: (progress: AccountOAuthProgress) => void) {
-    this.store = new AccountStore(providersPath)
+  constructor(
+    paths: { providers: string; auth: string },
+    emitOAuth: (progress: AccountOAuthProgress) => void,
+  ) {
+    this.store = new AccountStore(paths.providers, paths.auth)
     this.credentials = new AccountCredentials(
       homedir(),
       () => process.env.CODEX_HOME || join(homedir(), '.codex'),

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { lockSync } from 'proper-lockfile'
 import { deriveCredentialMeta } from './credential-data'
 import {
@@ -198,7 +198,6 @@ function restore(path: string, contents: string | null, assertUnchanged: () => v
 }
 
 export class AccountStore {
-  private readonly oauthPath: string
   private accounts?: StoredAccount[]
   private credentials?: Credentials
   private draft?: StoredAccount[]
@@ -206,9 +205,10 @@ export class AccountStore {
   private revision?: Revision
   private stamps?: Stamps
 
-  constructor(private readonly path: string) {
-    this.oauthPath = join(dirname(path), 'auth.json')
-  }
+  constructor(
+    private readonly path: string,
+    private readonly oauthPath: string,
+  ) {}
 
   private observe(): Stamps {
     return { providers: stampOf(this.path), oauth: stampOf(this.oauthPath) }

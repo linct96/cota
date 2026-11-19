@@ -94,6 +94,8 @@ function account(
 }
 
 let root: string
+let providersPath: string
+let oauthPath: string
 let stateFile: string
 let service: AccountService
 let scheduler: AccountUsageScheduler | undefined
@@ -128,7 +130,9 @@ beforeEach(() => {
   vi.stubEnv('GROK_HOME', join(root, 'grok'))
   vi.stubEnv('CODEX_HOME', join(root, 'codex'))
   stateFile = join(root, 'runtime', 'usage.json')
-  service = new AccountService(join(root, 'providers.json'), () => {})
+  providersPath = join(root, 'providers.json')
+  oauthPath = join(root, 'auth.json')
+  service = new AccountService({ providers: providersPath, auth: oauthPath }, () => {})
   now = Date.now()
   vi.spyOn(Date, 'now').mockImplementation(() => now)
   readCurrent = vi.fn<AccountCredentials['current']>().mockResolvedValue([])
@@ -295,14 +299,14 @@ describe('refresh after saving credentials', () => {
   it('preserves the last quota and does not retry on a failed reimport when disabled', async () => {
     const previous = { usedPercent: 42, windowMinutes: 300, resetsAt: null }
     const item = account('existing', 'codex', { usagePrimary: previous, usageUpdatedAt: now })
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     readCurrent.mockResolvedValue([normalizeCredential('codex', JSON.parse(item.auth))])
     vi.mocked(network.refreshAccountUsage).mockRejectedValue(new Error('额度服务不可用'))
     await createScheduler(false).start()
     const finished = waitForAccount(item.id)
     expect(await service.importCurrent('codex')).toBe(1)
     expect((await finished).error).toBe('额度服务不可用')
-    const saved = new AccountStore(join(root, 'providers.json')).get(item.id)
+    const saved = new AccountStore(providersPath, oauthPath).get(item.id)
     expect(saved.usagePrimary).toEqual(previous)
     expect(saved.usageUpdatedAt).toBe(now)
     now += 60 * 60_000
@@ -350,7 +354,7 @@ describe('refresh after saving credentials', () => {
         },
       }),
     })
-    const store = new AccountStore(join(root, 'providers.json'))
+    const store = new AccountStore(providersPath, oauthPath)
     store.save(codex)
     store.save(pi)
     await createScheduler(false).start()
@@ -370,7 +374,7 @@ describe('refresh after saving credentials', () => {
 
   it('merges an immediate refresh into a queued periodic refresh using the saved credentials', async () => {
     const item = account('existing', 'codex', { usageUpdatedAt: now - 31 * 60_000 })
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     const updated = JSON.parse(item.auth)
     updated.auth.tokens.access_token = 'new-access'
     updated.auth.tokens.refresh_token = 'new-refresh'
@@ -411,7 +415,7 @@ describe('refresh after saving credentials', () => {
 
   it('runs the saved-account request if a joined periodic refresh was skipped', async () => {
     const item = account('existing', 'codex', { usageUpdatedAt: now - 31 * 60_000 })
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     readCurrent.mockResolvedValue([normalizeCredential('codex', JSON.parse(item.auth))])
     const instance = createScheduler(false)
     await instance.start()
@@ -440,7 +444,7 @@ describe('refresh after saving credentials', () => {
 
 describe('background account usage refresh', () => {
   it('refreshes due supported OAuth accounts with separate active and inactive intervals', async () => {
-    const store = new AccountStore(join(root, 'providers.json'))
+    const store = new AccountStore(providersPath, oauthPath)
     const active = account('active', 'codex', { usageUpdatedAt: now - 5 * 60_000 })
     for (const item of [
       active,
@@ -487,7 +491,7 @@ describe('background account usage refresh', () => {
 
   it('refreshes when a quota reset time has passed without spamming before the interval', async () => {
     const resetAt = now - 5_000
-    new AccountStore(join(root, 'providers.json')).save(
+    new AccountStore(providersPath, oauthPath).save(
       account('reset-due', 'codex', {
         usageUpdatedAt: now - 60_000,
         usagePrimary: { usedPercent: 90, windowMinutes: 300, resetsAt: resetAt },
@@ -514,7 +518,7 @@ describe('background account usage refresh', () => {
   })
 
   it('checks when enabled and on wake, then stays stopped after exit', async () => {
-    new AccountStore(join(root, 'providers.json')).save(account('active', 'codex'))
+    new AccountStore(providersPath, oauthPath).save(account('active', 'codex'))
     const instance = createScheduler(false)
     await instance.start()
     expect(network.refreshAccountUsage).not.toHaveBeenCalled()
@@ -533,7 +537,7 @@ describe('background account usage refresh', () => {
   })
 
   it('stops scheduling when disabled but lets an in-flight refresh finish', async () => {
-    const store = new AccountStore(join(root, 'providers.json'))
+    const store = new AccountStore(providersPath, oauthPath)
     store.save(account('first', 'codex'))
     store.save(account('second', 'codex'))
     const started = deferred<void>()
@@ -553,12 +557,12 @@ describe('background account usage refresh', () => {
     expect(vi.mocked(network.refreshAccountUsage).mock.calls.map(([value]) => value.id)).toEqual([
       'first',
     ])
-    expect(new AccountStore(join(root, 'providers.json')).get('first').usageUpdatedAt).toBe(now)
+    expect(new AccountStore(providersPath, oauthPath).get('first').usageUpdatedAt).toBe(now)
   })
 
   it('persists failed attempt times across restarts and retries only when due', async () => {
     const item = account('active', 'codex')
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     readCurrent.mockImplementation((product) =>
       Promise.resolve(
         product === 'codex' ? [normalizeCredential('codex', JSON.parse(item.auth))] : [],
@@ -596,7 +600,7 @@ describe('background account usage refresh', () => {
     ['invalid_grant', new network.AccountNetworkError('请重新授权', 400, true)],
   ])('preserves the last quota and pauses automatic retries after %s', async (_name, failure) => {
     const previous = { usedPercent: 42, windowMinutes: 300, resetsAt: null }
-    new AccountStore(join(root, 'providers.json')).save(
+    new AccountStore(providersPath, oauthPath).save(
       account('active', 'codex', { usagePrimary: previous, usageUpdatedAt: now - 31 * 60_000 }),
     )
     vi.mocked(network.refreshAccountUsage).mockRejectedValue(failure)
@@ -604,7 +608,7 @@ describe('background account usage refresh', () => {
     await createScheduler().start()
     expect((await finished).error).toBe('请重新授权')
     await scheduler?.close()
-    const saved = new AccountStore(join(root, 'providers.json')).get('active')
+    const saved = new AccountStore(providersPath, oauthPath).get('active')
     expect(saved.needsReauthorization).toBe(true)
     expect(saved.usagePrimary).toEqual(previous)
 
@@ -648,7 +652,7 @@ describe('background account usage refresh', () => {
 
   it('waits for Pi credential ownership instead of racing another Pi process', async () => {
     const item = account('pi', 'pi')
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     const piHome = join(root, 'pi')
     mkdirSync(piHome)
     const release = await lock(join(piHome, 'auth.json'), { realpath: false })
@@ -675,7 +679,7 @@ describe('background account usage refresh', () => {
           },
         })
       }
-      new AccountStore(join(root, 'providers.json')).save(item)
+      new AccountStore(providersPath, oauthPath).save(item)
       const home = join(root, product)
       mkdirSync(home)
       const configPath = join(home, 'config.toml')
@@ -706,7 +710,7 @@ describe('background account usage refresh', () => {
 
   it('keeps external CLI changes and the rotated token if configuration changes during renewal', async () => {
     const item = account('active', 'codex')
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     const home = join(root, 'codex')
     mkdirSync(home)
     const configPath = join(home, 'config.toml')
@@ -739,19 +743,17 @@ describe('background account usage refresh', () => {
     await expect(refreshing).rejects.toThrow('当前 CLI 登录已变化')
     expect(readFileSync(configPath, 'utf8')).toBe('model = "after"\n')
     expect(readFileSync(authPath, 'utf8')).toBe(nativeAuth)
-    const stored = new AccountStore(join(root, 'providers.json')).get('active')
+    const stored = new AccountStore(providersPath, oauthPath).get('active')
     expect(stored.auth).toContain('new-refresh')
     expect(stored.needsReauthorization).toBe(true)
     await expect(service.refresh('active')).rejects.toThrow('请先导入当前登录或重新授权')
     expect(network.refreshCredential).toHaveBeenCalledTimes(1)
-    expect(new AccountStore(join(root, 'providers.json')).get('active').auth).toContain(
-      'new-refresh',
-    )
+    expect(new AccountStore(providersPath, oauthPath).get('active').auth).toContain('new-refresh')
   })
 
   it('protects a rotated Pi credential when the authentication lock is compromised', async () => {
     const item = account('pi', 'pi')
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     vi.spyOn(AccountCredentials.prototype, 'withPiLock').mockImplementation((action) =>
       action(() => {
         throw new Error('Pi 认证锁已失效')
@@ -772,14 +774,14 @@ describe('background account usage refresh', () => {
     await expect(
       service.refreshAutomatically('pi', { allowed: () => true, due: () => true }),
     ).rejects.toThrow('Pi 认证锁已失效')
-    const saved = new AccountStore(join(root, 'providers.json')).get('pi')
+    const saved = new AccountStore(providersPath, oauthPath).get('pi')
     expect(saved.auth).toContain('rotated-refresh')
     expect(saved.needsReauthorization).toBe(true)
   })
 
   it('persists and applies rotated Pi credentials while holding its shared lock', async () => {
     const item = account('pi', 'pi')
-    new AccountStore(join(root, 'providers.json')).save(item)
+    new AccountStore(providersPath, oauthPath).save(item)
     const piHome = join(root, 'pi')
     mkdirSync(piHome)
     const authPath = join(piHome, 'auth.json')
@@ -807,13 +809,11 @@ describe('background account usage refresh', () => {
     expect(JSON.parse(readFileSync(authPath, 'utf8'))['openai-codex'].refresh).toBe(
       'rotated-refresh',
     )
-    expect(new AccountStore(join(root, 'providers.json')).get('pi').auth).toContain(
-      'rotated-refresh',
-    )
+    expect(new AccountStore(providersPath, oauthPath).get('pi').auth).toContain('rotated-refresh')
   })
 
   it('does not overwrite a malformed runtime file or start automatic requests', async () => {
-    new AccountStore(join(root, 'providers.json')).save(account('active', 'codex'))
+    new AccountStore(providersPath, oauthPath).save(account('active', 'codex'))
     const directory = join(root, 'runtime')
     mkdirSync(directory)
     writeFileSync(stateFile, '{broken')

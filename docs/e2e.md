@@ -58,7 +58,8 @@ pnpm exec playwright test --last-failed
 
 - `home/`：独立 Home、Shell 配置、CLI 配置和工作树。
 - `home/.cota-dev/`：应用配置、账号文件与工作树。
-- `profile/Cota Dev/`：Chromium 用户数据、工作树初始化记录与单实例身份。
+- `profile/Cota Dev/`：Chromium 用户数据与单实例身份。
+- `profile/Cota Dev/cota/`：应用自身的 `cache/` 和 `state/`，工作树初始化记录在 `state/`。
 - `sample-project/`：真实 Git 仓库，只有测试身份和初始文件，无远端。
 - `home/.gitconfig`：测试身份，禁用签名、凭据 helper、hooks 和远程传输。
 - `bin/`：外部 CLI 的可控“不可用”替身，以及执行真实 `/usr/bin/git` 的隔离启动脚本。主进程会清除 `GIT_*`，启动脚本在可执行文件边界重新指定临时配置并禁用系统配置。

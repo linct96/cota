@@ -1,14 +1,13 @@
-import { join } from 'node:path'
 import type { IpcHandler } from '../app/ipc'
 import { ModelPrices, fetchModelPrices } from './pricing'
 import { UsageAnalyticsService } from './service'
 
 export function registerAnalyticsIPC(
   handle: IpcHandler,
-  configDirectory: string,
+  pricingPath: string,
   cacheDirectory: string,
 ): UsageAnalyticsService {
-  const prices = new ModelPrices(join(configDirectory, 'model-pricing.json'))
+  const prices = new ModelPrices(pricingPath)
   const analytics = new UsageAnalyticsService(prices, cacheDirectory)
   handle('analytics:query', (product: unknown, range: unknown) => analytics.query(product, range))
   handle('analytics:cache-clear', () => analytics.clearCache())

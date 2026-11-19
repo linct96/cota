@@ -74,7 +74,7 @@ afterEach(() => {
 
 describe('Agents providers.json and auth.json store', () => {
   it('keeps provider metadata and plaintext credentials in separate private files', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     expect(store.list()).toEqual([])
     store.save(account('first'))
     const raw = readFileSync(path, 'utf8')
@@ -104,11 +104,11 @@ describe('Agents providers.json and auth.json store', () => {
       expect(statSync(path).mode & 0o777).toBe(0o600)
       expect(statSync(oauthPath).mode & 0o777).toBe(0o600)
     }
-    expect(new AccountStore(path).get('first')).toEqual(account('first'))
+    expect(new AccountStore(path, oauthPath).get('first')).toEqual(account('first'))
   })
 
   it('writes only providers.json for metadata changes and only auth.json for auth changes', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('first'))
     const vaultBefore = readFileSync(oauthPath, 'utf8')
     store.save({ ...store.get('first'), alias: 'renamed' })
@@ -117,42 +117,42 @@ describe('Agents providers.json and auth.json store', () => {
     store.save({ ...store.get('first'), auth: authJson({ access_token: 'NEW-SECRET' }) })
     expect(readFileSync(path, 'utf8')).toBe(providersBefore)
     expect(readFileSync(oauthPath, 'utf8')).not.toBe(vaultBefore)
-    expect(new AccountStore(path).get('first')).toMatchObject({
+    expect(new AccountStore(path, oauthPath).get('first')).toMatchObject({
       alias: 'renamed',
       auth: authJson({ access_token: 'NEW-SECRET' }),
     })
   })
 
   it('supports ordering, deletion, and reading external file changes', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('first'))
     store.save({ ...account('second'), sortOrder: -1 })
     expect(store.list().map((entry) => entry.id)).toEqual(['second', 'first'])
     store.remove('second')
-    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['first'])
+    expect(new AccountStore(path, oauthPath).list().map((entry) => entry.id)).toEqual(['first'])
     expect(readVault().map((entry) => entry.id)).toEqual(['first'])
     unlinkSync(path)
     unlinkSync(oauthPath)
     expect(store.list()).toEqual([])
     store.save(account('third'))
-    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['third'])
+    expect(new AccountStore(path, oauthPath).list().map((entry) => entry.id)).toEqual(['third'])
   })
 
   it('commits a batch and exposes staged changes inside the transaction', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.transaction(() => {
       store.save(account('a'))
       expect(store.get('a').id).toBe('a')
       store.save(account('b'))
       store.remove('a')
     })
-    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['b'])
+    expect(new AccountStore(path, oauthPath).list().map((entry) => entry.id)).toEqual(['b'])
     expect(readVault().map((entry) => entry.id)).toEqual(['b'])
     expect(() => store.transaction(() => store.transaction(() => {}))).toThrow('嵌套')
   })
 
   it('rolls back a failed transaction and a failed credential write', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const before = readFileSync(path, 'utf8')
     const beforeOAuth = readFileSync(oauthPath, 'utf8')
@@ -179,11 +179,11 @@ describe('Agents providers.json and auth.json store', () => {
     expect(readFileSync(oauthPath, 'utf8')).toBe(beforeOAuth)
     expect(store.list().map((entry) => entry.id)).toEqual(['a'])
     store.save(account('b'))
-    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['a', 'b'])
+    expect(new AccountStore(path, oauthPath).list().map((entry) => entry.id)).toEqual(['a', 'b'])
   })
 
   it('rolls back staged credentials if writing providers.json fails', async () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const providersBefore = readFileSync(path, 'utf8')
     const oauthBefore = readFileSync(oauthPath, 'utf8')
@@ -203,7 +203,7 @@ describe('Agents providers.json and auth.json store', () => {
   })
 
   it('rolls back providers.json if removing credentials from auth.json fails', async () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     store.save(account('b'))
     const providersBefore = readFileSync(path, 'utf8')
@@ -223,7 +223,7 @@ describe('Agents providers.json and auth.json store', () => {
   })
 
   it('keeps corrupt, missing and unsupported files unchanged', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const providerGood = readFileSync(path, 'utf8')
     const oauthGood = readFileSync(oauthPath, 'utf8')
@@ -258,9 +258,9 @@ describe('Agents providers.json and auth.json store', () => {
   })
 
   it('detects edits to either file and never overwrites stale data', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
-    const other = new AccountStore(path)
+    const other = new AccountStore(path, oauthPath)
     other.save(account('b'))
     expect(() => store.save(account('c'))).toThrow('其他程序修改')
     expect(store.list().map((entry) => entry.id)).toEqual(['a', 'b'])
@@ -291,19 +291,19 @@ describe('Agents providers.json and auth.json store', () => {
   })
 
   it('can read a safe staged OAuth superset after an interrupted addition', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const vault = readVault()
     vault.push({ ...vault[0], id: 'orphan' })
     writeFileSync(oauthPath, JSON.stringify(vault, null, 2) + '\n')
-    expect(new AccountStore(path).list().map((entry) => entry.id)).toEqual(['a'])
+    expect(new AccountStore(path, oauthPath).list().map((entry) => entry.id)).toEqual(['a'])
     store.list() // Refresh the memoized snapshot after the external edit.
     store.save({ ...store.get('a'), alias: 'changed' })
     expect(readVault().map((entry) => entry.id)).toEqual(['a'])
   })
 
   it('rechecks auth.json after the temp file is flushed, before replacing it', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const vault = readVault()
     vault[0] = { ...vault[0], auth: { token: 'EXTERNAL' } }
@@ -317,7 +317,7 @@ describe('Agents providers.json and auth.json store', () => {
   })
 
   it('rejects legacy encrypted credentials without overwriting either file', () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save(account('a'))
     const providersBefore = readFileSync(path, 'utf8')
     const legacy = JSON.stringify({

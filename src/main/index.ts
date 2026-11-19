@@ -39,6 +39,7 @@ import { createAppWindow } from './app/window'
 import { installMenu } from './app/menu'
 import { createAppTray } from './app/tray'
 import { createIPC } from './app/ipc'
+import { appPaths } from './app/paths'
 
 let window: BrowserWindow | undefined
 let appTray: { dispose: () => void } | undefined
@@ -130,21 +131,23 @@ if (!app.requestSingleInstanceLock()) {
           /* Ignore icon load errors in headless or test environments. */
         }
       }
-      config = new ConfigStore(join(configDirectory, 'config.json'))
+      const userData = app.getPath('userData')
+      const paths = appPaths(configDirectory, userData)
+      config = new ConfigStore(paths.config)
       codeHosting = new CodeHostingService(
         config,
         sourceControl,
         undefined,
         undefined,
-        new HostingAccountsCache(join(app.getPath('userData'), 'code-hosting-accounts.json')),
+        new HostingAccountsCache(paths.hostingAccountsCache),
       )
-      accounts = new AccountService(join(configDirectory, 'providers.json'), (progress) =>
+      accounts = new AccountService(paths.accounts, (progress) =>
         renderer.send('accounts:oauth-progress', progress),
       )
       const warning = (await config.load()).warning
       usageScheduler = new AccountUsageScheduler(
         accounts,
-        join(app.getPath('userData'), 'usage-refresh-state.json'),
+        paths.usageRefreshState,
         config.snapshot().preferences.usageRefresh,
         () => {
           if (lifecycle.exitPending || lifecycle.exiting) return false
@@ -170,12 +173,8 @@ if (!app.requestSingleInstanceLock()) {
         usageScheduler?.wake()
       })
       nativeTheme.themeSource = config.snapshot().preferences.theme
-      worktrees = new WorktreeManager(config, join(configDirectory, 'worktrees'))
-      worktreeSetups = new WorktreeSetupService(
-        config,
-        worktrees,
-        join(app.getPath('userData'), 'worktree-setups'),
-      )
+      worktrees = new WorktreeManager(config, paths.worktrees)
+      worktreeSetups = new WorktreeSetupService(config, worktrees, paths.worktreeSetups)
       const desktopNotifications = createDesktopNotifications({
         config,
         renderer,
@@ -184,7 +183,7 @@ if (!app.requestSingleInstanceLock()) {
       })
       try {
         manager = await connectTerminalHost(
-          app.getPath('userData'),
+          userData,
           (event) => renderer.send('terminal:event', event),
           (event) => {
             agentSleep.receive(event)
@@ -235,11 +234,7 @@ if (!app.requestSingleInstanceLock()) {
       fileWatches = registerFilesIPC(common)
       workspacePorts = registerPortsIPC(common)
       registerAccountsIPC(handle, accounts, usageScheduler)
-      usageAnalytics = registerAnalyticsIPC(
-        handle,
-        configDirectory,
-        join(app.getPath('userData'), 'cache', 'usage-analytics'),
-      )
+      usageAnalytics = registerAnalyticsIPC(handle, paths.modelPricing, paths.usageAnalyticsCache)
       registerCodeHostingIPC({ ...common, codeHosting, git })
       registerAgentsIPC({ ...common, agentClis, cliInstallTerminals, getWindow })
       registerTerminalIPC({ ...common, agentClis, trusted })

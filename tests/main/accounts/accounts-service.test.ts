@@ -84,16 +84,18 @@ function siwcAccount(entry: ReturnType<typeof siwc>): StoredAccount {
 
 let root: string
 let path: string
+let oauthPath: string
 let service: AccountService
 let readCurrent: ReturnType<typeof vi.fn<AccountCredentials['current']>>
 let readRevision: ReturnType<typeof vi.fn<AccountCredentials['revision']>>
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'cota-account-service-'))
   path = join(root, 'providers.json')
-  const store = new AccountStore(path)
+  oauthPath = join(root, 'auth.json')
+  const store = new AccountStore(path, oauthPath)
   store.save(account('a'))
   store.save(account('b'))
-  service = new AccountService(path, () => {})
+  service = new AccountService({ providers: path, auth: oauthPath }, () => {})
   readCurrent = vi.fn<AccountCredentials['current']>().mockResolvedValue([])
   readRevision = vi.fn<AccountCredentials['revision']>().mockResolvedValue('stable-revision')
   vi.spyOn(AccountCredentials.prototype, 'current').mockImplementation(readCurrent)
@@ -169,7 +171,7 @@ describe('account snapshots during queued operations', () => {
     const listing = service.list('codex')
     await reading.promise
     await service.refresh('a')
-    expect(new AccountStore(path).get('a').auth).toContain('renewed')
+    expect(new AccountStore(path, oauthPath).get('a').auth).toContain('renewed')
     finishRead.resolve()
     await listing
     expect(readCurrent).toHaveBeenCalledTimes(3)
@@ -284,7 +286,7 @@ describe('account snapshots during queued operations', () => {
     )
     vi.spyOn(AccountCredentials.prototype, 'apply').mockRejectedValue(new Error('写入失败'))
     await expect(service.refresh('a')).rejects.toThrow('写入失败')
-    expect(new AccountStore(path).get('a').auth).toContain('renewed')
+    expect(new AccountStore(path, oauthPath).get('a').auth).toContain('renewed')
     expect((await service.list('codex')).profiles).toHaveLength(2)
     await service.close()
   })
@@ -396,14 +398,14 @@ describe('account snapshots during queued operations', () => {
       service.refreshAutomatically('a', { allowed: () => true, due: () => true }),
     ).rejects.toBeInstanceOf(network.AccountReauthorizationError)
     expect(fetch).not.toHaveBeenCalled()
-    expect(new AccountStore(path).get('a').needsReauthorization).toBe(true)
+    expect(new AccountStore(path, oauthPath).get('a').needsReauthorization).toBe(true)
     await service.close()
   })
 
   it('clears reauthorization status after a successful manual refresh', async () => {
-    new AccountStore(path).save({ ...account('a'), needsReauthorization: true })
+    new AccountStore(path, oauthPath).save({ ...account('a'), needsReauthorization: true })
     await service.refresh('a')
-    expect(new AccountStore(path).get('a').needsReauthorization).toBe(false)
+    expect(new AccountStore(path, oauthPath).get('a').needsReauthorization).toBe(false)
     await service.close()
   })
 
@@ -473,7 +475,7 @@ describe('account snapshots during queued operations', () => {
   })
 
   it('skips automatic refresh when another account shares its refresh token', async () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save({
       ...account('a'),
       auth: JSON.stringify({
@@ -513,17 +515,17 @@ describe('account snapshots during queued operations', () => {
     })
     const refreshing = service.refreshAutomatically('a', { allowed: () => true, due: () => true })
     await recording.promise
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save({ ...store.get('a'), alias: '外部修改' })
     finishRecording.resolve(() => Promise.resolve())
     await expect(refreshing).rejects.toThrow('账号配置已变化')
     expect(network.refreshCredential).not.toHaveBeenCalled()
-    expect(new AccountStore(path).get('a').alias).toBe('外部修改')
+    expect(new AccountStore(path, oauthPath).get('a').alias).toBe('外部修改')
     await service.close()
   })
 
   it('keeps protected credentials when switching away from a conflicted account', async () => {
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     store.save({
       ...account('a'),
       auth: JSON.stringify({
@@ -540,16 +542,16 @@ describe('account snapshots during queued operations', () => {
       .mockResolvedValue({ restore: () => Promise.resolve(), restartRequired: false })
     await expect(service.switch({ id: 'b' })).rejects.toThrow('当前 CLI 凭据与已保存凭据不一致')
     expect(apply).not.toHaveBeenCalled()
-    expect(new AccountStore(path).get('a').auth).toContain('new-refresh')
+    expect(new AccountStore(path, oauthPath).get('a').auth).toContain('new-refresh')
     await service.close()
   })
 
   it('does not clear protected credentials when CLI state is unreadable', async () => {
-    new AccountStore(path).save({ ...account('a'), needsReauthorization: true })
+    new AccountStore(path, oauthPath).save({ ...account('a'), needsReauthorization: true })
     readCurrent.mockRejectedValue(new Error('无法读取 CLI 认证'))
     await expect(service.refresh('a')).rejects.toThrow('无法读取 CLI 认证')
     expect(network.refreshCredential).not.toHaveBeenCalled()
-    expect(new AccountStore(path).get('a').needsReauthorization).toBe(true)
+    expect(new AccountStore(path, oauthPath).get('a').needsReauthorization).toBe(true)
     await service.close()
   })
 
@@ -571,7 +573,7 @@ describe('account snapshots during queued operations', () => {
     })
     const refreshing = service.refreshAutomatically('a', { allowed: () => true, due: () => true })
     await started.promise
-    const external = new AccountStore(path)
+    const external = new AccountStore(path, oauthPath)
     external.save({ ...external.get('a'), alias: '外部修改' })
     finish.resolve({
       ...account('a'),
@@ -583,7 +585,7 @@ describe('account snapshots during queued operations', () => {
       }),
     })
     expect(await refreshing).toBe(true)
-    const saved = new AccountStore(path).get('a')
+    const saved = new AccountStore(path, oauthPath).get('a')
     expect(saved.alias).toBe('外部修改')
     expect(saved.auth).toContain('new-refresh')
     await service.close()
@@ -598,7 +600,7 @@ describe('account snapshots during queued operations', () => {
     })
     const refreshing = service.refreshAutomatically('a', { allowed: () => true, due: () => true })
     await started.promise
-    const external = new AccountStore(path)
+    const external = new AccountStore(path, oauthPath)
     external.save({
       ...external.get('a'),
       auth: JSON.stringify({
@@ -614,7 +616,7 @@ describe('account snapshots during queued operations', () => {
       }),
     })
     await expect(refreshing).rejects.toThrow('无法安全保存新凭据')
-    expect(new AccountStore(path).get('a').auth).toContain('external')
+    expect(new AccountStore(path, oauthPath).get('a').auth).toContain('external')
     expect(network.refreshAccountUsage).not.toHaveBeenCalled()
     await service.close()
   })
@@ -642,7 +644,7 @@ describe('account snapshots during queued operations', () => {
       'stable-revision',
       undefined,
     )
-    expect(new AccountStore(path).get('a').auth).toContain('rotated')
+    expect(new AccountStore(path, oauthPath).get('a').auth).toContain('rotated')
     expect(network.refreshAccountUsage).not.toHaveBeenCalled()
     await service.close()
   })
@@ -682,11 +684,11 @@ describe('account snapshots during queued operations', () => {
     await started.promise
     await service.rename({ id: 'a', alias: '新别名' })
     await service.rename({ id: 'b', alias: '账号 B' })
-    expect(new AccountStore(path).get('a').alias).toBe('新别名')
-    expect(new AccountStore(path).get('b').alias).toBe('账号 B')
+    expect(new AccountStore(path, oauthPath).get('a').alias).toBe('新别名')
+    expect(new AccountStore(path, oauthPath).get('b').alias).toBe('账号 B')
     finish.resolve()
     expect(await automatic).toBe(true)
-    const saved = new AccountStore(path).get('a')
+    const saved = new AccountStore(path, oauthPath).get('a')
     expect(saved.alias).toBe('新别名')
     expect(saved.usageUpdatedAt).toBe(456)
     await service.close()
@@ -781,7 +783,9 @@ describe('Pi OpenAI credentials', () => {
       await service.deactivate(target.id)
       const { [provider]: _removed, ...remaining } = current
       expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(remaining)
-      expect(JSON.parse(new AccountStore(path).get(target.id).auth).auth[provider]).toEqual(rotated)
+      expect(
+        JSON.parse(new AccountStore(path, oauthPath).get(target.id).auth).auth[provider],
+      ).toEqual(rotated)
       const after = (await service.list('pi')).profiles
       expect(after.find((profile) => profile.id === target.id)?.isActive).toBe(false)
       expect(
@@ -916,13 +920,13 @@ describe('Pi OpenAI credentials', () => {
     const target = (await service.list('pi')).profiles.find(
       (profile) => profile.providerKey === 'openai',
     )!
-    const store = new AccountStore(path)
+    const store = new AccountStore(path, oauthPath)
     const saved = store.get(target.id)
     const rotated = siwc('current-user', 'current-client', 'newer', 9e12 + 1000)
     store.save({ ...saved, auth: JSON.stringify({ kind: 'pi', auth: { openai: rotated } }) })
     await expect(service.deactivate(target.id)).rejects.toThrow('无法确认最新的 Pi 令牌')
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
-    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain(rotated.refresh)
     await service.close()
   })
 
@@ -980,7 +984,7 @@ describe('Pi OpenAI credentials', () => {
     })
     await expect(service.deactivate(target.id)).rejects.toThrow('当前 Pi 登录已变化')
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
-    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain(rotated.refresh)
     await service.close()
   })
 
@@ -1045,7 +1049,9 @@ describe('Pi OpenAI credentials', () => {
     expect(await service.importCurrent('pi')).toBe(2)
     const second = await service.list('pi')
     expect(second.profiles.find((item) => item.providerKey === 'openai')?.id).toBe(profile.id)
-    expect(new AccountStore(path).get(profile.id).auth).toContain('refresh-current-client-rotated')
+    expect(new AccountStore(path, oauthPath).get(profile.id).auth).toContain(
+      'refresh-current-client-rotated',
+    )
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
     await service.close()
   })
@@ -1127,7 +1133,7 @@ describe('Pi OpenAI credentials', () => {
       apiBaseUrl: 'https://api.openai.com/v1',
     })
     expect(JSON.stringify(await service.list('pi'))).not.toContain('sk-test')
-    const legacyStore = new AccountStore(path)
+    const legacyStore = new AccountStore(path, oauthPath)
     legacyStore.save({ ...legacyStore.get(first.id), apiBaseUrl: null })
     legacyStore.close()
     expect(
@@ -1144,14 +1150,14 @@ describe('Pi OpenAI credentials', () => {
       apiKey: '',
     })
     expect((await service.list('pi')).profiles).toHaveLength(2)
-    expect(new AccountStore(path).get(first.id).accountType).toBe('relay')
+    expect(new AccountStore(path, oauthPath).get(first.id).accountType).toBe('relay')
     const codex = (await service.list('pi')).profiles.find(
       (item) => item.providerKey === 'openai-codex',
     )!
     await service.switch({ id: codex.id })
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(mixed)
     await service.close()
-    service = new AccountService(path, () => {})
+    service = new AccountService({ providers: path, auth: oauthPath }, () => {})
     expect((await service.list('pi')).profiles.find((item) => item.id === first.id)?.isActive).toBe(
       true,
     )
@@ -1332,7 +1338,7 @@ describe('Pi OpenAI credentials', () => {
     })
     await expect(service.switch({ id: target.id })).rejects.toThrow('metadata failed')
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
-    expect(new AccountStore(path).get(target.id).accountType).toBe('relay')
+    expect(new AccountStore(path, oauthPath).get(target.id).accountType).toBe('relay')
     await service.close()
   })
 
@@ -1382,7 +1388,7 @@ describe('Pi OpenAI credentials', () => {
       (await service.list('pi')).profiles.find((item) => item.id === imported.id)?.isActive,
     ).toBe(true)
     await service.close()
-    service = new AccountService(path, () => {})
+    service = new AccountService({ providers: path, auth: oauthPath }, () => {})
     expect(
       (await service.list('pi')).profiles.find((item) => item.id === imported.id)?.apiBaseUrl,
     ).toBe(config.baseUrl)
@@ -1503,8 +1509,8 @@ describe('Pi OpenAI credentials', () => {
       }),
     })
     const target = (await service.list('pi')).profiles.find((item) => item.providerKey === 'relay')!
-    expect(new AccountStore(path).get(target.id).auth).toContain('primary-key')
-    expect(new AccountStore(path).get(target.id).auth).not.toContain('fallback-key')
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain('primary-key')
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).not.toContain('fallback-key')
     expect(readFileSync(authPath, 'utf8')).not.toContain('primary-key')
     await service.close()
   })
@@ -1642,7 +1648,7 @@ describe('Pi OpenAI credentials', () => {
     finish.resolve()
     await switching
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual({ ...source, openai: rotated })
-    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain(rotated.refresh)
     await service.close()
   })
 
@@ -1704,7 +1710,7 @@ describe('Pi OpenAI credentials', () => {
     finish.resolve()
     await switching
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(external)
-    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain(rotated.refresh)
     await service.close()
   })
 
@@ -1725,7 +1731,7 @@ describe('Pi OpenAI credentials', () => {
         }),
       )
       await expect(service.switch({ id: target.id })).rejects.toThrow('授权不匹配')
-      const saved = new AccountStore(path).get(target.id)
+      const saved = new AccountStore(path, oauthPath).get(target.id)
       expect(saved.auth).toContain(rotated.refresh)
       expect(saved.needsReauthorization).toBe(true)
       expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
@@ -1747,11 +1753,11 @@ describe('Pi OpenAI credentials', () => {
     })
     const switching = service.switch({ id: target.id })
     await started.promise
-    const external = new AccountStore(path)
+    const external = new AccountStore(path, oauthPath)
     external.save({ ...external.get(target.id), alias: '外部修改' })
     finish.resolve()
     await switching
-    const saved = new AccountStore(path).get(target.id)
+    const saved = new AccountStore(path, oauthPath).get(target.id)
     expect(saved.alias).toBe('外部修改')
     expect(saved.auth).toContain(rotated.refresh)
     await service.close()
@@ -1778,7 +1784,7 @@ describe('Pi OpenAI credentials', () => {
     })
     await expect(service.switch({ id: target.id })).rejects.toThrow('登录令牌已更新')
     expect(JSON.parse(readFileSync(authPath, 'utf8')).openai).toEqual(rotated)
-    expect(new AccountStore(path).get(target.id).auth).toContain(rotated.refresh)
+    expect(new AccountStore(path, oauthPath).get(target.id).auth).toContain(rotated.refresh)
     await service.close()
   })
 
@@ -1793,7 +1799,7 @@ describe('Pi OpenAI credentials', () => {
       vi.fn().mockResolvedValue(Response.json({ error: 'invalid_grant' }, { status: 400 })),
     )
     await expect(service.switch({ id: target.id })).rejects.toThrow('账号认证失败')
-    expect(new AccountStore(path).get(target.id).needsReauthorization).toBe(true)
+    expect(new AccountStore(path, oauthPath).get(target.id).needsReauthorization).toBe(true)
     expect(JSON.parse(readFileSync(authPath, 'utf8'))).toEqual(source)
     await service.close()
   })
