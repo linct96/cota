@@ -71,7 +71,7 @@ function DialogContent({
             }
           >
             <XIcon className="dialog-close-icon" />
-            <span className="dialog-close-label sr-only">关闭设置</span>
+            <span className="dialog-close-label sr-only">关闭</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

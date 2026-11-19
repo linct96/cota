@@ -67,7 +67,7 @@ export function UsageRefreshSettings() {
         id="usage-refresh-settings-title"
         className="usage-refresh-settings-title settings-section-title"
       >
-        额度刷新
+        账号额度
       </h2>
       <Card size="sm" className="usage-refresh-settings-card gap-0 divide-y divide-border py-0">
         <Field className="usage-refresh-enabled-field min-h-7 flex-row flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
@@ -76,13 +76,13 @@ export function UsageRefreshSettings() {
               id="usage-refresh-enabled-label"
               className="usage-refresh-enabled-label text-xs leading-5 font-medium"
             >
-              定时刷新额度
+              自动刷新额度
             </span>
             <p
               id="usage-refresh-enabled-help"
               className="usage-refresh-enabled-description text-xs text-muted-foreground"
             >
-              刷新 Codex、Pi 和 Grok 的 OAuth 账号额度。
+              定期同步 Codex、Pi 与 Grok 账号的剩余额度。
             </p>
           </div>
           <Switch
@@ -102,8 +102,8 @@ export function UsageRefreshSettings() {
         </Field>
         {(
           [
-            { key: 'activeIntervalMinutes', label: '使用中账号间隔', options: activeOptions },
-            { key: 'inactiveIntervalMinutes', label: '其他账号间隔', options: inactiveOptions },
+            { key: 'activeIntervalMinutes', label: '当前账号刷新周期', options: activeOptions },
+            { key: 'inactiveIntervalMinutes', label: '其余账号刷新周期', options: inactiveOptions },
           ] as const
         ).map(({ key, label, options }) => (
           <Field
