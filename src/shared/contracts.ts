@@ -101,7 +101,6 @@ export interface AppConfig {
   worktreeNameHistory?: Record<string, string[]>
   worktreeSetups?: Record<string, WorktreeSetupConfig>
   codeHostingPendingCreates?: (string | PendingHostedReview)[]
-  agentCliCache?: AgentCliCache
 }
 
 export type WorktreeErrorCode =

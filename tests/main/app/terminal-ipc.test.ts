@@ -76,7 +76,16 @@ describe('Terminal IPC trust boundaries', () => {
         cwd: path,
         workspaceKind: 'local',
         ...launch,
-        agentCliCache: mocks.config.agentCliCache,
+        agentCliCache: {
+          checkedAt: mocks.agentCliCache.entries.codex.checkedAt,
+          pathEnv: mocks.agentCliCache.entries.codex.pathEnv,
+          entries: [
+            { provider: 'pi', executable: '/tmp/pi-fixture', version: '1.3.0' },
+            { provider: 'codex', executable: '/tmp/codex-fixture', version: '0.159.0' },
+            { provider: 'claude', executable: '/tmp/claude-fixture', version: '2.1.196' },
+            { provider: 'agy' },
+          ],
+        },
       },
       hostPreferences,
     )

@@ -27,6 +27,7 @@ import { CommitMessageService } from './git/commit-message/service'
 import { AgentSleepPrevention } from './agents/runtime/sleep-prevention'
 import { createDesktopNotifications } from './agents/notifications/desktop'
 import { registerAgentsIPC } from './agents/ipc'
+import { AgentCliCacheStore } from './agents/cli/cache'
 import { AgentCliManagement } from './agents/cli/management'
 import { AgentCliInstallTerminals } from './agents/cli/install-terminal'
 import { connectTerminalHost } from './host/host-client'
@@ -161,11 +162,11 @@ if (!app.requestSingleInstanceLock()) {
         (status) => renderer.send('accounts:usage-refresh', status),
       )
       await usageScheduler.start()
-      agentClis = new AgentCliManagement(config, (cache) =>
+      agentClis = new AgentCliManagement(new AgentCliCacheStore(paths.agentCliCache), (cache) =>
         renderer.send('agent:clis-changed', cache),
       )
       await agentClis
-        .initialize()
+        .initialize(config.snapshot().preferences)
         .catch((error) => renderer.warn(`Agent CLI 初始化失败：${String(error)}`))
       agentSleep.setEnabled(config.snapshot().preferences.preventSleep)
       powerMonitor.on('resume', () => {

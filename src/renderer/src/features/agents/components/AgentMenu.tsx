@@ -1,5 +1,6 @@
 import { Bot } from 'lucide-react'
 import { AgentIcon } from './AgentIcon'
+import { AGENT_CLI_PROVIDERS, agentCliEntry } from '../../../../../shared/agent-cli'
 import { AGENT_PROVIDERS, MAX_TERMINALS } from '../../../../../shared/contracts'
 import { useWorkspace } from '@/state/workspace'
 import { useAgentClis } from '@/state/agent-cli-store'
@@ -16,7 +17,9 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
   const cache = useAgentClis((state) => state.cache)
   const error = useAgentClis((state) => state.error)
   const atLimit = useWorkspace((state) => state.tabs.length >= MAX_TERMINALS)
-  const available = cache?.entries.filter((entry) => entry.executable) ?? []
+  const available = cache
+    ? AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(cache, id)).filter((entry) => entry.executable)
+    : []
   return (
     <ContextMenuSub>
       <ContextMenuSubTrigger className="workspace-new-agent-trigger" disabled={disabled || atLimit}>

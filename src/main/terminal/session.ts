@@ -9,7 +9,7 @@ import type {
 } from '../../shared/contracts'
 import type { AgentProcessRow } from '../agents/runtime/process-observation'
 import type { createTerminalKeyboardState } from '../../shared/terminal-keyboard-state'
-import type { AgentCliCache } from '../../shared/agent-cli'
+import type { HostAgentCliCache } from '../../shared/agent-cli'
 
 export interface Session extends TerminalSession {
   launch: TerminalLaunch
@@ -20,7 +20,7 @@ export interface Session extends TerminalSession {
   managed?: {
     token: string
     settings: Pick<Preferences, 'shellPath'>
-    cliCache?: AgentCliCache
+    cliCache?: HostAgentCliCache
     run?: {
       owner: AgentProcessRow
       process?: AgentProcessRow

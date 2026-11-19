@@ -1,10 +1,11 @@
 import { mocks, root } from '../../helpers/cli-environment.fixture'
 import { describe, expect, it, vi } from 'vitest'
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import * as shell from '../../../src/main/system/shell'
 import { DEFAULT_CONFIG } from '../../../src/shared/contracts'
 import { agentCliCacheSchema } from '../../../src/shared/agent-cli'
+import { AgentCliCacheStore } from '../../../src/main/agents/cli/cache'
 import { AgentCliManagement } from '../../../src/main/agents/cli/management'
 import type { ExecuteCliInstall } from '../../../src/main/agents/cli/install-terminal'
 import { ConfigStore } from '../../../src/main/settings/config-store'
@@ -33,18 +34,51 @@ describe('Agent CLI cached management', () => {
     await restarted.inspect(DEFAULT_CONFIG.preferences, false, 'pi')
     path = nextBin
     await restarted.inspect(DEFAULT_CONFIG.preferences, false, 'codex')
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')?.executable).toBe(
-      join(root, 'bin', 'pi'),
-    )
+    expect(restarted.read().entries.pi.executable).toBe(join(root, 'bin', 'pi'))
 
     await restarted.inspect(DEFAULT_CONFIG.preferences, false)
     const cache = restarted.read()
-    expect(cache.pathEnv.startsWith(nextBin)).toBe(true)
-    for (const provider of ['pi', 'codex', 'claude'])
-      expect(cache.entries.find((entry) => entry.provider === provider)).toMatchObject({
+    for (const provider of ['pi', 'codex', 'claude'] as const)
+      expect(cache.entries[provider]).toMatchObject({
+        pathEnv: expect.stringContaining(nextBin),
         executable: join(nextBin, provider),
         version: '0.160.0',
       })
+  })
+
+  it.skipIf(process.platform === 'win32')('uses the Homebrew receipt to classify agy', async () => {
+    const { restarted } = await cliManagement()
+    const executable = join(root, 'bin', 'agy')
+    await writeFile(executable, '#!/bin/sh\n', { mode: 0o700 })
+    expect(await restarted.inspect(DEFAULT_CONFIG.preferences, false, 'agy')).toEqual([
+      expect.objectContaining({ provider: 'agy', installMethod: 'unknown' }),
+    ])
+
+    const cache = restarted.read()
+    const legacyCache = agentCliCacheSchema.parse({
+      entries: { ...cache.entries, agy: { ...cache.entries.agy, installMethod: 'native' } },
+    })
+    expect(legacyCache.entries.agy.installMethod).toBe('unknown')
+
+    const cask = join(root, 'Caskroom', 'antigravity-cli')
+    const wrapper = join(cask, '0.159.0,123', '.homebrew-command-wrappers')
+    const receipt = join(cask, '.metadata', 'INSTALL_RECEIPT.json')
+    await mkdir(wrapper, { recursive: true })
+    await mkdir(join(cask, '.metadata'))
+    await writeFile(join(wrapper, 'agy'), '#!/bin/sh\n', { mode: 0o700 })
+    await rm(executable)
+    await symlink(join(wrapper, 'agy'), executable)
+    await writeFile(receipt, JSON.stringify({ source: { tap: 'homebrew/cask' } }))
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(Response.json({ version: '0.160.0,456' }))
+    expect(await restarted.inspect(DEFAULT_CONFIG.preferences, true, 'agy')).toEqual([
+      expect.objectContaining({ installMethod: 'brew', latestVersion: '0.160.0' }),
+    ])
+    expect(fetch).toHaveBeenCalledWith(
+      'https://formulae.brew.sh/api/cask/antigravity-cli.json',
+      expect.anything(),
+    )
   })
 
   it('keeps a version-check error when synchronizing an unchanged CLI', async () => {
@@ -55,27 +89,19 @@ describe('Agent CLI cached management', () => {
       .mockResolvedValueOnce(new Response('', { status: 503 }))
       .mockResolvedValueOnce(Response.json({ version: '0.160.0' }))
     await restarted.inspect(DEFAULT_CONFIG.preferences, true, 'pi')
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')?.updateError).toBe(
-      '版本服务返回 500',
-    )
+    expect(restarted.read().entries.pi.updateError).toBe('版本服务返回 500')
     await restarted.inspect(DEFAULT_CONFIG.preferences, false)
     await restarted.inspect(DEFAULT_CONFIG.preferences, false, 'pi')
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')?.updateError).toBe(
-      '版本服务返回 500',
-    )
+    expect(restarted.read().entries.pi.updateError).toBe('版本服务返回 500')
     await restarted.inspect(DEFAULT_CONFIG.preferences, true, 'pi')
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')?.updateError).toBe(
-      '版本服务返回 503',
-    )
+    expect(restarted.read().entries.pi.updateError).toBe('版本服务返回 503')
     await restarted.inspect(DEFAULT_CONFIG.preferences, true, 'pi')
     expect(fetch).toHaveBeenCalledTimes(3)
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')).toMatchObject({
+    expect(restarted.read().entries.pi).toMatchObject({
       latestVersion: '0.160.0',
       updateAvailable: true,
     })
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')?.updateError).toBe(
-      undefined,
-    )
+    expect(restarted.read().entries.pi.updateError).toBe(undefined)
   })
 
   it('does not restore a CLI invalidated while a check is pending', async () => {
@@ -104,18 +130,14 @@ describe('Agent CLI cached management', () => {
         throw new Error('spawn failed')
       }),
     ).rejects.toThrow('CLI 已不存在')
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')).toEqual({
-      provider: 'pi',
-    })
+    expect(restarted.read().entries.pi).not.toHaveProperty('executable')
     release(Response.json({ version: '0.160.0' }))
     await checking
-    expect(restarted.read().entries.find((entry) => entry.provider === 'pi')).toEqual({
-      provider: 'pi',
-    })
+    expect(restarted.read().entries.pi).not.toHaveProperty('executable')
   })
 
   it('merges out-of-order checks without losing another Agent result', async () => {
-    const { configFile, restarted, publish } = await cliManagement()
+    const { cacheFile, restarted, publish } = await cliManagement()
     publish.mockClear()
     const replies = new Map<string, (response: Response) => void>()
     vi.spyOn(globalThis, 'fetch').mockImplementation(
@@ -133,19 +155,18 @@ describe('Agent CLI cached management', () => {
     replies.get('pi')!(Response.json({ version: '0.160.0' }))
     await pi
     const cache = restarted.read()
-    expect(cache.entries.find((entry) => entry.provider === 'pi')?.latestVersion).toBe('0.160.0')
-    expect(cache.entries.find((entry) => entry.provider === 'codex')?.latestVersion).toBe('0.161.0')
-    const revisions: number[] = publish.mock.calls.map(([value]) => value.checkedAt)
-    expect(revisions.length).toBeGreaterThanOrEqual(2)
-    expect(revisions.every((value, index) => index === 0 || value > revisions[index - 1])).toBe(
-      true,
-    )
-    const restored = new ConfigStore(configFile)
+    expect(cache.entries.pi.latestVersion).toBe('0.160.0')
+    expect(cache.entries.codex.latestVersion).toBe('0.161.0')
+    const [afterCodex, afterPi] = publish.mock.calls.map(([value]) => value.entries)
+    expect(afterCodex.pi.latestVersion).toBeUndefined()
+    expect(afterPi.pi.checkedAt).toBeGreaterThan(afterCodex.pi.checkedAt)
+    expect(afterPi.codex).toEqual(afterCodex.codex)
+    const restored = new AgentCliCacheStore(cacheFile)
     await restored.load()
-    expect(restored.snapshot().agentCliCache).toEqual(cache)
+    expect(restored.snapshot()).toEqual(cache)
   })
 
-  it('retries an older scan after another Agent changes the cached PATH', async () => {
+  it('commits independent PATH snapshots without retrying another Agent scan', async () => {
     const { restarted } = await cliManagement()
     const nextBin = join(root, 'next-bin')
     await mkdir(nextBin)
@@ -180,14 +201,20 @@ describe('Agent CLI cached management', () => {
     release(Response.json({ version: '0.160.0' }))
     await pi
     const cache = restarted.read()
-    expect(cache.pathEnv.startsWith(nextBin)).toBe(true)
-    expect(cache.entries.find((entry) => entry.provider === 'pi')).toMatchObject({
-      executable: join(nextBin, 'pi'),
-      version: '0.160.0',
+    expect(cache.entries.pi).toMatchObject({
+      pathEnv: expect.stringContaining(join(root, 'bin')),
+      executable: join(root, 'bin', 'pi'),
+      version: '0.159.0',
+      latestVersion: '0.160.0',
     })
-    expect(cache.entries.find((entry) => entry.provider === 'codex')?.executable).toBe(
-      join(nextBin, 'codex'),
+    expect(cache.entries.codex).toMatchObject({
+      pathEnv: expect.stringContaining(nextBin),
+      executable: join(nextBin, 'codex'),
+    })
+    const command = await restarted.run('pi', DEFAULT_CONFIG.preferences, (resolved) =>
+      Promise.resolve(resolved),
     )
+    expect(command.env.PATH).toBe(cache.entries.pi.pathEnv)
   })
 
   it('synchronizes after the last concurrent update, including a failed update', async () => {
@@ -239,16 +266,14 @@ describe('Agent CLI cached management', () => {
           args[0] === '--version',
       ),
     ).toBe(false)
-    expect(restarted.read().entries.find((entry) => entry.provider === 'claude')?.executable).toBe(
-      join(root, 'bin', 'claude'),
-    )
+    expect(restarted.read().entries.claude.executable).toBe(join(root, 'bin', 'claude'))
 
     waiting.get('codex')!.reject(new Error('network failed'))
     await failedCodex
     const cache = restarted.read()
-    expect(cache.pathEnv.startsWith(nextBin)).toBe(true)
-    for (const provider of ['pi', 'codex', 'claude'])
-      expect(cache.entries.find((entry) => entry.provider === provider)).toMatchObject({
+    for (const provider of ['pi', 'codex', 'claude'] as const)
+      expect(cache.entries[provider]).toMatchObject({
+        pathEnv: expect.stringContaining(nextBin),
         executable: join(nextBin, provider),
         version: '0.160.0',
       })
@@ -281,14 +306,10 @@ describe('Agent CLI cached management', () => {
     })
     mocks.login.mockClear()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ version: '0.159.0' }))
-    const save = restored.saveAgentClis.bind(restored)
+    const save = restored.save.bind(restored)
     let rejectedRefresh = false
-    vi.spyOn(restored, 'saveAgentClis').mockImplementation((value) => {
-      if (
-        removed &&
-        !rejectedRefresh &&
-        !value.entries.find((entry) => entry.provider === 'codex')?.executable
-      ) {
+    vi.spyOn(restored, 'save').mockImplementation((value) => {
+      if (removed && !rejectedRefresh && !value.entries.codex.executable) {
         rejectedRefresh = true
         return Promise.reject(new Error('refresh failed'))
       }
@@ -315,9 +336,7 @@ describe('Agent CLI cached management', () => {
     ).rejects.toThrow('缓存同步失败：refresh failed')
     releaseClaude()
     expect((await pi).status.installing).toBe(false)
-    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')).toEqual({
-      provider: 'codex',
-    })
+    expect(restarted.read().entries.codex).not.toHaveProperty('executable')
   })
 
   it.each([false, true])(
@@ -325,9 +344,9 @@ describe('Agent CLI cached management', () => {
     async (commandFailed) => {
       const { restarted, restored } = await cliManagement()
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ version: '0.159.0' }))
-      const save = restored.saveAgentClis.bind(restored)
+      const save = restored.save.bind(restored)
       let saves = 0
-      vi.spyOn(restored, 'saveAgentClis').mockImplementation((value) =>
+      vi.spyOn(restored, 'save').mockImplementation((value) =>
         ++saves === 2 ? Promise.reject(new Error('disk full')) : save(value),
       )
       const failure = await restarted
@@ -357,39 +376,45 @@ describe('Agent CLI cached management', () => {
       }
     })
     const configFile = join(root, 'config.json')
+    const cacheFile = join(root, 'agent-cli.json')
+    const legacyConfig = JSON.stringify({
+      ...DEFAULT_CONFIG,
+      preferences: { ...DEFAULT_CONFIG.preferences, scrollback: 4321 },
+      agentCliCache: agentCliCacheSchema.parse({
+        entries: Object.fromEntries(
+          ['pi', 'codex', 'claude', 'agy'].map((provider) => [
+            provider,
+            { checkedAt: 1, pathEnv: '/obsolete' },
+          ]),
+        ),
+      }),
+    })
+    await writeFile(configFile, legacyConfig)
+    await writeFile(cacheFile, '{invalid')
     const config = new ConfigStore(configFile)
     await config.load()
+    expect(config.snapshot()).not.toHaveProperty('agentCliCache')
+    const settings = config.snapshot().preferences
+    expect(settings.scrollback).toBe(4321)
     const publish = vi.fn()
-    const agents = new AgentCliManagement(config, publish)
-    await agents.initialize()
-    expect(agents.read().entries).toHaveLength(4)
-    expect(agents.read().entries.find((entry) => entry.provider === 'agy')).toEqual({
-      provider: 'agy',
-    })
+    const store = new AgentCliCacheStore(cacheFile)
+    const agents = new AgentCliManagement(store, publish)
+    await agents.initialize(settings)
+    expect(Object.keys(agents.read().entries)).toHaveLength(4)
+    expect(agents.read().entries.agy).not.toHaveProperty('executable')
     expect(
-      agents
-        .read()
-        .entries.filter((entry) => entry.provider !== 'agy')
+      Object.values(agents.read().entries)
+        .filter((entry) => entry.executable)
         .every((entry) => entry.version === '0.159.0' && entry.installMethod === 'unknown'),
     ).toBe(true)
-    const legacyCache = agentCliCacheSchema.parse({
-      ...agents.read(),
-      entries: agents
-        .read()
-        .entries.map((entry) =>
-          entry.provider === 'claude' ? { ...entry, installMethod: 'native' } : entry,
-        ),
-    })
-    expect(legacyCache.entries.find((entry) => entry.provider === 'claude')?.installMethod).toBe(
-      'unknown',
-    )
     // Keep absence deterministic even on a developer machine with other installed copies.
-    await config.saveAgentClis({ ...legacyCache, pathEnv: join(root, 'bin') })
+    const cache = agents.read()
+    for (const entry of Object.values(cache.entries)) entry.pathEnv = join(root, 'bin')
+    await store.save(cache)
     const probes = mocks.login.mock.calls.length
-    const restored = new ConfigStore(configFile)
-    await restored.load()
+    const restored = new AgentCliCacheStore(cacheFile)
     const restarted = new AgentCliManagement(restored, publish)
-    await restarted.initialize()
+    await restarted.initialize(settings)
     expect(restarted.read()).toEqual(agents.read())
     const launch = vi.fn((command) => {
       try {
@@ -431,12 +456,9 @@ describe('Agent CLI cached management', () => {
       '未安装',
     )
     expect(launch).not.toHaveBeenCalled()
-    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')).toEqual({
-      provider: 'codex',
-    })
-    const disk = new ConfigStore(configFile)
-    await disk.load()
-    expect(disk.snapshot().agentCliCache).toEqual(restarted.read())
+    expect(restarted.read().entries.codex).not.toHaveProperty('executable')
+    expect(JSON.parse(await readFile(cacheFile, 'utf8'))).toEqual(restarted.read())
+    expect(await readFile(configFile, 'utf8')).toBe(legacyConfig)
     expect(publish).toHaveBeenLastCalledWith(restarted.read())
     expect(mocks.login).toHaveBeenCalledTimes(probes)
   })

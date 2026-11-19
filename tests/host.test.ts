@@ -138,6 +138,7 @@ function agentOptions() {
         { provider: 'pi' as const },
         { provider: 'codex' as const, executable: '/fake/codex', version: '0.159.0' },
         { provider: 'claude' as const },
+        { provider: 'agy' as const },
       ],
     },
   }

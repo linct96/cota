@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Download, ExternalLink, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react'
 import { AGENT_PROVIDERS, unwrap } from '../../../../../shared/contracts'
 import type { AgentProvider } from '../../../../../shared/contracts'
-import { AGENT_CLI_INSTALL_METHOD_LABELS } from '../../../../../shared/agent-cli'
+import {
+  AGENT_CLI_INSTALL_METHOD_LABELS,
+  AGENT_CLI_PROVIDERS,
+  agentCliEntry,
+} from '../../../../../shared/agent-cli'
 import type { AgentCliInstallRun, AgentCliStatus } from '../../../../../shared/agent-cli'
 import { useAgentClis } from '@/state/agent-cli-store'
 import { abbreviateHomePath, cn } from '@/lib/utils'
@@ -96,7 +100,7 @@ function AgentCliActionButton({
 export function AgentSettings() {
   const cache = useAgentClis((state) => state.cache)
   const cacheError = useAgentClis((state) => state.error)
-  const agents = cache?.entries ?? []
+  const agents = cache ? AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(cache, id)) : []
   const [busy, setBusy] = useState<'updates' | 'detect'>()
   const [checkingProviders, setCheckingProviders] = useState<AgentProvider[]>([])
   const [updatingProviders, setUpdatingProviders] = useState<AgentProvider[]>([])
@@ -296,7 +300,11 @@ export function AgentSettings() {
               </div>
               <Card size="sm" className="agent-settings-card gap-0 divide-y divide-border py-0">
                 {agents.map((agent) => {
-                  const { provider } = agent
+                  const { provider, installMethod } = agent
+                  const installSource =
+                    installMethod && installMethod !== 'unknown'
+                      ? AGENT_CLI_INSTALL_METHOD_LABELS[installMethod]
+                      : undefined
                   const canCompare = agent.updateAvailable !== undefined
                   const operationError = operationErrors[provider]
                   const retryCheck = !!agent.updateError || !!operationError?.retryCheck
@@ -340,11 +348,11 @@ export function AgentSettings() {
                               {agent.version}
                             </Badge>
                           )}
-                          {agent.installMethod && agent.installMethod !== 'unknown' && (
+                          {installSource ? (
                             <Badge className="agent-settings-install-source" variant="outline">
-                              {AGENT_CLI_INSTALL_METHOD_LABELS[agent.installMethod]}
+                              {installSource}
                             </Badge>
-                          )}
+                          ) : null}
                           {agent.updateAvailable && agent.latestVersion && !retryCheck && (
                             <Badge
                               className="agent-settings-update-status tabular-nums"

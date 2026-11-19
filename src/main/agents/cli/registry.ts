@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { AgentCliCache } from '../../../shared/agent-cli'
+import type { AgentCliCache, HostAgentCliCache } from '../../../shared/agent-cli'
 import { promisify } from 'node:util'
 import { AGENT_PROVIDERS } from '../../../shared/contracts'
 import type { AgentAvailability, AgentProvider, Preferences } from '../../../shared/contracts'
@@ -18,7 +18,7 @@ import {
 export async function resolveAgent(
   provider: AgentProvider,
   settings: Pick<Preferences, 'shellPath'>,
-  cache?: AgentCliCache,
+  cache?: AgentCliCache | HostAgentCliCache,
 ): Promise<{
   executable: string
   args: string[]
@@ -26,10 +26,16 @@ export async function resolveAgent(
   cliExecutable?: string
 }> {
   const definition = AGENT_PROVIDERS[agentProvider(provider)]
-  const cached = cache?.entries.find((entry) => entry.provider === provider)
-  const env = cache
-    ? { ...shellEnvironment(), PATH: cache.pathEnv }
-    : await loginShellEnvironment(settings)
+  const cached =
+    cache &&
+    ('pathEnv' in cache
+      ? cache.entries.find((entry) => entry.provider === provider)
+      : cache.entries[provider])
+  const pathEnv = cache && ('pathEnv' in cache ? cache.pathEnv : cache.entries[provider].pathEnv)
+  const env =
+    pathEnv !== undefined
+      ? { ...shellEnvironment(), PATH: pathEnv }
+      : await loginShellEnvironment(settings)
   let executable: string
   try {
     executable = await findExecutable(cached?.executable || definition.command, env)

@@ -1,7 +1,12 @@
 import { AGENT_PROVIDERS } from '../../../shared/contracts'
 import type { AgentProvider, Preferences } from '../../../shared/contracts'
-import type { ConfigStore } from '../../settings/config-store'
-import { AGENT_CLI_PACKAGES, isNewerVersion } from '../../../shared/agent-cli'
+import type { AgentCliCacheStore } from './cache'
+import {
+  AGENT_CLI_PACKAGES,
+  AGENT_CLI_PROVIDERS,
+  agentCliEntry,
+  isNewerVersion,
+} from '../../../shared/agent-cli'
 import type {
   AgentCliCache,
   AgentCliInstallResult,
@@ -26,17 +31,17 @@ export class AgentCliManagement {
   private updateRevision = 0
 
   constructor(
-    private readonly config: ConfigStore,
+    private readonly cache: AgentCliCacheStore,
     private readonly publish: (cache: AgentCliCache) => void,
   ) {}
 
-  async initialize(): Promise<void> {
-    if (!this.config.snapshot().agentCliCache)
-      await this.inspect(this.config.snapshot().preferences, false)
+  async initialize(settings: Preferences): Promise<void> {
+    await this.cache.load()
+    if (!this.cache.snapshot()) await this.inspect(settings, false)
   }
 
   read(): AgentCliCache {
-    const cache = this.config.snapshot().agentCliCache
+    const cache = this.cache.snapshot()
     if (!cache) throw new Error('Agent CLI 缓存尚未初始化，请在设置中检测并刷新缓存。')
     return cache
   }
@@ -57,12 +62,17 @@ export class AgentCliManagement {
   }
 
   private async save(entries: AgentCliStatus[], pathEnv: string): Promise<AgentCliCache> {
-    const cache = {
-      entries,
-      pathEnv,
-      checkedAt: Math.max(Date.now(), (this.config.snapshot().agentCliCache?.checkedAt ?? 0) + 1),
+    const previous = this.cache.snapshot()?.entries
+    const next = { ...previous } as AgentCliCache['entries']
+    for (const { provider, installing: _installing, ...entry } of entries) {
+      next[provider] = {
+        ...entry,
+        pathEnv,
+        checkedAt: Math.max(Date.now(), (previous?.[provider].checkedAt ?? 0) + 1),
+      }
     }
-    await this.config.saveAgentClis(cache)
+    const cache = { entries: next }
+    await this.cache.save(cache)
     const saved = this.read()
     this.publish(saved)
     return saved
@@ -93,7 +103,7 @@ export class AgentCliManagement {
   ): Promise<T> {
     return this.use(provider, async () => {
       const cache = this.read()
-      const entry = cache.entries.find((candidateEntry) => candidateEntry.provider === provider)!
+      const entry = cache.entries[provider]
       if (!entry.executable)
         throw new Error(`${AGENT_PROVIDERS[provider].name} 未安装，请在设置中安装或重新检测。`)
       try {
@@ -129,16 +139,8 @@ export class AgentCliManagement {
   ): Promise<void> {
     return this.enqueue(async () => {
       const current = this.read()
-      if (
-        current.pathEnv !== expected.pathEnv ||
-        JSON.stringify(current.entries.find((item) => item.provider === provider)) !==
-          JSON.stringify(expected.entries.find((item) => item.provider === provider))
-      )
-        return
-      await this.save(
-        current.entries.map((item) => (item.provider === provider ? entry : item)),
-        current.pathEnv,
-      )
+      if (current.entries[provider].checkedAt !== expected.entries[provider].checkedAt) return
+      await this.save([entry], current.entries[provider].pathEnv)
     })
   }
 
@@ -147,19 +149,19 @@ export class AgentCliManagement {
     checkUpdates: boolean,
     provider?: AgentProvider,
   ): Promise<AgentCliStatus[]> {
-    if (!this.config.snapshot().agentCliCache) {
+    if (!this.cache.snapshot()) {
       const initialized = await this.enqueue(async () => {
-        if (this.config.snapshot().agentCliCache) return undefined
+        if (this.cache.snapshot()) return undefined
         const env = await loginShellEnvironment(settings)
         return this.save(await this.scan(settings, checkUpdates, undefined, env), env.PATH || '')
       })
       if (initialized)
-        return provider
-          ? initialized.entries.filter((entry) => entry.provider === provider)
-          : initialized.entries
+        return (provider ? [provider] : AGENT_CLI_PROVIDERS).map((id) =>
+          agentCliEntry(initialized, id),
+        )
     }
     if (!provider) return this.synchronize(settings, checkUpdates)
-    const cached = () => this.read().entries.find((entry) => entry.provider === provider)!
+    const cached = () => agentCliEntry(this.read(), provider)
     if (this.installing.has(provider)) return [cached()]
     return [
       await this.enqueueProvider(provider, async () =>
@@ -178,20 +180,13 @@ export class AgentCliManagement {
     return this.enqueue(async () => {
       const current = this.read()
       if (
-        current.pathEnv !== expected.pathEnv ||
         entries.some(
           ({ provider }) =>
-            JSON.stringify(current.entries.find((entry) => entry.provider === provider)) !==
-            JSON.stringify(expected.entries.find((entry) => entry.provider === provider)),
+            current.entries[provider].checkedAt !== expected.entries[provider].checkedAt,
         )
       )
         return undefined
-      return this.save(
-        current.entries.map(
-          (entry) => entries.find((item) => item.provider === entry.provider) ?? entry,
-        ),
-        pathEnv,
-      )
+      return entries.length ? this.save(entries, pathEnv) : current
     })
   }
 
@@ -205,7 +200,7 @@ export class AgentCliManagement {
       const revision = this.updateRevision
       const env = await loginShellEnvironment(settings)
       const detected = await Promise.all(
-        (Object.keys(AGENT_PROVIDERS) as AgentProvider[]).map((provider) => {
+        AGENT_CLI_PROVIDERS.map((provider) => {
           if (this.installing.has(provider) && provider !== completed)
             return Promise.resolve(undefined)
           return this.enqueueProvider(provider, async () => {
@@ -218,10 +213,10 @@ export class AgentCliManagement {
       const cache = await this.mergeEntries(entries, env.PATH || '', expected)
       if (this.updateRevision !== revision) {
         if ([...this.installing].some((provider) => provider !== completed))
-          return this.read().entries
+          return AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(this.read(), id))
         continue
       }
-      if (cache) return cache.entries
+      if (cache) return AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(cache, id))
     }
     throw new Error('Shell 环境或 CLI 状态持续变化，请重新检测。')
   }
@@ -236,7 +231,7 @@ export class AgentCliManagement {
       const env = await loginShellEnvironment(settings)
       const detected = await this.scan(settings, checkUpdates, provider, env)
       const cache = await this.mergeEntries(detected, env.PATH || '', expected)
-      if (cache) return cache.entries.find((entry) => entry.provider === provider)!
+      if (cache) return agentCliEntry(cache, provider)
     }
     throw new Error('Shell 环境或 CLI 状态持续变化，请重新检测。')
   }
@@ -247,7 +242,7 @@ export class AgentCliManagement {
     provider: AgentProvider | undefined,
     env: Record<string, string>,
   ): Promise<AgentCliStatus[]> {
-    const previous = this.config.snapshot().agentCliCache?.entries
+    const previous = this.cache.snapshot()?.entries
     const detected = await detectAgents(settings, provider, env)
     return Promise.all(
       detected.map(async (entry): Promise<AgentCliStatus> => {
@@ -261,7 +256,7 @@ export class AgentCliManagement {
           installing: this.installing.has(entry.provider),
           installMethod: entry.executable ? (installation?.method ?? 'unknown') : undefined,
         }
-        const prior = previous?.find((item) => item.provider === entry.provider)
+        const prior = previous?.[entry.provider]
         if (
           !checkUpdates &&
           prior?.updateError &&
@@ -277,9 +272,19 @@ export class AgentCliManagement {
           status.latestVersion = cached.version
         }
         const npmPackage = AGENT_CLI_PACKAGES[entry.provider]
-        const latestUrl =
-          installation?.latestUrl ??
-          (npmPackage && `https://registry.npmjs.org/${encodeURIComponent(npmPackage)}/latest`)
+        let latestUrl = installation?.latestUrl
+        if (!latestUrl && npmPackage)
+          latestUrl = `https://registry.npmjs.org/${encodeURIComponent(npmPackage)}/latest`
+        if (
+          !latestUrl &&
+          entry.provider === 'agy' &&
+          ['darwin', 'win32'].includes(process.platform) &&
+          ['arm64', 'x64'].includes(process.arch)
+        ) {
+          const platform = process.platform === 'win32' ? 'windows' : 'darwin'
+          const arch = process.arch === 'x64' ? 'amd64' : 'arm64'
+          latestUrl = `https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/${platform}_${arch}.json`
+        }
         if (checkUpdates && entry.executable && latestUrl && cacheAge >= 60_000) {
           try {
             const response = await fetch(latestUrl, {
@@ -288,10 +293,11 @@ export class AgentCliManagement {
             })
             if (!response.ok) throw new Error(`版本服务返回 ${response.status}`)
             const metadata = await response.json()
-            const version =
-              installation?.method === 'brew' && !installation.cask
-                ? metadata?.versions?.stable
-                : metadata?.version
+            let version = metadata?.version
+            if (installation?.method === 'brew') {
+              if (!installation.cask) version = metadata?.versions?.stable
+              else if (typeof version === 'string') version = version.split(',')[0]
+            }
             if (typeof version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version))
               throw new Error('版本服务返回了无效版本号。')
             status.latestVersion = version

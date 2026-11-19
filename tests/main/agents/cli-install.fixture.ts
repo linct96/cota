@@ -5,7 +5,8 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AgentCliManagement } from '../../../src/main/agents/cli/management'
 import { AgentCliInstallTerminals } from '../../../src/main/agents/cli/install-terminal'
-import { ConfigStore } from '../../../src/main/settings/config-store'
+import { AgentCliCacheStore } from '../../../src/main/agents/cli/cache'
+import { DEFAULT_CONFIG } from '../../../src/shared/contracts'
 
 export async function cliManagement() {
   for (const provider of ['pi', 'codex', 'claude'])
@@ -19,17 +20,17 @@ export async function cliManagement() {
       return Promise.reject(cause)
     }
   })
-  const configFile = join(root, 'config.json')
-  const config = new ConfigStore(configFile)
-  await config.load()
+  const cacheFile = join(root, 'cota', 'cache', 'agent-cli.json')
+  const store = new AgentCliCacheStore(cacheFile)
   const publish = vi.fn()
-  const agents = new AgentCliManagement(config, publish)
-  await agents.initialize()
-  await config.saveAgentClis({ ...agents.read(), pathEnv: join(root, 'bin') })
-  const restored = new ConfigStore(configFile)
-  await restored.load()
+  const agents = new AgentCliManagement(store, publish)
+  await agents.initialize(DEFAULT_CONFIG.preferences)
+  const cache = agents.read()
+  for (const entry of Object.values(cache.entries)) entry.pathEnv = join(root, 'bin')
+  await store.save(cache)
+  const restored = new AgentCliCacheStore(cacheFile)
   const restarted = new AgentCliManagement(restored, publish)
-  await restarted.initialize()
+  await restarted.initialize(DEFAULT_CONFIG.preferences)
   const launch = vi.fn((command) => {
     try {
       return Promise.resolve(command.args)
@@ -37,7 +38,7 @@ export async function cliManagement() {
       return Promise.reject(cause)
     }
   })
-  return { configFile, restored, restarted, launch, publish }
+  return { cacheFile, restored, restarted, launch, publish }
 }
 export function installTerminal(separateChildren = false) {
   const createChild = () => {

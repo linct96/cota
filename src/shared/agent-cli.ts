@@ -11,7 +11,6 @@ export const AGENT_CLI_INSTALL_METHOD_LABELS = {
   brew: 'Homebrew',
   npm: 'npm',
   scoop: 'Scoop',
-  native: '官方 CLI',
   unknown: '其他来源',
 } as const
 
@@ -22,27 +21,35 @@ export interface AgentCliStatus extends AgentAvailability {
   updateError?: string
   installing?: boolean
 }
-const providers = Object.keys(AGENT_PROVIDERS) as AgentProvider[]
+export const AGENT_CLI_PROVIDERS = Object.keys(AGENT_PROVIDERS) as AgentProvider[]
+const agentProviderSchema = z.enum(AGENT_CLI_PROVIDERS)
+const checkedAtSchema = z.number().int().nonnegative()
+const pathEnvSchema = z
+  .string()
+  .max(131072)
+  .refine((value) => !value.includes('\0'))
 
-const agentCliStatusSchema = z
-  .object({
-    provider: z.enum(providers),
-    executable: z
-      .string()
-      .max(32768)
-      .refine((value) => /^(?:\/|[a-z]:[\\/]|\\\\)/i.test(value) && !value.includes('\0'))
-      .optional(),
-    version: z.string().max(100).optional(),
-    error: z.string().max(8000).optional(),
-    installMethod: z.enum(['brew', 'npm', 'scoop', 'native', 'unknown']).optional(),
-    latestVersion: z.string().max(100).optional(),
-    updateAvailable: z.boolean().optional(),
-    updateError: z.string().max(8000).optional(),
-  })
+const agentCliFieldsSchema = z.object({
+  executable: z
+    .string()
+    .max(32768)
+    .refine((value) => /^(?:\/|[a-z]:[\\/]|\\\\)/i.test(value) && !value.includes('\0'))
+    .optional(),
+  version: z.string().max(100).optional(),
+  error: z.string().max(8000).optional(),
+  installMethod: z
+    .enum(['brew', 'npm', 'scoop', 'native', 'unknown'])
+    .transform((method) => (method === 'native' ? 'unknown' : method))
+    .optional(),
+  latestVersion: z.string().max(100).optional(),
+  updateAvailable: z.boolean().optional(),
+  updateError: z.string().max(8000).optional(),
+})
+
+const agentCliStatusSchema = agentCliFieldsSchema
+  .extend({ provider: agentProviderSchema })
   .transform((entry) => {
     const definition = AGENT_PROVIDERS[entry.provider]
-    if (entry.installMethod === 'native' && entry.provider !== 'agy')
-      entry.installMethod = 'unknown'
     // Older caches treated a missing CLI as a detection error.
     if (
       !entry.executable &&
@@ -54,18 +61,33 @@ const agentCliStatusSchema = z
     return entry
   })
 
+const agentCliEntrySchema = agentCliFieldsSchema.extend({
+  checkedAt: checkedAtSchema,
+  pathEnv: pathEnvSchema,
+})
 export const agentCliCacheSchema = z.object({
-  checkedAt: z.number().int().nonnegative(),
-  pathEnv: z
-    .string()
-    .max(131072)
-    .refine((value) => !value.includes('\0')),
-  entries: z
-    .array(agentCliStatusSchema)
-    .length(providers.length)
-    .refine((entries) => new Set(entries.map((entry) => entry.provider)).size === providers.length),
+  entries: z.record(agentProviderSchema, agentCliEntrySchema),
 })
 export type AgentCliCache = z.infer<typeof agentCliCacheSchema>
+
+// Keep the launch payload compatible with Terminal Hosts surviving an app restart.
+export const hostAgentCliCacheSchema = z.object({
+  checkedAt: checkedAtSchema,
+  pathEnv: pathEnvSchema,
+  entries: z
+    .array(agentCliStatusSchema)
+    .length(AGENT_CLI_PROVIDERS.length)
+    .refine(
+      (entries) =>
+        new Set(entries.map((entry) => entry.provider)).size === AGENT_CLI_PROVIDERS.length,
+    ),
+})
+export type HostAgentCliCache = z.infer<typeof hostAgentCliCacheSchema>
+
+export function agentCliEntry(cache: AgentCliCache, provider: AgentProvider): AgentCliStatus {
+  const { checkedAt: _checkedAt, pathEnv: _pathEnv, ...entry } = cache.entries[provider]
+  return { provider, ...entry }
+}
 
 export const AGENT_CLI_INSTALL_SCROLLBACK = 200
 

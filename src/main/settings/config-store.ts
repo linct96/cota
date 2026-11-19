@@ -1,8 +1,6 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { agentCliCacheSchema } from '../../shared/agent-cli'
-import type { AgentCliCache } from '../../shared/agent-cli'
 import { worktreeSetupSchema } from '../../shared/worktree-setup'
 import { pendingHostedReviewSchema } from '../../shared/code-hosting'
 import type { PendingHostedReview } from '../../shared/code-hosting'
@@ -56,10 +54,6 @@ export class ConfigStore {
           projectGroupingSchema.parse(grouping),
           next.recentProjects,
         )
-      }
-      if (data.agentCliCache !== undefined) {
-        const cache = agentCliCacheSchema.safeParse(data.agentCliCache)
-        if (cache.success) next.agentCliCache = cache.data
       }
       if (data.worktreeSetups !== undefined) {
         if (
@@ -184,13 +178,6 @@ export class ConfigStore {
   savePreferences(value: Preferences): Promise<void> {
     return this.update((config) => {
       config.preferences = value
-    })
-  }
-
-  saveAgentClis(value: AgentCliCache): Promise<void> {
-    const cache = agentCliCacheSchema.parse(value)
-    return this.update((config) => {
-      config.agentCliCache = cache
     })
   }
 

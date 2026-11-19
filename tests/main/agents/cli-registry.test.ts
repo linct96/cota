@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { chmod, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AGENT_PROVIDERS, DEFAULT_CONFIG } from '../../../src/shared/contracts'
-import { agentCliCacheSchema } from '../../../src/shared/agent-cli'
+import { hostAgentCliCacheSchema } from '../../../src/shared/agent-cli'
 import { agentCapability, detectAgents, resolveAgent } from '../../../src/main/agents/cli/registry'
 
 describe('Agent CLI discovery and capabilities', () => {
@@ -114,7 +114,7 @@ describe('Agent CLI discovery and capabilities', () => {
     ).toContain('文件权限')
     await chmod(join(root, 'bin', 'claude'), 0o700)
     expect(
-      agentCliCacheSchema.parse({
+      hostAgentCliCacheSchema.parse({
         checkedAt: 1,
         pathEnv: detectionEnv.PATH,
         entries: [

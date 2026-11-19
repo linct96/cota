@@ -94,9 +94,9 @@ export function registerAgentsIPC(deps: {
     const agents = agentClis.read().entries
     return Promise.all(
       providers.map((provider) => {
-        const entry = agents.find((agent) => agent.provider === provider)
-        const executable = agentClis.isUpdating(provider) ? undefined : entry?.executable
-        const inspect = () => inspectAgentHook(provider, env, entry?.version, executable)
+        const entry = agents[provider]
+        const executable = agentClis.isUpdating(provider) ? undefined : entry.executable
+        const inspect = () => inspectAgentHook(provider, env, entry.version, executable)
         return provider === 'codex' && executable ? agentClis.use(provider, inspect) : inspect()
       }),
     )

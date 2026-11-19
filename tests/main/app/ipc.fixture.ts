@@ -3,17 +3,40 @@ import { EventEmitter } from 'node:events'
 import type { NotificationSound } from '../../../src/shared/notification-sounds'
 import { hookFiles } from '../../../src/main/agents/hooks/managed'
 import { DEFAULT_CONFIG } from '../../../src/shared/contracts'
-import type { AgentUpdate, Preferences, WorktreeRecord } from '../../../src/shared/contracts'
+import type {
+  AgentProvider,
+  AgentUpdate,
+  Preferences,
+  WorktreeRecord,
+} from '../../../src/shared/contracts'
 import type * as FsModule from 'node:fs'
 import type * as ChildProcessModule from 'node:child_process'
+import { AGENT_CLI_PROVIDERS, agentCliEntry } from '../../../src/shared/agent-cli'
 import type { AgentCliCache } from '../../../src/shared/agent-cli'
 import type * as ManagedModule from '../../../src/main/agents/hooks/managed'
 import type * as ShellModule from '../../../src/main/system/shell'
 
 const mocks = vi.hoisted(() => {
   const frame = { url: 'http://localhost:5173/' }
+  const agentCliCache: AgentCliCache = {
+    entries: {
+      pi: { checkedAt: 1, pathEnv: '/tmp', executable: '/tmp/pi-fixture', version: '1.3.0' },
+      codex: {
+        checkedAt: 1,
+        pathEnv: '/tmp',
+        executable: '/tmp/codex-fixture',
+        version: '0.159.0',
+      },
+      claude: {
+        checkedAt: 1,
+        pathEnv: '/tmp',
+        executable: '/tmp/claude-fixture',
+        version: '2.1.196',
+      },
+      agy: { checkedAt: 1, pathEnv: '/tmp' },
+    },
+  }
   const config: {
-    agentCliCache: AgentCliCache
     preferences: Pick<
       Preferences,
       | 'notificationsEnabled'
@@ -28,15 +51,6 @@ const mocks = vi.hoisted(() => {
     recentProjects: string[]
     worktreeRecords: WorktreeRecord[]
   } = {
-    agentCliCache: {
-      checkedAt: 1,
-      pathEnv: '/tmp',
-      entries: [
-        { provider: 'pi', executable: '/tmp/pi-fixture', version: '1.3.0' },
-        { provider: 'codex', executable: '/tmp/codex-fixture', version: '0.159.0' },
-        { provider: 'claude', executable: '/tmp/claude-fixture', version: '2.1.196' },
-      ],
-    },
     preferences: {
       notificationsEnabled: true,
       confirmCloseRunningTerminal: true,
@@ -96,6 +110,7 @@ const mocks = vi.hoisted(() => {
     stopBlocker: vi.fn(),
     isBlockerStarted: vi.fn().mockReturnValue(true),
     config,
+    agentCliCache,
     resolveShell: vi.fn().mockResolvedValue('/bin/bash'),
     openWorkspaceWith: vi.fn(),
     listWorkspaceOpeners: vi.fn(),
@@ -287,11 +302,11 @@ vi.mock('../../../src/main/system/open-with', () => ({
 }))
 vi.mock('../../../src/main/agents/cli/registry', () => ({
   detectAgents: mocks.detectAgents,
-  resolveAgent: (provider: string, _settings: unknown, cache: AgentCliCache) => {
+  resolveAgent: (provider: AgentProvider, _settings: unknown, cache: AgentCliCache) => {
     try {
       return Promise.resolve({
-        executable: cache.entries.find((entry) => entry.provider === provider)?.executable,
-        cliExecutable: cache.entries.find((entry) => entry.provider === provider)?.executable,
+        executable: cache.entries[provider].executable,
+        cliExecutable: cache.entries[provider].executable,
         args: [],
         env: {},
       })
@@ -334,6 +349,16 @@ vi.mock('../../../src/main/accounts/usage-refresh', () => ({
     snapshot = vi.fn().mockReturnValue([])
   },
 }))
+vi.mock('../../../src/main/agents/cli/cache', () => ({
+  AgentCliCacheStore: class {
+    load = vi.fn().mockResolvedValue(undefined)
+    snapshot = () => structuredClone(mocks.agentCliCache)
+    save = (cache: AgentCliCache) =>
+      Promise.resolve().then(() => {
+        mocks.agentCliCache = structuredClone(cache)
+      })
+  },
+}))
 vi.mock('../../../src/main/settings/config-store', () => ({
   ConfigStore: class {
     load = () => Promise.resolve({})
@@ -342,15 +367,6 @@ vi.mock('../../../src/main/settings/config-store', () => ({
     saveLayout = mocks.saveLayout
     flush = mocks.flush
     snapshot = () => structuredClone(mocks.config)
-    saveAgentClis = (cache: AgentCliCache) => {
-      try {
-        mocks.config.agentCliCache = structuredClone(cache)
-
-        return Promise.resolve()
-      } catch (cause) {
-        return Promise.reject(cause)
-      }
-    }
     remember = mocks.remember
   },
 }))
@@ -384,7 +400,7 @@ vi.mock('../../../src/main/host/host-client', () => ({
 }))
 
 const initialPreferences = structuredClone(mocks.config.preferences)
-const initialAgentCliCache = structuredClone(mocks.config.agentCliCache)
+const initialAgentCliCache = structuredClone(mocks.agentCliCache)
 const event = { sender: mocks.contents, senderFrame: mocks.contents.mainFrame }
 const path = '/missing/中文 项目'
 const target = {
@@ -410,7 +426,8 @@ async function blockHookInspectionUntilInstallStops() {
   mocks.detectAgents.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
-        finishInspection = () => resolve(initialAgentCliCache.entries)
+        finishInspection = () =>
+          resolve(AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(initialAgentCliCache, id)))
       }),
   )
   // Model Codex inspection waiting for the CLI installation to leave its shared queue.
@@ -481,7 +498,7 @@ beforeEach(() => {
       return Promise.reject(cause)
     }
   })
-  mocks.config.agentCliCache = structuredClone(initialAgentCliCache)
+  mocks.agentCliCache = structuredClone(initialAgentCliCache)
   mocks.config.recentProjects = []
   mocks.config.preferences.confirmCloseRunningTerminal = true
   mocks.remember.mockImplementation((filePath: string) => {

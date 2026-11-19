@@ -8,7 +8,8 @@ import type { AppLifecycle } from '../app/lifecycle'
 import type { AppRenderer } from '../app/renderer'
 import type { IpcHandler, TrustedIPC } from '../app/ipc'
 import { startupCommand, terminalId, terminalLaunch } from '../validation'
-import type { AgentCliCache } from '../../shared/agent-cli'
+import { AGENT_CLI_PROVIDERS, agentCliEntry } from '../../shared/agent-cli'
+import type { HostAgentCliCache } from '../../shared/agent-cli'
 
 export function registerTerminalIPC(deps: {
   handle: IpcHandler
@@ -46,7 +47,7 @@ export function registerTerminalIPC(deps: {
         lifecycle.exitPending
       )
         throw new Error('工作区正在关闭，无法新建终端。')
-      const create = (agentCliCache?: AgentCliCache) =>
+      const create = (agentCliCache?: HostAgentCliCache) =>
         manager.request('create', [
           {
             id: value.id,
@@ -64,9 +65,16 @@ export function registerTerminalIPC(deps: {
             quickCommands: snapshot.preferences.quickCommands,
           },
         ])
-      return launch.kind === 'agent'
-        ? agentClis.run(launch.provider, snapshot.preferences, (_command, cache) => create(cache))
-        : create()
+      if (launch.kind !== 'agent') return create()
+      const { provider } = launch
+      return agentClis.run(provider, snapshot.preferences, (_command, cache) => {
+        const { pathEnv, checkedAt } = cache.entries[provider]
+        return create({
+          pathEnv,
+          checkedAt,
+          entries: AGENT_CLI_PROVIDERS.map((id) => agentCliEntry(cache, id)),
+        })
+      })
     })
   })
   handle('service:stop', (id: string) => {

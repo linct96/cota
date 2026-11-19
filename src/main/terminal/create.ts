@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/headless'
 import { randomBytes } from 'node:crypto'
 import { basename, dirname } from 'node:path'
 import { SerializeAddon } from '@xterm/addon-serialize'
-import { agentCliCacheSchema } from '../../shared/agent-cli'
+import { hostAgentCliCacheSchema } from '../../shared/agent-cli'
 import { prepareAgentShell } from '../agents/hooks/shell-integration'
 import { MAX_TERMINALS } from '../../shared/contracts'
 import type { TerminalEvent } from '../../shared/contracts'
@@ -50,7 +50,7 @@ export function createTerminal(
   const cliCache =
     options.agentCliCache === undefined
       ? undefined
-      : agentCliCacheSchema.parse(options.agentCliCache)
+      : hostAgentCliCacheSchema.parse(options.agentCliCache)
   const settings = hostTerminalPreferences(inputSettings)
   const definition =
     options.service === undefined

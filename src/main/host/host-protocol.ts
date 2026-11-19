@@ -12,7 +12,7 @@ import type {
 } from '../../shared/contracts'
 
 import type { TerminalProcessRoot } from '../../shared/workspace-ports'
-import type { AgentCliCache } from '../../shared/agent-cli'
+import type { HostAgentCliCache } from '../../shared/agent-cli'
 
 export const HOST_PROTOCOL = 1
 
@@ -21,7 +21,7 @@ export type HostTerminalPreferences = Pick<
   'shellPath' | 'scrollback' | 'quickCommands'
 >
 export type ResolvedTerminalCreate = CreateTerminal &
-  TerminalBinding & { agentCliCache?: AgentCliCache }
+  TerminalBinding & { agentCliCache?: HostAgentCliCache }
 export interface ResolvedTerminalAttach extends AttachTerminal, TerminalBinding {}
 export const MAX_FRAME = 64 * 1024 * 1024
 

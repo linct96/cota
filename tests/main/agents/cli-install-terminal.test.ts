@@ -303,7 +303,7 @@ describe('Agent CLI update terminals', () => {
     const { restarted } = await cliManagement()
     const nextBin = join(root, 'next-bin')
     await mkdir(nextBin)
-    for (const provider of ['pi', 'codex', 'claude'])
+    for (const provider of ['pi', 'codex', 'claude'] as const)
       await writeFile(join(nextBin, provider), '#!/bin/sh\n', { mode: 0o700 })
     let path = join(root, 'bin')
     mocks.login.mockImplementation((file: string, args: string[]) =>
@@ -336,9 +336,9 @@ describe('Agent CLI update terminals', () => {
     await terminals.close()
     await interrupted
     const cache = restarted.read()
-    expect(cache.pathEnv.startsWith(nextBin)).toBe(true)
-    for (const provider of ['pi', 'codex', 'claude'])
-      expect(cache.entries.find((entry) => entry.provider === provider)).toMatchObject({
+    for (const provider of ['pi', 'codex', 'claude'] as const)
+      expect(cache.entries[provider]).toMatchObject({
+        pathEnv: expect.stringContaining(nextBin),
         executable: join(nextBin, provider),
         version: '0.160.0',
       })
@@ -393,9 +393,7 @@ describe('Agent CLI update terminals', () => {
     const idle = vi.fn().mockResolvedValue(undefined)
     const { terminals } = installTerminal()
     await restarted.inspect(DEFAULT_CONFIG.preferences, false)
-    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable).toBe(
-      join(root, 'bin', 'codex'),
-    )
+    expect(restarted.read().entries.codex.executable).toBe(join(root, 'bin', 'codex'))
     const findProgram = shell.findExecutable
     const missingCodex = new shell.ExecutableNotFoundError(
       '找不到 codex。请安装其命令行工具，并检查登录 Shell 的 PATH。',
@@ -407,9 +405,7 @@ describe('Agent CLI update terminals', () => {
       restarted.update('codex', DEFAULT_CONFIG.preferences, idle, execute),
     )
     expect(missing.status).toEqual({ provider: 'codex' })
-    expect(restarted.read().entries.find((entry) => entry.provider === 'codex')).toEqual({
-      provider: 'codex',
-    })
+    expect(restarted.read().entries.codex).not.toHaveProperty('executable')
     const snapshot = (await terminals.snapshot('codex'))!
     expect(snapshot.run).toMatchObject({ status: 'not-installed' })
     expect(snapshot.run.error).toBeUndefined()
@@ -423,16 +419,10 @@ describe('Agent CLI update terminals', () => {
     const idle = vi.fn().mockResolvedValue(undefined)
     const { terminals } = installTerminal()
     await restarted.inspect(DEFAULT_CONFIG.preferences, false)
-    await restored.saveAgentClis({
-      ...restarted.read(),
-      entries: restarted
-        .read()
-        .entries.map((entry) =>
-          entry.provider === 'codex'
-            ? { provider: 'codex', executable: join(root, 'bin', 'codex') }
-            : entry,
-        ),
-    })
+    const cache = restarted.read()
+    delete cache.entries.codex.version
+    delete cache.entries.codex.installMethod
+    await restored.save(cache)
     const findProgram = shell.findExecutable
     const permission = new Error('无法执行 codex，请检查文件权限和磁盘状态。')
     const missingCodex = new shell.ExecutableNotFoundError(
@@ -481,9 +471,7 @@ describe('Agent CLI update terminals', () => {
       await vi.waitFor(() => expect(mocks.ptySpawn).toHaveBeenCalledOnce())
       installChild.emit('exit', { exitCode: 2 })
       await failedCommand
-      expect(restarted.read().entries.find((entry) => entry.provider === 'codex')?.executable).toBe(
-        join(root, 'bin', 'codex'),
-      )
+      expect(restarted.read().entries.codex.executable).toBe(join(root, 'bin', 'codex'))
       expect((await terminals.snapshot('codex'))?.run.status).toBe('failed')
       expect((await terminals.snapshot('codex'))?.run.error).toContain('退出码 2')
 
