@@ -1,14 +1,17 @@
 import { root } from '../helpers/cli-environment.fixture'
 import { describe, expect, it, vi } from 'vitest'
 import { promisify } from 'node:util'
-import { mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
 
 import { installAgentHook } from '../../src/main/agents/hooks/managed'
 import { prepareAgentShell } from '../../src/main/agents/hooks/shell-integration'
+import { isWindows } from '../../src/main/system/platform'
+import { resolveShell, shellEnvironment } from '../../src/main/system/shell'
 import type * as ChildProcessModule from 'node:child_process'
 
-describe('Real Codex Shell wrappers', () => {
+describe.skipIf(isWindows)('Real POSIX Codex Shell wrappers', () => {
   it('loads login profiles once and preserves native arguments, user functions and aliases', async () => {
     const env = { HOME: root, PATH: join(root, 'bin') }
     await installAgentHook('codex', env, '0.159.0')
@@ -96,3 +99,45 @@ codex --no-daemon`)
     expect(await prepareAgentShell('/bin/sh', env, join(root, 'runtime'))).toBeUndefined()
   })
 })
+
+it.runIf(isWindows)(
+  'passes literal arguments through the PowerShell Codex wrapper',
+  async ({ onTestFinished }) => {
+    // The shared fixture path contains a literal semicolon, which separates Windows PATH entries.
+    const bin = await mkdtemp(join(tmpdir(), 'cota-codex-'))
+    onTestFinished(async () => rm(bin, { recursive: true, force: true }))
+    const shell = await resolveShell({ shellPath: null })
+    const inherited = shellEnvironment()
+    const env = {
+      ...inherited,
+      PATH: [bin, dirname(process.execPath), inherited.PATH].join(delimiter),
+      CODEX_HOME: join(root, '.codex'),
+      COTA_SERVICE: '1',
+    }
+    await writeFile(
+      join(bin, 'codex.cmd'),
+      '@echo off\r\nif "%~1"=="--help" (\r\n  echo --no-daemon\r\n  exit /b 0\r\n)\r\necho COTA_ARGS:%~1,%~2\r\n',
+    )
+    expect((await installAgentHook('codex', env, '0.159.0')).state).toBe('installed')
+    const args = await prepareAgentShell(
+      shell,
+      env,
+      join(root, 'runtime'),
+      "codex 'one argument'; codex --remote server; codex agents",
+    )
+    expect(args).toBeDefined()
+    const run = promisify(
+      (await vi.importActual<typeof ChildProcessModule>('node:child_process')).execFile,
+    )
+    const { stdout } = await run(shell, ['-NoProfile', ...args!], {
+      cwd: root,
+      env,
+      windowsHide: true,
+      timeout: 10_000,
+    })
+    expect(stdout).toContain('COTA_ARGS:--no-daemon,one argument')
+    expect(stdout).toContain('COTA_ARGS:--remote,server')
+    expect(stdout).toContain('COTA_ARGS:agents,')
+  },
+  15_000,
+)

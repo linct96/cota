@@ -1,70 +1,34 @@
-import { execFile } from 'node:child_process'
-import { gitAvailable } from './helpers/git'
+import { gitAvailable, linkDirectory } from './helpers/git'
+import {
+  git,
+  init,
+  input,
+  removalOptions,
+  worktreeTestDirectory,
+  worktreeTestRepository,
+} from './helpers/worktrees'
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { lstat, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
-import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfigStore } from '../src/main/settings/config-store'
 import { GitService, WorktreeError, gitEnvironment } from '../src/main/git/worktrees/git'
 import { WorktreeManager } from '../src/main/git/worktrees/manager'
-import { WorktreeSetupService } from '../src/main/git/worktrees/setup'
-import * as shells from '../src/main/system/shell'
+import { isWindows } from '../src/main/system/platform'
 import { DEFAULT_CONFIG } from '../src/shared/contracts'
 import type { TerminalSession, WorktreeRecord } from '../src/shared/contracts'
 import { worktreeBranchSegment } from '../src/shared/worktree-names'
 
-const execFileAsync = promisify(execFile)
 const service = new GitService()
 let root: string
 let repo: string
 let config: ConfigStore
 let manager: WorktreeManager
-const git = async (cwd: string, ...args: string[]) =>
-  (
-    await execFileAsync('git', args, {
-      cwd,
-      env: { ...gitEnvironment(), GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
-      timeout: 10000,
-    })
-  ).stdout
-const input = (projectPath: string, branchName = 'feature/中文') => ({
-  projectPath,
-  branchName,
-  name: '功能 工作区',
-  baseRef: 'main',
-})
-const removalOptions = () => ({
-  deleteBranch: false,
-  sessions: vi.fn((): Promise<TerminalSession[]> => Promise.resolve([])),
-  close: vi.fn(async (_id: string) => {}),
-  confirm: vi.fn((_check?: unknown, _force?: boolean) => Promise.resolve(true)),
-})
-const init = async (path: string, committed = true) => {
-  await mkdir(path, { recursive: true })
-  await git(path, 'init', '--initial-branch=main')
-  await git(path, 'config', 'user.name', 'Cota Test')
-  await git(path, 'config', 'user.email', 'cota@example.test')
-  await git(path, 'config', 'commit.gpgsign', 'false')
-  await git(path, 'config', 'core.hooksPath', '/dev/null')
-  if (committed) {
-    await writeFile(join(path, 'example.txt'), 'initial\n')
-    await git(path, 'add', 'example.txt')
-    await git(path, 'commit', '-m', 'initial')
-  }
-}
-
 describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
   beforeEach(async () => {
     vi.spyOn(console, 'info').mockImplementation(() => {})
-    root = await realpath(await mkdtemp(join(tmpdir(), 'cota worktree 中文-')))
-    repo = join(root, '项目 空格')
-    await init(repo)
-    config = new ConfigStore(join(root, 'config.json'))
-    await config.load()
-    await config.remember(repo)
-    manager = new WorktreeManager(config, join(root, '.cota-dev', 'worktrees'))
+    root = await worktreeTestDirectory()
+    ;({ repo, config, manager } = await worktreeTestRepository(root))
   })
   afterEach(async () => {
     vi.unstubAllEnvs()
@@ -113,7 +77,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       const outside = join(root, 'outside')
       await mkdir(outside)
       await rm(dirname(plan.path), { recursive: true })
-      await symlink(outside, dirname(plan.path))
+      await linkDirectory(outside, dirname(plan.path))
       await expect(
         manager.createWorktree({ ...input(repo), planId: plan.id }),
       ).rejects.toMatchObject({ code: 'PATH_CONFLICT' })
@@ -153,7 +117,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       const first = join(parent, 'feature')
       await mkdir(first)
       await writeFile(`${first}-2`, 'keep')
-      await symlink(join(root, 'missing'), `${first}-3`)
+      await linkDirectory(join(root, 'missing'), `${first}-3`)
       await git(repo, 'worktree', 'add', '-b', 'external', `${first}-4`)
       await rm(`${first}-4`, { recursive: true })
       const result = await manager.createWorktree({ ...input(repo), name: 'feature' })
@@ -363,7 +327,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
         (await manager.inspectRemoval(config.snapshot().worktreeRecords[1].id, [])).blockers,
       ).toContain('MAIN_WORKTREE')
       await rm(record.path, { recursive: true })
-      await symlink(repo, record.path)
+      await linkDirectory(repo, record.path)
       expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('OWNERSHIP_MISMATCH')
       await expect(manager.removeWorktree(record.id, removalOptions())).rejects.toMatchObject({
         code: 'REMOVAL_BLOCKED',
@@ -555,25 +519,6 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
   })
 
   describe('repository discovery and authoritative listing', () => {
-    it('canonicalizes subdirectories and linked worktree .git files to the same repository', async () => {
-      const child = join(repo, 'nested')
-      const linked = join(root, 'linked 中文')
-      await mkdir(child)
-      await git(repo, 'worktree', 'add', '-b', 'other', linked)
-      const base = await service.requireRepository(child)
-      expect(base).toEqual({
-        status: 'ready',
-        projectPath: child,
-        rootPath: repo,
-        repoCommonDir: join(repo, '.git'),
-        isBare: false,
-      })
-      expect((await service.requireRepository(linked)).repoCommonDir).toBe(base.repoCommonDir)
-      expect((await lstat(join(linked, '.git'))).isFile()).toBe(true)
-      const alias = join(root, 'repo-alias')
-      await symlink(repo, alias)
-      expect((await service.requireRepository(alias)).repoCommonDir).toBe(base.repoCommonDir)
-    })
     it('distinguishes non-Git, missing directory, corrupt and bare repositories', async () => {
       expect(await service.inspectRepository(root)).toMatchObject({
         status: 'nonGit',
@@ -733,7 +678,7 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       const { record } = await manager.createWorktree(input(repo))
       const otherRoot = join(root, 'unsafe')
       await mkdir(otherRoot)
-      await symlink(target, join(otherRoot, basename(dirname(record.path))))
+      await linkDirectory(target, join(otherRoot, basename(dirname(record.path))))
       const unsafe = new WorktreeManager(config, otherRoot)
       await expect(unsafe.createWorktree(input(repo, 'another'))).rejects.toMatchObject({
         code: 'PATH_CONFLICT',
@@ -891,7 +836,8 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('OWNERSHIP_MISMATCH')
       const outside = join(root, 'marker')
       await writeFile(outside, record.repoId)
-      await symlink(outside, marker)
+      if (isWindows) await linkDirectory(root, marker)
+      else await symlink(outside, marker)
       expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('OWNERSHIP_MISMATCH')
       await expect(manager.createWorktree(input(repo, 'second'))).rejects.toMatchObject({
         code: 'PATH_CONFLICT',
@@ -937,183 +883,6 @@ describe.skipIf(!gitAvailable)('Worktree integration (requires Git)', () => {
       await config.registerWorktree(record)
       await config.registerWorktree({ ...record, id: randomUUID(), path: repo, origin: 'created' })
       expect((await manager.listWorktrees(repo)).every((entry) => !entry.managedByCota)).toBe(true)
-    })
-    describe.skipIf(process.platform === 'win32')('worktree setup', () => {
-      const fixture = async () => {
-        vi.spyOn(shells, 'resolveShell').mockResolvedValue('/bin/sh')
-        vi.spyOn(shells, 'loginShellEnvironment').mockResolvedValue({
-          PATH: '/usr/bin:/bin',
-          HOME: root,
-        })
-        const created = await manager.createWorktree(input(repo))
-        const directory = join(root, 'setup-logs')
-        const setup = new WorktreeSetupService(config, manager, directory)
-        return {
-          ...created,
-          setup,
-          directory,
-          target: { projectPath: repo, workspaceId: created.workspace.id },
-        }
-      }
-      const settled = async (
-        setup: WorktreeSetupService,
-        target: { projectPath: string; workspaceId: string },
-      ) => {
-        await vi.waitFor(async () => expect((await setup.inspect(target)).running).toBe(false), {
-          timeout: 8000,
-          interval: 100,
-        })
-        return (await setup.inspect(target)).run!
-      }
-      it('confirms before copying, runs in the worktree, preserves edits on retry and persists the result', async () => {
-        const { setup, record, target, directory } = await fixture()
-        try {
-          await writeFile(join(repo, '.env.local'), 'local-secret')
-          await mkdir(join(repo, 'config'))
-          await writeFile(join(repo, 'config/local.json'), '{"local":true}')
-          const definition = {
-            command: 'pwd; cat .env.local; printf ready > initialized.txt',
-            copyFiles: ['.env.local', 'config/local.json'],
-          }
-          await config.saveWorktreeSetup(repo, definition)
-          expect((await setup.inspect(target)).run).toBeUndefined()
-          expect(await setup.start(target, definition, () => Promise.resolve(false))).toBe(false)
-          await expect(lstat(join(record.path, '.env.local'))).rejects.toMatchObject({
-            code: 'ENOENT',
-          })
-          const confirm = vi.fn((_description: string) => Promise.resolve(true))
-          expect(await setup.start(target, definition, confirm)).toBe(true)
-          expect(confirm.mock.calls[0][0]).toContain(record.path)
-          expect(confirm.mock.calls[0][0]).toContain(repo)
-          const first = await settled(setup, target)
-          expect(first.status).toBe('succeeded')
-          expect(first.log).toContain(record.path)
-          expect(await readFile(join(record.path, 'config/local.json'), 'utf8')).toBe(
-            '{"local":true}',
-          )
-          expect(await readFile(join(record.path, 'initialized.txt'), 'utf8')).toBe('ready')
-          expect((await lstat(join(record.path, '.env.local'))).mode & 0o777).toBe(0o600)
-          await writeFile(join(record.path, '.env.local'), 'edited')
-          await setup.start(target, definition, () => Promise.resolve(true))
-          expect((await settled(setup, target)).log).toContain('保留已有文件')
-          expect(await readFile(join(record.path, '.env.local'), 'utf8')).toBe('edited')
-          expect(await readFile(join(repo, '.env.local'), 'utf8')).toBe('local-secret')
-          const reloaded = new WorktreeSetupService(config, manager, directory)
-          expect((await reloaded.inspect(target)).run?.status).toBe('succeeded')
-          expect(
-            (await new ConfigStore(join(root, 'config.json')).load()).config.worktreeSetups?.[repo],
-          ).toEqual(definition)
-          const last = (await reloaded.inspect(target)).run!
-          await writeFile(
-            join(directory, `${record.id}.json`),
-            JSON.stringify({ ...last, status: 'running' }),
-          )
-          const interrupted = await reloaded.inspect(target)
-          expect(interrupted.running).toBe(false)
-          expect(interrupted.run?.status).toBe('interrupted')
-          expect(interrupted.run?.log).toContain('不会自动重试')
-        } finally {
-          await setup.close()
-        }
-      }, 15000)
-      it('rejects unsafe paths and symlinks before commands and keeps failed worktrees', async () => {
-        const { setup, record, target } = await fixture()
-        try {
-          const outside = join(root, 'outside-secret')
-          await writeFile(outside, 'keep')
-          await symlink(outside, join(repo, 'linked.env'))
-          let definition = {
-            command: 'printf forbidden > should-not-exist',
-            copyFiles: ['linked.env'],
-          }
-          await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, () => Promise.resolve(true))
-          expect((await settled(setup, target)).status).toBe('failed')
-          await mkdir(join(repo, 'config'))
-          await writeFile(join(repo, 'config/secret'), 'secret')
-          const outsideDirectory = join(root, 'outside-directory')
-          await mkdir(outsideDirectory)
-          await symlink(outsideDirectory, join(record.path, 'config'))
-          definition = { ...definition, copyFiles: ['config/secret'] }
-          await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, () => Promise.resolve(true))
-          expect((await settled(setup, target)).status).toBe('failed')
-          await expect(lstat(join(record.path, 'should-not-exist'))).rejects.toMatchObject({
-            code: 'ENOENT',
-          })
-          await expect(lstat(join(outsideDirectory, 'secret'))).rejects.toMatchObject({
-            code: 'ENOENT',
-          })
-          expect(await readFile(outside, 'utf8')).toBe('keep')
-          expect(
-            (await service.listWorktrees(repo)).some((entry) => entry.path === record.path),
-          ).toBe(true)
-        } finally {
-          await setup.close()
-        }
-      }, 15000)
-      it('blocks duplicate runs and removal, then stops the owned process and allows inspection', async () => {
-        const { setup, target, record } = await fixture()
-        try {
-          const definition = {
-            command: 'printf started; sleep 30; printf forbidden > should-not-exist',
-            copyFiles: [],
-          }
-          await config.saveWorktreeSetup(repo, definition)
-          await setup.start(target, definition, () => Promise.resolve(true))
-          await vi.waitFor(
-            async () => expect((await setup.inspect(target)).run?.log).toContain('started'),
-            { timeout: 5000 },
-          )
-          await expect(
-            setup.start(target, definition, () => Promise.resolve(true)),
-          ).rejects.toThrow('重复执行')
-          expect((await manager.inspectRemoval(record.id, [])).blockers).toContain('INITIALIZING')
-          await expect(manager.removeWorktree(record.id, removalOptions())).rejects.toMatchObject({
-            code: 'REMOVAL_BLOCKED',
-          })
-          await expect(manager.unlinkWorktree(record.id, removalOptions())).rejects.toThrow(
-            '停止工作区初始化',
-          )
-          await setup.stop(target)
-          expect((await setup.inspect(target)).run?.status).toBe('interrupted')
-          expect(setup.running).toBe(false)
-          await expect(lstat(join(record.path, 'should-not-exist'))).rejects.toMatchObject({
-            code: 'ENOENT',
-          })
-        } finally {
-          await setup.close()
-        }
-      }, 15000)
-      it('requires fresh configuration and rechecks shutdown authorization after confirmation', async () => {
-        const { setup, target } = await fixture()
-        const definition = { command: 'printf forbidden > should-not-exist', copyFiles: [] }
-        await config.saveWorktreeSetup(repo, definition)
-        await expect(
-          setup.start(target, { ...definition, command: 'old command' }, () =>
-            Promise.resolve(true),
-          ),
-        ).rejects.toThrow('配置已改变')
-        await expect(
-          setup.start(target, definition, async () => {
-            await config.saveWorktreeSetup(repo, { ...definition, command: 'updated' })
-            return true
-          }),
-        ).rejects.toThrow('确认期间配置已改变')
-        await config.saveWorktreeSetup(repo, definition)
-        await expect(
-          setup.start(
-            target,
-            definition,
-            () => Promise.resolve(true),
-            () => {
-              throw new Error('正在退出')
-            },
-          ),
-        ).rejects.toThrow('正在退出')
-        expect((await setup.inspect(target)).run).toBeUndefined()
-        expect(setup.running).toBe(false)
-      })
     })
     it('does not start Git writes if a preserved old/invalid config prevents saving', async () => {
       const file = join(root, 'old.json')

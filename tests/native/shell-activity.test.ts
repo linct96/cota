@@ -7,9 +7,11 @@ import { createRequire } from 'node:module'
 import { promisify } from 'node:util'
 import { inspectAgentHook } from '../../src/main/agents/hooks/managed'
 import { prepareAgentShell } from '../../src/main/agents/hooks/shell-integration'
+import { isWindows } from '../../src/main/system/platform'
+import { resolveShell, shellEnvironment } from '../../src/main/system/shell'
 import type * as ChildProcessModule from 'node:child_process'
 
-describe('Real interactive Shell markers', () => {
+describe.skipIf(isWindows)('Real interactive POSIX Shell markers', () => {
   it('reports command and prompt activity in real session-only Bash, Zsh and Fish PTYs', async () => {
     const run = promisify(
       (await vi.importActual<typeof ChildProcessModule>('node:child_process')).execFile,
@@ -93,3 +95,37 @@ child.write(input)
     }
   })
 })
+
+it.runIf(isWindows)(
+  'reports running and idle PowerShell markers around a startup command',
+  async () => {
+    const run = promisify(
+      (await vi.importActual<typeof ChildProcessModule>('node:child_process')).execFile,
+    )
+    const shell = await resolveShell({ shellPath: null })
+    const token = 'a'.repeat(64)
+    const env = {
+      ...shellEnvironment(),
+      COTA_SHELL_ACTIVITY: token,
+      CODEX_HOME: join(root, '.codex'),
+    }
+    const args = await prepareAgentShell(
+      shell,
+      env,
+      join(root, 'runtime'),
+      '[Console]::Write("COTA_PID:$PID")',
+    )
+    expect(args).toBeDefined()
+    const { stdout } = await run(
+      shell,
+      ['-NoProfile', '-NonInteractive', ...args!.filter((arg) => arg !== '-NoExit')],
+      { cwd: root, env, windowsHide: true, timeout: 10_000 },
+    )
+    const pid = Number(/COTA_PID:(\d+)/.exec(stdout)?.[1])
+    expect(pid).toBeGreaterThan(0)
+    expect(stdout).toContain(
+      `\x1b]133;C;Cota=${token};Shell=${pid}\x07COTA_PID:${pid}\x1b]133;D;Cota=${token};Shell=${pid}\x07`,
+    )
+  },
+  15_000,
+)

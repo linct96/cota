@@ -8,6 +8,11 @@ import { promisify } from 'node:util'
 import { inspectAgentHook } from '../../src/main/agents/hooks/managed'
 import { prepareAgentShell } from '../../src/main/agents/hooks/shell-integration'
 import { prepareFishStartupInput } from '../../src/main/terminal/fish-startup'
+import { isWindows } from '../../src/main/system/platform'
+import {
+  shellEnvironment as nativeShellEnvironment,
+  resolveShell,
+} from '../../src/main/system/shell'
 import type * as ChildProcessModule from 'node:child_process'
 
 const unicode = '中文'.repeat(200)
@@ -61,7 +66,7 @@ async function realExecFile() {
   )
 }
 
-describe('Real quick command startup and Shell history', () => {
+describe.skipIf(isWindows)('Real POSIX quick command startup and Shell history', () => {
   it.for(['bash', 'zsh', 'fish'] as const)(
     'prepares %s startup without installing Codex Hooks',
     async (name) => {
@@ -237,4 +242,42 @@ process.on('SIGTERM', () => { child.kill(); process.exit(1) })
       prepareAgentShell('/bin/sh', { HOME: root }, join(root, 'runtime'), command),
     ).rejects.toThrow('快捷命令需要')
   })
+})
+
+describe.runIf(isWindows)('Real PowerShell quick command startup', () => {
+  it.each([0, 7])(
+    'runs once and preserves native exit status %i',
+    async (code) => {
+      const shell = await resolveShell({ shellPath: null })
+      const env = {
+        ...nativeShellEnvironment(),
+        CODEX_HOME: join(root, '.codex'),
+        COTA_SERVICE: '1',
+      }
+      const node = process.execPath.replaceAll("'", "''")
+      const args = await prepareAgentShell(
+        shell,
+        env,
+        join(root, 'runtime'),
+        `if (Test-Path Env:COTA_STARTUP_COMMAND) { exit 99 }; Add-Content -LiteralPath 'startup output' -Value 'ready'; & '${node}' -e 'process.exit(${code})'`,
+      )
+      expect(args).toBeDefined()
+      const run = await realExecFile()
+      const status = await run(shell, ['-NoProfile', ...args!], {
+        env,
+        cwd: root,
+        windowsHide: true,
+        timeout: 10_000,
+      }).then(
+        () => 0,
+        (error) => {
+          if (typeof error.code !== 'number') throw error
+          return error.code
+        },
+      )
+      expect(status).toBe(code)
+      expect((await readFile(join(root, 'startup output'), 'utf8')).trim()).toBe('ready')
+    },
+    15_000,
+  )
 })

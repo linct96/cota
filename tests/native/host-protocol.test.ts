@@ -3,7 +3,7 @@ import { connect } from 'node:net'
 import { execFile } from 'node:child_process'
 import * as childProcess from 'node:child_process'
 import { promisify } from 'node:util'
-import { GitService, gitEnvironment } from '../src/main/git/worktrees/git'
+import { GitService, gitEnvironment } from '../../src/main/git/worktrees/git'
 import { once } from 'node:events'
 import {
   chmod,
@@ -25,15 +25,16 @@ import {
   connectTerminalHost,
   forceStopTerminalHost,
   hostDirectory,
-} from '../src/main/host/host-client'
-import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../src/main/host/host-protocol'
-import type { HostTerminalPreferences } from '../src/main/host/host-protocol'
-import { gitAvailable } from './helpers/git'
-import { startHost } from '../src/main/host/host-server'
-import { DEFAULT_CONFIG } from '../src/shared/contracts'
+} from '../../src/main/host/host-client'
+import { HOST_PROTOCOL, MAX_FRAME, readMessages } from '../../src/main/host/host-protocol'
+import type { HostTerminalPreferences } from '../../src/main/host/host-protocol'
+import { gitAvailable } from '../helpers/git'
+import { startHost } from '../../src/main/host/host-server'
+import { hostEndpoint, isWindows, powershell } from '../../src/main/system/platform'
+import { DEFAULT_CONFIG } from '../../src/shared/contracts'
 import { Terminal } from '@xterm/xterm'
-import { installTerminalInput } from '../src/renderer/src/features/terminal/lib/terminal-input'
-import type * as ShellModule from '../src/main/system/shell'
+import { installTerminalInput } from '../../src/renderer/src/features/terminal/lib/terminal-input'
+import type * as ShellModule from '../../src/main/system/shell'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock('node:child_process', async (importOriginal) => ({
   spawn: mocks.hostSpawn,
 }))
 vi.mock('node-pty', () => ({ spawn: mocks.spawn }))
-vi.mock('../src/main/agents/cli/registry', () => ({
+vi.mock('../../src/main/agents/cli/registry', () => ({
   resolveAgent: (provider: string) =>
     Promise.resolve({
       executable: `/fake/${provider}`,
@@ -55,19 +56,33 @@ vi.mock('../src/main/agents/cli/registry', () => ({
     }),
   agentCapability: () => Promise.resolve('partial'),
 }))
-vi.mock('../src/main/agents/runtime/process-observation', async (original) => ({
+vi.mock('../../src/main/agents/runtime/process-observation', async (original) => ({
   ...(await original<object>()),
   agentProcesses: () =>
     Promise.resolve([
-      { pid: 12345, parent: 1, group: 12345, foreground: 12345, stat: 'S', started: 'pty-root' },
-      { pid: 12346, parent: 12345, group: 12345, foreground: 12345, stat: 'S', started: 'hook' },
+      {
+        pid: 12345,
+        parent: 1,
+        group: 12345,
+        foreground: 12345,
+        stat: 'S',
+        started: '2026-11-20T00:00:00.0000000Z',
+      },
+      {
+        pid: 12346,
+        parent: 12345,
+        group: 12345,
+        foreground: 12345,
+        stat: 'S',
+        started: '2026-11-20T00:00:01.0000000Z',
+      },
     ]),
 }))
-vi.mock('../src/main/system/process-tree', () => ({
+vi.mock('../../src/main/system/process-tree', () => ({
   stopProcessTree: mocks.stop,
   hasRunningJob: mocks.busy,
 }))
-vi.mock('../src/main/system/shell', async (importOriginal) => ({
+vi.mock('../../src/main/system/shell', async (importOriginal) => ({
   ...(await importOriginal<typeof ShellModule>()),
   resolveShell: () => Promise.resolve('/bin/sh'),
   shellEnvironment: () => ({}),
@@ -77,10 +92,11 @@ let directory: string
 let server: Awaited<ReturnType<typeof startHost>>
 const clients: HostClient[] = []
 const token = randomBytes(32).toString('hex')
+const exec = promisify(execFile)
 const { shellPath, scrollback, quickCommands } = DEFAULT_CONFIG.preferences
 const settings = { shellPath, scrollback, quickCommands }
 async function client(secret = token, version = HOST_PROTOCOL, send = vi.fn(), agents = vi.fn()) {
-  const socket = connect(join(directory, 'host.sock'))
+  const socket = connect(hostEndpoint(directory, 'host'))
   await once(socket, 'connect')
   const value = new HostClient(socket, send, agents)
   clients.push(value)
@@ -88,6 +104,16 @@ async function client(secret = token, version = HOST_PROTOCOL, send = vi.fn(), a
   return value
 }
 beforeEach(async () => {
+  if (isWindows) {
+    // Protocol tests don't need to invoke PowerShell to set ACLs on their temporary fixtures.
+    Object.defineProperty(vi.spyOn(childProcess, 'execFile'), promisify.custom, {
+      configurable: true,
+      value: (file: string, args: string[], options?: childProcess.ExecFileOptions) =>
+        file === powershell && options?.env?.COTA_PRIVATE_DIRECTORY
+          ? Promise.resolve({ stdout: '', stderr: '' })
+          : exec(file, args, options),
+    })
+  }
   mocks.spawn.mockReset().mockImplementation(() => {
     const listeners: Record<string, (data: any) => void> = {}
     return {
@@ -160,7 +186,7 @@ function nativeAgentEvent(agentId: string, scopedToken: string, type: string) {
 }
 
 async function deliverAgentEvent(value: unknown) {
-  const socket = connect(join(directory, 'agent.sock'))
+  const socket = connect(hostEndpoint(directory, 'agent'))
   socket.on('error', () => {})
   await once(socket, 'connect')
   const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
@@ -386,8 +412,8 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
         },
       },
     ])
-    expect((await stat(join(directory, 'agent.sock'))).mode & 0o777).toBe(0o600)
-    const unauthenticated = connect(join(directory, 'host.sock'))
+    if (!isWindows) expect((await stat(hostEndpoint(directory, 'agent'))).mode & 0o777).toBe(0o600)
+    const unauthenticated = connect(hostEndpoint(directory, 'host'))
     const leaked = vi.fn()
     unauthenticated.on('data', leaked)
     unauthenticated.on('error', () => {})
@@ -580,7 +606,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
   it('refuses live incompatible Host metadata without replacing its process or runtime file', async () => {
     const userData = join(directory, 'old-profile')
     const runtime = hostDirectory(userData)
-    await mkdir(runtime, { mode: 0o700 })
+    await mkdir(runtime, { recursive: true, mode: 0o700 })
     const file = join(runtime, 'runtime.json')
     try {
       for (const version of [HOST_PROTOCOL - 1, HOST_PROTOCOL + 1]) {
@@ -600,7 +626,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     async (version) => {
       const userData = join(directory, 'force-profile')
       const runtime = hostDirectory(userData)
-      await mkdir(runtime, { mode: 0o700 })
+      await mkdir(runtime, { recursive: true, mode: 0o700 })
       const file = join(runtime, 'runtime.json')
       const content = JSON.stringify({ pid: 12345, token, version })
       let stopped = false
@@ -615,13 +641,17 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       Object.defineProperty(command, promisify.custom, { value: query })
       try {
         await writeFile(file, content, { mode: 0o600 })
-        await writeFile(join(runtime, 'host.sock'), '')
-        await writeFile(join(runtime, 'agent.sock'), '')
+        if (!isWindows) {
+          await writeFile(hostEndpoint(runtime, 'host'), '')
+          await writeFile(hostEndpoint(runtime, 'agent'), '')
+        }
         await expect(forceStopTerminalHost(userData)).rejects.toThrow('进程身份不匹配')
         expect(mocks.stop).not.toHaveBeenCalled()
         expect(await readFile(file, 'utf8')).toBe(content)
         query.mockResolvedValue({
-          stdout: `${process.execPath} ${join(import.meta.dirname, '../src/main/host/host.js')}`,
+          stdout: isWindows
+            ? `"${process.execPath}" "${join(import.meta.dirname, '../../src/main/host/host.js')}"`
+            : `${process.execPath} ${join(import.meta.dirname, '../../src/main/host/host.js')}`,
         })
         mocks.stop.mockRejectedValueOnce(new Error('child still running'))
         await expect(forceStopTerminalHost(userData)).rejects.toThrow('child still running')
@@ -657,7 +687,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     async (version) => {
       const userData = join(directory, 'dead-profile')
       const runtime = hostDirectory(userData)
-      await mkdir(runtime, { mode: 0o700 })
+      await mkdir(runtime, { recursive: true, mode: 0o700 })
       const file = join(runtime, 'runtime.json')
       const socket = join(runtime, 'host.sock')
       const spawnError = new Error('replacement spawn reached')
@@ -669,7 +699,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
       })
       try {
         await writeFile(file, JSON.stringify({ pid: process.pid, token, version }), { mode: 0o600 })
-        if (version !== HOST_PROTOCOL) await writeFile(socket, '')
+        if (!isWindows && version !== HOST_PROTOCOL) await writeFile(socket, '')
         await expect(connectTerminalHost(userData, vi.fn())).rejects.toBe(spawnError)
         expect(probe).toHaveBeenCalledExactlyOnceWith(process.pid, 0)
         expect(spawn).toHaveBeenCalledOnce()
@@ -685,7 +715,7 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
   it('preserves incompatible Host metadata when its process cannot be probed', async () => {
     const userData = join(directory, 'unprobeable-profile')
     const runtime = hostDirectory(userData)
-    await mkdir(runtime, { mode: 0o700 })
+    await mkdir(runtime, { recursive: true, mode: 0o700 })
     const file = join(runtime, 'runtime.json')
     const content = JSON.stringify({ pid: process.pid, token, version: HOST_PROTOCOL + 1 })
     const probeError = Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
@@ -723,38 +753,41 @@ describe.skipIf(!gitAvailable)('local terminal Host (requires Git)', () => {
     expect(restored.exited).toBe(false)
     expect(mocks.spawn).toHaveBeenCalledOnce()
   })
-  it('restricts socket permissions and rejects public or symlinked credentials', async () => {
-    expect((await stat(join(directory, 'host.sock'))).mode & 0o777).toBe(0o600)
-    const userData = join(directory, 'unsafe-profile')
-    const runtime = hostDirectory(userData)
-    const metadata = join(runtime, 'runtime.json')
-    await mkdir(runtime, { mode: 0o700 })
-    try {
-      await writeFile(
-        metadata,
-        JSON.stringify({ pid: process.pid, token, version: HOST_PROTOCOL }),
-        { mode: 0o600 },
-      )
-      await chmod(runtime, 0o755)
-      await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('目录权限不安全')
-      await expect(forceStopTerminalHost(userData)).rejects.toThrow('目录权限不安全')
-      await chmod(runtime, 0o700)
-      await chmod(metadata, 0o644)
-      await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
-      await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
-      await unlink(metadata)
-      await symlink(join(directory, 'other-credentials'), metadata)
-      await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
-      await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
-      expect(mocks.stop).not.toHaveBeenCalled()
-    } finally {
-      await rm(runtime, { recursive: true, force: true })
-    }
-  })
+  it.skipIf(isWindows)(
+    'restricts POSIX socket permissions and rejects public or symlinked credentials',
+    async () => {
+      expect((await stat(join(directory, 'host.sock'))).mode & 0o777).toBe(0o600)
+      const userData = join(directory, 'unsafe-profile')
+      const runtime = hostDirectory(userData)
+      const metadata = join(runtime, 'runtime.json')
+      await mkdir(runtime, { recursive: true, mode: 0o700 })
+      try {
+        await writeFile(
+          metadata,
+          JSON.stringify({ pid: process.pid, token, version: HOST_PROTOCOL }),
+          { mode: 0o600 },
+        )
+        await chmod(runtime, 0o755)
+        await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('目录权限不安全')
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('目录权限不安全')
+        await chmod(runtime, 0o700)
+        await chmod(metadata, 0o644)
+        await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
+        await unlink(metadata)
+        await symlink(join(directory, 'other-credentials'), metadata)
+        await expect(connectTerminalHost(userData, vi.fn())).rejects.toThrow('元数据权限')
+        await expect(forceStopTerminalHost(userData)).rejects.toThrow('元数据权限')
+        expect(mocks.stop).not.toHaveBeenCalled()
+      } finally {
+        await rm(runtime, { recursive: true, force: true })
+      }
+    },
+  )
   it('never replaces an unreachable host whose PID is alive', async () => {
     const userData = join(directory, 'profile')
     const runtime = hostDirectory(userData)
-    await mkdir(runtime, { mode: 0o700 })
+    await mkdir(runtime, { recursive: true, mode: 0o700 })
     try {
       await writeFile(
         join(runtime, 'runtime.json'),

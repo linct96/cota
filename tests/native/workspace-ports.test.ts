@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { spawn } from 'node:child_process'
-import { requireOwnedPort } from '../src/main/ports/workspace-ports'
-import { terminatePortProcess } from '../src/main/ports/terminate-port-process'
+import { requireOwnedPort } from '../../src/main/ports/workspace-ports'
+import { terminatePortProcess } from '../../src/main/ports/terminate-port-process'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
@@ -13,10 +13,10 @@ import {
   parseNetstatPorts,
   portAccess,
   scanLocalPorts,
-} from '../src/main/ports/local-ports'
-import { parseProcessSnapshot, readProcessSnapshot } from '../src/main/system/process-snapshot'
-import type { ProcessIdentity } from '../src/main/system/process-snapshot'
-import type { PortScanContext } from '../src/shared/workspace-ports'
+} from '../../src/main/ports/local-ports'
+import { parseProcessSnapshot, readProcessSnapshot } from '../../src/main/system/process-snapshot'
+import type { ProcessIdentity } from '../../src/main/system/process-snapshot'
+import type { PortScanContext } from '../../src/shared/workspace-ports'
 
 it('parses numeric TCP listeners without confusing connections, IPv6 or URLs', () => {
   expect(parseLsofPorts('p12\ncnode\nf18\ntIPv4\nn*:3000\nf19\ntIPv6\nn[::1]:3000\n')).toEqual([

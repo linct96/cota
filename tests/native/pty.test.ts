@@ -10,6 +10,7 @@ import { expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 const run = promisify(execFile)
 
+// Windows ConPTY runs the same checks through the real Terminal Host.
 it.skipIf(process.platform === 'win32')(
   'runs real PTYs with Unicode cwd, terminal size and exit status',
   async ({ signal }) => {

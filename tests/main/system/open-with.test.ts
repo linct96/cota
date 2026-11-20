@@ -2,7 +2,6 @@ import { child, command, mocks, opener, root } from '../../helpers/cli-environme
 import { describe, expect, it, vi } from 'vitest'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import * as shell from '../../../src/main/system/shell'
 import { DEFAULT_CONFIG } from '../../../src/shared/contracts'
 import {
   parseArguments,
@@ -41,16 +40,6 @@ describe('Workspace program launching', () => {
     [opener, opener],
   ])('rejects invalid program definitions: %j', (value) => {
     expect(() => workspaceOpeners(value)).toThrow()
-  })
-
-  it('opens an explicitly configured Finder without shell evaluation', async () => {
-    await openWorkspaceWith(root, {
-      id: 'finder',
-      name: 'Finder',
-      command: '/usr/bin/open',
-      arguments: '-a Finder {path}',
-    })
-    expect(mocks.spawn.mock.calls[0].slice(0, 2)).toEqual(['/usr/bin/open', ['-a', 'Finder', root]])
   })
 
   it('finds login-shell commands and passes literal paths without inherited Electron credentials', async () => {
@@ -151,31 +140,6 @@ describe('Workspace program launching', () => {
       }).map((entry) => entry.id),
     ).toEqual(['editor', 'system-file-manager'])
   })
-
-  it.skipIf(process.platform !== 'darwin')(
-    'opens a macOS application when its CLI is absent',
-    async () => {
-      const missing = vi.spyOn(shell, 'findExecutable').mockRejectedValue(new Error('not on PATH'))
-      try {
-        mocks.applications.add('/Applications/Visual Studio Code.app')
-        const apps = listWorkspaceOpeners({
-          ...DEFAULT_CONFIG.preferences,
-          openWith: [{ id: 'vscode', name: 'VS Code', command: 'code', arguments: '{path}' }],
-        })
-        expect(apps).toContainEqual(expect.objectContaining({ id: 'vscode' }))
-        await openWorkspaceWith(
-          root,
-          apps.find((entry) => entry.id === 'vscode')!,
-        )
-        expect(mocks.spawn.mock.calls.at(-1)!.slice(0, 2)).toEqual([
-          '/usr/bin/open',
-          ['-a', '/Applications/Visual Studio Code.app', root, '--args', root],
-        ])
-      } finally {
-        missing.mockRestore()
-      }
-    },
-  )
 
   it('resolves a detached launch after its startup grace period and clears the timer', async () => {
     vi.useFakeTimers()

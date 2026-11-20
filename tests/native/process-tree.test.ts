@@ -2,9 +2,9 @@ import { execFile, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
-import { hasRunningJob, stopProcessTree } from '../src/main/system/process-tree'
-import { nativeWindowsProcesses } from '../src/main/system/windows-process-snapshot'
-import { powershell } from '../src/main/system/platform'
+import { hasRunningJob, stopProcessTree } from '../../src/main/system/process-tree'
+import { nativeWindowsProcesses } from '../../src/main/system/windows-process-snapshot'
+import { powershell } from '../../src/main/system/platform'
 
 it('kills a real owned process tree, including a background child', async () => {
   const child = spawn(
@@ -42,7 +42,8 @@ it('kills a real owned process tree, including a background child', async () => 
           '-Command',
           `(Get-CimInstance Win32_Process -Filter 'ProcessId = ${child.pid}').CreationDate.ToUniversalTime().ToString('o')`,
         ],
-        { windowsHide: true, timeout: 3000 },
+        // Allow for slow PowerShell and CIM startup on Windows runners.
+        { windowsHide: true, timeout: 10_000 },
       )
       expect(rows.find((row) => row.pid === child.pid)?.started).toBe(stdout.trim())
     }
@@ -66,7 +67,7 @@ it('kills a real owned process tree, including a background child', async () => 
       /* Already cleaned up. */
     }
   }
-})
+}, 20_000)
 
 it.skipIf(process.platform === 'win32')(
   'recognizes an idle shell and a program replacing the shell with exec',

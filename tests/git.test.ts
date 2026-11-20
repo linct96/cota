@@ -13,7 +13,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, normalize } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { projectBranch } from '../src/main/git/branches/project-branch'
@@ -186,7 +186,8 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
     })
 
     describe('unborn staging and committed file safety', () => {
-      const name = 'nested/中文 [文件]*\n.txt'
+      const name =
+        process.platform === 'win32' ? 'nested/中文 [文件].txt' : 'nested/中文 [文件]*\n.txt'
       const file = { path: name, area: 'untracked' as const }
 
       let nested: string
@@ -352,7 +353,7 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           await git('commit', '-m', 'initial')
           history = await sourceControl.history(directory)
         })
-        it('unborn staging: protects binary files, symlink targets and metadata paths', async () => {
+        it('unborn staging: protects binary files and metadata paths', async () => {
           const discard = {
             ...target,
             action: 'discard' as const,
@@ -364,15 +365,6 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           )
           expect((await sourceControl.status(directory, true)).entries[0].stats).toBeNull()
           await sourceControl.mutate(directory, discard, () => Promise.resolve(true))
-          const outside = join(directory, 'outside.txt')
-          await writeFile(outside, 'do not delete')
-          await symlink(outside, join(nested, 'link'))
-          await sourceControl.mutate(
-            directory,
-            { ...target, action: 'discard', files: [{ path: 'nested/link', area: 'untracked' }] },
-            () => Promise.resolve(true),
-          )
-          expect(await readFile(outside, 'utf8')).toBe('do not delete')
           await expect(
             sourceControl.diff(directory, { path: '../outside.txt', area: 'untracked' }),
           ).rejects.toThrow('路径无效')
@@ -384,8 +376,28 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
             ),
           ).rejects.toThrow('路径无效')
         }, 15000)
+        it.skipIf(process.platform === 'win32')(
+          'discards a POSIX file symlink without touching its target',
+          async () => {
+            const outside = join(directory, 'outside.txt')
+            await writeFile(outside, 'do not delete')
+            await symlink(outside, join(nested, 'link'))
+            await sourceControl.mutate(
+              directory,
+              { ...target, action: 'discard', files: [{ path: 'nested/link', area: 'untracked' }] },
+              () => Promise.resolve(true),
+            )
+            expect(await readFile(outside, 'utf8')).toBe('do not delete')
+          },
+          15000,
+        )
+        const renamed =
+          process.platform === 'win32' ? 'nested/renamed 中文.txt' : 'nested/renamed\t中文\n.txt'
         const samples = [
-          ['nested/new\t中文\n.txt', Buffer.from('one\r\ntwo')],
+          [
+            process.platform === 'win32' ? 'nested/new 中文.txt' : 'nested/new\t中文\n.txt',
+            Buffer.from('one\r\ntwo'),
+          ],
           ['nested/empty.txt', Buffer.alloc(0)],
           ['nested/binary.dat', Buffer.from([0, 1, 2])],
           ['nested/large.txt', Buffer.alloc(2 * 1024 * 1024 + 1, 65)],
@@ -412,7 +424,6 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
             counts.entries.find((entry) => entry.path === samples[3][0])?.stats,
           ).toBeUndefined()
           await git('restore', '--worktree', '--', `:(literal)${name}`)
-          const renamed = 'nested/renamed\t中文\n.txt'
           await git('mv', '--', name, renamed)
           await git('config', 'diff.external', 'cota-must-not-run-external-diff')
           expect((await sourceControl.status(nested, true)).entries).toContainEqual(
@@ -429,8 +440,6 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
           ).toBe(true)
         }, 15000)
         describe('renamed files', () => {
-          const renamed = 'nested/renamed\t中文\n.txt'
-
           beforeEach(async () => {
             for (const [path, bytes] of samples) await writeFile(join(directory, path), bytes)
             await git('mv', '--', name, renamed)
@@ -891,7 +900,9 @@ describe.skipIf(!gitAvailable)('Git integration (requires Git)', () => {
       await git('commit', '-m', 'initial')
       const linked = join(directory, 'linked')
       await git('worktree', 'add', '-b', 'linked', linked)
-      const gitDir = (await git('-C', linked, 'rev-parse', '--absolute-git-dir')).stdout.trim()
+      const gitDir = normalize(
+        (await git('-C', linked, 'rev-parse', '--absolute-git-dir')).stdout.trim(),
+      )
       const common = join(directory, '.git')
       const paths = new Map<
         string,

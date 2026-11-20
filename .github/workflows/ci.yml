@@ -22,9 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Common Checks
+            os: ubuntu-latest
           - name: macOS Checks
             os: macos-15
-          - name: Windows Host
+          - name: Windows Checks
             os: windows-latest
     defaults:
       run:
@@ -39,13 +41,28 @@ jobs:
           node-version-file: .node-version
           package-manager-cache: false
       - run: pnpm install --frozen-lockfile
-      - if: runner.os == 'macOS'
-        run: pnpm format:check
-      - if: runner.os == 'macOS'
-        run: pnpm lint
-      - if: runner.os == 'macOS'
-        run: pnpm typecheck
-      - if: runner.os == 'macOS'
-        run: pnpm test
-      - if: runner.os == 'Windows'
-        run: pnpm test:host
+      - name: Common checks
+        if: runner.os == 'Linux'
+        env:
+          SHELL: /bin/bash
+        run: |
+          pnpm format:check
+          pnpm lint
+          pnpm typecheck
+          pnpm test:unit
+      - name: Test Git integration
+        if: runner.os == 'Linux'
+        env:
+          SHELL: /bin/bash
+        run: pnpm test:git
+      - name: Configure Git line endings for test fixtures
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - name: Install Fish for shell tests
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew list --versions fish || brew install fish
+      - name: Test native integration
+        if: runner.os != 'Linux'
+        run: pnpm test:native

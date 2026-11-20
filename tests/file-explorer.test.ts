@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileExplorerService } from '../src/main/files/file-explorer'
 import { FileExplorerWatches } from '../src/main/files/file-explorer-watch'
-import { gitAvailable } from './helpers/git'
+import { gitAvailable, linkDirectory } from './helpers/git'
 
 let directory: string
 let root: string
@@ -86,7 +86,7 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     const files = new FileExplorerService()
     await mkdir(join(root, 'src'))
     await writeFile(join(root, 'src', '中文 空格.txt'), '你好\n')
-    await symlink('src', join(root, 'linked-src'))
+    await linkDirectory(join(root, 'src'), join(root, 'linked-src'))
     expect((await files.list(root, '')).filter((entry) => entry.kind === 'directory')).toEqual([
       { name: 'linked-src', path: 'linked-src', kind: 'directory', symlink: true, empty: false },
       { name: 'src', path: 'src', kind: 'directory', empty: false },
@@ -102,18 +102,25 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     const files = new FileExplorerService()
     await mkdir(join(directory, 'outside'))
     await writeFile(join(directory, 'outside', 'secret'), 'must not read')
-    await symlink(join(directory, 'outside'), join(root, 'linked-dir'))
-    await symlink(join(directory, 'outside', 'secret'), join(root, 'linked-file'))
-    await symlink('missing', join(root, 'dangling'))
-    expect((await files.list(root, '')).filter((entry) => entry.kind === 'link')).toHaveLength(3)
-    expect(await files.read(root, 'linked-file')).toEqual({
-      kind: 'link',
-      target: join(directory, 'outside', 'secret'),
-    })
-    expect(await files.read(root, 'dangling')).toEqual({ kind: 'link', target: 'missing' })
+    await linkDirectory(join(directory, 'outside'), join(root, 'linked-dir'))
+    if (process.platform === 'win32') {
+      await linkDirectory(join(directory, 'missing'), join(root, 'dangling'))
+      expect(await files.read(root, 'dangling')).toMatchObject({ kind: 'link' })
+    } else {
+      await symlink(join(directory, 'outside', 'secret'), join(root, 'linked-file'))
+      await symlink('missing', join(root, 'dangling'))
+      expect(await files.read(root, 'linked-file')).toEqual({
+        kind: 'link',
+        target: join(directory, 'outside', 'secret'),
+      })
+      expect(await files.read(root, 'dangling')).toEqual({ kind: 'link', target: 'missing' })
+      expect(await files.location(root, 'linked-file')).toBe(join(root, 'linked-file'))
+    }
+    expect((await files.list(root, '')).filter((entry) => entry.kind === 'link')).toHaveLength(
+      process.platform === 'win32' ? 2 : 3,
+    )
     await expect(files.list(root, 'linked-dir')).rejects.toThrow('工作区外')
     await expect(files.read(root, 'linked-dir/secret')).rejects.toThrow('工作区外')
-    expect(await files.location(root, 'linked-file')).toBe(join(root, 'linked-file'))
     expect(await readFile(join(directory, 'outside', 'secret'), 'utf8')).toBe('must not read')
   })
 
@@ -143,7 +150,7 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
 
   it('rejects a symlink as the workspace root', async () => {
     const files = new FileExplorerService()
-    await symlink(root, join(directory, 'root-link'))
+    await linkDirectory(root, join(directory, 'root-link'))
     await expect(files.list(join(directory, 'root-link'), '')).rejects.toThrow('真实路径')
   })
 
@@ -159,14 +166,15 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
     await mkdir(join(root, 'src'))
     await mkdir(join(root, 'generated'))
     await writeFile(join(root, '.gitignore'), 'generated/\n*.log\n!keep.log\n')
-    for (const name of ['ignored.log', '-中文 空格\n.log', 'keep.log', 'tracked.log'])
+    const ignoredName = process.platform === 'win32' ? '-中文 空格.log' : '-中文 空格\n.log'
+    for (const name of ['ignored.log', ignoredName, 'keep.log', 'tracked.log'])
       await writeFile(join(root, name), 'fixture')
     await writeFile(join(root, 'generated', 'output.ts'), 'generated')
     await git('add', '--force', '--', 'tracked.log')
     const entries = await files.list(root, '')
     expect(entries.filter((entry) => entry.ignored).map((entry) => entry.name)).toEqual([
       'generated',
-      '-中文 空格\n.log',
+      ignoredName,
       'ignored.log',
     ])
     expect(entries.find((entry) => entry.name === 'keep.log')?.ignored).toBeUndefined()
@@ -269,7 +277,7 @@ describe.skipIf(!gitAvailable)('file explorer (requires Git)', () => {
       resolveRoot(root)
       expect(await pending).toBe(false)
       expect(watch).toHaveBeenCalledTimes(count)
-      await symlink(join(directory, 'outside'), join(root, 'link'))
+      await linkDirectory(join(directory, 'outside'), join(root, 'link'))
       expect(await service.start(id, ['link'], () => root, notify)).toBe(false)
       await expect(service.start(id, Array(129).fill('src'), () => root, notify)).rejects.toThrow(
         '128',

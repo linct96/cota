@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -185,11 +185,13 @@ child.once('spawn', () => { console.log(child.pid); child.unref() })
       return false
     }
   }, poll)
+  const cwd = join(directory, '工作区 smoke')
+  await mkdir(cwd)
   const options = {
     id: randomUUID(),
     workspaceId: randomUUID(),
-    projectPath: directory,
-    cwd: directory,
+    projectPath: cwd,
+    cwd,
     workspaceKind: 'local' as const,
     cols: 91,
     rows: 31,
@@ -208,10 +210,12 @@ child.once('spawn', () => { console.log(child.pid); child.unref() })
   await first.client.request('write', [
     options.id,
     isWindows
-      ? "[Console]::WriteLine('COTA_SHELL_PID='+$PID)\r"
-      : 'printf \'\\nCOTA_SHELL_PID=%s\\n\' "$$"\r',
+      ? "[Console]::WriteLine($PWD.Path); [Console]::WriteLine([Console]::WindowHeight.ToString()+' '+[Console]::WindowWidth); [Console]::WriteLine('COTA_SHELL_PID='+$PID)\r"
+      : 'pwd; stty size; printf \'\\nCOTA_SHELL_PID=%s\\n\' "$$"\r',
   ])
   await expect.poll(() => first.output, poll).toMatch(/COTA_SHELL_PID=(\d+)/)
+  expect(first.output).toContain(cwd)
+  expect(first.output).toMatch(/31\s+91/)
   const shellPid = Number(/COTA_SHELL_PID=(\d+)/.exec(first.output)![1])
   await first.client.request('write', [
     options.id,
@@ -259,20 +263,28 @@ child.once('spawn', () => { console.log(child.pid); child.unref() })
     final.snapshot,
     'must resume the original shell without detached output blocking it',
   ).toContain(`COTA_DONE_PID=${shellPid}`)
-  if (isWindows) {
-    const cleanup = { ...options, id: randomUUID() }
-    await second.client.request('create', [cleanup, preferences])
-    await second.client.request('attach', [{ ...cleanup, attachmentId: randomUUID() }])
-    await second.client.request('write', [cleanup.id, 'ping.exe -t 127.0.0.1\r'])
-    await expect.poll(() => second.output, poll).toContain('127.0.0.1')
-    await expect
-      .poll(() => second.client.request('needsCloseConfirmation', [cleanup.id]), poll)
-      .toBe(true)
-    await second.client.request('close', [cleanup.id])
-    expect(
-      (await second.client.request('list', [])).some((session) => session.id === cleanup.id),
-    ).toBe(false)
-  }
+  const cleanup = { ...options, id: randomUUID() }
+  await second.client.request('create', [cleanup, preferences])
+  await second.client.request('attach', [{ ...cleanup, attachmentId: randomUUID() }])
+  await second.client.request('write', [
+    cleanup.id,
+    isWindows ? "[Console]::WriteLine('COTA_IDLE'+'_SHELL')\r" : "printf 'COTA_IDLE_%s\\n' SHELL\r",
+  ])
+  await expect.poll(() => second.output, poll).toContain('COTA_IDLE_SHELL')
+  await expect
+    .poll(() => second.client.request('needsCloseConfirmation', [cleanup.id]), poll)
+    .toBe(false)
+  await second.client.request('write', [
+    cleanup.id,
+    isWindows ? 'ping.exe -t 127.0.0.1\r' : '/bin/sleep 120\r',
+  ])
+  await expect
+    .poll(() => second.client.request('needsCloseConfirmation', [cleanup.id]), poll)
+    .toBe(true)
+  await second.client.request('close', [cleanup.id])
+  expect(
+    (await second.client.request('list', [])).some((session) => session.id === cleanup.id),
+  ).toBe(false)
   await second.client.request('shutdown', [])
   await expect.poll(() => alive(pid), poll).toBe(false)
   expect(alive(shellPid)).toBe(false)
