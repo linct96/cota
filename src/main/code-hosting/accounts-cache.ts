@@ -1,7 +1,7 @@
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { z } from 'zod'
-import { hostingHostSchema } from '../../shared/code-hosting'
+import { hostingAccountNameSchema, hostingHostSchema } from '../../shared/code-hosting'
 import type {
   HostingAccountsCacheEntry,
   HostingAccountsCacheSnapshot,
@@ -12,10 +12,7 @@ import { writePrivate } from '../accounts/files'
 const accountSchema = z
   .object({
     host: hostingHostSchema,
-    account: z
-      .string()
-      .max(256)
-      .refine((value) => !/\p{Cc}/u.test(value)),
+    account: hostingAccountNameSchema,
     active: z.boolean(),
     status: z.enum(['connected', 'error']),
   })
@@ -30,9 +27,12 @@ const entrySchema = z
     result: resultSchema.optional(),
     failed: z.boolean(),
     cliUnavailable: z.boolean().optional(),
+    // 兼容旧版缓存，重新检测时不再屏蔽本机登录。
+    removed: z.unknown().optional(),
   })
   .strict()
   .refine((entry) => entry.result !== undefined || entry.failed)
+  .transform(({ removed: _removed, ...entry }) => entry)
 const fileSchema = z
   .object({
     version: z.literal(1),

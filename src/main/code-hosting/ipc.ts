@@ -31,11 +31,6 @@ export function registerCodeHostingIPC(deps: {
     assertReadable()
     return codeHosting.accounts(provider, refresh)
   })
-  handle('code-hosting:connection', async (provider: unknown, host: unknown) => {
-    assertReadable()
-    const result = await codeHosting.connection(provider, host)
-    return { result, cache: await codeHosting.readAccounts() }
-  })
   handle('code-hosting:inspect', (target: WorkspaceTarget) => {
     assertReadable()
     return readHosting(target, (cwd, context) => codeHosting.inspect(cwd, context))

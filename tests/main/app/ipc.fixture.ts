@@ -155,7 +155,6 @@ const mocks = vi.hoisted(() => {
     hostingInspect: vi.fn(),
     hostingReadAccounts: vi.fn(),
     hostingAccounts: vi.fn(),
-    hostingConnection: vi.fn(),
   }
 })
 vi.mock('../../../src/main/settings/notification-sound', () => ({
@@ -249,7 +248,6 @@ vi.mock('../../../src/main/code-hosting/service', () => ({
     inspect = mocks.hostingInspect
     readAccounts = mocks.hostingReadAccounts
     accounts = mocks.hostingAccounts
-    connection = mocks.hostingConnection
     prune = vi.fn()
     close = vi.fn()
     invalidateRemoteBranches = vi.fn()

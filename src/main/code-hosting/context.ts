@@ -17,7 +17,9 @@ export class HostingContexts {
   private readonly accountScans = new Map<HostingProvider, Promise<HostingAccounts>>()
   constructor(
     private readonly git: SourceControlService,
-    private readonly scanAccounts = scanHostingAccounts,
+    private readonly scanAccounts: (
+      provider: HostingProvider,
+    ) => Promise<HostingAccounts> = scanHostingAccounts,
   ) {}
 
   close(): void {
@@ -44,10 +46,6 @@ export class HostingContexts {
             current.source.path === context.source!.path,
         ),
     )
-  }
-
-  forgetAccounts(provider: HostingProvider): void {
-    this.accountScans.delete(provider)
   }
 
   assertActive(cwd: string): void {
@@ -137,11 +135,11 @@ export class HostingContexts {
         : status.branch
     let reason: string | undefined
     if (!selected && ambiguousHost)
-      reason = '同一自定义端点同时出现在 GitHub 和 GitLab CLI 中，请先在代码托管设置中核对平台。'
+      reason = '同一自定义端点同时出现在 GitHub 和 GitLab CLI 中，请先在源代码管理设置中核对平台。'
     else if (!source || !target)
       reason = discoveryFailed
-        ? '自定义托管端点读取失败，请在代码托管设置中重新检测 CLI 连接。'
-        : '无法自动识别代码托管仓库，请检查 Git 远端、分支上游及代码托管设置中的 CLI 端点。'
+        ? '自定义托管端点读取失败，请在源代码管理设置中重新检测 CLI 连接。'
+        : '无法自动识别代码托管仓库，请检查 Git 远端、分支上游及源代码管理设置中的 CLI 端点。'
     const context: HostingContext = {
       remotes,
       source,

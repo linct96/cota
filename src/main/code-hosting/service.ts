@@ -2,7 +2,6 @@ import { z } from 'zod'
 import {
   createHostedReviewSchema,
   hostingBranchSchema,
-  hostingHostSchema,
   hostingProviderSchema,
   mergeHostedReviewSchema,
   prepareHostedReviewSchema,
@@ -12,7 +11,6 @@ import type {
   HostedReviewCreationContext,
   HostedReviewPreparation,
   HostingAccounts,
-  HostingConnection,
   HostingContext,
   HostingProvider,
   HostingSnapshot,
@@ -34,7 +32,6 @@ import { prepareReview } from './review-preparation'
 export class CodeHostingService {
   private readonly creating = new Set<string>()
   private readonly merging = new Set<string>()
-  private readonly accountQueues = new Map<HostingProvider, Promise<unknown>>()
   private readonly accountScans = new Map<HostingProvider, Promise<HostingAccounts>>()
   private readonly branches = new HostingBranches()
   private readonly creationScopes = new Map<
@@ -95,48 +92,34 @@ export class CodeHostingService {
     return this.accountsCache.read()
   }
 
-  private enqueueAccount<T>(provider: HostingProvider, action: () => Promise<T>): Promise<T> {
-    const operation = (this.accountQueues.get(provider) ?? Promise.resolve())
-      .catch(() => {})
-      .then(action)
-    this.accountQueues.set(provider, operation)
-    void operation.then(
-      () => {
-        if (this.accountQueues.get(provider) === operation) this.accountQueues.delete(provider)
-      },
-      () => {
-        if (this.accountQueues.get(provider) === operation) this.accountQueues.delete(provider)
-      },
-    )
-    return operation
-  }
-
   async accounts(providerValue: unknown, refreshValue: unknown = true): Promise<HostingAccounts> {
     const provider = hostingProviderSchema.parse(providerValue)
     const refresh = z.boolean().parse(refreshValue)
     const pending = this.accountScans.get(provider)
     if (!refresh && pending) return pending
     const generation = this.contexts.generation
-    const operation = this.enqueueAccount(provider, async () => {
-      if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
-      this.creationScopes.clear()
-      this.branches.clear()
-      let result: HostingAccounts
-      try {
-        result = await this.contexts.accountScan(provider, refresh)
-      } catch (error) {
-        if (generation === this.contexts.generation)
-          await this.accountsCache.update(provider, (previous) => ({ ...previous, failed: true }))
-        throw error
-      }
-      if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
-      await this.accountsCache.update(provider, (previous) =>
-        result.status === 'cli-unavailable' && previous?.result?.status === 'detected'
-          ? { ...previous, failed: false, cliUnavailable: true }
-          : { result, failed: false },
-      )
-      return result
-    })
+    const operation = (pending ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
+        this.creationScopes.clear()
+        this.branches.clear()
+        let result: HostingAccounts
+        try {
+          result = await this.contexts.accountScan(provider, refresh)
+        } catch (error) {
+          if (generation === this.contexts.generation)
+            await this.accountsCache.update(provider, (previous) => ({ ...previous, failed: true }))
+          throw error
+        }
+        if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
+        await this.accountsCache.update(provider, (previous) =>
+          result.status === 'cli-unavailable' && previous?.result?.status === 'detected'
+            ? { ...previous, failed: false, cliUnavailable: true }
+            : { result, failed: false },
+        )
+        return result
+      })
     this.accountScans.set(provider, operation)
     void operation.then(
       () => {
@@ -147,61 +130,6 @@ export class CodeHostingService {
       },
     )
     return operation
-  }
-
-  async connection(providerValue: unknown, hostValue: unknown): Promise<HostingConnection> {
-    const provider = hostingProviderSchema.parse(providerValue)
-    const host = hostingHostSchema.parse(hostValue)
-    const generation = this.contexts.generation
-    return this.enqueueAccount(provider, async () => {
-      if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
-      this.contexts.forgetAccounts(provider)
-      this.creationScopes.clear()
-      this.branches.clear()
-      let result: HostingConnection
-      try {
-        const account = await this.adapters[provider].account({ provider, host, path: '' })
-        result = { status: 'connected', account }
-      } catch (error) {
-        if (error instanceof HostingError && (error.kind === 'auth' || error.kind === 'cli'))
-          result = {
-            status: error.kind === 'auth' ? 'disconnected' : 'cli-unavailable',
-            message: error.message,
-          }
-        else throw error
-      }
-      if (generation !== this.contexts.generation) throw new Error('代码托管上下文已失效。')
-      await this.accountsCache.update(provider, (previous) => {
-        if (result.status === 'cli-unavailable')
-          return previous?.result?.status === 'detected'
-            ? { ...previous, cliUnavailable: true }
-            : { result, failed: previous?.failed ?? false }
-        const accounts = previous?.result?.status === 'detected' ? previous.result.accounts : []
-        const updated = accounts.map((account) => {
-          if (account.host !== host) return account
-          if (result.status !== 'connected')
-            return account.active ? { ...account, status: 'error' as const } : account
-          return {
-            ...account,
-            active: account.account === result.account,
-            status: account.account === result.account ? ('connected' as const) : account.status,
-          }
-        })
-        if (
-          result.status === 'connected' &&
-          !updated.some((account) => account.host === host && account.account === result.account)
-        )
-          updated.push({ host, account: result.account, active: true, status: 'connected' })
-        return {
-          result:
-            result.status === 'connected' || updated.length > 0
-              ? { status: 'detected', accounts: updated }
-              : result,
-          failed: previous?.failed ?? false,
-        }
-      })
-      return result
-    })
   }
 
   private async scope(context: HostingContext) {

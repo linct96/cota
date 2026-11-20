@@ -2,22 +2,22 @@ import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { promisify } from 'node:util'
 import { z } from 'zod'
-import { hostingHostSchema, hostingProviderSchema } from '../../shared/code-hosting'
+import {
+  hostingAccountNameSchema,
+  hostingHostSchema,
+  hostingProviderSchema,
+} from '../../shared/code-hosting'
 import type { HostingAccounts, HostingProvider } from '../../shared/code-hosting'
 import { HostingError, hostingCLI } from './cli-runner'
 
 const execute = promisify(execFile)
-const accountName = z
-  .string()
-  .max(256)
-  .refine((value) => !/\p{Cc}/u.test(value))
 const githubStatus = z.object({
   hosts: z.record(
     hostingHostSchema,
     z.array(
       z.object({
         host: hostingHostSchema,
-        login: accountName,
+        login: hostingAccountNameSchema,
         active: z.boolean(),
         state: z.enum(['success', 'error', 'timeout', 'refresh_expired']),
       }),
@@ -28,8 +28,9 @@ const gitlabStatus = z.object({
   hosts: z.array(
     z.object({
       host: hostingHostSchema,
-      user: accountName.optional(),
+      user: hostingAccountNameSchema.optional(),
       state: z.enum(['success', 'error']),
+      token_source: z.string().optional(),
     }),
   ),
 })
@@ -51,12 +52,15 @@ export function parseHostingAccounts(provider: HostingProvider, output: string):
               active: entry.active,
               status: entry.state === 'success' ? ('connected' as const) : ('error' as const),
             }))
-        : gitlabStatus.parse(data).hosts.map((entry) => ({
-            host: entry.host,
-            account: entry.user || '',
-            active: true,
-            status: entry.state === 'success' ? ('connected' as const) : ('error' as const),
-          }))
+        : gitlabStatus
+            .parse(data)
+            .hosts.filter((entry) => entry.state === 'success' || entry.token_source !== 'none')
+            .map((entry) => ({
+              host: entry.host,
+              account: entry.user || '',
+              active: true,
+              status: entry.state === 'success' ? ('connected' as const) : ('error' as const),
+            }))
     if (accounts.some((entry) => entry.status === 'connected' && !entry.account))
       throw new Error('Missing account')
     return accounts.length ? { status: 'detected', accounts } : noAccounts()

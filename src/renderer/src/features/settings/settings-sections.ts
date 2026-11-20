@@ -1,7 +1,6 @@
 import { GeneralSettings } from '@/features/settings/sections/GeneralSettings'
 import { NotificationSettings } from '@/features/settings/sections/NotificationSettings'
 import { SourceControlSettings } from '@/features/settings/sections/SourceControlSettings'
-import { CodeHostingSettings } from '@/features/settings/sections/CodeHostingSettings'
 import { TerminalSettings } from '@/features/settings/sections/TerminalSettings'
 import { OpenWithSettings } from '@/features/settings/sections/OpenWithSettings'
 import { AppearanceSettings } from '@/features/settings/sections/AppearanceSettings'
@@ -15,7 +14,6 @@ import {
   Bot,
   FolderTree,
   GitBranch,
-  GitPullRequest,
   Keyboard,
   Play,
   Settings as SettingsIcon,
@@ -85,7 +83,8 @@ export const SETTING_GROUPS: SettingGroup[] = [
         id: 'source-control',
         label: '源代码管理',
         icon: GitBranch,
-        keywords: 'git 提交 信息 提示词 commit message prompt conventional pi 暂存',
+        keywords:
+          'git 提交 信息 提示词 commit message prompt conventional pi 暂存 代码托管 github gitlab gh glab host cli 全局 连接 账号 授权 登录 检测 pr mr review',
       },
       {
         id: 'quick-commands',
@@ -111,12 +110,6 @@ export const SETTING_GROUPS: SettingGroup[] = [
         icon: AppWindow,
         keywords: '应用程序 默认 编辑器 启动 参数 vscode cursor zed finder explorer open with',
       },
-      {
-        id: 'code-hosting',
-        label: '代码托管',
-        icon: GitPullRequest,
-        keywords: 'github gitlab gh glab host cli 全局 连接 账号 授权 登录 检测 pr mr review',
-      },
     ],
   },
 ]
@@ -128,7 +121,6 @@ export const SETTING_COMPONENTS: Record<string, React.ComponentType> = {
   'quick-commands': QuickCommandsSettings,
   'open-with': OpenWithSettings,
   'source-control': SourceControlSettings,
-  'code-hosting': CodeHostingSettings,
   appearance: AppearanceSettings,
   'file-explorer': FileExplorerSettings,
   shortcuts: ShortcutSettings,

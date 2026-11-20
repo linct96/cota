@@ -211,10 +211,10 @@ export function HostedReviewPanel({
                       className="hosted-review-unbound-settings"
                       disabled={action}
                       onClick={() =>
-                        void navigate({ to: '/settings', search: { section: 'code-hosting' } })
+                        void navigate({ to: '/settings', search: { section: 'source-control' } })
                       }
                     >
-                      前往代码托管设置
+                      前往源代码管理设置
                     </Button>
                   </EmptyContent>
                 </Empty>

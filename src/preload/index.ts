@@ -110,7 +110,6 @@ const api: DesktopAPI = {
     context: (target) => ipcRenderer.invoke('code-hosting:context', target),
     readAccounts: () => ipcRenderer.invoke('code-hosting:accounts-read'),
     accounts: (provider, refresh) => ipcRenderer.invoke('code-hosting:accounts', provider, refresh),
-    connection: (provider, host) => ipcRenderer.invoke('code-hosting:connection', provider, host),
     inspect: (target) => ipcRenderer.invoke('code-hosting:inspect', target),
     creationContext: (target) => ipcRenderer.invoke('code-hosting:creation-context', target),
     refreshBranches: (target, input) =>

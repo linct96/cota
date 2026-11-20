@@ -127,29 +127,8 @@ describe.skipIf(!gitAvailable)('Hosting context and creation integration (requir
     vi.unstubAllEnvs()
     await rm(directory, { recursive: true, force: true })
   })
-  it('checks connections and reads tracking independently from local HEAD', async () => {
-    const { service, adapter, head } = fixture
-    await expect(service.connection('github', 'github.com')).resolves.toEqual({
-      status: 'connected',
-      account: 'fixture-user',
-    })
-    for (const [kind, status] of [
-      ['auth', 'disconnected'],
-      ['cli', 'cli-unavailable'],
-    ] as const) {
-      adapter.account.mockRejectedValueOnce(new HostingError(kind, `${kind} fixture`))
-      await expect(service.connection('gitlab', 'gitlab.example.com')).resolves.toEqual({
-        status,
-        message: `${kind} fixture`,
-      })
-    }
-    for (const kind of ['network', 'forbidden', 'rate-limit', 'response'] as const) {
-      adapter.account.mockRejectedValueOnce(new HostingError(kind, `${kind} fixture`))
-      await expect(service.connection('github', 'github.com')).rejects.toThrow(`${kind} fixture`)
-    }
-    const accountCalls = adapter.account.mock.calls.length
-    await expect(service.connection('github', 'https://github.com/path')).rejects.toThrow()
-    expect(adapter.account).toHaveBeenCalledTimes(accountCalls)
+  it('reads tracking independently from local HEAD', async () => {
+    const { service, head } = fixture
     expect((await service.context(directory)).reason).toContain('无法自动识别')
     await git('remote', 'add', 'origin', 'git@github.com:team/repo.git')
     await git('config', 'branch.feature/review.remote', 'origin')

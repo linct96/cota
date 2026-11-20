@@ -226,6 +226,7 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
           hosts: [
             { host: 'gitlab.com', user: 'personal', state: 'success', token: 'secret' },
             { host: 'gitlab.example.com', state: 'error', error: 'secret' },
+            { host: 'gitlab.logged-out.example', state: 'error', token_source: 'none' },
           ],
         }),
       ),
@@ -270,12 +271,10 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
     const scan = vi.fn((provider: unknown): Promise<HostingAccounts> =>
       Promise.resolve(provider === 'github' ? github : gitlab),
     )
-    const adapter = new GitHubAdapter(vi.fn())
-    vi.spyOn(adapter, 'account').mockResolvedValue('bob')
     const service = new CodeHostingService(
       new ConfigStore(join(directory, 'config.json')),
       new SourceControlService(),
-      { github: adapter, gitlab: adapter },
+      undefined,
       scan,
       new HostingAccountsCache(file),
     )
@@ -294,7 +293,7 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
     const restarted = new CodeHostingService(
       new ConfigStore(join(directory, 'config.json')),
       new SourceControlService(),
-      { github: adapter, gitlab: adapter },
+      undefined,
       scan,
       new HostingAccountsCache(file),
     )
@@ -315,20 +314,6 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       result: github,
       failed: true,
     })
-    await expect(restarted.connection('github', 'github.com')).resolves.toEqual({
-      status: 'connected',
-      account: 'bob',
-    })
-    expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
-      failed: true,
-      result: {
-        status: 'detected',
-        accounts: [
-          { host: 'github.com', account: 'alice', active: false, status: 'connected' },
-          { host: 'github.com', account: 'bob', active: true, status: 'connected' },
-        ],
-      },
-    })
     await restarted.accounts('github', true)
     expect(scan).toHaveBeenCalledTimes(4)
     expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
@@ -337,6 +322,47 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
     })
     service.close()
     restarted.close()
+  })
+
+  it('hosting account cache ignores old removal marks and follows current CLI logins', async () => {
+    const file = join(directory, 'code-hosting-accounts.json')
+    const account = {
+      host: 'github.example.com',
+      account: 'alice',
+      active: true,
+      status: 'connected',
+    } as const
+    const disconnected = { status: 'disconnected', message: 'no accounts' } as const
+    const detected = { status: 'detected', accounts: [account] }
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        entries: {
+          github: { result: disconnected, failed: false, removed: [{ host: account.host }] },
+        },
+      }),
+    )
+    const scan = vi.fn().mockResolvedValueOnce(detected).mockResolvedValueOnce(disconnected)
+    const service = new CodeHostingService(
+      new ConfigStore(join(directory, 'config.json')),
+      new SourceControlService(),
+      undefined,
+      scan,
+      new HostingAccountsCache(file),
+    )
+    expect(await service.readAccounts()).toEqual({
+      entries: { github: { result: disconnected, failed: false } },
+    })
+    await expect(service.accounts('github')).resolves.toEqual(detected)
+    expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
+      result: detected,
+      failed: false,
+    })
+    expect(await readFile(file, 'utf8')).not.toContain('"removed"')
+
+    await expect(service.accounts('github')).resolves.toEqual(disconnected)
+    expect((await service.readAccounts()).entries.github?.result).toEqual(disconnected)
   })
 
   it.each([
@@ -355,18 +381,16 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       const detected: HostingAccounts = { status: 'detected', accounts: [...accounts] }
       const unavailable: HostingAccounts = { status: 'cli-unavailable', message: 'CLI unavailable' }
       const scan = vi.fn().mockResolvedValue(detected)
-      const adapter = new GitHubAdapter(vi.fn())
-      const account = vi.spyOn(adapter, 'account')
       const service = new CodeHostingService(
         new ConfigStore(join(directory, 'config.json')),
         new SourceControlService(),
-        { github: adapter, gitlab: adapter },
+        undefined,
         scan,
         new HostingAccountsCache(file),
       )
       await service.accounts('github', true)
-      account.mockRejectedValueOnce(new HostingError('cli', 'CLI unavailable'))
-      await expect(service.connection('github', 'github.com')).resolves.toEqual(unavailable)
+      scan.mockResolvedValueOnce(unavailable)
+      await expect(service.accounts('github', true)).resolves.toEqual(unavailable)
       expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
         result: detected,
         failed: false,
@@ -380,39 +404,14 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
         failed: true,
         cliUnavailable: true,
       })
-      account.mockResolvedValueOnce('alice')
-      await service.connection('github', 'github.com')
-      expect((await service.readAccounts()).entries.github).toEqual({
-        result: detected,
-        failed: true,
-      })
-
-      scan.mockResolvedValueOnce(unavailable)
-      await expect(service.accounts('github', true)).resolves.toEqual(unavailable)
-      expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
-        result: detected,
-        failed: false,
-        cliUnavailable: true,
-      })
-      account.mockRejectedValueOnce(new HostingError('auth', 'not logged in'))
-      await service.connection('github', 'github.com')
-      expect((await service.readAccounts()).entries.github).toEqual({
-        result: {
-          status: 'detected',
-          accounts: accounts.map((entry) =>
-            entry.host === 'github.com' ? { ...entry, status: 'error' } : entry,
-          ),
-        },
-        failed: false,
-      })
       await service.accounts('github', true)
       expect((await new HostingAccountsCache(file).read()).entries.github).toEqual({
         result: detected,
         failed: false,
       })
 
-      account.mockRejectedValueOnce(new HostingError('cli', 'CLI unavailable'))
-      await service.connection('gitlab', 'gitlab.com')
+      scan.mockResolvedValueOnce(unavailable)
+      await service.accounts('gitlab', true)
       expect((await service.readAccounts()).entries.gitlab).toEqual({
         result: unavailable,
         failed: false,
@@ -421,39 +420,43 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
     },
   )
 
-  it('hosting account cache serializes scans and host checks and retains an initial failure', async () => {
+  it('hosting account cache serializes refreshes, deduplicates scans and retains an initial failure', async () => {
     const file = join(directory, 'code-hosting-accounts.json')
     let finish!: (result: HostingAccounts) => void
     const pending = new Promise<HostingAccounts>((resolve) => {
       finish = resolve
     })
-    const scan = vi.fn().mockReturnValueOnce(pending).mockRejectedValueOnce(new Error('private'))
-    const adapter = new GitHubAdapter(vi.fn())
-    const account = vi.spyOn(adapter, 'account').mockResolvedValue('new-user')
+    const detected: HostingAccounts = {
+      status: 'detected',
+      accounts: [{ host: 'github.com', account: 'old-user', active: true, status: 'connected' }],
+    }
+    const refreshed: HostingAccounts = {
+      status: 'detected',
+      accounts: [{ host: 'github.com', account: 'new-user', active: true, status: 'connected' }],
+    }
+    const scan = vi
+      .fn()
+      .mockReturnValueOnce(pending)
+      .mockResolvedValueOnce(refreshed)
+      .mockRejectedValueOnce(new Error('private'))
     const service = new CodeHostingService(
       new ConfigStore(join(directory, 'config.json')),
       new SourceControlService(),
-      { github: adapter, gitlab: adapter },
+      undefined,
       scan,
       new HostingAccountsCache(file),
     )
     const scanning = service.accounts('github', false)
     const duplicate = service.accounts('github', false)
-    const connecting = service.connection('github', 'github.com')
-    expect(account).not.toHaveBeenCalled()
-    finish({
-      status: 'detected',
-      accounts: [{ host: 'github.com', account: 'old-user', active: true, status: 'connected' }],
-    })
-    await Promise.all([scanning, duplicate, connecting])
-    expect(scan).toHaveBeenCalledOnce()
-    expect((await service.readAccounts()).entries.github?.result).toEqual({
-      status: 'detected',
-      accounts: [
-        { host: 'github.com', account: 'old-user', active: false, status: 'connected' },
-        { host: 'github.com', account: 'new-user', active: true, status: 'connected' },
-      ],
-    })
+    const refreshing = service.accounts('github', true)
+    finish(detected)
+    expect(await Promise.all([scanning, duplicate, refreshing])).toEqual([
+      detected,
+      detected,
+      refreshed,
+    ])
+    expect(scan).toHaveBeenCalledTimes(2)
+    expect((await service.readAccounts()).entries.github?.result).toEqual(refreshed)
     await expect(service.accounts('gitlab', false)).rejects.toThrow('private')
     expect((await new HostingAccountsCache(file).read()).entries.gitlab).toEqual({ failed: true })
     expect(await readFile(file, 'utf8')).not.toContain('private')

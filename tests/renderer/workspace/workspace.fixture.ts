@@ -56,7 +56,6 @@ beforeEach(() => {
       context: vi.fn(),
       readAccounts: vi.fn(),
       accounts: vi.fn(),
-      connection: vi.fn(),
       inspect: vi.fn(),
       creationContext: vi.fn(),
       refreshBranches: vi.fn(),

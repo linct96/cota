@@ -30,6 +30,11 @@ export const hostingHostSchema = z
       return false
     }
   }, 'Host 无效。')
+export const hostingAccountNameSchema = z
+  .string()
+  .max(256)
+  .refine((value) => !/\p{Cc}/u.test(value))
+
 export interface HostingRepository {
   provider: HostingProvider
   host: string
@@ -181,10 +186,6 @@ export const createHostedReviewSchema = prepareHostedReviewSchema
   })
   .strict()
 export type CreateHostedReview = z.infer<typeof createHostedReviewSchema>
-export type HostingConnection =
-  | { status: 'connected'; account: string }
-  | { status: 'disconnected' | 'cli-unavailable'; message: string }
-
 export interface HostingAccount {
   host: string
   account: string
@@ -209,10 +210,6 @@ export interface CodeHostingAPI {
   context: (target: WorkspaceTarget) => Promise<Result<HostingContext>>
   readAccounts: () => Promise<Result<HostingAccountsCacheSnapshot>>
   accounts: (provider: HostingProvider, refresh?: boolean) => Promise<Result<HostingAccounts>>
-  connection: (
-    provider: HostingProvider,
-    host: string,
-  ) => Promise<Result<{ result: HostingConnection; cache: HostingAccountsCacheSnapshot }>>
   inspect: (target: WorkspaceTarget) => Promise<Result<HostingSnapshot>>
   creationContext: (target: WorkspaceTarget) => Promise<Result<HostedReviewCreationContext>>
   refreshBranches: (
