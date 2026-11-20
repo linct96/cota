@@ -33,15 +33,16 @@ export function QuickCommandDialog({
   onOpenChangeComplete,
   command,
   projectPath,
+  initialScope,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onOpenChangeComplete: (open: boolean) => void
   command?: QuickCommand
   projectPath?: string
+  initialScope?: QuickCommand['scope']['type']
 }) {
   const id = useId()
-  const nameInput = useRef<HTMLInputElement>(null)
   const saving = useRef(false)
   const [error, setError] = useState<string>()
   const projects = useWorkspace((state) => state.projects)
@@ -52,7 +53,12 @@ export function QuickCommandDialog({
         ? projectPath
         : projects[0] || ''
   const defaultScope: QuickCommand['scope']['type'] =
-    command?.scope.type || (defaultProjectPath ? 'project' : 'global')
+    command?.scope.type ||
+    (initialScope === 'global' || (initialScope === 'project' && defaultProjectPath)
+      ? initialScope
+      : defaultProjectPath
+        ? 'project'
+        : 'global')
   const form = useForm({
     defaultValues: {
       name: command?.name || '',
@@ -132,7 +138,6 @@ export function QuickCommandDialog({
       <DialogContent
         className="quick-command-dialog max-h-[calc(100%-2rem)] overflow-y-auto"
         showCloseButton={false}
-        initialFocus={nameInput}
       >
         <DialogHeader className="quick-command-dialog-header">
           <DialogTitle className="quick-command-dialog-title">
@@ -162,7 +167,6 @@ export function QuickCommandDialog({
                       名称
                     </FieldLabel>
                     <Input
-                      ref={nameInput}
                       id={`${id}-name`}
                       name={field.name}
                       className="quick-command-name-input"
