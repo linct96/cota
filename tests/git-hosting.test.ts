@@ -104,6 +104,8 @@ async function hostingFixture() {
       Promise.resolve('not-pushed'),
     ),
     checks: vi.fn(() => Promise.resolve({ checks: 'success' as const })),
+    preMergePipeline: vi.fn(() => Promise.resolve(undefined)),
+    mergedPipeline: vi.fn(() => Promise.resolve(undefined)),
     create: vi.fn((): Promise<HostedReview> => Promise.reject(new Error('timeout'))),
   } satisfies HostingAdapter
   const service = new CodeHostingService(config, sourceControl, {

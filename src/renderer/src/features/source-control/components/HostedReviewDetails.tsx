@@ -37,6 +37,7 @@ const pipelineStatuses = new Map<
   ['failed', ['失败', CircleX, 'destructive']],
   ['canceled', ['已取消', Ban, 'secondary']],
   ['skipped', ['已跳过', CircleMinus, 'secondary']],
+  ['neutral', ['不影响结果', CircleMinus, 'secondary']],
   ['manual', ['待手动执行', Clock, 'warning']],
   ['scheduled', ['已计划', Clock, 'warning']],
 ])
@@ -79,7 +80,7 @@ function PipelineStageDots({ stages }: { stages: NonNullable<HostedPipeline['sta
         const { normalized, label, variant } = getPipelineStatus(stage.status)
         return (
           <span
-            key={stage.name}
+            key={stage.id ?? stage.name}
             className="hosted-review-pipeline-dot size-1.5 rounded-full"
             data-status={normalized}
             data-variant={variant}
@@ -184,7 +185,7 @@ function ReviewPipeline({
                 } = stageStatus
                 return (
                   <li
-                    key={stage.name}
+                    key={stage.id ?? stage.name}
                     className="hosted-review-pipeline-stage flex items-center justify-between gap-2 rounded-xs px-1.5 py-1 text-xs"
                   >
                     <span className="hosted-review-pipeline-stage-info flex min-w-0 items-center gap-1.5">
@@ -436,25 +437,34 @@ export function HostedReviewDetails({
                   </time>
                 )}
               </div>
-              {label === 'MR' && (
+              {(review.authorUsername || mergedTime) && (
                 <div className="hosted-review-merged-metadata flex min-w-0 items-center gap-1.5 text-2xs whitespace-nowrap text-app-muted-foreground">
-                  <span
-                    className="hosted-review-author truncate font-mono"
-                    title={review.authorUsername}
-                  >
-                    <span className="hosted-review-author-label sr-only">发起人：</span>
-                    {review.authorUsername ? `@${review.authorUsername}` : '—'}
-                  </span>
-                  <span
-                    className="hosted-review-merged-separator shrink-0 opacity-50"
-                    aria-hidden="true"
-                  >
-                    ·
-                  </span>
-                  <span className="hosted-review-merged-time min-w-0 shrink-0 tabular-nums">
-                    <span className="hosted-review-merged-time-label sr-only">合并时间：</span>
-                    {mergedAt && mergedTime ? <time dateTime={mergedAt}>{mergedTime}</time> : '—'}
-                  </span>
+                  {review.authorUsername && (
+                    <span
+                      className="hosted-review-author truncate font-mono"
+                      title={review.authorUsername}
+                    >
+                      <span className="hosted-review-author-label sr-only">发起人：</span>
+                      @${review.authorUsername}
+                    </span>
+                  )}
+                  {review.authorUsername && mergedTime && (
+                    <span
+                      className="hosted-review-merged-separator shrink-0 opacity-50"
+                      aria-hidden="true"
+                    >
+                      ·
+                    </span>
+                  )}
+                  {mergedAt && mergedTime && (
+                    <time
+                      className="hosted-review-merged-time shrink-0 tabular-nums"
+                      dateTime={mergedAt}
+                    >
+                      <span className="hosted-review-merged-time-label sr-only">合并时间：</span>
+                      {mergedTime}
+                    </time>
+                  )}
                 </div>
               )}
             </div>

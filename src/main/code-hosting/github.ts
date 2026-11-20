@@ -5,8 +5,10 @@ import { HostingError, hostingRequest } from './cli-runner'
 import type { HostingRequest } from './cli-runner'
 import type {
   CreateHostedReview,
+  HostedPipeline,
   HostedReview,
   HostingBranch,
+  HostingCheckState,
   HostingComparison,
   HostingRepository,
 } from '../../shared/code-hosting'
@@ -24,7 +26,9 @@ const pullSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   merged_at: z.string().nullable(),
+  merge_commit_sha: z.string().nullish(),
   closed_at: z.string().nullable(),
+  user: z.object({ login: z.string() }).nullish(),
   head: z.object({
     ref: z.string(),
     sha: z.string(),
@@ -32,9 +36,84 @@ const pullSchema = z.object({
   }),
   base: z.object({ ref: z.string(), repo: z.object({ id: z.number() }) }),
 })
+const jobSchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string(),
+  status: z.string(),
+  conclusion: z.string().nullable(),
+})
+const checkRunSchema = jobSchema.extend({
+  started_at: z.string().nullable(),
+  check_suite: z.object({ id: z.number() }),
+})
+const commitStatusSchema = z.object({
+  context: z.string(),
+  state: z.string(),
+  created_at: z.string(),
+})
+const workflowRunSchema = jobSchema.extend({
+  name: z.string().nullish(),
+  workflow_id: z.number().int().positive(),
+  event: z.string(),
+  head_branch: z.string().nullable(),
+  head_sha: z.string(),
+  created_at: z.string(),
+})
 type Pull = z.infer<typeof pullSchema>
 const endpoint = (repository: HostingRepository) =>
   `repos/${repository.path.split('/').map(encodeURIComponent).join('/')}`
+
+function jobStatus(job: Pick<z.infer<typeof jobSchema>, 'status' | 'conclusion'>) {
+  switch (job.status) {
+    case 'queued':
+    case 'pending':
+    case 'requested':
+    case 'waiting':
+      return 'pending'
+    case 'in_progress':
+      return 'running'
+    case 'completed':
+      switch (job.conclusion) {
+        case 'success':
+        case 'neutral':
+        case 'skipped':
+          return job.conclusion
+        case 'cancelled':
+          return 'canceled'
+        case 'action_required':
+          return 'manual'
+        default:
+          return job.conclusion ? 'failed' : 'unknown'
+      }
+    default:
+      return 'unknown'
+  }
+}
+
+function checkState(status: string): HostingCheckState {
+  switch (status) {
+    case 'running':
+    case 'pending':
+    case 'success':
+      return status
+    case 'neutral':
+    case 'skipped':
+      return 'success'
+    case 'failed':
+    case 'failure':
+    case 'error':
+    case 'canceled':
+    case 'manual':
+      return 'failure'
+    default:
+      return 'unknown'
+  }
+}
+
+function pipelineStatus(checks: HostingCheckState) {
+  return checks === 'failure' ? 'failed' : checks
+}
+
 function review(scope: ReviewScope, pull: Pull): HostedReview {
   if (
     pull.head.repo?.id !== scope.sourceInfo.id ||
@@ -50,11 +129,13 @@ function review(scope: ReviewScope, pull: Pull): HostedReview {
     sourceBranch: pull.head.ref,
     targetBranch: pull.base.ref,
     head: pull.head.sha,
+    mergedHead: pull.merged_at ? (pull.merge_commit_sha ?? undefined) : undefined,
     url: reviewUrl(scope.target, pull.number),
     checks: 'unknown',
     createdAt: pull.created_at,
     updatedAt: pull.updated_at,
     mergedAt: pull.merged_at,
+    authorUsername: pull.user?.login,
     closedAt: pull.closed_at,
   }
 }
@@ -248,43 +329,143 @@ export class GitHubAdapter implements HostingAdapter {
         ),
       ).commit.sha
   }
-  async checks(scope: ReviewScope, current: HostedReview) {
-    const prefix = `${endpoint(scope.source)}/commits/${encodeURIComponent(current.head)}`
+  checks(scope: ReviewScope, current: HostedReview) {
+    return this.commitChecks(scope.source, current.head)
+  }
+  async preMergePipeline(scope: ReviewScope, current: HostedReview) {
+    const mergedAt = Date.parse(current.mergedAt ?? '')
+    if (current.state !== 'merged' || !Number.isFinite(mergedAt)) return undefined
+    return (await this.commitChecks(scope.source, current.head, mergedAt)).pipeline
+  }
+  async mergedPipeline(
+    scope: ReviewScope,
+    current: HostedReview,
+  ): Promise<HostedPipeline | undefined> {
+    const mergedAt = Date.parse(current.mergedAt ?? '')
+    if (current.state !== 'merged' || !current.mergedHead || !Number.isFinite(mergedAt))
+      return undefined
+    const target = endpoint(scope.target)
+    const query = new URLSearchParams({
+      head_sha: current.mergedHead,
+      branch: current.targetBranch,
+      event: 'push',
+      created: `>=${new Date(mergedAt).toISOString()}`,
+      per_page: '100',
+    })
+    const result = z
+      .object({ total_count: z.number(), workflow_runs: z.array(workflowRunSchema) })
+      .parse(await this.request(scope.target, `${target}/actions/runs?${query}`))
+    // shortcut: show unknown beyond one page; paginate if repositories exceed 100 runs per merge.
+    if (result.total_count > result.workflow_runs.length) return { status: 'unknown' }
+    const workflows = new Map<number, z.infer<typeof workflowRunSchema>>()
+    for (const run of result.workflow_runs) {
+      const created = Date.parse(run.created_at)
+      if (
+        run.event !== 'push' ||
+        run.head_sha !== current.mergedHead ||
+        run.head_branch !== current.targetBranch ||
+        !(created >= mergedAt)
+      )
+        continue
+      const previous = workflows.get(run.workflow_id)
+      // A later push of the same SHA must not replace the run triggered by the merge.
+      if (!previous || created < Date.parse(previous.created_at))
+        workflows.set(run.workflow_id, run)
+    }
+    const runs = [...workflows.values()]
+    if (!runs.length) return undefined
+    const status =
+      runs.length === 1
+        ? jobStatus(runs[0])
+        : pipelineStatus(combineChecks(runs.map((run) => checkState(jobStatus(run)))))
+    const stages = await Promise.all(
+      runs.map(async (run) => {
+        const jobPage = z
+          .object({ total_count: z.number(), jobs: z.array(jobSchema) })
+          .parse(
+            await this.request(
+              scope.target,
+              `${target}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
+            ),
+          )
+        // shortcut: keep the workflow status but hide partial lists over 100 jobs.
+        if (jobPage.total_count > jobPage.jobs.length) return undefined
+        return jobPage.jobs.map((job) => ({
+          id: `job:${job.id}`,
+          name: runs.length > 1 && run.name ? `${run.name} · ${job.name}` : job.name,
+          status: jobStatus(job),
+        }))
+      }),
+    ).catch(() => undefined)
+    return {
+      status,
+      stages: stages?.every((jobs) => jobs !== undefined) ? stages.flat() : undefined,
+    }
+  }
+  private async commitChecks(
+    repository: HostingRepository,
+    head: string,
+    before?: number,
+  ): Promise<Pick<HostedReview, 'checks' | 'pipeline'>> {
+    const prefix = `${endpoint(repository)}/commits/${encodeURIComponent(head)}`
     const [runs, status] = await Promise.all([
-      this.request(scope.source, `${prefix}/check-runs?per_page=100`),
-      this.request(scope.source, `${prefix}/status`),
+      this.request(
+        repository,
+        `${prefix}/check-runs?per_page=100${before === undefined ? '' : '&filter=all'}`,
+      ),
+      this.request(repository, `${prefix}/status?per_page=100`),
     ])
     const parsedRuns = z
-      .object({
-        total_count: z.number(),
-        check_runs: z.array(z.object({ status: z.string(), conclusion: z.string().nullable() })),
-      })
+      .object({ total_count: z.number(), check_runs: z.array(checkRunSchema) })
       .parse(runs)
-    const parsedStatus = z.object({ total_count: z.number(), state: z.string() }).parse(status)
-    if (parsedRuns.total_count > parsedRuns.check_runs.length) return { checks: 'unknown' as const }
+    const parsedStatus = z
+      .object({ total_count: z.number(), state: z.string(), statuses: z.array(commitStatusSchema) })
+      .parse(status)
+    const partialStatuses = parsedStatus.total_count > parsedStatus.statuses.length
+    // shortcut: never show a misleading partial list; paginate if checks exceed 100 per commit.
+    if (
+      parsedRuns.total_count > parsedRuns.check_runs.length ||
+      (before !== undefined && partialStatuses)
+    )
+      return { checks: 'unknown', pipeline: { status: 'unknown' } }
+
+    const checkRuns = new Map<string, z.infer<typeof checkRunSchema>>()
+    for (const run of parsedRuns.check_runs) {
+      // Without a start time, a check on a shared source/merge SHA cannot be attributed safely.
+      if (before !== undefined && !(Date.parse(run.started_at ?? '') < before)) continue
+      const key = `${run.check_suite.id}:${run.name}`
+      const previous = checkRuns.get(key)
+      if (!previous || run.id > previous.id) checkRuns.set(key, run)
+    }
+    const contexts = parsedStatus.statuses.filter(
+      (entry) => before === undefined || Date.parse(entry.created_at) < before,
+    )
+    const stages = [
+      ...[...checkRuns.values()].map((run) => ({
+        id: `check:${run.id}`,
+        name: run.name,
+        status: jobStatus(run),
+      })),
+      ...contexts.map((entry) => ({
+        id: `status:${entry.context}`,
+        name: entry.context,
+        status: pipelineStatus(checkState(entry.state)),
+      })),
+    ]
     const checks = combineChecks([
-      ...parsedRuns.check_runs.map((run) =>
-        run.status === 'queued'
-          ? ('pending' as const)
-          : run.status !== 'completed'
-            ? ('running' as const)
-            : ['success', 'neutral', 'skipped'].includes(run.conclusion || '')
-              ? ('success' as const)
-              : ('failure' as const),
-      ),
-      ...(parsedStatus.total_count
-        ? [
-            parsedStatus.state === 'success'
-              ? ('success' as const)
-              : parsedStatus.state === 'pending'
-                ? ('pending' as const)
-                : parsedStatus.state === 'failure' || parsedStatus.state === 'error'
-                  ? ('failure' as const)
-                  : ('unknown' as const),
-          ]
-        : []),
+      ...stages.map((stage) => checkState(stage.status)),
+      ...(before === undefined && parsedStatus.total_count ? [checkState(parsedStatus.state)] : []),
     ])
-    return { checks }
+    return {
+      checks,
+      pipeline:
+        checks === 'none'
+          ? undefined
+          : {
+              status: pipelineStatus(checks),
+              stages: partialStatuses ? undefined : stages,
+            },
+    }
   }
   async create(scope: ReviewScope, input: CreateHostedReview) {
     const pull = pullSchema.parse(

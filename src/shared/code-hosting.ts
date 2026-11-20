@@ -92,7 +92,7 @@ export interface HostedReview {
 }
 export interface HostedPipeline {
   status: string
-  stages?: { name: string; status: string }[]
+  stages?: { id?: string; name: string; status: string }[]
 }
 export interface HostedReviewHistory {
   items: HostedReview[]
