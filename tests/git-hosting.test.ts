@@ -103,7 +103,7 @@ async function hostingFixture() {
     branchHead: vi.fn((_repository: HostingRepository, _branch: string) =>
       Promise.resolve('not-pushed'),
     ),
-    checks: vi.fn(() => Promise.resolve('success' as const)),
+    checks: vi.fn(() => Promise.resolve({ checks: 'success' as const })),
     create: vi.fn((): Promise<HostedReview> => Promise.reject(new Error('timeout'))),
   } satisfies HostingAdapter
   const service = new CodeHostingService(config, sourceControl, {

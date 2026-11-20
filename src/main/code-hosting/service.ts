@@ -217,10 +217,18 @@ export class CodeHostingService {
     scope: ReviewScope,
   ): Promise<HostingSnapshot> {
     await this.reconcile(context, account, activeReviews)
+    // An unavailable pipeline must not hide the review result.
+    const mergedPipelines =
+      latestReview?.state === 'merged'
+        ? Promise.all([
+            adapter.preMergePipeline?.(scope, latestReview).catch(() => undefined),
+            adapter.mergedPipeline?.(scope, latestReview).catch(() => undefined),
+          ])
+        : undefined
     await Promise.all(
       activeReviews.map(async (current) => {
         try {
-          current.checks = await adapter.checks(scope, current)
+          Object.assign(current, await adapter.checks(scope, current))
         } catch (error) {
           current.checks = 'unknown'
           current.checksError =
@@ -232,13 +240,16 @@ export class CodeHostingService {
         }
       }),
     )
+    const [preMergePipeline, pipeline] = (await mergedPipelines) ?? []
     return {
       context,
       account,
       defaultBranch,
       activeReviews,
       latestReview:
-        activeReviews.find((review) => review.number === latestReview?.number) || latestReview,
+        latestReview?.state === 'merged'
+          ? { ...latestReview, preMergePipeline, pipeline }
+          : activeReviews.find((review) => review.number === latestReview?.number) || latestReview,
       fetchedAt: Date.now(),
       creationBlocked: !!this.pending(context),
     }

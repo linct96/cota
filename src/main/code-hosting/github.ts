@@ -261,8 +261,8 @@ export class GitHubAdapter implements HostingAdapter {
       })
       .parse(runs)
     const parsedStatus = z.object({ total_count: z.number(), state: z.string() }).parse(status)
-    if (parsedRuns.total_count > parsedRuns.check_runs.length) return 'unknown' as const
-    return combineChecks([
+    if (parsedRuns.total_count > parsedRuns.check_runs.length) return { checks: 'unknown' as const }
+    const checks = combineChecks([
       ...parsedRuns.check_runs.map((run) =>
         run.status === 'queued'
           ? ('pending' as const)
@@ -284,6 +284,7 @@ export class GitHubAdapter implements HostingAdapter {
           ]
         : []),
     ])
+    return { checks }
   }
   async create(scope: ReviewScope, input: CreateHostedReview) {
     const pull = pullSchema.parse(

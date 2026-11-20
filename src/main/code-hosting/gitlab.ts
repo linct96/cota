@@ -5,6 +5,7 @@ import { hostingRequest } from './cli-runner'
 import type { HostingRequest } from './cli-runner'
 import type {
   CreateHostedReview,
+  HostedPipeline,
   HostedReview,
   HostingBranch,
   HostingCheckState,
@@ -21,13 +22,63 @@ const mergeSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   merged_at: z.string().nullable(),
+  author: z
+    .object({ username: z.string().trim().min(1) })
+    .nullish()
+    .catch(undefined),
   closed_at: z.string().nullable(),
   source_project_id: z.number().nullable(),
   target_project_id: z.number(),
   source_branch: z.string(),
   target_branch: z.string(),
   sha: z.string().nullable(),
+  merge_commit_sha: z.string().nullish(),
+  squash_commit_sha: z.string().nullish(),
 })
+const pipelineSchema = z.object({
+  iid: z.number().int().positive().optional(),
+  project_id: z.number().int().positive().optional(),
+  sha: z.string(),
+  ref: z.string().optional(),
+  source: z.string().optional(),
+  status: z.string().min(1),
+  created_at: z.string().optional(),
+})
+const pipelineCheckStates = new Map<string, HostingCheckState>([
+  ['success', 'success'],
+  ['skipped', 'success'],
+  ['failed', 'failure'],
+  ['canceled', 'failure'],
+  ['running', 'running'],
+  ['created', 'pending'],
+  ['pending', 'pending'],
+  ['preparing', 'pending'],
+  ['waiting_for_resource', 'pending'],
+  ['scheduled', 'pending'],
+  ['manual', 'pending'],
+])
+const pipelineStagesSchema = z.object({
+  data: z.object({
+    project: z.object({
+      pipeline: z.object({
+        stages: z.object({
+          nodes: z.array(z.object({ name: z.string().min(1), status: z.string().min(1) })),
+          pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
+        }),
+      }),
+    }),
+  }),
+})
+const pipelineStagesQuery = `query($path: ID!, $iid: ID!, $after: String) {
+  project(fullPath: $path) {
+    pipeline(iid: $iid) {
+      stages(first: 100, after: $after) {
+        nodes { name status }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}`
 const endpoint = (repository: HostingRepository) =>
   `projects/${encodeURIComponent(repository.path)}`
 function review(scope: ReviewScope, merge: z.infer<typeof mergeSchema>): HostedReview {
@@ -45,11 +96,13 @@ function review(scope: ReviewScope, merge: z.infer<typeof mergeSchema>): HostedR
     sourceBranch: merge.source_branch,
     targetBranch: merge.target_branch,
     head: merge.sha || '',
+    mergedHead: merge.merge_commit_sha || merge.squash_commit_sha || undefined,
     url: reviewUrl(scope.target, merge.iid),
     checks: 'unknown',
     createdAt: merge.created_at,
     updatedAt: merge.updated_at,
     mergedAt: merge.merged_at,
+    authorUsername: merge.author?.username,
     closedAt: merge.closed_at,
   }
 }
@@ -250,38 +303,153 @@ export class GitLabAdapter implements HostingAdapter {
         ),
       ).commit.id
   }
-  async checks(scope: ReviewScope, current: HostedReview): Promise<HostingCheckState> {
-    const data = z
-      .object({
-        head_pipeline: z.object({ sha: z.string(), status: z.string() }).nullable().optional(),
+  async preMergePipeline(
+    scope: ReviewScope,
+    current: HostedReview,
+  ): Promise<HostedPipeline | undefined> {
+    const mergedAt = Date.parse(current.mergedAt ?? '')
+    if (current.state !== 'merged' || !current.head || !Number.isFinite(mergedAt)) return undefined
+    const beforeMerge = (pipeline: z.infer<typeof pipelineSchema>) =>
+      Date.parse(pipeline.created_at ?? '') < mergedAt
+    const data = await this.readHeadPipeline(scope, current)
+    const head = data.head_pipeline
+    if (
+      data.sha === current.head &&
+      head &&
+      beforeMerge(head) &&
+      (head.sha === current.head || this.isMergeRef(head, current))
+    ) {
+      return this.pipelineWithStages(head, this.pipelineRepository(scope, head.project_id))
+    }
+
+    // The MR's head pipeline can be replaced by a run created after merge.
+    // shortcut: read up to 500 MR pipelines; extend if older matching runs need to be recovered.
+    for (let page = 1; page <= 5; page++) {
+      const pipelines = z
+        .array(pipelineSchema)
+        .parse(
+          await this.request(
+            scope.target,
+            `${endpoint(scope.target)}/merge_requests/${current.number}/pipelines?per_page=100&page=${page}`,
+          ),
+        )
+      // Without the authoritative head pointer, an older synthetic SHA cannot be tied to this revision.
+      const pipeline = pipelines.find((entry) => entry.sha === current.head && beforeMerge(entry))
+      if (pipeline)
+        return this.pipelineWithStages(
+          pipeline,
+          this.pipelineRepository(scope, pipeline.project_id),
+        )
+      if (pipelines.length < 100) break
+    }
+    return undefined
+  }
+
+  async mergedPipeline(
+    scope: ReviewScope,
+    current: HostedReview,
+  ): Promise<HostedPipeline | undefined> {
+    if (current.state !== 'merged' || !current.mergedHead) return undefined
+    const query = new URLSearchParams({
+      ref: current.targetBranch,
+      sha: current.mergedHead,
+      order_by: 'id',
+      sort: 'desc',
+      per_page: '1',
+    })
+    const pipelines = z
+      .array(pipelineSchema)
+      .parse(await this.request(scope.target, `${endpoint(scope.target)}/pipelines?${query}`))
+    const mergedAt = Date.parse(current.mergedAt ?? '')
+    const pipeline = pipelines.find(
+      (entry) =>
+        entry.sha === current.mergedHead &&
+        entry.ref === current.targetBranch &&
+        (entry.created_at && Number.isFinite(mergedAt)
+          ? Date.parse(entry.created_at) >= mergedAt
+          : current.head !== current.mergedHead),
+    )
+    if (!pipeline) return undefined
+    return this.pipelineWithStages(pipeline, scope.target)
+  }
+
+  private async pipelineWithStages(
+    pipeline: z.infer<typeof pipelineSchema>,
+    repository?: HostingRepository,
+  ): Promise<HostedPipeline> {
+    const stages =
+      pipeline.iid && repository
+        ? await this.pipelineStages(repository, pipeline.iid).catch(() => undefined)
+        : undefined
+    return { status: pipeline.status, stages }
+  }
+
+  private async pipelineStages(repository: HostingRepository, iid: number) {
+    const stages: NonNullable<HostedPipeline['stages']> = []
+    let after: string | null = null
+    const seen = new Set<string>()
+    for (;;) {
+      const response = await this.request(repository, 'graphql', {
+        query: pipelineStagesQuery,
+        variables: { path: repository.path, iid: String(iid), after },
       })
+      const result = pipelineStagesSchema.parse(response).data.project.pipeline.stages
+      stages.push(...result.nodes)
+      if (!result.pageInfo.hasNextPage) return stages
+      after = result.pageInfo.endCursor
+      if (!after || seen.has(after)) throw new Error('流水线阶段分页无效。')
+      seen.add(after)
+    }
+  }
+  private async readHeadPipeline(scope: ReviewScope, current: HostedReview) {
+    return z
+      .object({ sha: z.string().nullish(), head_pipeline: pipelineSchema.nullish() })
       .parse(
         await this.request(
           scope.target,
           `${endpoint(scope.target)}/merge_requests/${current.number}`,
         ),
       )
+  }
+
+  private isMergeRef(pipeline: z.infer<typeof pipelineSchema>, current: HostedReview) {
+    // GitLab's merged-results and merge-train pipelines run on synthetic commits.
+    return (
+      pipeline.source === 'merge_request_event' &&
+      ['merge', 'train'].some(
+        (ref) => pipeline.ref === `refs/merge-requests/${current.number}/${ref}`,
+      )
+    )
+  }
+
+  private pipelineRepository(scope: ReviewScope, projectId?: number) {
+    if (
+      projectId === scope.targetInfo.id ||
+      (!projectId && scope.sourceInfo.id === scope.targetInfo.id)
+    )
+      return scope.target
+    return projectId === scope.sourceInfo.id ? scope.source : undefined
+  }
+
+  async checks(
+    scope: ReviewScope,
+    current: HostedReview,
+  ): Promise<Pick<HostedReview, 'checks' | 'pipeline'>> {
+    const data = await this.readHeadPipeline(scope, current)
+    if (data.sha && data.sha !== current.head) return { checks: 'unknown' }
     const pipeline = data.head_pipeline
-    if (!pipeline) return 'none'
-    if (pipeline.sha !== current.head) return 'unknown'
-    switch (pipeline.status) {
-      case 'success':
-      case 'skipped':
-        return 'success'
-      case 'failed':
-      case 'canceled':
-        return 'failure'
-      case 'running':
-        return 'running'
-      case 'created':
-      case 'pending':
-      case 'preparing':
-      case 'waiting_for_resource':
-      case 'scheduled':
-      case 'manual':
-        return 'pending'
-      default:
-        return 'unknown'
+    if (!pipeline) return { checks: 'none' }
+    if (
+      pipeline.sha !== current.head &&
+      !(data.sha === current.head && this.isMergeRef(pipeline, current))
+    )
+      return { checks: 'unknown' }
+    return {
+      checks: pipelineCheckStates.get(pipeline.status) ?? 'unknown',
+      pipeline: await this.pipelineWithStages(
+        pipeline,
+        this.pipelineRepository(scope, pipeline.project_id),
+      ),
     }
   }
   async create(scope: ReviewScope, input: CreateHostedReview) {

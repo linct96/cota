@@ -104,6 +104,24 @@ export function HostedReviewPanel({
     })
   }
 
+  const createButton = snapshot?.creationBlocked ? null : (
+    <Button
+      type="button"
+      variant={review?.state === 'merged' ? 'secondary' : 'default'}
+      size="sm"
+      className="hosted-review-create-button w-full"
+      disabled={disabled}
+      onClick={openCreate}
+    >
+      <GitPullRequest
+        className="hosted-review-create-button-icon"
+        data-icon="inline-start"
+        aria-hidden="true"
+      />
+      {review?.state === 'merged' ? '再创建一个' : '创建'} {label}
+    </Button>
+  )
+
   return (
     <section
       className="hosted-review-panel flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
@@ -283,6 +301,7 @@ export function HostedReviewPanel({
                           })
                         }
                       />
+                      {review.state === 'merged' && createButton}
                     </div>
                   ) : (
                     <div className="hosted-review-empty flex flex-col items-center gap-2.5 rounded-lg border border-dashed border-border px-4 py-6 text-center">
@@ -305,23 +324,7 @@ export function HostedReviewPanel({
                           </p>
                         )}
                       </div>
-                      {!snapshot.creationBlocked && (
-                        <Button
-                          type="button"
-                          variant="default"
-                          size="sm"
-                          className="hosted-review-empty-create w-full"
-                          disabled={disabled}
-                          onClick={openCreate}
-                        >
-                          <GitPullRequest
-                            className="hosted-review-empty-create-icon"
-                            data-icon="inline-start"
-                            aria-hidden="true"
-                          />
-                          创建 {label}
-                        </Button>
-                      )}
+                      {createButton}
                     </div>
                   )}
                 </>

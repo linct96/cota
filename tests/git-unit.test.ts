@@ -513,7 +513,11 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       expect(await adapter.history(scope, 1)).toMatchObject({ items: [], nextPage: 2 })
       request.mockResolvedValueOnce([
         payload(15, 'open'),
-        payload(12, 'merged'),
+        {
+          ...payload(12, 'merged'),
+          author: { username: 'author' },
+          merge_user: { username: 'merger' },
+        },
         payload(9, 'closed'),
         payload(8, 'closed', scope.branch, 'main', 2),
       ])
@@ -525,6 +529,7 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
         [9, 'closed'],
       ])
       expect(history.items[1]).toMatchObject({ createdAt: time, mergedAt: time })
+      if (provider === 'gitlab') expect(history.items[1].authorUsername).toBe('author')
       const historyRequest = request.mock.calls.at(-1)?.[1]
       expect(historyRequest).toContain('state=all')
       expect(historyRequest).toContain(
@@ -549,6 +554,189 @@ describe('Git and hosting pure logic / mocked APIs (no Git required)', () => {
       await expect(adapter.get(scope, 13)).rejects.toThrow('不匹配')
     },
   )
+
+  it('reads GitLab pre-merge stages from the pipeline project and rejects stale commits', async () => {
+    const { request, scope, payload } = reviewFixture('gitlab')
+    const adapter = new GitLabAdapter(request)
+    const source = { ...scope.source, path: 'fork/repo' }
+    const fork = { ...scope, source, sourceInfo: { ...scope.sourceInfo, id: 2, path: source.path } }
+    const open = payload(12, 'open', scope.branch, 'main', 2)
+    request.mockResolvedValueOnce(open)
+    const review = await adapter.get(fork, 12)
+    const stages = [
+      { name: 'build', status: 'success' },
+      { name: 'test', status: 'running' },
+    ]
+    const headPipeline = { iid: 42, project_id: 2, sha: review.head, status: 'running' }
+    request
+      .mockResolvedValueOnce({ sha: review.head, head_pipeline: headPipeline })
+      .mockResolvedValueOnce({
+        data: {
+          project: {
+            pipeline: {
+              stages: { nodes: stages, pageInfo: { endCursor: null, hasNextPage: false } },
+            },
+          },
+        },
+      })
+    expect(await adapter.checks(fork, review)).toEqual({
+      checks: 'running',
+      pipeline: { status: 'running', stages },
+    })
+    expect(request).toHaveBeenLastCalledWith(
+      source,
+      'graphql',
+      expect.objectContaining({ variables: { path: source.path, iid: '42', after: null } }),
+    )
+    request.mockResolvedValueOnce({ sha: 'b'.repeat(40), head_pipeline: headPipeline })
+    expect(await adapter.checks(fork, review)).toEqual({ checks: 'unknown' })
+    expect(request).toHaveBeenCalledTimes(4)
+
+    request
+      .mockResolvedValueOnce({
+        sha: review.head,
+        head_pipeline: {
+          ...headPipeline,
+          project_id: 1,
+          sha: 'c'.repeat(40),
+          source: 'merge_request_event',
+          ref: 'refs/merge-requests/12/merge',
+        },
+      })
+      .mockRejectedValueOnce(new Error('stage details unavailable'))
+    expect(await adapter.checks(fork, review)).toEqual({
+      checks: 'running',
+      pipeline: { status: 'running' },
+    })
+    expect(request).toHaveBeenLastCalledWith(
+      scope.target,
+      'graphql',
+      expect.objectContaining({ variables: { path: scope.target.path, iid: '42', after: null } }),
+    )
+  })
+
+  it('keeps GitLab pre-merge and post-merge pipelines separate even when they share a SHA', async () => {
+    const { request, scope, payload, time } = reviewFixture('gitlab')
+    const adapter = new GitLabAdapter(request)
+    request.mockResolvedValueOnce(payload(12, 'merged'))
+    const review = await adapter.get(scope, 12)
+    const merged = { ...review, mergedHead: review.head }
+    const preMerge = {
+      sha: review.head,
+      ref: scope.branch,
+      status: 'failed',
+      iid: 41,
+      created_at: '2026-10-27T23:58:00Z',
+    }
+    const postMerge = {
+      ...preMerge,
+      ref: review.targetBranch,
+      status: 'success',
+      iid: 42,
+      created_at: time,
+    }
+    const stale = { ...preMerge, sha: 'b'.repeat(40), iid: 40 }
+    const stagePage = (name: string, status: string) => ({
+      data: {
+        project: {
+          pipeline: {
+            stages: {
+              nodes: [{ name, status }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        },
+      },
+    })
+    request
+      .mockResolvedValueOnce({ sha: review.head, head_pipeline: postMerge })
+      .mockResolvedValueOnce([postMerge, stale, preMerge])
+      .mockResolvedValueOnce(stagePage('test', 'failed'))
+    expect(await adapter.preMergePipeline(scope, merged)).toEqual({
+      status: 'failed',
+      stages: [{ name: 'test', status: 'failed' }],
+    })
+    expect(request).toHaveBeenNthCalledWith(
+      3,
+      scope.target,
+      'projects/team%2Frepo/merge_requests/12/pipelines?per_page=100&page=1',
+    )
+    expect(request).toHaveBeenLastCalledWith(
+      scope.target,
+      'graphql',
+      expect.objectContaining({
+        variables: { path: scope.target.path, iid: '41', after: null },
+      }),
+    )
+
+    request.mockResolvedValueOnce([{ ...preMerge, ref: review.targetBranch }])
+    expect(await adapter.mergedPipeline(scope, merged)).toBeUndefined()
+    request.mockResolvedValueOnce([postMerge]).mockResolvedValueOnce(stagePage('deploy', 'success'))
+    expect(await adapter.mergedPipeline(scope, merged)).toEqual({
+      status: 'success',
+      stages: [{ name: 'deploy', status: 'success' }],
+    })
+
+    request
+      .mockResolvedValueOnce({
+        sha: review.head,
+        head_pipeline: {
+          ...stale,
+          source: 'merge_request_event',
+          ref: 'refs/merge-requests/12/merge',
+        },
+      })
+      .mockResolvedValueOnce(stagePage('merged-result-test', 'failed'))
+    expect(await adapter.preMergePipeline(scope, merged)).toMatchObject({
+      stages: [{ name: 'merged-result-test', status: 'failed' }],
+    })
+  })
+
+  it('reads only the GitLab pipeline matching the merged commit and target branch', async () => {
+    const { request, scope, payload } = reviewFixture('gitlab')
+    const adapter = new GitLabAdapter(request)
+    const sha = 'b'.repeat(40)
+    const ref = 'release/stable'
+    request.mockResolvedValueOnce([
+      { ...payload(12, 'merged', scope.branch, ref), merge_commit_sha: sha },
+    ])
+    const [merged] = (await adapter.history(scope, 1)).items
+    request
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ sha: merged.head, ref, status: 'success' }])
+      .mockResolvedValueOnce([{ sha, ref, status: 'running', iid: 42 }])
+    const stagePage = (nodes: { name: string; status: string }[], endCursor: string | null) => ({
+      data: {
+        project: {
+          pipeline: { stages: { nodes, pageInfo: { endCursor, hasNextPage: !!endCursor } } },
+        },
+      },
+    })
+    const build = { name: 'build', status: 'success' }
+    const deploy = { name: 'deploy', status: 'running' }
+    request
+      .mockResolvedValueOnce(stagePage([build], 'next'))
+      .mockResolvedValueOnce(stagePage([deploy], null))
+      .mockResolvedValueOnce([{ sha, ref, status: 'success', iid: 42 }])
+      .mockRejectedValueOnce(new Error('stage details unavailable'))
+    expect(await adapter.mergedPipeline(scope, merged)).toBeUndefined()
+    expect(await adapter.mergedPipeline(scope, merged)).toBeUndefined()
+    expect(await adapter.mergedPipeline(scope, merged)).toEqual({
+      status: 'running',
+      stages: [build, deploy],
+    })
+    expect(request).toHaveBeenLastCalledWith(
+      scope.target,
+      'graphql',
+      expect.objectContaining({ variables: { path: scope.target.path, iid: '42', after: 'next' } }),
+    )
+    expect(await adapter.mergedPipeline(scope, merged)).toEqual({ status: 'success' })
+    expect(request).toHaveBeenNthCalledWith(
+      7,
+      scope.target,
+      `projects/team%2Frepo/pipelines?ref=release%2Fstable&sha=${sha}&order_by=id&sort=desc&per_page=1`,
+    )
+  })
 
   describe.each(['github', 'gitlab'] as const)('%s comparisons', (provider) => {
     it.each(['empty', 'changes', 'unknown'] as const)(

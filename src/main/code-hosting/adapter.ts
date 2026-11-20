@@ -1,5 +1,6 @@
 import type {
   CreateHostedReview,
+  HostedPipeline,
   HostedReview,
   HostedReviewHistory,
   HostingBranch,
@@ -33,7 +34,15 @@ export interface HostingAdapter {
     targetHead: string,
   ) => Promise<HostingComparison>
   branchHead: (repository: HostingRepository, branch: string) => Promise<string>
-  checks: (scope: ReviewScope, review: HostedReview) => Promise<HostingCheckState>
+  checks: (
+    scope: ReviewScope,
+    review: HostedReview,
+  ) => Promise<Pick<HostedReview, 'checks' | 'pipeline'>>
+  preMergePipeline?: (
+    scope: ReviewScope,
+    review: HostedReview,
+  ) => Promise<HostedPipeline | undefined>
+  mergedPipeline?: (scope: ReviewScope, review: HostedReview) => Promise<HostedPipeline | undefined>
   create: (scope: ReviewScope, input: CreateHostedReview) => Promise<HostedReview>
   merge: (scope: ReviewScope, review: HostedReview) => Promise<HostedReview>
 }

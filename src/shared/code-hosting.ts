@@ -81,10 +81,18 @@ export interface HostedReview {
   url: string
   checks: HostingCheckState
   checksError?: string
+  mergedHead?: string
+  pipeline?: HostedPipeline
+  preMergePipeline?: HostedPipeline
   createdAt: string
   updatedAt: string
   mergedAt: string | null
+  authorUsername?: string
   closedAt: string | null
+}
+export interface HostedPipeline {
+  status: string
+  stages?: { name: string; status: string }[]
 }
 export interface HostedReviewHistory {
   items: HostedReview[]
