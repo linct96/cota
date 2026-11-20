@@ -38,11 +38,11 @@ export interface HostingAdapter {
     scope: ReviewScope,
     review: HostedReview,
   ) => Promise<Pick<HostedReview, 'checks' | 'pipeline'>>
-  preMergePipeline?: (
+  preMergePipeline: (
     scope: ReviewScope,
     review: HostedReview,
   ) => Promise<HostedPipeline | undefined>
-  mergedPipeline?: (scope: ReviewScope, review: HostedReview) => Promise<HostedPipeline | undefined>
+  mergedPipeline: (scope: ReviewScope, review: HostedReview) => Promise<HostedPipeline | undefined>
   create: (scope: ReviewScope, input: CreateHostedReview) => Promise<HostedReview>
   merge: (scope: ReviewScope, review: HostedReview) => Promise<HostedReview>
 }

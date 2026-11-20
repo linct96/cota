@@ -217,12 +217,12 @@ export class CodeHostingService {
     scope: ReviewScope,
   ): Promise<HostingSnapshot> {
     await this.reconcile(context, account, activeReviews)
-    // An unavailable pipeline must not hide the review result.
+    // Only omit runs that don't exist; a read error is an unknown CI result.
     const mergedPipelines =
       latestReview?.state === 'merged'
         ? Promise.all([
-            adapter.preMergePipeline?.(scope, latestReview).catch(() => undefined),
-            adapter.mergedPipeline?.(scope, latestReview).catch(() => undefined),
+            adapter.preMergePipeline(scope, latestReview).catch(() => ({ status: 'unknown' })),
+            adapter.mergedPipeline(scope, latestReview).catch(() => ({ status: 'unknown' })),
           ])
         : undefined
     await Promise.all(
