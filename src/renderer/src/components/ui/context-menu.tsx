@@ -23,17 +23,33 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRight className="context-menu-sub-chevron ml-auto" />
+      <ChevronRight className="context-menu-sub-chevron ml-auto" aria-hidden="true" />
     </ContextMenuPrimitive.SubmenuTrigger>
   )
 }
 
-function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.Props) {
+function ContextMenuContent({
+  className,
+  align,
+  alignOffset,
+  side,
+  sideOffset,
+  collisionPadding = 8,
+  ...props
+}: ContextMenuPrimitive.Popup.Props &
+  Pick<
+    ContextMenuPrimitive.Positioner.Props,
+    'align' | 'alignOffset' | 'side' | 'sideOffset' | 'collisionPadding'
+  >) {
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Positioner
-        className="context-menu-positioner isolate z-50 outline-none"
-        collisionPadding={8}
+        className="context-menu-positioner isolate z-50 outline-none data-anchor-hidden:invisible"
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
+        sideOffset={sideOffset}
+        collisionPadding={collisionPadding}
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
@@ -48,6 +64,16 @@ function ContextMenuContent({ className, ...props }: ContextMenuPrimitive.Popup.
   )
 }
 
+/** 二级右键菜单内容容器，统一与一级菜单保持右侧展开与 4px 间距。 */
+function ContextMenuSubContent({
+  side = 'right',
+  align = 'start',
+  sideOffset = 4,
+  ...props
+}: ComponentProps<typeof ContextMenuContent>) {
+  return <ContextMenuContent side={side} align={align} sideOffset={sideOffset} {...props} />
+}
+
 function ContextMenuItem(props: ComponentProps<typeof DropdownMenuItem>) {
   return <DropdownMenuItem data-slot="context-menu-item" {...props} />
 }
@@ -57,6 +83,7 @@ export {
   ContextMenuTrigger,
   ContextMenuGroup,
   ContextMenuContent,
+  ContextMenuSubContent,
   ContextMenuItem,
   ContextMenuSub,
   ContextMenuSubTrigger,

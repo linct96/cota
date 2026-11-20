@@ -6,10 +6,10 @@ import { useWorkspace } from '@/state/workspace'
 import { useAgentClis } from '@/state/agent-cli-store'
 import { abbreviateHomePath } from '@/lib/utils'
 import {
-  ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSub,
+  ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from '@/components/ui/context-menu'
 
@@ -26,7 +26,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
         <Bot className="workspace-new-agent-icon" />
         新建 Agent{atLimit ? '（终端已达上限）' : ''}
       </ContextMenuSubTrigger>
-      <ContextMenuContent className="workspace-agent-menu" aria-label="新建 Agent">
+      <ContextMenuSubContent className="workspace-agent-menu" aria-label="新建 Agent">
         <ContextMenuGroup className="workspace-agent-providers">
           {available.map(({ provider, executable, version }) => (
             <ContextMenuItem
@@ -59,7 +59,7 @@ export function AgentMenu({ workspaceId, disabled }: { workspaceId: string; disa
             </ContextMenuItem>
           )}
         </ContextMenuGroup>
-      </ContextMenuContent>
+      </ContextMenuSubContent>
     </ContextMenuSub>
   )
 }

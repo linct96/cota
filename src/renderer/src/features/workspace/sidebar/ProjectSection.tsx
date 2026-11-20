@@ -14,6 +14,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
+  DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -145,12 +146,7 @@ export const ProjectSection = memo(function ProjectSection({
                 >
                   移动到分组
                 </DropdownMenuSubTrigger>
-                <DropdownMenuContent
-                  side="right"
-                  align="start"
-                  className="project-move-group-menu"
-                  aria-label="移动到分组"
-                >
+                <DropdownMenuSubContent className="project-move-group-menu" aria-label="移动到分组">
                   {state.projectGroups.length > 0 && (
                     <>
                       <DropdownMenuRadioGroup
@@ -191,7 +187,7 @@ export const ProjectSection = memo(function ProjectSection({
                       <span className="project-move-create-group-label">新建分组</span>
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
-                </DropdownMenuContent>
+                </DropdownMenuSubContent>
               </DropdownMenuSub>
               <DropdownMenuItem
                 className="project-new-local-workspace-item"

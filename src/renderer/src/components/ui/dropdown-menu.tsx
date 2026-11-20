@@ -77,6 +77,16 @@ function DropdownMenuContent({
   )
 }
 
+/** 二级下拉菜单内容容器，统一与一级菜单保持右侧展开与 4px 间距。 */
+function DropdownMenuSubContent({
+  side = 'right',
+  align = 'start',
+  sideOffset = 4,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuContent>) {
+  return <DropdownMenuContent side={side} align={align} sideOffset={sideOffset} {...props} />
+}
+
 function DropdownMenuItem({
   className,
   variant = 'default',
@@ -172,5 +182,6 @@ export {
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
+  DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 }
