@@ -110,7 +110,6 @@ export function useHostedReviewCreation({
   })
   const submitting = useStore(form.store, (state) => state.isSubmitting)
   const canSubmit = useStore(form.store, (state) => state.canSubmit)
-  const draft = useStore(form.store, (state) => state.values.draft)
   const submittingVisible = useLoadingIndicator(submitting)
   const busy = submitting || unlocking
   const fieldsDisabled = busy || !creation
@@ -401,7 +400,6 @@ export function useHostedReviewCreation({
     visible: open && !closing,
     busy,
     dirty,
-    draft,
     isFork,
     unlocking,
     fieldsDisabled,

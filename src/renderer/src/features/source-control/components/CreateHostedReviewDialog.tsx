@@ -28,7 +28,6 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
     visible,
     busy,
     dirty,
-    draft,
     isFork,
     unlocking,
     fieldsDisabled,
@@ -319,7 +318,7 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
                     aria-hidden="true"
                   />
                 )}
-                <span>{draft ? `创建草稿 ${label}` : `创建 ${label}`}</span>
+                <span className="create-hosted-review-submit-label">创建 {label}</span>
                 <Kbd className="create-hosted-review-submit-shortcut ml-0.5 h-4 min-w-0 bg-primary-foreground/15 px-1 text-primary-foreground/85">
                   {isMac ? '⌘↵' : 'Ctrl+↵'}
                 </Kbd>
