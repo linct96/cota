@@ -380,7 +380,7 @@ export class GitHubAdapter implements HostingAdapter {
         : pipelineStatus(combineChecks(runs.map((run) => checkState(jobStatus(run)))))
     const stages = await Promise.all(
       runs.map(async (run) => {
-        const result = z
+        const jobPage = z
           .object({ total_count: z.number(), jobs: z.array(jobSchema) })
           .parse(
             await this.request(
@@ -389,8 +389,8 @@ export class GitHubAdapter implements HostingAdapter {
             ),
           )
         // shortcut: keep the workflow status but hide partial lists over 100 jobs.
-        if (result.total_count > result.jobs.length) return undefined
-        return result.jobs.map((job) => ({
+        if (jobPage.total_count > jobPage.jobs.length) return undefined
+        return jobPage.jobs.map((job) => ({
           id: `job:${job.id}`,
           name: runs.length > 1 && run.name ? `${run.name} · ${job.name}` : job.name,
           status: jobStatus(job),
