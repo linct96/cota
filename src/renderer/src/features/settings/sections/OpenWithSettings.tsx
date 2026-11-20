@@ -307,7 +307,6 @@ export function OpenWithSettings() {
         <DialogContent
           className="open-with-dialog max-h-[calc(100%-2rem)] overflow-y-auto"
           showCloseButton={false}
-          initialFocus={false}
         >
           <DialogHeader className="open-with-dialog-header">
             <DialogTitle className="open-with-dialog-title">

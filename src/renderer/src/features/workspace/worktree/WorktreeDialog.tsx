@@ -55,7 +55,6 @@ export function WorktreeDialog({
   const [plan, setPlan] = useState<WorktreePlan>()
   const [checkingPlan, setCheckingPlan] = useState(false)
   const submitting = useRef(false)
-  const nameInput = useRef<HTMLInputElement>(null)
   const nameEdited = useRef(false)
   const baseEdited = useRef(false)
   const form = useForm({
@@ -187,11 +186,7 @@ export function WorktreeDialog({
         }
       }}
     >
-      <DialogContent
-        className="worktree-create-dialog"
-        showCloseButton={false}
-        initialFocus={nameInput}
-      >
+      <DialogContent className="worktree-create-dialog" showCloseButton={false}>
         <DialogHeader className="worktree-create-header">
           <DialogTitle className="worktree-create-title">新建工作树</DialogTitle>
         </DialogHeader>
@@ -225,7 +220,6 @@ export function WorktreeDialog({
                       maxLength={1024}
                       required
                       disabled={pending}
-                      ref={nameInput}
                       onBlur={field.handleBlur}
                       aria-invalid={invalid}
                       aria-describedby={

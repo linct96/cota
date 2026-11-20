@@ -1,4 +1,3 @@
-import type { RefObject } from 'react'
 import { Field, FieldError, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,10 +8,7 @@ export function HostedReviewDetailsFields({
   label,
   composerDisabled,
   markTextEdited,
-  titleInputRef,
-}: Pick<HostedReviewCreation, 'form' | 'label' | 'composerDisabled' | 'markTextEdited'> & {
-  titleInputRef: RefObject<HTMLInputElement | null>
-}) {
+}: Pick<HostedReviewCreation, 'form' | 'label' | 'composerDisabled' | 'markTextEdited'>) {
   return (
     <div className="create-hosted-review-composer flex min-h-0 flex-1 flex-col gap-3">
       <form.Field name="title">
@@ -31,7 +27,6 @@ export function HostedReviewDetailsFields({
                 标题
               </FieldLabel>
               <Input
-                ref={titleInputRef}
                 id="review-title"
                 name={field.name}
                 value={field.state.value}

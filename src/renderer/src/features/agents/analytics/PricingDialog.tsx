@@ -55,9 +55,7 @@ export function PricingDialog({
   const [listProvider, setListProvider] = useState('all')
   const editorReturnFocus = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (editing) {
-      document.getElementById(editing === 'new' ? 'price-provider' : 'price-input')?.focus()
-    } else if (editorReturnFocus.current) {
+    if (!editing && editorReturnFocus.current) {
       const trigger =
         document.getElementById(editorReturnFocus.current) ??
         document.getElementById('pricing-search')

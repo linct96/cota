@@ -55,7 +55,6 @@ export function ProjectGroupNameDialog({
 }) {
   const changeGrouping = useWorkspace((state) => state.changeProjectGrouping)
   const [saveError, setSaveError] = useState<string>()
-  const input = useRef<HTMLInputElement | null>(null)
   const form = useForm({
     defaultValues: { name: '' },
     validationLogic: revalidateLogic({ mode: 'blur' }),
@@ -100,10 +99,6 @@ export function ProjectGroupNameDialog({
       <DialogContent
         className="project-group-name-dialog"
         showCloseButton={false}
-        initialFocus={() => {
-          input.current?.select()
-          return input.current
-        }}
         finalFocus={() => restoreGroupFocus(trigger, target?.projectPath)}
       >
         <DialogHeader className="project-group-name-header">
@@ -136,7 +131,6 @@ export function ProjectGroupNameDialog({
                         </FieldLabel>
                         <Input
                           className="project-group-name-input"
-                          ref={input}
                           id="project-group-name"
                           value={field.state.value}
                           onBlur={field.handleBlur}

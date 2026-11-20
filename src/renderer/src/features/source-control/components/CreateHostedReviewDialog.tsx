@@ -56,8 +56,6 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
   } = useHostedReviewCreation(props)
 
   const formRef = useRef<HTMLFormElement>(null)
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const autoFocused = useRef(false)
   const isMac = window.desktop.platform === 'darwin'
 
   useEffect(() => {
@@ -72,22 +70,6 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
     node.addEventListener('keydown', handleKeyDown)
     return () => node.removeEventListener('keydown', handleKeyDown)
   }, [visible, isMac, submit])
-
-  useEffect(() => {
-    if (!visible) {
-      autoFocused.current = false
-      return
-    }
-    if (autoFocused.current || initializing || preparing || composerDisabled) return
-    const active = document.activeElement
-    const userMovedFocus =
-      active instanceof HTMLElement &&
-      active !== document.body &&
-      active.closest('[data-slot="dialog-content"]') !== null &&
-      active.getAttribute('data-slot') !== 'dialog-content'
-    if (!userMovedFocus) titleInputRef.current?.focus()
-    autoFocused.current = true
-  }, [visible, initializing, preparing, composerDisabled])
 
   const sourcePath = creation?.context.source?.path
   const targetPath = creation?.context.target?.path
@@ -107,7 +89,6 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
       <DialogContent
         className="create-hosted-review-dialog flex max-h-[calc(100dvh-3rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[610px]"
         showCloseButton={false}
-        initialFocus={false}
       >
         <DialogHeader className="create-hosted-review-header flex h-11 shrink-0 flex-row items-center justify-between gap-3 px-4">
           <div className="create-hosted-review-identity flex min-w-0 items-center gap-2">
@@ -236,7 +217,6 @@ export function CreateHostedReviewDialog(props: CreateHostedReviewDialogProps) {
               label={label}
               composerDisabled={composerDisabled}
               markTextEdited={markTextEdited}
-              titleInputRef={titleInputRef}
             />
           </div>
 

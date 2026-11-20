@@ -55,7 +55,6 @@ export function WorkspaceNameDialog({
   const [savingWorkspace, setSavingWorkspace] = useState(false)
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string>()
   const workspaceSavePending = useRef(false)
-  const workspaceNameInput = useRef<HTMLInputElement | null>(null)
   const [checkingWorktree, setCheckingWorktree] = useState(false)
   const workspaceForm = useForm({
     defaultValues: { name: workspaceDialog?.name || '' },
@@ -140,10 +139,6 @@ export function WorkspaceNameDialog({
       <DialogContent
         className="workspace-name-dialog max-h-[80vh] overflow-y-auto"
         showCloseButton={false}
-        initialFocus={() => {
-          workspaceNameInput.current?.select()
-          return workspaceNameInput.current
-        }}
         finalFocus={workspaceDialogTrigger}
       >
         <form
@@ -173,7 +168,6 @@ export function WorkspaceNameDialog({
                       工作区名称
                     </FieldLabel>
                     <Input
-                      ref={workspaceNameInput}
                       id="workspace-name"
                       name={field.name}
                       className="workspace-name-input"
