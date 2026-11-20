@@ -10,7 +10,8 @@
 
 ## 前端 UI 调试
 
-- 使用 `agent-browser` 调试；首次使用时运行 `agent-browser skills get core`，连接 Electron 时可参考 `agent-browser skills get electron`。
+- 仅在用户明确要求调试前端 UI 时，才使用 `agent-browser`；不得主动用它调试或验证界面。
+- 首次使用时运行 `agent-browser skills get core`，连接 Electron 时可参考 `agent-browser skills get electron`。
 - 通过 CDP 连接正在运行的 Electron 开发实例，端口以 `package.json` 中的 `--remoteDebuggingPort` 为准，检查相关界面和必要交互。
 - 不要擅自关闭或重启已有实例，也不要用普通浏览器访问 Vite 页面代替 Electron 验证。
 
